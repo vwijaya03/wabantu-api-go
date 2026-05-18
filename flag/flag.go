@@ -14,7 +14,7 @@ import (
 	"encore.app/wabantu/shared/types"
 )
 
-var db = sqldb.Named("tenant")
+var db = sqldb.Named("system")
 
 // ---------- types ----------
 
@@ -103,7 +103,7 @@ func scanFlag(scan func(dest ...any) error) (FeatureFlag, error) {
 
 // ---------- endpoints ----------
 
-//encore:api auth method=GET path=/flags
+//encore:api auth method=GET path=/api/v1/flags
 func ListFlags(ctx context.Context) (*ListFlagsResponse, error) {
 	if _, err := requireSuperAdmin(); err != nil {
 		return nil, err
@@ -128,7 +128,7 @@ func ListFlags(ctx context.Context) (*ListFlagsResponse, error) {
 	return &ListFlagsResponse{Flags: flags}, nil
 }
 
-//encore:api auth method=POST path=/flags
+//encore:api auth method=POST path=/api/v1/flags
 func CreateFlag(ctx context.Context, p *CreateFlagParams) (*FeatureFlag, error) {
 	if _, err := requireSuperAdmin(); err != nil {
 		return nil, err
@@ -155,7 +155,7 @@ func CreateFlag(ctx context.Context, p *CreateFlagParams) (*FeatureFlag, error) 
 	return &f, nil
 }
 
-//encore:api auth method=PATCH path=/flags/:key
+//encore:api auth method=PATCH path=/api/v1/flags/:key
 func UpdateFlag(ctx context.Context, key string, req *UpdateFlagParams) (*FeatureFlag, error) {
 	if _, err := requireSuperAdmin(); err != nil {
 		return nil, err
@@ -201,7 +201,7 @@ func UpdateFlag(ctx context.Context, key string, req *UpdateFlagParams) (*Featur
 	return &f, nil
 }
 
-//encore:api auth method=GET path=/flags/check/:key
+//encore:api auth method=GET path=/api/v1/flags/check/:key
 func CheckFlag(ctx context.Context, key string) (*CheckFlagResponse, error) {
 	u, _ := auth.Data().(*types.AuthUser)
 	if u == nil {

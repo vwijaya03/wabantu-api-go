@@ -12,8 +12,12 @@ CREATE TABLE tenant (
 CREATE TABLE tenant_company (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id UUID UNIQUE NOT NULL REFERENCES tenant(id),
+    host VARCHAR(200),
+    port INTEGER,
+    database VARCHAR(100),
     schema_name VARCHAR(128) UNIQUE NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE tenant_account (

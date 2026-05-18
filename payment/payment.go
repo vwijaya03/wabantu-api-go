@@ -19,7 +19,8 @@ import (
 	"encore.app/wabantu/shared/types"
 )
 
-var db = sqldb.Named("tenant")
+var dataDB = sqldb.Named("tenant")
+var systemDB = sqldb.Named("system")
 
 var secrets struct {
 	MidtransServerKey    string
@@ -94,7 +95,7 @@ type midtransNotification struct {
 
 // ---------- endpoints ----------
 
-//encore:api auth method=POST path=/payment/create-qris
+//encore:api auth method=POST path=/api/v1/payment/create-qris
 func CreateQRIS(ctx context.Context, p *CreateQRISParams) (*QRISResponse, error) {
 	u, _ := auth.Data().(*types.AuthUser)
 	if u == nil || u.Role != "owner" {
@@ -121,7 +122,7 @@ func CreateQRIS(ctx context.Context, p *CreateQRISParams) (*QRISResponse, error)
 
 	expiresAt := time.Now().Add(15 * time.Minute)
 
-	_, err = db.Exec(ctx, fmt.Sprintf(
+	_, err = dataDB.Exec(ctx, fmt.Sprintf(
 		`INSERT INTO "%s".payment_transaction
 			(midtrans_order_id, midtrans_transaction_id, invoice_id, amount_idr,
 			 description, status, payment_type, qr_url, expires_at)
@@ -133,7 +134,7 @@ func CreateQRIS(ctx context.Context, p *CreateQRISParams) (*QRISResponse, error)
 		return nil, fmt.Errorf("save transaction: %w", err)
 	}
 
-	_, err = db.Exec(ctx,
+	_, err = systemDB.Exec(ctx,
 		`INSERT INTO payment_webhook_map (order_id, tenant_schema) VALUES ($1,$2)`,
 		orderID, u.TenantSchema)
 	if err != nil {
@@ -148,7 +149,7 @@ func CreateQRIS(ctx context.Context, p *CreateQRISParams) (*QRISResponse, error)
 	}, nil
 }
 
-//encore:api auth method=GET path=/payment/:id/status
+//encore:api auth method=GET path=/api/v1/payment/:id/status
 func GetStatus(ctx context.Context, id string) (*PaymentStatus, error) {
 	u, _ := auth.Data().(*types.AuthUser)
 	if u == nil {
@@ -156,7 +157,7 @@ func GetStatus(ctx context.Context, id string) (*PaymentStatus, error) {
 	}
 
 	var ps PaymentStatus
-	err := db.QueryRow(ctx, fmt.Sprintf(
+	err := dataDB.QueryRow(ctx, fmt.Sprintf(
 		`SELECT id, midtrans_order_id, COALESCE(midtrans_transaction_id,''),
 		        COALESCE(invoice_id,''), amount_idr, status, payment_type,
 		        COALESCE(qr_url,''), expires_at, paid_at, created_at
@@ -171,7 +172,7 @@ func GetStatus(ctx context.Context, id string) (*PaymentStatus, error) {
 	return &ps, nil
 }
 
-//encore:api public raw method=POST path=/payment/webhook/midtrans
+//encore:api public raw method=POST path=/api/v1/payment/webhook/midtrans
 func MidtransWebhook(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -198,7 +199,7 @@ func MidtransWebhook(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	var tenantSchema string
-	if err := db.QueryRow(ctx,
+	if err := systemDB.QueryRow(ctx,
 		`SELECT tenant_schema FROM payment_webhook_map WHERE order_id=$1`,
 		n.OrderID).Scan(&tenantSchema); err != nil {
 		rlog.Error("webhook map lookup failed", "orderId", n.OrderID, "err", err)
@@ -207,7 +208,7 @@ func MidtransWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var currentStatus string
-	if err := db.QueryRow(ctx, fmt.Sprintf(
+	if err := dataDB.QueryRow(ctx, fmt.Sprintf(
 		`SELECT status FROM "%s".payment_transaction WHERE midtrans_order_id=$1`,
 		tenantSchema), n.OrderID).Scan(&currentStatus); err != nil {
 		rlog.Error("transaction lookup failed", "orderId", n.OrderID, "err", err)
@@ -227,11 +228,16 @@ func MidtransWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if newStatus == "PAID" {
-		_, _ = db.Exec(ctx, fmt.Sprintf(
+		_, _ = dataDB.Exec(ctx, fmt.Sprintf(
 			`UPDATE "%s".payment_transaction SET status=$1, paid_at=NOW(), updated_at=NOW()
 			 WHERE midtrans_order_id=$2`, tenantSchema), newStatus, n.OrderID)
+		_, _ = dataDB.Exec(ctx, fmt.Sprintf(
+			`UPDATE "%s"."order" SET status='paid', updated_at=NOW()
+			 WHERE payment_transaction_id = (
+			   SELECT id FROM "%s".payment_transaction WHERE midtrans_order_id=$1 LIMIT 1
+			 ) AND status IN ('draft','confirmed')`, tenantSchema, tenantSchema), n.OrderID)
 	} else {
-		_, _ = db.Exec(ctx, fmt.Sprintf(
+		_, _ = dataDB.Exec(ctx, fmt.Sprintf(
 			`UPDATE "%s".payment_transaction SET status=$1, updated_at=NOW()
 			 WHERE midtrans_order_id=$2`, tenantSchema), newStatus, n.OrderID)
 	}

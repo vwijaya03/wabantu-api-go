@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"encore.dev/rlog"
@@ -151,14 +152,14 @@ func deliverPayload(ctx context.Context, url string, payload json.RawMessage) er
 }
 
 func getWebhookURL(ctx context.Context, db *sql.DB, schema string) (string, error) {
-	q := fmt.Sprintf(`SELECT webhook_url FROM %q.business_setting
-		WHERE key = 'webhook_url' LIMIT 1`, schema)
+	q := fmt.Sprintf(`SELECT COALESCE(outbound_webhook_url,'')
+		FROM %q.business_profile ORDER BY created_at ASC LIMIT 1`, schema)
 	var url string
 	err := db.QueryRowContext(ctx, q).Scan(&url)
 	if err == sql.ErrNoRows {
 		return "", nil
 	}
-	return url, err
+	return strings.TrimSpace(url), err
 }
 
 func markDelivered(ctx context.Context, db *sql.DB, schema, eventID string, attempts int) error {

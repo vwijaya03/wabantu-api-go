@@ -12,8 +12,14 @@ import (
 	"encore.dev/storage/sqldb"
 
 	e "encore.app/wabantu/shared/errs"
+	"encore.app/wabantu/shared/entitlement"
 	"encore.app/wabantu/shared/types"
+	"encore.app/wabantu/usage"
 )
+
+var validLeadStatuses = map[string]bool{
+	"new": true, "interested": true, "negotiation": true, "paid": true, "lost": true,
+}
 
 var db = sqldb.Named("tenant")
 
@@ -26,34 +32,31 @@ func withTenantDB(ctx context.Context, schema string) (*sql.DB, error) {
 	return stdlib, nil
 }
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-
+// Lead matches the NestJS / web-frontend contract.
 type Lead struct {
-	ID             string     `json:"id"`
-	ContactID      *string    `json:"contactId,omitempty"`
-	ConversationID *string    `json:"conversationId,omitempty"`
-	Name           string     `json:"name"`
-	Status         string     `json:"status"` // "new" | "contacted" | "qualified" | "converted" | "lost"
-	Notes          *string    `json:"notes,omitempty"`
-	CreatedAt      time.Time  `json:"createdAt"`
-	UpdatedAt      time.Time  `json:"updatedAt"`
+	ID              string    `json:"id"`
+	PhoneNumber     string    `json:"phoneNumber"`
+	Name            *string   `json:"name"`
+	ProductInterest *string   `json:"productInterest"`
+	Budget          *string   `json:"budget"`
+	Location        *string   `json:"location"`
+	Status          string    `json:"status"`
+	Notes           *string   `json:"notes"`
+	CreatedAt       time.Time `json:"createdAt"`
 }
 
 type ListRequest struct {
-	Status   string `query:"status"`
-	Page     int    `query:"page"`
-	PageSize int    `query:"pageSize"`
+	Status string `query:"status"`
 }
 
-type ListResponse struct {
-	Items    []Lead `json:"items"`
-	Total    int    `json:"total"`
-	Page     int    `json:"page"`
-	PageSize int    `json:"pageSize"`
+// ListLeadsResponse wraps the lead list (Encore requires a named struct).
+type ListLeadsResponse struct {
+	Items []Lead `json:"items"`
 }
 
-type GetResponse struct {
-	Lead Lead `json:"lead"`
+type UpdateRequest struct {
+	Status *string `json:"status"`
+	Notes  *string `json:"notes"`
 }
 
 type CaptureRequest struct {
@@ -61,14 +64,14 @@ type CaptureRequest struct {
 	ContactID      string `json:"contactId"`
 	ConversationID string `json:"conversationId"`
 	ContactName    string `json:"contactName"`
+	PhoneNumber    string `json:"phoneNumber"`
+	Body           string `json:"body"`
 }
 
 type CaptureResponse struct {
-	Created bool `json:"created"`
+	Created bool   `json:"created"`
 	LeadID  string `json:"leadId"`
 }
-
-// ─── Auth helper ─────────────────────────────────────────────────────────────
 
 func currentUser(ctx context.Context) (*types.AuthUser, error) {
 	uid, ok := auth.UserID()
@@ -83,13 +86,16 @@ func currentUser(ctx context.Context) (*types.AuthUser, error) {
 	return u, nil
 }
 
-// ─── Endpoints ───────────────────────────────────────────────────────────────
-
-//encore:api auth method=GET path=/leads
-func List(ctx context.Context, req *ListRequest) (*ListResponse, error) {
+// List returns all leads for the tenant (optional status filter).
+//
+//encore:api auth method=GET path=/api/v1/leads
+func List(ctx context.Context, req *ListRequest) (*ListLeadsResponse, error) {
 	u, err := currentUser(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if !entitlement.HasFeature(usage.TenantPlan(ctx, u.TenantSchema), entitlement.FeatureCRMLeads) {
+		return nil, e.Forbidden("CRM leads requires Business plan or higher")
 	}
 
 	conn, err := withTenantDB(ctx, u.TenantSchema)
@@ -97,45 +103,22 @@ func List(ctx context.Context, req *ListRequest) (*ListResponse, error) {
 		return nil, err
 	}
 
-	page := req.Page
-	if page < 1 {
-		page = 1
-	}
-	pageSize := req.PageSize
-	if pageSize < 1 {
-		pageSize = 20
-	}
-	if pageSize > 100 {
-		pageSize = 100
-	}
-	offset := (page - 1) * pageSize
-
-	where := "WHERE 1=1"
+	where := "WHERE l.deleted_at IS NULL"
 	var args []any
-	argN := 1
-
 	if status := strings.TrimSpace(req.Status); status != "" {
-		where += fmt.Sprintf(" AND l.status = $%d", argN)
+		where += " AND l.status = $1"
 		args = append(args, status)
-		argN++
-	}
-
-	var total int
-	countSQL := fmt.Sprintf("SELECT COUNT(*) FROM leads l %s", where)
-	if err := conn.QueryRowContext(ctx, countSQL, args...).Scan(&total); err != nil {
-		return nil, fmt.Errorf("count leads: %w", err)
 	}
 
 	querySQL := fmt.Sprintf(`
-		SELECT l.id, l.contact_id, l.conversation_id,
-		       COALESCE(NULLIF(TRIM(l.name),''), c.display_name, '') AS name,
-		       l.status, l.notes, l.created_at, l.updated_at
-		FROM leads l
-		LEFT JOIN contacts c ON c.id = l.contact_id
+		SELECT l.id, l.phone_number,
+		       COALESCE(NULLIF(TRIM(l.name), ''), NULLIF(TRIM(c.display_name), '')) AS name,
+		       l.product_interest, l.budget, l.location,
+		       l.status, l.notes, l.created_at
+		FROM lead l
+		LEFT JOIN contact c ON c.id = l.contact_id
 		%s
-		ORDER BY l.created_at DESC
-		LIMIT $%d OFFSET $%d`, where, argN, argN+1)
-	args = append(args, pageSize, offset)
+		ORDER BY l.created_at DESC`, where)
 
 	rows, err := conn.QueryContext(ctx, querySQL, args...)
 	if err != nil {
@@ -147,9 +130,9 @@ func List(ctx context.Context, req *ListRequest) (*ListResponse, error) {
 	for rows.Next() {
 		var l Lead
 		if err := rows.Scan(
-			&l.ID, &l.ContactID, &l.ConversationID,
-			&l.Name, &l.Status, &l.Notes,
-			&l.CreatedAt, &l.UpdatedAt,
+			&l.ID, &l.PhoneNumber, &l.Name,
+			&l.ProductInterest, &l.Budget, &l.Location,
+			&l.Status, &l.Notes, &l.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -158,14 +141,22 @@ func List(ctx context.Context, req *ListRequest) (*ListResponse, error) {
 	if items == nil {
 		items = []Lead{}
 	}
-	return &ListResponse{Items: items, Total: total, Page: page, PageSize: pageSize}, rows.Err()
+	return &ListLeadsResponse{Items: items}, rows.Err()
 }
 
-//encore:api auth method=GET path=/leads/:id
-func Get(ctx context.Context, id string) (*GetResponse, error) {
+// Update patches lead status and/or notes.
+//
+//encore:api auth method=PATCH path=/api/v1/leads/:id
+func Update(ctx context.Context, id string, req *UpdateRequest) (*Lead, error) {
 	u, err := currentUser(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if !entitlement.HasFeature(usage.TenantPlan(ctx, u.TenantSchema), entitlement.FeatureCRMLeads) {
+		return nil, e.Forbidden("CRM leads requires Business plan or higher")
+	}
+	if req == nil || (req.Status == nil && req.Notes == nil) {
+		return nil, e.BadRequest("nothing to update")
 	}
 
 	conn, err := withTenantDB(ctx, u.TenantSchema)
@@ -173,31 +164,51 @@ func Get(ctx context.Context, id string) (*GetResponse, error) {
 		return nil, err
 	}
 
+	sets := make([]string, 0, 2)
+	args := make([]any, 0, 3)
+	n := 1
+	if req.Status != nil {
+		st := strings.ToLower(strings.TrimSpace(*req.Status))
+		if !validLeadStatuses[st] {
+			return nil, e.BadRequest("status must be one of: new, interested, negotiation, paid, lost")
+		}
+		sets = append(sets, fmt.Sprintf("status = $%d", n))
+		args = append(args, st)
+		n++
+	}
+	if req.Notes != nil {
+		sets = append(sets, fmt.Sprintf("notes = $%d", n))
+		args = append(args, req.Notes)
+		n++
+	}
+	sets = append(sets, "updated_at = NOW()")
+	args = append(args, id)
+
+	query := fmt.Sprintf(`
+		UPDATE lead SET %s
+		WHERE id = $%d AND deleted_at IS NULL
+		RETURNING id, phone_number, name, product_interest, budget, location,
+		          status, notes, created_at`,
+		strings.Join(sets, ", "), n)
+
 	var l Lead
-	err = conn.QueryRowContext(ctx, `
-		SELECT l.id, l.contact_id, l.conversation_id,
-		       COALESCE(NULLIF(TRIM(l.name),''), c.display_name, '') AS name,
-		       l.status, l.notes, l.created_at, l.updated_at
-		FROM leads l
-		LEFT JOIN contacts c ON c.id = l.contact_id
-		WHERE l.id = $1`, id).Scan(
-		&l.ID, &l.ContactID, &l.ConversationID,
-		&l.Name, &l.Status, &l.Notes,
-		&l.CreatedAt, &l.UpdatedAt,
+	err = conn.QueryRowContext(ctx, query, args...).Scan(
+		&l.ID, &l.PhoneNumber, &l.Name,
+		&l.ProductInterest, &l.Budget, &l.Location,
+		&l.Status, &l.Notes, &l.CreatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, e.NotFound("Lead tidak ditemukan")
 	}
 	if err != nil {
-		return nil, fmt.Errorf("get lead: %w", err)
+		return nil, fmt.Errorf("update lead: %w", err)
 	}
-	return &GetResponse{Lead: l}, nil
+	return &l, nil
 }
 
-// CaptureFromMessage auto-creates a lead if one doesn't already exist for the contact.
-// Called internally by the AI pipeline or message handlers.
+// CaptureFromMessage auto-creates or updates a lead from an inbound message.
 //
-//encore:api private method=POST path=/leads/capture
+//encore:api private method=POST path=/api/v1/leads/capture
 func CaptureFromMessage(ctx context.Context, req *CaptureRequest) (*CaptureResponse, error) {
 	if req.TenantSchema == "" || req.ContactID == "" || req.ConversationID == "" {
 		return nil, e.BadRequest("tenantSchema, contactId, conversationId required")
@@ -208,36 +219,67 @@ func CaptureFromMessage(ctx context.Context, req *CaptureRequest) (*CaptureRespo
 		return nil, err
 	}
 
+	text := strings.TrimSpace(req.Body)
+	if text == "" {
+		return &CaptureResponse{Created: false}, nil
+	}
+
+	lower := strings.ToLower(text)
+	signals := []string{"harga", "order", "pesan", "stok", "budget", "lokasi", "kirim", "cod", "minat"}
+	hasSignal := false
+	for _, k := range signals {
+		if strings.Contains(lower, k) {
+			hasSignal = true
+			break
+		}
+	}
+	if !hasSignal {
+		return &CaptureResponse{Created: false}, nil
+	}
+
 	var existingID string
 	err = conn.QueryRowContext(ctx, `
-		SELECT id FROM leads WHERE contact_id = $1 LIMIT 1`, req.ContactID).Scan(&existingID)
+		SELECT id FROM lead
+		WHERE conversation_id = $1 AND status = 'new' AND deleted_at IS NULL
+		ORDER BY created_at DESC LIMIT 1`,
+		req.ConversationID,
+	).Scan(&existingID)
 	if err == nil {
+		if req.ContactName != "" {
+			_, _ = conn.ExecContext(ctx, `
+				UPDATE lead SET name = COALESCE(NULLIF(TRIM(name), ''), $1), updated_at = NOW()
+				WHERE id = $2`, req.ContactName, existingID)
+		}
 		return &CaptureResponse{Created: false, LeadID: existingID}, nil
 	}
 	if err != sql.ErrNoRows {
 		return nil, fmt.Errorf("check existing lead: %w", err)
 	}
 
-	name := req.ContactName
-	if name == "" {
-		name = "Unnamed Lead"
+	phone := req.PhoneNumber
+	if phone == "" {
+		_ = conn.QueryRowContext(ctx,
+			`SELECT phone_number FROM contact WHERE id = $1`, req.ContactID,
+		).Scan(&phone)
+	}
+
+	var name *string
+	if n := strings.TrimSpace(req.ContactName); n != "" {
+		name = &n
 	}
 
 	var newID string
 	err = conn.QueryRowContext(ctx, `
-		INSERT INTO leads (contact_id, conversation_id, name, status)
-		VALUES ($1, $2, $3, 'new')
+		INSERT INTO lead (contact_id, conversation_id, phone_number, name, status, metadata)
+		VALUES ($1, $2, $3, $4, 'new', $5::jsonb)
 		RETURNING id`,
-		req.ContactID, req.ConversationID, name,
+		req.ContactID, req.ConversationID, phone, name,
+		fmt.Sprintf(`{"source":"webhook","triggerMessage":%q}`, text),
 	).Scan(&newID)
 	if err != nil {
 		return nil, fmt.Errorf("insert lead: %w", err)
 	}
 
-	rlog.Info("lead captured from message",
-		"leadId", newID,
-		"contactId", req.ContactID,
-		"conversationId", req.ConversationID,
-	)
+	rlog.Info("lead captured from message", "leadId", newID, "contactId", req.ContactID)
 	return &CaptureResponse{Created: true, LeadID: newID}, nil
 }

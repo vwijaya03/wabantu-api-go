@@ -42,7 +42,22 @@ func NewAnthropicClient(apiKey string, cfg AnthropicConfig) *AnthropicClient {
 	}
 }
 
+// CompletionUsage holds token counts from the Anthropic API.
+type CompletionUsage struct {
+	InputTokens  int
+	OutputTokens int
+}
+
 func (c *AnthropicClient) GenerateReply(ctx context.Context, system, business, kb, history, userMessage string) (string, error) {
+	text, _, err := c.GenerateReplyWithModel(ctx, c.model, system, business, kb, history, userMessage)
+	return text, err
+}
+
+// GenerateReplyWithModel runs completion on the given model (Haiku / Sonnet hybrid routing).
+func (c *AnthropicClient) GenerateReplyWithModel(ctx context.Context, model, system, business, kb, history, userMessage string) (text string, usage CompletionUsage, err error) {
+	if strings.TrimSpace(model) == "" {
+		model = c.model
+	}
 	prompt := strings.Join([]string{
 		"Konteks bisnis:",
 		business,
@@ -56,7 +71,7 @@ func (c *AnthropicClient) GenerateReply(ctx context.Context, system, business, k
 	}, "\n")
 
 	rlog.Info("anthropic request",
-		"model", c.model,
+		"model", model,
 		"maxTokens", c.maxTok,
 		"sysLen", len(system),
 		"businessLen", len(business),
@@ -66,7 +81,7 @@ func (c *AnthropicClient) GenerateReply(ctx context.Context, system, business, k
 	)
 
 	resp, err := c.client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:       anthropic.Model(c.model),
+		Model:       anthropic.Model(model),
 		MaxTokens:   c.maxTok,
 		Temperature: anthropic.Float(0.3),
 		System: []anthropic.TextBlockParam{
@@ -77,8 +92,12 @@ func (c *AnthropicClient) GenerateReply(ctx context.Context, system, business, k
 		},
 	})
 	if err != nil {
-		rlog.Error("anthropic messages.create failed", "err", err)
-		return "", fmt.Errorf("anthropic API error: %w", err)
+		rlog.Error("anthropic messages.create failed", "err", err, "model", model)
+		return "", usage, fmt.Errorf("anthropic API error: %w", err)
+	}
+	usage = CompletionUsage{
+		InputTokens:  int(resp.Usage.InputTokens),
+		OutputTokens: int(resp.Usage.OutputTokens),
 	}
 
 	var parts []string
@@ -87,15 +106,15 @@ func (c *AnthropicClient) GenerateReply(ctx context.Context, system, business, k
 			parts = append(parts, block.Text)
 		}
 	}
-	text := strings.TrimSpace(strings.Join(parts, "\n"))
+	text = strings.TrimSpace(strings.Join(parts, "\n"))
 	if text == "" {
-		rlog.Warn("anthropic returned empty completion")
-		return "", fmt.Errorf("AI response kosong")
+		rlog.Warn("anthropic returned empty completion", "model", model)
+		return "", usage, fmt.Errorf("AI response kosong")
 	}
 
-	rlog.Info("anthropic completion received", "len", len(text))
+	rlog.Info("anthropic completion received", "model", model, "len", len(text), "inputTok", usage.InputTokens, "outputTok", usage.OutputTokens)
 	if len(text) > 1200 {
 		text = text[:1200]
 	}
-	return text, nil
+	return text, usage, nil
 }

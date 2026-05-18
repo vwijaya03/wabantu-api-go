@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"time"
 
+	"encore.app/wabantu/system"
 	appErrs "encore.app/wabantu/shared/errs"
 )
 
@@ -32,6 +33,19 @@ type CompanyRow struct {
 	SchemaName string `json:"schemaName"`
 }
 
+// TenantIDBySchema resolves the system tenant id for a tenant schema name.
+func TenantIDBySchema(ctx context.Context, schema string) (string, error) {
+	var id string
+	err := system.DB.QueryRow(ctx,
+		`SELECT tenant_id FROM tenant_company WHERE schema_name = $1 LIMIT 1`,
+		schema,
+	).Scan(&id)
+	if err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
 // ---------- request / response ----------
 
 type CreateTenantParams struct {
@@ -52,14 +66,14 @@ type ListTenantsResponse struct {
 
 // CreateTenant provisions a new tenant: system rows + schema + DDL.
 //
-//encore:api private method=POST path=/internal/tenant/create
+//encore:api private method=POST path=/api/v1/internal/tenant/create
 func CreateTenant(ctx context.Context, p *CreateTenantParams) (*CreateTenantResponse, error) {
 	schemaName := fmt.Sprintf("t_%s", p.Slug)
 	if len(schemaName) > 63 {
 		schemaName = schemaName[:63]
 	}
 
-	tx, err := DB.Stdlib().BeginTx(ctx, nil)
+	tx, err := system.DB.Stdlib().BeginTx(ctx, nil)
 	if err != nil {
 		return nil, appErrs.Internal("begin tx: " + err.Error())
 	}
@@ -92,8 +106,8 @@ func CreateTenant(ctx context.Context, p *CreateTenantParams) (*CreateTenantResp
 	}
 
 	if err := RunTenantDDL(ctx, schemaName); err != nil {
-		DB.Exec(ctx, "DELETE FROM tenant_company WHERE id = $1", c.ID)
-		DB.Exec(ctx, "DELETE FROM tenant WHERE id = $1", t.ID)
+		system.DB.Exec(ctx, "DELETE FROM tenant_company WHERE id = $1", c.ID)
+		system.DB.Exec(ctx, "DELETE FROM tenant WHERE id = $1", t.ID)
 		return nil, appErrs.Internal("bootstrap schema: " + err.Error())
 	}
 
@@ -102,10 +116,10 @@ func CreateTenant(ctx context.Context, p *CreateTenantParams) (*CreateTenantResp
 
 // GetTenantByID returns a single tenant by primary key.
 //
-//encore:api private method=GET path=/internal/tenant/by-id/:id
+//encore:api private method=GET path=/api/v1/internal/tenant/by-id/:id
 func GetTenantByID(ctx context.Context, id string) (*TenantRow, error) {
 	var t TenantRow
-	err := DB.QueryRow(ctx,
+	err := system.DB.QueryRow(ctx,
 		`SELECT id, slug, name, status, created_at, updated_at
 		 FROM tenant WHERE id = $1 AND deleted_at IS NULL`, id,
 	).Scan(&t.ID, &t.Slug, &t.Name, &t.Status, &t.CreatedAt, &t.UpdatedAt)
@@ -120,10 +134,10 @@ func GetTenantByID(ctx context.Context, id string) (*TenantRow, error) {
 
 // GetTenantBySlug returns a single tenant by unique slug.
 //
-//encore:api private method=GET path=/internal/tenant/by-slug/:slug
+//encore:api private method=GET path=/api/v1/internal/tenant/by-slug/:slug
 func GetTenantBySlug(ctx context.Context, slug string) (*TenantRow, error) {
 	var t TenantRow
-	err := DB.QueryRow(ctx,
+	err := system.DB.QueryRow(ctx,
 		`SELECT id, slug, name, status, created_at, updated_at
 		 FROM tenant WHERE slug = $1 AND deleted_at IS NULL`, slug,
 	).Scan(&t.ID, &t.Slug, &t.Name, &t.Status, &t.CreatedAt, &t.UpdatedAt)
@@ -136,11 +150,44 @@ func GetTenantBySlug(ctx context.Context, slug string) (*TenantRow, error) {
 	return &t, nil
 }
 
+// MigrateAllTenantSchemas applies idempotent DDL patches to every tenant schema.
+//
+//encore:api private method=POST path=/api/v1/internal/tenant/migrate-schemas
+func MigrateAllTenantSchemas(ctx context.Context) (*MigrateSchemasResponse, error) {
+	rows, err := system.DB.Query(ctx, `SELECT schema_name FROM tenant_company`)
+	if err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	defer rows.Close()
+
+	var patched, failed int
+	var errors []string
+	for rows.Next() {
+		var schema string
+		if err := rows.Scan(&schema); err != nil {
+			continue
+		}
+		if err := RunSchemaPatches(ctx, schema); err != nil {
+			failed++
+			errors = append(errors, fmt.Sprintf("%s: %v", schema, err))
+			continue
+		}
+		patched++
+	}
+	return &MigrateSchemasResponse{Patched: patched, Failed: failed, Errors: errors}, rows.Err()
+}
+
+type MigrateSchemasResponse struct {
+	Patched int      `json:"patched"`
+	Failed  int      `json:"failed"`
+	Errors  []string `json:"errors,omitempty"`
+}
+
 // ListTenants returns all active (non-deleted) tenants.
 //
-//encore:api private method=GET path=/internal/tenant/list
+//encore:api private method=GET path=/api/v1/internal/tenant/list
 func ListTenants(ctx context.Context) (*ListTenantsResponse, error) {
-	rows, err := DB.Query(ctx,
+	rows, err := system.DB.Query(ctx,
 		`SELECT id, slug, name, status, created_at, updated_at
 		 FROM tenant WHERE deleted_at IS NULL
 		 ORDER BY created_at DESC`)
@@ -171,11 +218,11 @@ func TenantConn(ctx context.Context, schemaName string) (*sql.Conn, error) {
 	if !schemaNameRe.MatchString(schemaName) {
 		return nil, fmt.Errorf("invalid schema name: %q", schemaName)
 	}
-	conn, err := DB.Stdlib().Conn(ctx)
+	conn, err := DataDB.Stdlib().Conn(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("acquire conn: %w", err)
 	}
-	_, err = conn.ExecContext(ctx, fmt.Sprintf(`SET search_path TO "%s"`, schemaName))
+	_, err = conn.ExecContext(ctx, fmt.Sprintf(`SET search_path TO "%s", public`, schemaName))
 	if err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("set search_path: %w", err)
@@ -192,7 +239,7 @@ func FindUniqueSlug(ctx context.Context, base string) (string, error) {
 			candidate = fmt.Sprintf("%s_%d", base, i)
 		}
 		var exists bool
-		err := DB.QueryRow(ctx,
+		err := system.DB.QueryRow(ctx,
 			"SELECT EXISTS(SELECT 1 FROM tenant WHERE slug = $1)", candidate,
 		).Scan(&exists)
 		if err != nil {
@@ -211,7 +258,7 @@ func RunTenantDDL(ctx context.Context, schemaName string) error {
 		return fmt.Errorf("invalid schema name: %q", schemaName)
 	}
 
-	conn, err := DB.Stdlib().Conn(ctx)
+	conn, err := DataDB.Stdlib().Conn(ctx)
 	if err != nil {
 		return fmt.Errorf("acquire conn: %w", err)
 	}
@@ -225,6 +272,9 @@ func RunTenantDDL(ctx context.Context, schemaName string) error {
 	}
 	if _, err := conn.ExecContext(ctx, tenantDDL); err != nil {
 		return fmt.Errorf("run DDL: %w", err)
+	}
+	if err := RunSchemaPatches(ctx, schemaName); err != nil {
+		return fmt.Errorf("schema patches: %w", err)
 	}
 	return nil
 }
@@ -247,6 +297,7 @@ CREATE TABLE IF NOT EXISTS business_profile (
     ai_enabled          BOOLEAN      NOT NULL DEFAULT true,
     reporting_timezone  VARCHAR(100) NOT NULL DEFAULT 'Asia/Jakarta',
     catalog_website_url TEXT,
+    outbound_webhook_url TEXT,
     created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
@@ -419,46 +470,88 @@ CREATE TABLE IF NOT EXISTS usage_event (
 CREATE INDEX IF NOT EXISTS idx_usage_event_type_created
     ON usage_event(event_type, created_at);
 
--- usage_aggregate
+-- usage_aggregate (monthly period key YYYY-MM)
 CREATE TABLE IF NOT EXISTS usage_aggregate (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    period_start TIMESTAMPTZ NOT NULL,
-    period_end   TIMESTAMPTZ NOT NULL,
     event_type   VARCHAR(60) NOT NULL,
-    total_count  INTEGER     NOT NULL DEFAULT 0,
+    period       VARCHAR(7)  NOT NULL,
+    quantity     BIGINT      NOT NULL DEFAULT 0,
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE(period_start, event_type)
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(event_type, period)
 );
 
--- payment_transaction
+-- payment_transaction (Midtrans QRIS)
 CREATE TABLE IF NOT EXISTS payment_transaction (
-    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    invoice_id   UUID,
-    provider     VARCHAR(20)  NOT NULL,
-    provider_ref VARCHAR(120),
-    amount_idr   INTEGER      NOT NULL,
-    status       VARCHAR(20)  NOT NULL DEFAULT 'pending',
-    paid_at      TIMESTAMPTZ,
-    metadata     JSONB        NOT NULL DEFAULT '{}',
-    created_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    updated_at   TIMESTAMPTZ  NOT NULL DEFAULT now()
+    id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    invoice_id              UUID,
+    order_id                UUID,
+    midtrans_order_id       VARCHAR(120) UNIQUE,
+    midtrans_transaction_id VARCHAR(120),
+    amount_idr              BIGINT       NOT NULL,
+    description             TEXT,
+    status                  VARCHAR(20)  NOT NULL DEFAULT 'PENDING',
+    payment_type            VARCHAR(20),
+    qr_url                  TEXT,
+    expires_at              TIMESTAMPTZ,
+    paid_at                 TIMESTAMPTZ,
+    metadata                JSONB        NOT NULL DEFAULT '{}',
+    created_at              TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at              TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    deleted_at              TIMESTAMPTZ,
+    deleted_by              UUID
 );
+
+-- broadcast_campaign
+CREATE TABLE IF NOT EXISTS broadcast_campaign (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name            VARCHAR(200) NOT NULL,
+    message_body    TEXT         NOT NULL,
+    status          VARCHAR(20)  NOT NULL DEFAULT 'draft',
+    scheduled_at    TIMESTAMPTZ,
+    total_recipients INTEGER     NOT NULL DEFAULT 0,
+    sent_count      INTEGER      NOT NULL DEFAULT 0,
+    failed_count    INTEGER      NOT NULL DEFAULT 0,
+    created_by      UUID,
+    created_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    deleted_at      TIMESTAMPTZ,
+    deleted_by      UUID
+);
+
+-- broadcast_recipient
+CREATE TABLE IF NOT EXISTS broadcast_recipient (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    campaign_id  UUID         NOT NULL REFERENCES broadcast_campaign(id),
+    phone_number VARCHAR(32)  NOT NULL,
+    status       VARCHAR(20)  NOT NULL DEFAULT 'pending',
+    last_error   TEXT,
+    sent_at      TIMESTAMPTZ,
+    created_at   TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_broadcast_recipient_campaign
+    ON broadcast_recipient(campaign_id, status);
 
 -- "order" (quoted — reserved word)
 CREATE TABLE IF NOT EXISTS "order" (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    contact_id      UUID,
-    conversation_id UUID,
-    order_number    VARCHAR(50) UNIQUE,
-    status          VARCHAR(20) NOT NULL DEFAULT 'pending',
-    items           JSONB       NOT NULL DEFAULT '[]',
-    total_idr       INTEGER     NOT NULL DEFAULT 0,
-    notes           TEXT,
-    metadata        JSONB       NOT NULL DEFAULT '{}',
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    deleted_at      TIMESTAMPTZ,
-    deleted_by      UUID
+    id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    contact_id             UUID,
+    conversation_id        UUID,
+    items                  JSONB        NOT NULL DEFAULT '[]',
+    shipping_address       JSONB        NOT NULL DEFAULT '{}',
+    notes                  TEXT,
+    status                 VARCHAR(20)  NOT NULL DEFAULT 'draft',
+    tracking_number        VARCHAR(120),
+    courier                VARCHAR(60),
+    payment_transaction_id UUID,
+    subtotal               DECIMAL(15,4) NOT NULL DEFAULT 0,
+    shipping_cost          DECIMAL(15,4) NOT NULL DEFAULT 0,
+    total                  DECIMAL(15,4) NOT NULL DEFAULT 0,
+    created_by             UUID,
+    created_at             TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at             TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    deleted_at             TIMESTAMPTZ,
+    deleted_by             UUID
 );
 
 -- conversation_summary
@@ -466,23 +559,23 @@ CREATE TABLE IF NOT EXISTS conversation_summary (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     conversation_id UUID UNIQUE NOT NULL,
     summary         TEXT        NOT NULL,
+    message_count   INTEGER     NOT NULL DEFAULT 0,
     key_topics      JSONB       NOT NULL DEFAULT '[]',
     sentiment       VARCHAR(20),
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- webhook_event
+-- webhook_event (outbound delivery tracking)
 CREATE TABLE IF NOT EXISTS webhook_event (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    source       VARCHAR(40)  NOT NULL,
     event_type   VARCHAR(60)  NOT NULL,
     payload      JSONB        NOT NULL DEFAULT '{}',
     status       VARCHAR(20)  NOT NULL DEFAULT 'pending',
     attempts     INTEGER      NOT NULL DEFAULT 0,
     last_error   TEXT,
-    processed_at TIMESTAMPTZ,
-    created_at   TIMESTAMPTZ  NOT NULL DEFAULT now()
+    created_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at   TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_webhook_event_status
     ON webhook_event(status);

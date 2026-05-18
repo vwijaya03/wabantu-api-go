@@ -66,23 +66,28 @@ func GetTenantAICostEstimate(ctx context.Context, tenantSchema string, period Us
 		interval = "30 days"
 	}
 
-	q := fmt.Sprintf(`SELECT
-		COALESCE(SUM(input_tokens), 0),
-		COALESCE(SUM(output_tokens), 0),
-		COUNT(*)
-	FROM %q.ai_usage_log
-	WHERE created_at >= NOW() - INTERVAL '%s'`, tenantSchema, interval)
-
-	var result TenantAICostEstimate
-	err = db.QueryRowContext(ctx, q).Scan(
-		&result.TotalInputTokens,
-		&result.TotalOutputTokens,
-		&result.TotalRequests,
-	)
+	var tokenTotal int64
+	var convCount int64
+	err = db.QueryRowContext(ctx, fmt.Sprintf(
+		`SELECT COALESCE(SUM(quantity),0) FROM %q.usage_event
+		 WHERE event_type = 'ai_token' AND created_at >= NOW() - INTERVAL '%s'`,
+		tenantSchema, interval)).Scan(&tokenTotal)
 	if err != nil {
-		return nil, fmt.Errorf("query AI usage: %w", err)
+		return nil, fmt.Errorf("query AI tokens: %w", err)
+	}
+	err = db.QueryRowContext(ctx, fmt.Sprintf(
+		`SELECT COALESCE(SUM(quantity),0) FROM %q.usage_event
+		 WHERE event_type = 'ai_conversation' AND created_at >= NOW() - INTERVAL '%s'`,
+		tenantSchema, interval)).Scan(&convCount)
+	if err != nil {
+		return nil, fmt.Errorf("query AI conversations: %w", err)
 	}
 
+	result := TenantAICostEstimate{
+		TotalInputTokens:  int(tokenTotal * 7 / 10), // approximate split for cost estimate
+		TotalOutputTokens: int(tokenTotal * 3 / 10),
+		TotalRequests:     int(convCount),
+	}
 	result.EstimatedCostUSD = EstimateTokenCost(
 		"claude-sonnet-4-5-20250514",
 		result.TotalInputTokens,
@@ -93,5 +98,5 @@ func GetTenantAICostEstimate(ctx context.Context, tenantSchema string, period Us
 }
 
 func getTenantDB(_ context.Context, _ string) (*sql.DB, error) {
-	return nil, fmt.Errorf("tenant DB resolver not yet wired — implement shared/tenantdb")
+	return db.Stdlib(), nil
 }

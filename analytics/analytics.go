@@ -89,7 +89,7 @@ func currentUser(ctx context.Context) (*types.AuthUser, error) {
 
 // ─── Endpoint ────────────────────────────────────────────────────────────────
 
-//encore:api auth method=GET path=/analytics/overview
+//encore:api auth method=GET path=/api/v1/analytics/overview
 func Overview(ctx context.Context, req *OverviewRequest) (*OverviewResponse, error) {
 	u, err := currentUser(ctx)
 	if err != nil {
@@ -125,7 +125,7 @@ func Overview(ctx context.Context, req *OverviewRequest) (*OverviewResponse, err
 	if err != nil {
 		return nil, err
 	}
-	leads, err := countSince(ctx, conn, "leads", since)
+	leads, err := countSince(ctx, conn, "lead", since)
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +216,7 @@ func Overview(ctx context.Context, req *OverviewRequest) (*OverviewResponse, err
 func resolveReportingTimezone(ctx context.Context, conn *sql.DB) string {
 	var tz sql.NullString
 	_ = conn.QueryRowContext(ctx, `
-		SELECT reporting_timezone FROM business_profiles
+		SELECT reporting_timezone FROM business_profile
 		ORDER BY created_at ASC LIMIT 1`).Scan(&tz)
 	if tz.Valid && tz.String != "" {
 		return tz.String
@@ -225,7 +225,7 @@ func resolveReportingTimezone(ctx context.Context, conn *sql.DB) string {
 }
 
 func countMessages(ctx context.Context, conn *sql.DB, since time.Time, direction, author string) (int, error) {
-	q := "SELECT COUNT(*) FROM messages WHERE created_at >= $1"
+	q := "SELECT COUNT(*) FROM message WHERE created_at >= $1"
 	args := []any{since}
 	n := 2
 	if direction != "" {
@@ -243,7 +243,7 @@ func countMessages(ctx context.Context, conn *sql.DB, since time.Time, direction
 }
 
 func countTodayMessages(ctx context.Context, conn *sql.DB, tz, direction, author string) (int, error) {
-	q := `SELECT COUNT(*) FROM messages
+	q := `SELECT COUNT(*) FROM message
 		WHERE direction = $1
 		AND created_at >= ((CURRENT_TIMESTAMP AT TIME ZONE $2)::date AT TIME ZONE $2)
 		AND created_at < (((CURRENT_TIMESTAMP AT TIME ZONE $3)::date + interval '1 day') AT TIME ZONE $3)`
@@ -267,14 +267,14 @@ func countSince(ctx context.Context, conn *sql.DB, table string, since time.Time
 func sumUnread(ctx context.Context, conn *sql.DB) (int, error) {
 	var sum int
 	err := conn.QueryRowContext(ctx, `
-		SELECT COALESCE(SUM(unread_count), 0) FROM conversations`).Scan(&sum)
+		SELECT COALESCE(SUM(unread_count), 0) FROM conversation`).Scan(&sum)
 	return sum, err
 }
 
 func countOutboundRead(ctx context.Context, conn *sql.DB, since time.Time) (int, error) {
 	var count int
 	err := conn.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM messages
+		SELECT COUNT(*) FROM message
 		WHERE direction = 'out' AND status = 'read' AND created_at >= $1`, since).Scan(&count)
 	return count, err
 }
@@ -282,7 +282,7 @@ func countOutboundRead(ctx context.Context, conn *sql.DB, since time.Time) (int,
 func topQuestions(ctx context.Context, conn *sql.DB, since time.Time, limit int) ([]TopQuestion, error) {
 	rows, err := conn.QueryContext(ctx, `
 		SELECT LOWER(TRIM(body)) AS question, COUNT(1) AS cnt
-		FROM messages
+		FROM message
 		WHERE direction = 'in' AND type = 'text'
 		  AND created_at >= $1
 		  AND body IS NOT NULL AND char_length(TRIM(body)) >= 4
@@ -313,13 +313,13 @@ func avgFirstResponse(ctx context.Context, conn *sql.DB, since time.Time) *float
 		SELECT AVG(EXTRACT(EPOCH FROM (fo.first_out - fi.first_in)))::float AS avg_sec
 		FROM (
 			SELECT conversation_id, MIN(created_at) AS first_in
-			FROM messages
+			FROM message
 			WHERE direction = 'in' AND created_at >= $1
 			GROUP BY conversation_id
 		) fi
 		INNER JOIN (
 			SELECT conversation_id, MIN(created_at) AS first_out
-			FROM messages
+			FROM message
 			WHERE direction = 'out' AND author IN ('ai', 'human') AND created_at >= $1
 			GROUP BY conversation_id
 		) fo ON fo.conversation_id = fi.conversation_id

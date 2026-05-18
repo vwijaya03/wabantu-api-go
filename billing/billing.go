@@ -7,9 +7,12 @@ import (
 	"math/rand"
 	"time"
 
+	"encore.dev/beta/auth"
 	"encore.dev/beta/errs"
 	"encore.dev/rlog"
 	"encore.dev/storage/sqldb"
+
+	"encore.app/wabantu/shared/types"
 )
 
 var db = sqldb.Named("tenant")
@@ -34,9 +37,22 @@ type Plan struct {
 }
 
 var PlanCatalog = map[string]Plan{
-	"starter": {Code: "starter", Name: "Starter", AmountIDR: 0, Limits: PlanLimits{Channels: 1, Seats: 1, AIConversations: 100, AITokens: 500_000, BroadcastContacts: 100, StorageMB: 100, WorkflowExecs: 50}},
-	"basic":   {Code: "basic", Name: "Basic", AmountIDR: 149_000, Limits: PlanLimits{Channels: 2, Seats: 3, AIConversations: 1_000, AITokens: 5_000_000, BroadcastContacts: 1_000, StorageMB: 1_024, WorkflowExecs: 500}},
-	"pro":     {Code: "pro", Name: "Pro", AmountIDR: 499_000, Limits: PlanLimits{Channels: 10, Seats: 20, AIConversations: 10_000, AITokens: 50_000_000, BroadcastContacts: 10_000, StorageMB: 10_240, WorkflowExecs: 5_000}},
+	"starter": {
+		Code: "starter", Name: "Starter", AmountIDR: 299_000,
+		Limits: PlanLimits{Channels: 1, Seats: 1, AIConversations: 1_500, AITokens: 2_000_000, BroadcastContacts: 0, StorageMB: 256, WorkflowExecs: 50},
+	},
+	"business": {
+		Code: "business", Name: "Business", AmountIDR: 799_000,
+		Limits: PlanLimits{Channels: 2, Seats: 3, AIConversations: 6_000, AITokens: 8_000_000, BroadcastContacts: 500, StorageMB: 2_048, WorkflowExecs: 500},
+	},
+	"basic": { // legacy alias → business
+		Code: "basic", Name: "Business", AmountIDR: 799_000,
+		Limits: PlanLimits{Channels: 2, Seats: 3, AIConversations: 6_000, AITokens: 8_000_000, BroadcastContacts: 500, StorageMB: 2_048, WorkflowExecs: 500},
+	},
+	"pro": {
+		Code: "pro", Name: "Pro", AmountIDR: 1_999_000,
+		Limits: PlanLimits{Channels: 10, Seats: 10, AIConversations: 20_000, AITokens: 30_000_000, BroadcastContacts: 10_000, StorageMB: 10_240, WorkflowExecs: 5_000},
+	},
 }
 
 func GetPlanLimits(planCode string) PlanLimits {
@@ -118,11 +134,11 @@ type OverviewResponse struct {
 	Invoices     []Invoice     `json:"invoices"`
 }
 
-//encore:api auth method=GET path=/billing/overview
+//encore:api auth method=GET path=/api/v1/billing/overview
 func Overview(ctx context.Context) (*OverviewResponse, error) {
-	uid := getAuthUser(ctx)
-	if uid == nil {
-		return nil, &errs.Error{Code: errs.Unauthenticated, Message: "not authenticated"}
+	uid, err := authUser(ctx)
+	if err != nil {
+		return nil, err
 	}
 	d, err := tenantDB(ctx, uid.TenantSchema)
 	if err != nil {
@@ -163,10 +179,13 @@ type SelectPlanResponse struct {
 	Subscription *Subscription `json:"subscription"`
 }
 
-//encore:api auth method=POST path=/billing/select-plan
+//encore:api auth method=POST path=/api/v1/billing/select-plan
 func SelectPlan(ctx context.Context, req *SelectPlanRequest) (*SelectPlanResponse, error) {
-	uid := getAuthUser(ctx)
-	if uid == nil || uid.Role != "owner" {
+	uid, err := authUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if uid.Role != "owner" {
 		return nil, &errs.Error{Code: errs.PermissionDenied, Message: "owner only"}
 	}
 	plan, ok := PlanCatalog[req.PlanCode]
@@ -217,11 +236,11 @@ type InvoicesResponse struct {
 	Invoices []Invoice `json:"invoices"`
 }
 
-//encore:api auth method=GET path=/billing/invoices
+//encore:api auth method=GET path=/api/v1/billing/invoices
 func ListInvoices(ctx context.Context) (*InvoicesResponse, error) {
-	uid := getAuthUser(ctx)
-	if uid == nil {
-		return nil, &errs.Error{Code: errs.Unauthenticated, Message: "not authenticated"}
+	uid, err := authUser(ctx)
+	if err != nil {
+		return nil, err
 	}
 	d, err := tenantDB(ctx, uid.TenantSchema)
 	if err != nil {
@@ -247,18 +266,12 @@ func ListInvoices(ctx context.Context) (*InvoicesResponse, error) {
 
 // ---------- internal ----------
 
-type authUserKey struct{}
-
-func getAuthUser(ctx context.Context) *AuthData {
-	v, _ := ctx.Value(authUserKey{}).(*AuthData)
-	return v
-}
-
-type AuthData struct {
-	AccountID    string
-	TenantID     string
-	TenantSchema string
-	Role         string
+func authUser(ctx context.Context) (*types.AuthUser, error) {
+	u, ok := auth.Data().(*types.AuthUser)
+	if !ok || u == nil {
+		return nil, &errs.Error{Code: errs.Unauthenticated, Message: "not authenticated"}
+	}
+	return u, nil
 }
 
 func randStr(n int) string {

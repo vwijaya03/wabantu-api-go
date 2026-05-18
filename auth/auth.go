@@ -14,8 +14,16 @@ import (
 	"unicode"
 
 	encoreAuth "encore.dev/beta/auth"
+	"encore.dev/rlog"
+	_ "encore.app/wabantu/platform"
+
+	"encore.app/wabantu/audit"
+	"encore.app/wabantu/branch"
 	"encore.app/wabantu/shared/errs"
+	"encore.app/wabantu/shared/ratelimit"
+	"encore.app/wabantu/shared/response"
 	"encore.app/wabantu/shared/types"
+	"encore.app/wabantu/system"
 	"encore.app/wabantu/tenant"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -38,6 +46,8 @@ const (
 	cookieName      = "wabantu_at"
 	schemaPrefix    = "t_"
 	maxSchemaLen    = 63
+	// superAdminDevEmail is promoted to role super_admin (dev/staging bootstrap).
+	superAdminDevEmail = "superadmin@gmail.com"
 )
 
 // ---------- request / response types ----------
@@ -124,13 +134,18 @@ func AuthHandler(ctx context.Context, token string) (encoreAuth.UID, *types.Auth
 // Register creates a new tenant + account, bootstraps the tenant schema,
 // seeds a business_profile row, and returns a JWT.
 //
-//encore:api public raw method=POST path=/auth/register
+//encore:api public raw method=POST path=/api/v1/auth/register
 func Register(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
+	if !allowAuthRate(ctx, req) {
+		writeError(w, http.StatusTooManyRequests, "too many attempts — coba lagi nanti")
+		return
+	}
 
-	var body RegisterRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	body, err := parseRegisterRequest(req)
+	if err != nil {
+		rlog.Warn("register decode failed", "err", err, "contentType", req.Header.Get("Content-Type"))
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if body.Email == "" || body.Password == "" || body.Name == "" || body.BusinessName == "" {
@@ -143,7 +158,7 @@ func Register(w http.ResponseWriter, req *http.Request) {
 
 	// Duplicate check
 	var existingID string
-	err := tenant.DB.QueryRow(ctx,
+	err = system.DB.QueryRow(ctx,
 		"SELECT id FROM tenant_account WHERE email_hash = $1 AND deleted_at IS NULL",
 		emailHash,
 	).Scan(&existingID)
@@ -182,7 +197,7 @@ func Register(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// --- system-DB transaction: tenant + company + account ---
-	tx, err := tenant.DB.Stdlib().BeginTx(ctx, nil)
+	tx, err := system.DB.Stdlib().BeginTx(ctx, nil)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "begin tx: "+err.Error())
 		return
@@ -210,14 +225,18 @@ func Register(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	accountRole := "owner"
+	if emailLower == superAdminDevEmail {
+		accountRole = "super_admin"
+	}
+
 	var accountID string
 	var accountName sql.NullString
-	var accountRole string
 	err = tx.QueryRowContext(ctx,
 		`INSERT INTO tenant_account (email, email_hash, password_hash, name, tenant_id, role)
-		 VALUES ($1, $2, $3, $4, $5, 'owner')
+		 VALUES ($1, $2, $3, $4, $5, $6)
 		 RETURNING id, name, role`,
-		emailLower, emailHash, string(passwordHash), strings.TrimSpace(body.Name), tenantID,
+		emailLower, emailHash, string(passwordHash), strings.TrimSpace(body.Name), tenantID, accountRole,
 	).Scan(&accountID, &accountName, &accountRole)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "insert account: "+err.Error())
@@ -237,7 +256,7 @@ func Register(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// Seed empty business_profile
+	// Seed empty business_profile + default branch
 	if conn, err := tenant.TenantConn(ctx, schemaName); err == nil {
 		defer conn.Close()
 		conn.ExecContext(ctx,
@@ -246,6 +265,7 @@ func Register(w http.ResponseWriter, req *http.Request) {
 			tenantName,
 		)
 	}
+	_ = branch.EnsureDefaultBranch(ctx, schemaName)
 
 	completeLogin(w, ctx, accountID, emailLower, nullStr(accountName), accountRole,
 		tenantID, tenantSlug, tenantName, schemaName, http.StatusCreated)
@@ -253,13 +273,18 @@ func Register(w http.ResponseWriter, req *http.Request) {
 
 // Login verifies credentials and returns a JWT + sets a cookie.
 //
-//encore:api public raw method=POST path=/auth/login
+//encore:api public raw method=POST path=/api/v1/auth/login
 func Login(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
+	if !allowAuthRate(ctx, req) {
+		writeError(w, http.StatusTooManyRequests, "too many attempts — coba lagi nanti")
+		return
+	}
 
-	var body LoginRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	body, err := parseLoginRequest(req)
+	if err != nil {
+		rlog.Warn("login decode failed", "err", err, "contentType", req.Header.Get("Content-Type"))
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if body.Email == "" || body.Password == "" {
@@ -273,7 +298,7 @@ func Login(w http.ResponseWriter, req *http.Request) {
 	var accountID, storedHash, email string
 	var accountName sql.NullString
 	var accountRole, accountTenantID string
-	err := tenant.DB.QueryRow(ctx,
+	err = system.DB.QueryRow(ctx,
 		`SELECT id, password_hash, email, name, role, tenant_id
 		 FROM tenant_account
 		 WHERE email_hash = $1 AND deleted_at IS NULL`,
@@ -301,7 +326,7 @@ func Login(w http.ResponseWriter, req *http.Request) {
 
 	// Fetch tenant + company
 	var tenantSlug, tenantName, tenantStatus string
-	err = tenant.DB.QueryRow(ctx,
+	err = system.DB.QueryRow(ctx,
 		`SELECT slug, name, status FROM tenant WHERE id = $1 AND deleted_at IS NULL`,
 		accountTenantID,
 	).Scan(&tenantSlug, &tenantName, &tenantStatus)
@@ -319,7 +344,7 @@ func Login(w http.ResponseWriter, req *http.Request) {
 	}
 
 	var schemaName string
-	err = tenant.DB.QueryRow(ctx,
+	err = system.DB.QueryRow(ctx,
 		`SELECT schema_name FROM tenant_company WHERE tenant_id = $1`,
 		accountTenantID,
 	).Scan(&schemaName)
@@ -329,7 +354,7 @@ func Login(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// Update last_login_at
-	tenant.DB.Exec(ctx,
+	system.DB.Exec(ctx,
 		"UPDATE tenant_account SET last_login_at = $1 WHERE id = $2",
 		time.Now(), accountID,
 	)
@@ -340,7 +365,7 @@ func Login(w http.ResponseWriter, req *http.Request) {
 
 // Logout destroys the current session and clears the auth cookie.
 //
-//encore:api auth raw method=POST path=/auth/logout
+//encore:api auth raw method=POST path=/api/v1/auth/logout
 func Logout(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 
@@ -351,6 +376,7 @@ func Logout(w http.ResponseWriter, req *http.Request) {
 	}
 
 	_ = destroySession(ctx, userData.AccountID, userData.SessionID)
+	audit.Log(ctx, userData.TenantID, userData.AccountID, "auth.logout", "account", userData.AccountID, nil)
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     cookieName,
@@ -365,17 +391,23 @@ func Logout(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusOK, LogoutResponse{OK: true})
 }
 
+// MeEnvelopeResponse matches NestJS { success, data } for GET /auth/me.
+type MeEnvelopeResponse struct {
+	Success bool       `json:"success"`
+	Data    MeResponse `json:"data"`
+}
+
 // Me returns the current authenticated user's profile.
 //
-//encore:api auth method=GET path=/auth/me
-func Me(ctx context.Context) (*MeResponse, error) {
+//encore:api auth method=GET path=/api/v1/auth/me
+func Me(ctx context.Context) (*MeEnvelopeResponse, error) {
 	userData, ok := encoreAuth.Data().(*types.AuthUser)
 	if !ok || userData == nil {
 		return nil, errs.Unauthenticated("not authenticated")
 	}
 
 	var tenantSlug, tenantName string
-	err := tenant.DB.QueryRow(ctx,
+	err := system.DB.QueryRow(ctx,
 		`SELECT slug, name FROM tenant WHERE id = $1 AND deleted_at IS NULL`,
 		userData.TenantID,
 	).Scan(&tenantSlug, &tenantName)
@@ -383,15 +415,18 @@ func Me(ctx context.Context) (*MeResponse, error) {
 		return nil, errs.NotFound("Tenant tidak ditemukan")
 	}
 
-	return &MeResponse{
-		ID:    userData.AccountID,
-		Email: userData.Email,
-		Name:  userData.Name,
-		Role:  userData.Role,
-		Tenant: TenantResponse{
-			ID:   userData.TenantID,
-			Slug: tenantSlug,
-			Name: tenantName,
+	return &MeEnvelopeResponse{
+		Success: true,
+		Data: MeResponse{
+			ID:    userData.AccountID,
+			Email: userData.Email,
+			Name:  userData.Name,
+			Role:  userData.Role,
+			Tenant: TenantResponse{
+				ID:   userData.TenantID,
+				Slug: tenantSlug,
+				Name: tenantName,
+			},
 		},
 	}, nil
 }
@@ -475,6 +510,10 @@ func completeLogin(
 		MaxAge:   expiresIn,
 	})
 
+	audit.Log(ctx, tenantID, accountID, "auth.login", "account", accountID, map[string]string{
+		"email": email, "role": role,
+	})
+
 	writeJSON(w, statusCode, AuthResponse{
 		AccessToken:      accessToken,
 		ExpiresInSeconds: expiresIn,
@@ -493,9 +532,9 @@ func completeLogin(
 }
 
 func cleanupRegistration(ctx context.Context, accountID, companyID, tenantID string) {
-	tenant.DB.Exec(ctx, "DELETE FROM tenant_account WHERE id = $1", accountID)
-	tenant.DB.Exec(ctx, "DELETE FROM tenant_company WHERE id = $1", companyID)
-	tenant.DB.Exec(ctx, "DELETE FROM tenant WHERE id = $1", tenantID)
+	system.DB.Exec(ctx, "DELETE FROM tenant_account WHERE id = $1", accountID)
+	system.DB.Exec(ctx, "DELETE FROM tenant_company WHERE id = $1", companyID)
+	system.DB.Exec(ctx, "DELETE FROM tenant WHERE id = $1", tenantID)
 }
 
 func normalizeEmail(email string) string {
@@ -532,12 +571,70 @@ func nullStr(ns sql.NullString) string {
 
 // ---------- HTTP helpers for raw endpoints ----------
 
+// Register/login expect JSON. Postman: Body → raw → JSON, Header Content-Type: application/json.
+func parseRegisterRequest(r *http.Request) (RegisterRequest, error) {
+	ct := strings.ToLower(r.Header.Get("Content-Type"))
+	if strings.Contains(ct, "application/x-www-form-urlencoded") {
+		if err := r.ParseForm(); err != nil {
+			return RegisterRequest{}, fmt.Errorf("invalid form body")
+		}
+		return RegisterRequest{
+			Email:        r.FormValue("email"),
+			Password:     r.FormValue("password"),
+			Name:         r.FormValue("name"),
+			BusinessName: r.FormValue("businessName"),
+			Slug:         r.FormValue("slug"),
+		}, nil
+	}
+	if ct != "" && !strings.Contains(ct, "application/json") {
+		return RegisterRequest{}, fmt.Errorf(
+			"Content-Type must be application/json (raw body). Got: %s. Do not use form-data.",
+			r.Header.Get("Content-Type"),
+		)
+	}
+	var body RegisterRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		return RegisterRequest{}, fmt.Errorf("invalid JSON body: use raw JSON with email, password, name, businessName")
+	}
+	return body, nil
+}
+
+func parseLoginRequest(r *http.Request) (LoginRequest, error) {
+	ct := strings.ToLower(r.Header.Get("Content-Type"))
+	if strings.Contains(ct, "application/x-www-form-urlencoded") {
+		if err := r.ParseForm(); err != nil {
+			return LoginRequest{}, fmt.Errorf("invalid form body")
+		}
+		return LoginRequest{
+			Email:    r.FormValue("email"),
+			Password: r.FormValue("password"),
+		}, nil
+	}
+	if ct != "" && !strings.Contains(ct, "application/json") {
+		return LoginRequest{}, fmt.Errorf("Content-Type must be application/json (raw body)")
+	}
+	var body LoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		return LoginRequest{}, fmt.Errorf("invalid JSON body: use raw JSON with email and password")
+	}
+	return body, nil
+}
+
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(response.Wrap(v))
+}
+
+func allowAuthRate(ctx context.Context, r *http.Request) bool {
+	return ratelimit.Allow(ctx, getRedis(), ratelimit.Key("auth", ratelimit.ClientIP(r)), ratelimit.AuthRPM, time.Minute)
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]string{"error": msg})
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": false,
+		"message": msg,
+	})
 }

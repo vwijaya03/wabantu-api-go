@@ -1,0 +1,1 @@
+-- jb_tenant: per-tenant schemas (t_<slug>) are provisioned via tenant.RunTenantDDL at registration.

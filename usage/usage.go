@@ -21,27 +21,35 @@ var db = sqldb.Named("tenant")
 
 var planQuotas = map[string]map[string]int{
 	"starter": {
-		"ai_conversation":   100,
-		"ai_token":          500_000,
-		"broadcast_contact": 100,
-		"storage_byte":      104_857_600,
+		"ai_conversation":   1_500,
+		"ai_token":          2_000_000,
+		"broadcast_contact": 0,
+		"storage_byte":      268_435_456,
 		"admin_seat":        1,
 		"workflow_exec":     50,
 	},
-	"basic": {
-		"ai_conversation":   1_000,
-		"ai_token":          5_000_000,
-		"broadcast_contact": 1_000,
-		"storage_byte":      1_073_741_824,
+	"business": {
+		"ai_conversation":   6_000,
+		"ai_token":          8_000_000,
+		"broadcast_contact": 500,
+		"storage_byte":      2_147_483_648,
+		"admin_seat":        3,
+		"workflow_exec":     500,
+	},
+	"basic": { // legacy alias
+		"ai_conversation":   6_000,
+		"ai_token":          8_000_000,
+		"broadcast_contact": 500,
+		"storage_byte":      2_147_483_648,
 		"admin_seat":        3,
 		"workflow_exec":     500,
 	},
 	"pro": {
-		"ai_conversation":   10_000,
-		"ai_token":          50_000_000,
+		"ai_conversation":   20_000,
+		"ai_token":          30_000_000,
 		"broadcast_contact": 10_000,
 		"storage_byte":      10_737_418_240,
-		"admin_seat":        20,
+		"admin_seat":        10,
 		"workflow_exec":     5_000,
 	},
 }
@@ -96,7 +104,7 @@ var _ = cron.NewJob("reset-monthly-usage", cron.JobConfig{
 
 // ---------- endpoints ----------
 
-//encore:api auth method=GET path=/usage/summary
+//encore:api auth method=GET path=/api/v1/usage/summary
 func Summary(ctx context.Context, p *SummaryParams) (*UsageSummary, error) {
 	u, _ := auth.Data().(*types.AuthUser)
 	if u == nil || u.Role != "owner" {
@@ -110,12 +118,12 @@ func Summary(ctx context.Context, p *SummaryParams) (*UsageSummary, error) {
 	return GetSummary(ctx, u.TenantSchema, period)
 }
 
-//encore:api private method=POST path=/usage/record
+//encore:api private method=POST path=/api/v1/usage/record
 func Record(ctx context.Context, p *RecordEventParams) error {
 	return RecordEvent(ctx, p.TenantSchema, p.EventType, p.Quantity, p.Metadata)
 }
 
-//encore:api private method=POST path=/usage/reset
+//encore:api private method=POST path=/api/v1/usage/reset
 func ResetMonthlyUsage(ctx context.Context) error {
 	rlog.Info("monthly usage period rotated", "period", time.Now().Format("2006-01"))
 	return nil
@@ -229,12 +237,20 @@ func GetSummary(ctx context.Context, tenantSchema, period string) (*UsageSummary
 
 // ---------- internal ----------
 
+// TenantPlan returns the active subscription plan code for a tenant schema.
+func TenantPlan(ctx context.Context, tenantSchema string) string {
+	return getTenantPlan(ctx, tenantSchema)
+}
+
 func getTenantPlan(ctx context.Context, tenantSchema string) string {
 	var plan string
-	err := db.QueryRow(ctx,
-		`SELECT COALESCE(plan,'starter') FROM tenant WHERE schema_name=$1`,
-		tenantSchema).Scan(&plan)
-	if err != nil {
+	err := db.QueryRow(ctx, fmt.Sprintf(
+		`SELECT COALESCE(plan_code,'starter')
+		 FROM "%s".subscription
+		 WHERE status = 'active'
+		 ORDER BY updated_at DESC LIMIT 1`, tenantSchema),
+	).Scan(&plan)
+	if err != nil || plan == "" {
 		return "starter"
 	}
 	return plan

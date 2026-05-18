@@ -3,27 +3,37 @@ package importcsv
 import (
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"path/filepath"
 	"strings"
 
+	"time"
+
 	"encore.dev/beta/auth"
 	"encore.dev/beta/errs"
 	"encore.dev/pubsub"
 	"encore.dev/rlog"
+	"encore.dev/storage/sqldb"
 
+	appauth "encore.app/wabantu/auth"
+	"encore.app/wabantu/business"
 	"encore.app/wabantu/shared/types"
 
 	"github.com/xuri/excelize/v2"
 )
 
+var tenantDB = sqldb.Named("tenant")
+
 // ---------- Pub/Sub ----------
 
 type ImportRequest struct {
+	JobID         string            `json:"jobId"`
 	TenantSchema  string            `json:"tenantSchema"`
 	TargetTable   string            `json:"targetTable"` // "business_catalog_item" | "knowledge_base_entry"
+	Headers       []string            `json:"headers"`
 	ColumnMapping map[string]string `json:"columnMapping"`
 	Rows          [][]string        `json:"rows"`
 	UploadedBy    string            `json:"uploadedBy"`
@@ -45,13 +55,24 @@ type PreviewRequest struct {
 }
 
 type PreviewResponse struct {
-	Headers    []string            `json:"headers"`
-	SampleRows [][]string          `json:"sampleRows"`
-	Suggestions map[string]string  `json:"suggestions"`
-	TotalRows  int                 `json:"totalRows"`
+	JobID       string              `json:"jobId"`
+	Headers     []string            `json:"headers"`
+	SampleRows  [][]string          `json:"sampleRows"`
+	Suggestions map[string]string   `json:"suggestions"`
+	TotalRows   int                 `json:"totalRows"`
+}
+
+type importStagingPayload struct {
+	TenantSchema  string            `json:"tenantSchema"`
+	TargetTable   string            `json:"targetTable"`
+	Headers       []string          `json:"headers"`
+	Rows          [][]string        `json:"rows"`
+	UploadedBy    string            `json:"uploadedBy"`
+	ColumnMapping map[string]string `json:"columnMapping,omitempty"`
 }
 
 type ExecuteRequest struct {
+	JobID         string            `json:"jobId"`
 	TargetTable   string            `json:"targetTable"`
 	ColumnMapping map[string]string `json:"columnMapping"`
 }
@@ -98,14 +119,23 @@ func validColumns(target string) map[string]bool {
 
 // ---------- API endpoints ----------
 
-// Preview parses an uploaded file and returns headers + sample rows.
+const importStagingTTL = 24 * time.Hour
+const maxImportRows = 50_000
+
+func importStagingKey(jobID string) string { return "import:staging:" + jobID }
+
+// Preview parses an uploaded file, stores full rows in Redis (staging), returns jobId + sample.
 //
-//encore:api auth method=POST path=/import/preview tag:owner
+//encore:api auth method=POST path=/api/v1/import/preview tag:owner
 func Preview(ctx context.Context, file *multipart.FileHeader) (*PreviewResponse, error) {
 	u, _ := auth.UserID()
+	userData, _ := auth.Data().(*types.AuthUser)
 	rlog.Info("import preview", "user", u)
 
 	target := "business_catalog_item"
+	if userData == nil {
+		return nil, &errs.Error{Code: errs.Unauthenticated, Message: "not authenticated"}
+	}
 
 	f, err := file.Open()
 	if err != nil {
@@ -117,6 +147,22 @@ func Preview(ctx context.Context, file *multipart.FileHeader) (*PreviewResponse,
 	if err != nil {
 		return nil, &errs.Error{Code: errs.InvalidArgument, Message: fmt.Sprintf("parse error: %s", err)}
 	}
+	if len(rows) > maxImportRows {
+		return nil, &errs.Error{Code: errs.InvalidArgument, Message: fmt.Sprintf("max %d rows per import", maxImportRows)}
+	}
+
+	jobID := fmt.Sprintf("imp_%d", time.Now().UnixNano())
+	payload := importStagingPayload{
+		TenantSchema: userData.TenantSchema,
+		TargetTable:  target,
+		Headers:      headers,
+		Rows:         rows,
+		UploadedBy:   string(u),
+	}
+	raw, _ := json.Marshal(payload)
+	if err := appauth.RedisClient().Set(ctx, importStagingKey(jobID), raw, importStagingTTL).Err(); err != nil {
+		return nil, &errs.Error{Code: errs.Internal, Message: "failed to stage import file"}
+	}
 
 	sample := rows
 	if len(sample) > 5 {
@@ -126,6 +172,7 @@ func Preview(ctx context.Context, file *multipart.FileHeader) (*PreviewResponse,
 	suggestions := suggestMapping(headers, target)
 
 	return &PreviewResponse{
+		JobID:       jobID,
 		Headers:     headers,
 		SampleRows:  sample,
 		Suggestions: suggestions,
@@ -133,9 +180,27 @@ func Preview(ctx context.Context, file *multipart.FileHeader) (*PreviewResponse,
 	}, nil
 }
 
+// ImportJobStatus returns import results stored after the worker finishes.
+//
+//encore:api auth method=GET path=/api/v1/import/status/:jobId tag:owner
+func ImportJobStatus(ctx context.Context, jobId string) (*ImportResult, error) {
+	if jobId == "" {
+		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "jobId required"}
+	}
+	raw, err := appauth.RedisClient().Get(ctx, importResultKey(jobId)).Bytes()
+	if err != nil {
+		return nil, &errs.Error{Code: errs.NotFound, Message: "import job not found or still processing"}
+	}
+	var result ImportResult
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, &errs.Error{Code: errs.Internal, Message: "invalid import result"}
+	}
+	return &result, nil
+}
+
 // Execute validates mapping and publishes import job to the queue.
 //
-//encore:api auth method=POST path=/import/execute tag:owner
+//encore:api auth method=POST path=/api/v1/import/execute tag:owner
 func Execute(ctx context.Context, req *ExecuteRequest) (*ExecuteResponse, error) {
 	uid, _ := auth.UserID()
 	userData := auth.Data().(*types.AuthUser)
@@ -152,22 +217,58 @@ func Execute(ctx context.Context, req *ExecuteRequest) (*ExecuteResponse, error)
 			return nil, &errs.Error{Code: errs.InvalidArgument, Message: fmt.Sprintf("invalid column: %s", col)}
 		}
 	}
+	if req.JobID == "" {
+		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "jobId required (from preview)"}
+	}
 
-	msgID, err := ImportTopic.Publish(ctx, ImportRequest{
+	staged, err := loadStaging(ctx, req.JobID, userData.TenantSchema)
+	if err != nil {
+		return nil, err
+	}
+	target := req.TargetTable
+	if target == "" {
+		target = staged.TargetTable
+	}
+
+	jobID := req.JobID
+	_, err = ImportTopic.Publish(ctx, ImportRequest{
+		JobID:         jobID,
 		TenantSchema:  userData.TenantSchema,
-		TargetTable:   req.TargetTable,
+		TargetTable:   target,
+		Headers:       staged.Headers,
 		ColumnMapping: req.ColumnMapping,
+		Rows:          staged.Rows,
 		UploadedBy:    string(uid),
 	})
 	if err != nil {
 		return nil, &errs.Error{Code: errs.Internal, Message: "failed to queue import"}
 	}
 
-	rlog.Info("import queued", "user", uid, "target", req.TargetTable, "msgID", msgID)
+	_ = appauth.RedisClient().Del(ctx, importStagingKey(jobID)).Err()
+
+	rlog.Info("import queued", "user", uid, "target", target, "jobId", jobID)
 	return &ExecuteResponse{
 		Message: "Import job queued",
-		JobID:   msgID,
+		JobID:   jobID,
 	}, nil
+}
+
+func loadStaging(ctx context.Context, jobID, tenantSchema string) (*importStagingPayload, error) {
+	raw, err := appauth.RedisClient().Get(ctx, importStagingKey(jobID)).Bytes()
+	if err != nil {
+		return nil, &errs.Error{Code: errs.NotFound, Message: "import preview expired or not found — upload again"}
+	}
+	var p importStagingPayload
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return nil, &errs.Error{Code: errs.Internal, Message: "invalid staged import"}
+	}
+	if p.TenantSchema != tenantSchema {
+		return nil, &errs.Error{Code: errs.PermissionDenied, Message: "import job belongs to another tenant"}
+	}
+	if len(p.Headers) == 0 || len(p.Rows) == 0 {
+		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "staged import is empty"}
+	}
+	return &p, nil
 }
 
 // ---------- File parsing ----------
@@ -277,7 +378,7 @@ func handleImport(ctx context.Context, req ImportRequest) error {
 	result := ImportResult{TotalRows: len(req.Rows)}
 
 	for i, row := range req.Rows {
-		err := processRow(ctx, req.TenantSchema, req.TargetTable, req.ColumnMapping, row, i)
+		err := processRow(ctx, req.TenantSchema, req.TargetTable, req.Headers, req.ColumnMapping, row, i)
 		if err != nil {
 			result.FailedCount++
 			result.Errors = append(result.Errors, RowError{
@@ -296,29 +397,89 @@ func handleImport(ctx context.Context, req ImportRequest) error {
 		"success", result.SuccessCount,
 		"failed", result.FailedCount,
 	)
+	if req.JobID != "" {
+		b, _ := json.Marshal(result)
+		_ = appauth.RedisClient().Set(ctx, importResultKey(req.JobID), b, 24*time.Hour).Err()
+	}
 	return nil
 }
 
-func processRow(ctx context.Context, schema, target string, mapping map[string]string, row []string, _ int) error {
-	// Build column→value map from the row
-	_ = schema
-	_ = target
+func importResultKey(jobID string) string {
+	return "import:result:" + jobID
+}
 
-	mapped := make(map[string]string)
-	i := 0
-	for header, col := range mapping {
+func processRow(ctx context.Context, schema, target string, headers []string, mapping map[string]string, row []string, _ int) error {
+	vals := make(map[string]string)
+	for i, header := range headers {
+		col := mapping[header]
 		if col == "" || col == "-" {
 			continue
 		}
-		_ = header
 		if i < len(row) {
-			mapped[col] = row[i]
+			vals[col] = strings.TrimSpace(row[i])
 		}
-		i++
 	}
 
-	// Placeholder: actual DB insert would go here, dispatched by target table.
-	// INSERT INTO {schema}.{target} (col1, col2, ...) VALUES ($1, $2, ...)
-	rlog.Debug("import row", "mapped", mapped)
-	return nil
+	switch target {
+	case "business_catalog_item":
+		code := vals["external_code"]
+		name := vals["name"]
+		if code == "" || name == "" {
+			return fmt.Errorf("external_code and name required")
+		}
+		var price *float64
+		if p := vals["sell_price"]; p != "" {
+			f, err := business.ParsePrice(p)
+			if err != nil {
+				return fmt.Errorf("invalid sell_price: %w", err)
+			}
+			price = &f
+		}
+		active := true
+		if v := strings.ToLower(vals["is_active"]); v == "0" || v == "false" || v == "tidak" || v == "no" {
+			active = false
+		}
+		var desc, unit, barcode *string
+		if v := vals["description"]; v != "" {
+			desc = &v
+		}
+		if v := vals["sell_unit"]; v != "" {
+			unit = &v
+		}
+		if v := vals["barcode"]; v != "" {
+			barcode = &v
+		}
+		_, err := tenantDB.Exec(ctx, fmt.Sprintf(`
+			INSERT INTO "%s".business_catalog_item
+				(external_code, name, description, sell_price, sell_unit, is_active, barcode, source)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,'import')
+			ON CONFLICT (source, external_code) DO UPDATE SET
+				name = EXCLUDED.name,
+				description = EXCLUDED.description,
+				sell_price = EXCLUDED.sell_price,
+				sell_unit = EXCLUDED.sell_unit,
+				is_active = EXCLUDED.is_active,
+				barcode = EXCLUDED.barcode,
+				updated_at = NOW()`, schema),
+			code, name, desc, price, unit, active, barcode)
+		return err
+
+	case "knowledge_base_entry":
+		q := vals["question"]
+		a := vals["answer"]
+		if q == "" || a == "" {
+			return fmt.Errorf("question and answer required")
+		}
+		var cat *string
+		if v := vals["category"]; v != "" {
+			cat = &v
+		}
+		_, err := tenantDB.Exec(ctx, fmt.Sprintf(`
+			INSERT INTO "%s".knowledge_base_entry (question, answer, category, source)
+			VALUES ($1,$2,$3,'import')`, schema), q, a, cat)
+		return err
+
+	default:
+		return fmt.Errorf("unsupported target: %s", target)
+	}
 }

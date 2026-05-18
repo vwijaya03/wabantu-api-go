@@ -2,7 +2,7 @@ package tenant
 
 import "encore.dev/storage/sqldb"
 
-// DB is the system-level database shared by tenant, audit, and flag services.
-var DB = sqldb.NewDatabase("tenant", sqldb.DatabaseConfig{
+// DataDB is the tenant-data database (Nest jb_tenant): one schema per tenant (t_<slug>).
+var DataDB = sqldb.NewDatabase("tenant", sqldb.DatabaseConfig{
 	Migrations: "./migrations",
 })

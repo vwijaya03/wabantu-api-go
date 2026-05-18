@@ -188,16 +188,16 @@ func loadMessagesSince(ctx context.Context, db *sql.DB, schema, convoID string, 
 
 func storeSummary(ctx context.Context, db *sql.DB, schema, convoID, summary string, msgCount int) error {
 	q := fmt.Sprintf(`INSERT INTO %q.conversation_summary
-		(conversation_id, summary, message_count, created_at)
-		VALUES ($1, $2, $3, NOW())`, schema)
+		(conversation_id, summary, message_count, updated_at)
+		VALUES ($1, $2, $3, NOW())
+		ON CONFLICT (conversation_id) DO UPDATE SET
+			summary = EXCLUDED.summary,
+			message_count = EXCLUDED.message_count,
+			updated_at = NOW()`, schema)
 	_, err := db.ExecContext(ctx, q, convoID, summary, msgCount)
 	return err
 }
 
-// getTenantDB resolves a *sql.DB for the given tenant schema.
-// In production, this would come from a connection pool/registry.
 func getTenantDB(_ context.Context, _ string) (*sql.DB, error) {
-	// Placeholder: in a real implementation, this resolves from a
-	// tenant connection registry (e.g. shared/tenantdb package).
-	return nil, fmt.Errorf("tenant DB resolver not yet wired — implement shared/tenantdb")
+	return aiDB.Stdlib(), nil
 }

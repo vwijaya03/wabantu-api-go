@@ -3,7 +3,6 @@ package ai
 import (
 	"context"
 	"crypto/subtle"
-	"fmt"
 
 	"encore.dev/beta/errs"
 	"encore.dev/rlog"
@@ -13,12 +12,16 @@ import (
 // ─── Encore secrets ──────────────────────────────────────────────────────────
 
 var secrets struct {
-	AnthropicApiKey  string
-	RedisURL         string
-	AiInternalToken  string
-	AnthropicModel   string // optional override, default claude-sonnet-4-5
-	AnthropicMaxToks string // optional override, default "512"
+	AnthropicApiKey string
+	RedisURL        string
+	AiInternalToken string
 }
+
+// Fallback client defaults (per-request routing uses Haiku/Sonnet in routing.go).
+const (
+	defaultAnthropicModel   = ModelSonnet
+	defaultAnthropicMaxToks = 1024
+)
 
 // ─── Singleton service ───────────────────────────────────────────────────────
 
@@ -26,22 +29,9 @@ var svc *AutoReplyService
 
 func init() {
 	rdb := newRedisClient()
-
-	model := secrets.AnthropicModel
-	if model == "" {
-		model = "claude-sonnet-4-5-20250514"
-	}
-	maxTok := 512
-	if secrets.AnthropicMaxToks != "" {
-		var n int
-		if _, err := fmt.Sscanf(secrets.AnthropicMaxToks, "%d", &n); err == nil && n > 0 {
-			maxTok = n
-		}
-	}
-
 	client := NewAnthropicClient(secrets.AnthropicApiKey, AnthropicConfig{
-		Model:     model,
-		MaxTokens: maxTok,
+		Model:     defaultAnthropicModel,
+		MaxTokens: defaultAnthropicMaxToks,
 	})
 	svc = NewAutoReplyService(rdb, client)
 }
@@ -86,7 +76,7 @@ type InternalFallbackResponse struct {
 
 // ─── Endpoints ───────────────────────────────────────────────────────────────
 
-//encore:api public method=POST path=/internal/ai/auto-reply
+//encore:api public method=POST path=/api/v1/internal/ai/auto-reply
 func InternalProcessAutoReply(ctx context.Context, req *InternalAutoReplyRequest) (*InternalAutoReplyResponse, error) {
 	if err := assertInternalToken(req.InternalToken); err != nil {
 		return nil, err
@@ -116,7 +106,7 @@ func InternalProcessAutoReply(ctx context.Context, req *InternalAutoReplyRequest
 	return &InternalAutoReplyResponse{Sent: sent}, nil
 }
 
-//encore:api public method=POST path=/internal/ai/auto-reply/fallback
+//encore:api public method=POST path=/api/v1/internal/ai/auto-reply/fallback
 func InternalProcessFallback(ctx context.Context, req *InternalFallbackRequest) (*InternalFallbackResponse, error) {
 	if err := assertInternalToken(req.InternalToken); err != nil {
 		return nil, err

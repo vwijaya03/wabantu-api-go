@@ -89,7 +89,7 @@ type rajaOngkirResp struct {
 
 // ---------- endpoints ----------
 
-//encore:api auth method=GET path=/shipping/provinces
+//encore:api auth method=GET path=/api/v1/shipping/provinces
 func Provinces(ctx context.Context) (*ProvincesResponse, error) {
 	body, err := roGet("/province", nil)
 	if err != nil {
@@ -103,7 +103,7 @@ func Provinces(ctx context.Context) (*ProvincesResponse, error) {
 	return &ProvincesResponse{Provinces: provinces}, nil
 }
 
-//encore:api auth method=GET path=/shipping/cities
+//encore:api auth method=GET path=/api/v1/shipping/cities
 func Cities(ctx context.Context, p *CitiesParams) (*CitiesResponse, error) {
 	params := url.Values{}
 	if p.ProvinceID != "" {
@@ -122,7 +122,7 @@ func Cities(ctx context.Context, p *CitiesParams) (*CitiesResponse, error) {
 	return &CitiesResponse{Cities: cities}, nil
 }
 
-//encore:api auth method=GET path=/shipping/cost
+//encore:api auth method=GET path=/api/v1/shipping/cost
 func Cost(ctx context.Context, p *CostParams) (*CostResponse, error) {
 	if p.Origin == "" || p.Destination == "" || p.Weight <= 0 || p.Courier == "" {
 		return nil, appErrs.BadRequest("origin, destination, weight, and courier are required")

@@ -153,6 +153,23 @@ func tConn(ctx context.Context, schema string) (*sql.Conn, error) {
 	return appdb.TenantConn(ctx, db.Stdlib(), schema)
 }
 
+func queryBool(s string) bool {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "true", "1", "yes":
+		return true
+	default:
+		return false
+	}
+}
+
+func queryBoolOptional(s string) (bool, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return false, false
+	}
+	return queryBool(s), true
+}
+
 func clampLimit(raw int, fallback, max int) int {
 	if raw == 0 {
 		return fallback
@@ -197,7 +214,7 @@ func decodeCursor(s string) (cursorData, error) {
 // ListConversations returns a paginated list of conversations with last-message
 // preview, contact, and channel info.
 //
-//encore:api auth method=GET path=/inbox/conversations
+//encore:api auth method=GET path=/api/v1/inbox/conversations
 func ListConversations(ctx context.Context, p *ListConversationsParams) (*ListConversationsResponse, error) {
 	user, err := currentUser()
 	if err != nil {
@@ -237,12 +254,12 @@ func ListConversations(ctx context.Context, p *ListConversationsParams) (*ListCo
 		args = append(args, like)
 		idx++
 	}
-	if strings.EqualFold(p.UnreadOnly, "true") {
+	if queryBool(p.UnreadOnly) {
 		conds = append(conds, "c.unread_count > 0")
 	}
-	if h := strings.TrimSpace(p.AIHandled); h == "true" || h == "false" {
+	if ai, ok := queryBoolOptional(p.AIHandled); ok {
 		conds = append(conds, fmt.Sprintf("c.ai_handled = $%d", idx))
-		args = append(args, h == "true")
+		args = append(args, ai)
 		idx++
 	}
 	if strings.TrimSpace(p.Cursor) != "" {
@@ -326,7 +343,7 @@ func ListConversations(ctx context.Context, p *ListConversationsParams) (*ListCo
 
 // UpdateConversation patches a conversation's status, aiHandled, or assignment.
 //
-//encore:api auth method=PATCH path=/inbox/conversations/:id
+//encore:api auth method=PATCH path=/api/v1/inbox/conversations/:id
 func UpdateConversation(ctx context.Context, id string, p *UpdateConversationParams) (*UpdateConversationResponse, error) {
 	user, err := currentUser()
 	if err != nil {
@@ -395,7 +412,7 @@ func UpdateConversation(ctx context.Context, id string, p *UpdateConversationPar
 // GetMessages returns paginated messages for a conversation (newest-first fetch,
 // reversed to chronological order in response).
 //
-//encore:api auth method=GET path=/inbox/conversations/:id/messages
+//encore:api auth method=GET path=/api/v1/inbox/conversations/:id/messages
 func GetMessages(ctx context.Context, id string, p *GetMessagesParams) (*GetMessagesResponse, error) {
 	user, err := currentUser()
 	if err != nil {
@@ -499,7 +516,7 @@ func GetMessages(ctx context.Context, id string, p *GetMessagesParams) (*GetMess
 // SendMessage sends a human (staff/owner) reply through the WhatsApp channel
 // and persists it.
 //
-//encore:api auth method=POST path=/inbox/conversations/:id/messages
+//encore:api auth method=POST path=/api/v1/inbox/conversations/:id/messages
 func SendMessage(ctx context.Context, id string, p *SendMessageParams) (*SendMessageResponse, error) {
 	user, err := currentUser()
 	if err != nil {
@@ -582,7 +599,7 @@ func SendMessage(ctx context.Context, id string, p *SendMessageParams) (*SendMes
 
 // GetContact returns a single contact's details.
 //
-//encore:api auth method=GET path=/inbox/contacts/:id
+//encore:api auth method=GET path=/api/v1/inbox/contacts/:id
 func GetContact(ctx context.Context, id string) (*GetContactResponse, error) {
 	user, err := currentUser()
 	if err != nil {
@@ -604,7 +621,7 @@ func GetContact(ctx context.Context, id string) (*GetContactResponse, error) {
 
 // UpdateContact patches a contact's display name or notes.
 //
-//encore:api auth method=PATCH path=/inbox/contacts/:id
+//encore:api auth method=PATCH path=/api/v1/inbox/contacts/:id
 func UpdateContact(ctx context.Context, id string, p *UpdateContactParams) (*UpdateContactResponse, error) {
 	user, err := currentUser()
 	if err != nil {

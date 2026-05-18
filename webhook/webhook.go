@@ -12,11 +12,16 @@ import (
 	"net/http"
 	"strings"
 
-	"encore.dev/pubsub"
 	"encore.dev/rlog"
 	"encore.dev/storage/sqldb"
 
+	"encore.app/wabantu/ai"
+	"encore.app/wabantu/workflow"
+	appauth "encore.app/wabantu/auth"
+	"encore.app/wabantu/leads"
 	appdb "encore.app/wabantu/shared/db"
+	"encore.app/wabantu/shared/inboxrealtime"
+	"encore.app/wabantu/tenant"
 	"encore.app/wabantu/whatsapp"
 )
 
@@ -28,31 +33,37 @@ var secrets struct {
 }
 
 // ---------------------------------------------------------------------------
-// Pub/Sub — AI auto-reply job
-// ---------------------------------------------------------------------------
-
-// AIJobEvent is published when an inbound message needs AI processing.
-type AIJobEvent struct {
-	TenantSchema     string `json:"tenantSchema"`
-	ConversationID   string `json:"conversationId"`
-	InboundMessageID string `json:"inboundMessageId"`
-	InboundType      string `json:"inboundType"`
-}
-
-// AIJobs is the topic that the AI worker subscribes to.
-var AIJobs = pubsub.NewTopic[*AIJobEvent]("ai-jobs", pubsub.TopicConfig{
-	DeliveryGuarantee: pubsub.AtLeastOnce,
-})
-
-// ---------------------------------------------------------------------------
 // Raw HTTP handler (Meta requires exact challenge response for GET)
 // ---------------------------------------------------------------------------
 
 // HandleWhatsAppWebhook handles both the Meta verification challenge (GET)
 // and inbound webhook events (POST).
 //
-//encore:api public raw path=/webhook/whatsapp
+//encore:api public raw path=/api/v1/webhook/whatsapp
 func HandleWhatsAppWebhook(w http.ResponseWriter, r *http.Request) {
+	handleMetaWebhook(w, r)
+}
+
+// HandleMetaWebhook is the Nest-compatible Meta webhook path (/whatsapp/webhook/meta).
+//
+//encore:api public raw path=/api/v1/whatsapp/webhook/meta
+func HandleMetaWebhook(w http.ResponseWriter, r *http.Request) {
+	handleMetaWebhook(w, r)
+}
+
+// Legacy paths (Meta apps configured before /api/v1 prefix).
+//
+//encore:api public raw path=/whatsapp/webhook/meta
+func HandleMetaWebhookLegacy(w http.ResponseWriter, r *http.Request) {
+	handleMetaWebhook(w, r)
+}
+
+//encore:api public raw path=/webhook/whatsapp
+func HandleWhatsAppWebhookLegacy(w http.ResponseWriter, r *http.Request) {
+	handleMetaWebhook(w, r)
+}
+
+func handleMetaWebhook(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		verifyChallenge(w, r)
@@ -167,14 +178,47 @@ func ingestMessage(ctx context.Context, msg whatsapp.InboundMessage) error {
 		return fmt.Errorf("update conversation: %w", err)
 	}
 
-	if _, pubErr := AIJobs.Publish(ctx, &AIJobEvent{
-		TenantSchema:     schema,
-		ConversationID:   convoID,
-		InboundMessageID: messageID,
-		InboundType:      msg.Type,
-	}); pubErr != nil {
-		rlog.Warn("publish AI job failed", "err", pubErr, "messageId", messageID)
+	handled, wfErr := workflow.TryRun(ctx, schema, convoID, msg.Body)
+	if wfErr != nil {
+		rlog.Warn("workflow evaluation failed", "err", wfErr)
 	}
+	if !handled {
+		if pubErr := ai.PublishInboundJob(ctx, &ai.InboundAIJob{
+			TenantSchema:     schema,
+			ConversationID:   convoID,
+			InboundMessageID: messageID,
+			InboundType:      msg.Type,
+		}); pubErr != nil {
+			rlog.Warn("publish AI job failed", "err", pubErr, "messageId", messageID)
+		}
+	}
+
+	if ok, sErr := ai.ShouldTriggerSummary(ctx, schema, convoID); sErr == nil && ok {
+		if _, pubErr := ai.SummarizeTopic.Publish(ctx, ai.SummarizeRequest{
+			TenantSchema:   schema,
+			ConversationID: convoID,
+		}); pubErr != nil {
+			rlog.Warn("publish summarize job failed", "err", pubErr)
+		}
+	}
+
+	if tenantID, tErr := tenant.TenantIDBySchema(ctx, schema); tErr == nil && tenantID != "" {
+		inboxrealtime.Publish(ctx, appauth.RedisClient(), tenantID)
+	}
+
+	var contactPhone string
+	_ = conn.QueryRowContext(ctx,
+		`SELECT phone_number FROM contact WHERE id = $1`, contactID,
+	).Scan(&contactPhone)
+
+	_, _ = leads.CaptureFromMessage(ctx, &leads.CaptureRequest{
+		TenantSchema:   schema,
+		ContactID:      contactID,
+		ConversationID: convoID,
+		ContactName:    msg.FromDisplayName,
+		PhoneNumber:    contactPhone,
+		Body:           msg.Body,
+	})
 
 	return nil
 }

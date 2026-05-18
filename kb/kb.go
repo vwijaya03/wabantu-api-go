@@ -111,7 +111,7 @@ func requireOwner(u *types.AuthUser) error {
 
 // ─── Endpoints ───────────────────────────────────────────────────────────────
 
-//encore:api auth method=GET path=/knowledge-base
+//encore:api auth method=GET path=/api/v1/knowledge-base
 func List(ctx context.Context, req *ListRequest) (*ListResponse, error) {
 	u, err := currentUser(ctx)
 	if err != nil {
@@ -151,7 +151,7 @@ func List(ctx context.Context, req *ListRequest) (*ListResponse, error) {
 		argN++
 	}
 
-	countSQL := "SELECT COUNT(*) FROM knowledge_base_entries " + where
+	countSQL := "SELECT COUNT(*) FROM knowledge_base_entry " + where
 	var total int
 	if err := conn.QueryRowContext(ctx, countSQL, args...).Scan(&total); err != nil {
 		return nil, fmt.Errorf("count KB entries: %w", err)
@@ -160,7 +160,7 @@ func List(ctx context.Context, req *ListRequest) (*ListResponse, error) {
 	querySQL := fmt.Sprintf(`
 		SELECT id, question, answer, category, source, is_active,
 		       created_at, updated_at, deleted_at, deleted_by
-		FROM knowledge_base_entries %s
+		FROM knowledge_base_entry %s
 		ORDER BY created_at DESC
 		LIMIT $%d OFFSET $%d`, where, argN, argN+1)
 	args = append(args, pageSize, offset)
@@ -189,7 +189,7 @@ func List(ctx context.Context, req *ListRequest) (*ListResponse, error) {
 	return &ListResponse{Items: items, Total: total, Page: page, PageSize: pageSize}, rows.Err()
 }
 
-//encore:api auth method=POST path=/knowledge-base
+//encore:api auth method=POST path=/api/v1/knowledge-base
 func Create(ctx context.Context, req *CreateRequest) (*CreateResponse, error) {
 	u, err := currentUser(ctx)
 	if err != nil {
@@ -214,7 +214,7 @@ func Create(ctx context.Context, req *CreateRequest) (*CreateResponse, error) {
 
 	var entry KBEntry
 	err = conn.QueryRowContext(ctx, `
-		INSERT INTO knowledge_base_entries (question, answer, category, source, is_active)
+		INSERT INTO knowledge_base_entry (question, answer, category, source, is_active)
 		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id, question, answer, category, source, is_active, created_at, updated_at`,
 		req.Question, req.Answer, req.Category, req.Source, isActive,
@@ -226,7 +226,7 @@ func Create(ctx context.Context, req *CreateRequest) (*CreateResponse, error) {
 	return &CreateResponse{Entry: entry}, nil
 }
 
-//encore:api auth method=PATCH path=/knowledge-base/:id
+//encore:api auth method=PATCH path=/api/v1/knowledge-base/:id
 func Update(ctx context.Context, id string, req *UpdateRequest) (*UpdateResponse, error) {
 	u, err := currentUser(ctx)
 	if err != nil {
@@ -279,7 +279,7 @@ func Update(ctx context.Context, id string, req *UpdateRequest) (*UpdateResponse
 	args = append(args, id)
 
 	query := fmt.Sprintf(`
-		UPDATE knowledge_base_entries
+		UPDATE knowledge_base_entry
 		SET %s
 		WHERE id = $%d AND deleted_at IS NULL
 		RETURNING id, question, answer, category, source, is_active, created_at, updated_at`,
@@ -298,7 +298,7 @@ func Update(ctx context.Context, id string, req *UpdateRequest) (*UpdateResponse
 	return &UpdateResponse{Entry: entry}, nil
 }
 
-//encore:api auth method=DELETE path=/knowledge-base/:id
+//encore:api auth method=DELETE path=/api/v1/knowledge-base/:id
 func Delete(ctx context.Context, id string) (*DeleteResponse, error) {
 	u, err := currentUser(ctx)
 	if err != nil {
@@ -314,7 +314,7 @@ func Delete(ctx context.Context, id string) (*DeleteResponse, error) {
 	}
 
 	res, err := conn.ExecContext(ctx, `
-		UPDATE knowledge_base_entries
+		UPDATE knowledge_base_entry
 		SET deleted_at = NOW(), deleted_by = $1
 		WHERE id = $2 AND deleted_at IS NULL`,
 		u.Email, id)

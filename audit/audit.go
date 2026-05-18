@@ -13,7 +13,7 @@ import (
 	"encore.app/wabantu/shared/types"
 )
 
-var db = sqldb.Named("tenant")
+var db = sqldb.Named("system")
 
 // ---------- types ----------
 
@@ -57,7 +57,7 @@ type ListAuditResponse struct {
 
 // ---------- endpoints ----------
 
-//encore:api private method=POST path=/audit/log
+//encore:api private method=POST path=/api/v1/audit/log
 func RecordAudit(ctx context.Context, p *RecordAuditParams) error {
 	changesJSON := p.Changes
 	if len(changesJSON) == 0 {
@@ -74,7 +74,7 @@ func RecordAudit(ctx context.Context, p *RecordAuditParams) error {
 	return err
 }
 
-//encore:api auth method=GET path=/audit/logs
+//encore:api auth method=GET path=/api/v1/audit/logs
 func ListAuditLogs(ctx context.Context, p *ListAuditParams) (*ListAuditResponse, error) {
 	u, _ := auth.Data().(*types.AuthUser)
 	if u == nil || u.Role != "super_admin" {

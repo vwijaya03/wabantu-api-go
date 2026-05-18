@@ -13,6 +13,8 @@ import (
 
 	"encore.dev/rlog"
 	"encore.dev/storage/sqldb"
+
+	"encore.app/wabantu/usage"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -341,10 +343,40 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	}
 
 	kbHybrid := retrieveHybridKB(userText, kbEntries)
-	rlog.Info("AI job: hybrid retrieval",
+	kbTopScore := topKBMatchScore(userText, kbEntries)
+	rlog.Info("AI job: hybrid KB retrieval",
 		"selected", len(kbHybrid),
 		"total", len(kbEntries),
+		"topScore", kbTopScore,
 	)
+
+	// FAQ bypass — no LLM call when KB match is strong (cost optimization).
+	if direct, ok := tryFAQDirectAnswer(userText, kbEntries); ok {
+		rlog.Info("AI job: FAQ direct answer (no LLM)", "topScore", kbTopScore)
+		finalReply := applyOutputPolicy(direct)
+		s.setCachedAnswer(ctx, payload.TenantID, userText, finalReply)
+		err = s.sendAiMessage(ctx, db, convo, channel, contact, finalReply, "ai", reasonAIGenerated)
+		return err == nil, err
+	}
+
+	planCode, _ := loadSubscriptionPlanCode(ctx, db)
+	complexity := ClassifyComplexity(userText, classifier.Label, kbTopScore)
+	route := ResolveRouting(planCode, complexity)
+	rlog.Info("AI job: hybrid model routing",
+		"plan", planCode,
+		"complexity", complexity,
+		"model", route.Model,
+		"tier", route.Tier,
+		"reason", route.Reason,
+	)
+
+	if ok, reason := usage.CheckAICostLimit(ctx, payload.TenantSchema, payload.TenantID); !ok {
+		rlog.Warn("AI job: tenant cost limit reached", "reason", reason)
+		err = s.sendAiMessage(ctx, db, convo, channel, contact,
+			"Maaf kak, kuota AI bulan ini sudah mencapai batas. Tim kami akan segera menghubungi kakak ya 🙏",
+			"system", reasonOutOfScope)
+		return err == nil, err
+	}
 
 	kbForPrompt := make([]KBEntry, len(kbHybrid))
 	for i, e := range kbHybrid {
@@ -362,7 +394,8 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	sys := BuildSystemPrompt(bp)
 	business := BuildBusinessContext(bp)
 	kbCtx := BuildKnowledgeContext(kbForPrompt)
-	histCtx := BuildConversationContext(histForPrompt)
+	summary, _ := GetLatestSummary(ctx, payload.TenantSchema, convo.ID)
+	histCtx := BuildConversationContextWithSummary(summary, histForPrompt)
 	rlog.Info("AI job: context sizes",
 		"sys", len(sys),
 		"business", len(business),
@@ -370,14 +403,25 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		"hist", len(histCtx),
 	)
 
-	reply, err := s.anthropic.GenerateReply(ctx, sys, business, kbCtx, histCtx, userText)
+	reply, compUsage, err := s.anthropic.GenerateReplyWithModel(ctx, route.Model, sys, business, kbCtx, histCtx, userText)
 	if err != nil {
 		rlog.Error("AI job: anthropic.GenerateReply failed",
 			"err", err,
+			"model", route.Model,
 			"tenantId", payload.TenantID,
 			"convoId", convo.ID,
 		)
 		return false, err
+	}
+
+	_, _, newSession := usage.TrackAIExchange(ctx, payload.TenantID, convo.ID)
+	tokens := compUsage.InputTokens + compUsage.OutputTokens
+	usage.RecordAITokens(ctx, payload.TenantID, convo.ID, tokens)
+	if newSession {
+		_ = usage.RecordEvent(ctx, payload.TenantSchema, "ai_conversation", 1, nil)
+	}
+	if tokens > 0 {
+		_ = usage.RecordEvent(ctx, payload.TenantSchema, "ai_token", tokens, nil)
 	}
 
 	finalReply := applyOutputPolicy(reply)
@@ -779,11 +823,27 @@ func (s *AutoReplyService) resetScopeCounters(ctx context.Context, tenantID, con
 
 // ─── DB loaders ──────────────────────────────────────────────────────────────
 
+func loadSubscriptionPlanCode(ctx context.Context, db *sql.DB) (string, error) {
+	var planCode string
+	err := db.QueryRowContext(ctx, `
+		SELECT plan_code FROM subscription
+		WHERE status = 'active'
+		ORDER BY created_at DESC LIMIT 1`,
+	).Scan(&planCode)
+	if err == sql.ErrNoRows {
+		return "starter", nil
+	}
+	if err != nil {
+		return "starter", err
+	}
+	return planCode, nil
+}
+
 func loadConversation(ctx context.Context, db *sql.DB, id string) (*dbConversation, error) {
 	row := db.QueryRowContext(ctx, `
 		SELECT id, contact_id, channel_id, ai_handled, ai_paused_at,
 		       handoff_reason, last_message_at, last_message_preview, status
-		FROM conversations WHERE id = $1`, id)
+		FROM conversation WHERE id = $1`, id)
 	c := &dbConversation{}
 	err := row.Scan(&c.ID, &c.ContactID, &c.ChannelID, &c.AIHandled,
 		&c.AIPausedAt, &c.HandoffReason, &c.LastMessageAt, &c.LastPreview, &c.Status)
@@ -796,7 +856,7 @@ func loadConversation(ctx context.Context, db *sql.DB, id string) (*dbConversati
 func loadMessage(ctx context.Context, db *sql.DB, id string) (*dbMessage, error) {
 	row := db.QueryRowContext(ctx, `
 		SELECT id, direction, author, type, COALESCE(body,''), created_at
-		FROM messages WHERE id = $1`, id)
+		FROM message WHERE id = $1`, id)
 	m := &dbMessage{}
 	err := row.Scan(&m.ID, &m.Direction, &m.Author, &m.Type, &m.Body, &m.CreatedAt)
 	if err == sql.ErrNoRows {
@@ -811,7 +871,7 @@ func loadBusinessProfile(ctx context.Context, db *sql.DB) (*dbBusinessProfile, e
 		       products_services, base_pricing, delivery_area,
 		       greeting_template, tone, ai_enabled,
 		       COALESCE(catalog_url, '')
-		FROM business_profiles ORDER BY created_at ASC LIMIT 1`)
+		FROM business_profile ORDER BY created_at ASC LIMIT 1`)
 	p := &dbBusinessProfile{}
 	var catalogURL string
 	err := row.Scan(&p.BusinessName, &p.Description, &p.Address, &p.OpeningHours,
@@ -829,7 +889,7 @@ func loadBusinessProfile(ctx context.Context, db *sql.DB) (*dbBusinessProfile, e
 func loadContact(ctx context.Context, db *sql.DB, id string) (*dbContact, error) {
 	row := db.QueryRowContext(ctx, `
 		SELECT id, phone_number, display_name
-		FROM contacts WHERE id = $1`, id)
+		FROM contact WHERE id = $1`, id)
 	c := &dbContact{}
 	err := row.Scan(&c.ID, &c.PhoneNumber, &c.DisplayName)
 	if err == sql.ErrNoRows {
@@ -842,7 +902,7 @@ func loadChannel(ctx context.Context, db *sql.DB, id string) (*dbChannel, error)
 	row := db.QueryRowContext(ctx, `
 		SELECT id, provider, status, access_token, meta_phone_number_id,
 		       meta_waba_id, display_name, phone_number
-		FROM whatsapp_channels WHERE id = $1`, id)
+		FROM whatsapp_channel WHERE id = $1`, id)
 	ch := &dbChannel{}
 	err := row.Scan(&ch.ID, &ch.Provider, &ch.Status, &ch.AccessToken,
 		&ch.MetaPhoneNumberID, &ch.MetaWabaID, &ch.DisplayName, &ch.PhoneNumber)
@@ -855,7 +915,7 @@ func loadChannel(ctx context.Context, db *sql.DB, id string) (*dbChannel, error)
 func loadHistory(ctx context.Context, db *sql.DB, convoID string, limit int) ([]dbMessage, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT id, direction, author, type, COALESCE(body,''), created_at
-		FROM messages WHERE conversation_id = $1
+		FROM message WHERE conversation_id = $1
 		ORDER BY created_at DESC LIMIT $2`, convoID, limit)
 	if err != nil {
 		return nil, err
@@ -879,7 +939,7 @@ func loadHistory(ctx context.Context, db *sql.DB, convoID string, limit int) ([]
 func loadKBEntries(ctx context.Context, db *sql.DB, limit int) ([]dbKBEntry, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT id, question, answer, category, is_active
-		FROM knowledge_base_entries
+		FROM knowledge_base_entry
 		WHERE is_active = true
 		ORDER BY created_at DESC LIMIT $1`, limit)
 	if err != nil {

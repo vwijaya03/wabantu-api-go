@@ -93,7 +93,7 @@ type ListOrdersResponse struct {
 
 // ---------- endpoints ----------
 
-//encore:api auth method=GET path=/orders
+//encore:api auth method=GET path=/api/v1/orders
 func List(ctx context.Context, p *ListOrdersParams) (*ListOrdersResponse, error) {
 	u, err := getUser()
 	if err != nil {
@@ -155,7 +155,7 @@ func List(ctx context.Context, p *ListOrdersParams) (*ListOrdersResponse, error)
 	return &ListOrdersResponse{Orders: orders, Total: total}, nil
 }
 
-//encore:api auth method=GET path=/orders/:id
+//encore:api auth method=GET path=/api/v1/orders/:id
 func Get(ctx context.Context, id string) (*Order, error) {
 	u, err := getUser()
 	if err != nil {
@@ -177,7 +177,7 @@ func Get(ctx context.Context, id string) (*Order, error) {
 	return &o, nil
 }
 
-//encore:api auth method=POST path=/orders
+//encore:api auth method=POST path=/api/v1/orders
 func Create(ctx context.Context, p *CreateOrderParams) (*Order, error) {
 	u, err := getUser()
 	if err != nil {
@@ -216,7 +216,7 @@ func Create(ctx context.Context, p *CreateOrderParams) (*Order, error) {
 	return &o, nil
 }
 
-//encore:api auth method=PATCH path=/orders/:id
+//encore:api auth method=PATCH path=/api/v1/orders/:id
 func Update(ctx context.Context, id string, req *UpdateOrderParams) (*Order, error) {
 	u, err := getUser()
 	if err != nil {
@@ -289,7 +289,7 @@ func Update(ctx context.Context, id string, req *UpdateOrderParams) (*Order, err
 	return &o, nil
 }
 
-//encore:api auth method=PATCH path=/orders/:id/cancel
+//encore:api auth method=PATCH path=/api/v1/orders/:id/cancel
 func Cancel(ctx context.Context, id string) (*Order, error) {
 	u, err := getUser()
 	if err != nil {

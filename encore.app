@@ -1,4 +1,4 @@
 {
-    "id": "wabantu",
-    "lang": "go"
+	"id": "wabantu-viko-8vni",
+	"lang": "go"
 }

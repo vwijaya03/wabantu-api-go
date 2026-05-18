@@ -139,7 +139,7 @@ func isValidTimezone(tz string) bool {
 // GetProfile returns the business profile for the current tenant.
 // If none exists yet, a default placeholder is created automatically.
 //
-//encore:api auth method=GET path=/business/profile
+//encore:api auth method=GET path=/api/v1/business/profile
 func GetProfile(ctx context.Context) (*GetProfileResponse, error) {
 	user, err := currentUser()
 	if err != nil {
@@ -171,7 +171,7 @@ func GetProfile(ctx context.Context) (*GetProfileResponse, error) {
 
 // UpdateProfile patches the business profile (owner only).
 //
-//encore:api auth method=PATCH path=/business/profile
+//encore:api auth method=PATCH path=/api/v1/business/profile
 func UpdateProfile(ctx context.Context, req *UpdateProfileRequest) (*UpdateProfileResponse, error) {
 	user, err := currentUser()
 	if err != nil {
@@ -254,7 +254,7 @@ func UpdateProfile(ctx context.Context, req *UpdateProfileRequest) (*UpdateProfi
 // ImportPreview crawls a website URL and extracts business profile fields.
 // Uses SSRF guards and optionally calls Anthropic for structured extraction.
 //
-//encore:api auth method=POST path=/business/profile/import-preview
+//encore:api auth method=POST path=/api/v1/business/profile/import-preview
 func ImportPreview(ctx context.Context, req *ImportPreviewRequest) (*ImportPreviewResponse, error) {
 	user, err := currentUser()
 	if err != nil {
