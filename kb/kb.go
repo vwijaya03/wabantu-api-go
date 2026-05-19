@@ -103,7 +103,7 @@ func currentUser(ctx context.Context) (*types.AuthUser, error) {
 }
 
 func requireOwner(u *types.AuthUser) error {
-	if u.Role != "owner" && u.Role != "super_admin" {
+	if !u.CanPerformOwnerActions() {
 		return e.Forbidden("only owner can manage knowledge base")
 	}
 	return nil

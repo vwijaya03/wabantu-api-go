@@ -157,7 +157,7 @@ func requireOwner(ctx context.Context) (*types.AuthUser, error) {
 	if !ok || userData == nil {
 		return nil, errs.Unauthenticated("not authenticated")
 	}
-	if userData.Role != "owner" {
+	if !userData.CanPerformOwnerActions() {
 		return nil, errs.Forbidden("owner access required")
 	}
 	return userData, nil

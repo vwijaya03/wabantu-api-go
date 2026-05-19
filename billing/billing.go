@@ -185,7 +185,7 @@ func SelectPlan(ctx context.Context, req *SelectPlanRequest) (*SelectPlanRespons
 	if err != nil {
 		return nil, err
 	}
-	if uid.Role != "owner" {
+	if !uid.CanPerformOwnerActions() {
 		return nil, &errs.Error{Code: errs.PermissionDenied, Message: "owner only"}
 	}
 	plan, ok := PlanCatalog[req.PlanCode]

@@ -581,7 +581,7 @@ Normal — tenant baru di DB Encore terpisah dari data Nest lama.
 
 1. Log `encore run`: webhook ingest + publish job.
 2. Worker jalan? `AI_INTERNAL_TOKEN` = secret `AiInternalToken`.
-3. `curl` internal endpoint (lihat §12).
+3. `curl` internal endpoint (lihat Bagian 12).
 4. `AnthropicApiKey` terisi.
 5. Conversation `ai_handled = true`, channel connected.
 

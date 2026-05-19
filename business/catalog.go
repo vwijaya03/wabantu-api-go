@@ -93,7 +93,7 @@ func CreateCatalog(ctx context.Context, req *CreateCatalogRequest) (*CatalogItem
 	if err != nil {
 		return nil, err
 	}
-	if user.Role != "owner" {
+	if !user.CanPerformOwnerActions() {
 		return nil, apperr.Forbidden("only owner can manage catalog")
 	}
 	code := strings.TrimSpace(req.ExternalCode)
@@ -133,7 +133,7 @@ func UpdateCatalog(ctx context.Context, id string, req *UpdateCatalogRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	if user.Role != "owner" {
+	if !user.CanPerformOwnerActions() {
 		return nil, apperr.Forbidden("only owner can manage catalog")
 	}
 
@@ -197,7 +197,7 @@ func DeleteCatalog(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	if user.Role != "owner" {
+	if !user.CanPerformOwnerActions() {
 		return apperr.Forbidden("only owner can manage catalog")
 	}
 	conn, err := tConn(ctx, user.TenantSchema)

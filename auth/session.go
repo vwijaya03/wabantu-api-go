@@ -20,6 +20,12 @@ type SessionData struct {
 	Role         string `json:"role"`
 	Email        string `json:"email"`
 	Name         string `json:"name"`
+
+	Impersonating       bool   `json:"impersonating,omitempty"`
+	ActAsTenantID       string `json:"actAsTenantId,omitempty"`
+	ActAsTenantSchema   string `json:"actAsTenantSchema,omitempty"`
+	ActAsTenantName     string `json:"actAsTenantName,omitempty"`
+	ActAsTenantSlug     string `json:"actAsTenantSlug,omitempty"`
 }
 
 type Session struct {
@@ -80,4 +86,23 @@ func getSession(ctx context.Context, accountID, sessionID string) (*SessionData,
 func destroySession(ctx context.Context, accountID, sessionID string) error {
 	key := sessionKey(accountID, sessionID)
 	return getRedis().Del(ctx, key).Err()
+}
+
+func updateSession(ctx context.Context, accountID, sessionID string, data SessionData) error {
+	key := sessionKey(accountID, sessionID)
+	raw, err := json.Marshal(data)
+	if err != nil {
+		return fmt.Errorf("marshal session: %w", err)
+	}
+	ttl, err := getRedis().TTL(ctx, key).Result()
+	if err != nil {
+		return fmt.Errorf("redis ttl session: %w", err)
+	}
+	if ttl <= 0 {
+		ttl = defaultSessionTTL
+	}
+	if err := getRedis().Set(ctx, key, raw, ttl).Err(); err != nil {
+		return fmt.Errorf("redis set session: %w", err)
+	}
+	return nil
 }

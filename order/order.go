@@ -222,7 +222,7 @@ func Update(ctx context.Context, id string, req *UpdateOrderParams) (*Order, err
 	if err != nil {
 		return nil, err
 	}
-	if u.Role != "owner" {
+	if !u.CanPerformOwnerActions() {
 		return nil, appErrs.Forbidden("owner access required")
 	}
 
@@ -295,7 +295,7 @@ func Cancel(ctx context.Context, id string) (*Order, error) {
 	if err != nil {
 		return nil, err
 	}
-	if u.Role != "owner" {
+	if !u.CanPerformOwnerActions() {
 		return nil, appErrs.Forbidden("owner access required")
 	}
 

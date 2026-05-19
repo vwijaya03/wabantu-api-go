@@ -33,9 +33,10 @@ import (
 // ---------- Encore secrets ----------
 
 var secrets struct {
-	JWTSecret         string
-	DataEncryptionKey string
-	RedisURL          string
+	JWTSecret                    string
+	DataEncryptionKey            string
+	RedisURL                     string
+	PlatformAdminBootstrapSecret string
 }
 
 // ---------- constants ----------
@@ -45,9 +46,7 @@ const (
 	jwtTTL          = 15 * time.Minute
 	cookieName      = "wabantu_at"
 	schemaPrefix    = "t_"
-	maxSchemaLen    = 63
-	// superAdminDevEmail is promoted to role super_admin (dev/staging bootstrap).
-	superAdminDevEmail = "superadmin@gmail.com"
+	maxSchemaLen = 63
 )
 
 // ---------- request / response types ----------
@@ -72,11 +71,13 @@ type AuthResponse struct {
 }
 
 type UserResponse struct {
-	ID     string         `json:"id"`
-	Email  string         `json:"email"`
-	Name   string         `json:"name"`
-	Role   string         `json:"role"`
-	Tenant TenantResponse `json:"tenant"`
+	ID            string                 `json:"id"`
+	Email         string                 `json:"email"`
+	Name          string                 `json:"name"`
+	Role          string                 `json:"role"`
+	Tenant        *TenantResponse        `json:"tenant,omitempty"`
+	Platform      bool                   `json:"platform,omitempty"`
+	Impersonation *ImpersonationResponse `json:"impersonation,omitempty"`
 }
 
 type TenantResponse struct {
@@ -85,13 +86,13 @@ type TenantResponse struct {
 	Name string `json:"name"`
 }
 
-type MeResponse struct {
-	ID     string         `json:"id"`
-	Email  string         `json:"email"`
-	Name   string         `json:"name"`
-	Role   string         `json:"role"`
-	Tenant TenantResponse `json:"tenant"`
+type ImpersonationResponse struct {
+	Active bool            `json:"active"`
+	Tenant *TenantResponse `json:"tenant,omitempty"`
 }
+
+// MeResponse mirrors UserResponse for GET /auth/me.
+type MeResponse = UserResponse
 
 type LogoutResponse struct {
 	OK bool `json:"ok"`
@@ -117,16 +118,7 @@ func AuthHandler(ctx context.Context, token string) (encoreAuth.UID, *types.Auth
 		return "", nil, errs.Unauthenticated("session expired")
 	}
 
-	user := &types.AuthUser{
-		AccountID:    sess.AccountID,
-		TenantID:     sess.TenantID,
-		TenantSchema: sess.TenantSchema,
-		Email:        sess.Email,
-		Name:         sess.Name,
-		Role:         sess.Role,
-		SessionID:    sessionID,
-	}
-	return encoreAuth.UID(accountID), user, nil
+	return encoreAuth.UID(accountID), buildAuthUser(sess, sessionID), nil
 }
 
 // ---------- API endpoints ----------
@@ -226,9 +218,6 @@ func Register(w http.ResponseWriter, req *http.Request) {
 	}
 
 	accountRole := "owner"
-	if emailLower == superAdminDevEmail {
-		accountRole = "super_admin"
-	}
 
 	var accountID string
 	var accountName sql.NullString
@@ -297,7 +286,8 @@ func Login(w http.ResponseWriter, req *http.Request) {
 
 	var accountID, storedHash, email string
 	var accountName sql.NullString
-	var accountRole, accountTenantID string
+	var accountRole string
+	var accountTenantID sql.NullString
 	err = system.DB.QueryRow(ctx,
 		`SELECT id, password_hash, email, name, role, tenant_id
 		 FROM tenant_account
@@ -324,11 +314,27 @@ func Login(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// Fetch tenant + company
+	system.DB.Exec(ctx,
+		"UPDATE tenant_account SET last_login_at = $1 WHERE id = $2",
+		time.Now(), accountID,
+	)
+
+	// Internal platform operator — no customer tenant required.
+	if accountRole == roleSuperAdmin && (!accountTenantID.Valid || accountTenantID.String == "") {
+		completeLogin(w, req, ctx, accountID, email, nullStr(accountName), accountRole,
+			"", "", "", "", http.StatusOK)
+		return
+	}
+
+	if !accountTenantID.Valid || accountTenantID.String == "" {
+		writeError(w, http.StatusForbidden, "Akun tidak terhubung ke bisnis")
+		return
+	}
+
 	var tenantSlug, tenantName, tenantStatus string
 	err = system.DB.QueryRow(ctx,
 		`SELECT slug, name, status FROM tenant WHERE id = $1 AND deleted_at IS NULL`,
-		accountTenantID,
+		accountTenantID.String,
 	).Scan(&tenantSlug, &tenantName, &tenantStatus)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusUnauthorized, "Tenant tidak ditemukan")
@@ -346,21 +352,15 @@ func Login(w http.ResponseWriter, req *http.Request) {
 	var schemaName string
 	err = system.DB.QueryRow(ctx,
 		`SELECT schema_name FROM tenant_company WHERE tenant_id = $1`,
-		accountTenantID,
+		accountTenantID.String,
 	).Scan(&schemaName)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "company not found")
 		return
 	}
 
-	// Update last_login_at
-	system.DB.Exec(ctx,
-		"UPDATE tenant_account SET last_login_at = $1 WHERE id = $2",
-		time.Now(), accountID,
-	)
-
 	completeLogin(w, req, ctx, accountID, email, nullStr(accountName), accountRole,
-		accountTenantID, tenantSlug, tenantName, schemaName, http.StatusOK)
+		accountTenantID.String, tenantSlug, tenantName, schemaName, http.StatusOK)
 }
 
 // Logout destroys the current session (Bearer token required).
@@ -399,31 +399,7 @@ func Me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var tenantSlug, tenantName string
-	err = system.DB.QueryRow(ctx,
-		`SELECT slug, name FROM tenant WHERE id = $1 AND deleted_at IS NULL`,
-		userData.TenantID,
-	).Scan(&tenantSlug, &tenantName)
-	if errors.Is(err, sql.ErrNoRows) {
-		writeError(w, http.StatusNotFound, "Tenant tidak ditemukan")
-		return
-	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db error")
-		return
-	}
-
-	writeJSON(w, http.StatusOK, MeResponse{
-		ID:    userData.AccountID,
-		Email: userData.Email,
-		Name:  userData.Name,
-		Role:  userData.Role,
-		Tenant: TenantResponse{
-			ID:   userData.TenantID,
-			Slug: tenantSlug,
-			Name: tenantName,
-		},
-	})
+	writeJSON(w, http.StatusOK, profileResponse(userData))
 }
 
 // ---------- JWT helpers ----------
@@ -499,21 +475,52 @@ func completeLogin(
 		"email": email, "role": role,
 	})
 
+	authUser := buildAuthUser(&sess.Data, sess.SessionID)
 	writeJSON(w, statusCode, AuthResponse{
 		AccessToken:      accessToken,
 		ExpiresInSeconds: expiresIn,
-		User: UserResponse{
-			ID:    accountID,
-			Email: email,
-			Name:  name,
-			Role:  role,
-			Tenant: TenantResponse{
-				ID:   tenantID,
-				Slug: tenantSlug,
-				Name: tenantName,
-			},
-		},
+		User:             profileResponse(authUser),
 	})
+}
+
+func profileResponse(u *types.AuthUser) UserResponse {
+	resp := UserResponse{
+		ID:    u.AccountID,
+		Email: u.Email,
+		Name:  u.Name,
+		Role:  u.Role,
+	}
+	if u.IsPlatformSession {
+		resp.Platform = true
+		return resp
+	}
+	if u.Impersonating && u.TenantID != "" {
+		resp.Impersonation = &ImpersonationResponse{
+			Active: true,
+			Tenant: &TenantResponse{
+				ID:   u.TenantID,
+				Slug: u.ImpersonationTenantSlug,
+				Name: u.ImpersonationTenantName,
+			},
+		}
+		resp.Tenant = resp.Impersonation.Tenant
+		return resp
+	}
+	if u.TenantID != "" {
+		slug, name := u.ImpersonationTenantSlug, u.ImpersonationTenantName
+		if slug == "" || name == "" {
+			slug, name = lookupTenantDisplay(context.Background(), u.TenantID)
+		}
+		resp.Tenant = &TenantResponse{ID: u.TenantID, Slug: slug, Name: name}
+	}
+	return resp
+}
+
+func lookupTenantDisplay(ctx context.Context, tenantID string) (slug, name string) {
+	_ = system.DB.QueryRow(ctx,
+		`SELECT slug, name FROM tenant WHERE id = $1 AND deleted_at IS NULL`, tenantID,
+	).Scan(&slug, &name)
+	return slug, name
 }
 
 func cleanupRegistration(ctx context.Context, accountID, companyID, tenantID string) {

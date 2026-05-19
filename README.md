@@ -6,6 +6,8 @@ Dokumentasi alur lengkap (mirip `api/APP_FLOW_GUIDE.md`): **[APP_FLOW_GUIDE.md](
 
 Perbandingan endpoint vs NestJS / kompatibilitas frontend: **[ENDPOINT_COMPATIBILITY.md](./ENDPOINT_COMPATIBILITY.md)**.
 
+Dokumentasi teknis lengkap (arsitektur, API, DB, **platform admin**): **[DEVELOPER_DOCUMENTATION.md](./DEVELOPER_DOCUMENTATION.md)** — untuk akun operator internal WABantu langsung ke **[Bagian 8.1](./DEVELOPER_DOCUMENTATION.md#81-platform-admin-internal-operator-wabantu-owner)**.
+
 ---
 
 ## Untuk developer baru — checklist sebelum coding
@@ -21,7 +23,7 @@ Centang semua ini **sebelum** `encore run` atau membuka `web-frontend`. Kalau ad
 | 5 | **Redis** jalan (session, rate limit, import staging, SSE) | `docker compose -f ../infra/docker-compose.yml ps redis` atau `redis-cli ping` → `PONG` |
 | 6 | **Encore login** | `encore auth login` (sekali per laptop) |
 | 7 | **App terdaftar** di Encore Cloud | `encore.app` punya `id` valid; tidak error `app_not_found` saat `encore run` |
-| 8 | **Secrets** ter-set | `encore secret list` menampilkan minimal `JWTSecret`, `DataEncryptionKey`, `RedisURL` |
+| 8 | **Secrets** ter-set | `encore secret list` → minimal `JWTSecret`, `DataEncryptionKey`, `RedisURL`; untuk platform admin tambah `PlatformAdminBootstrapSecret` ([Bagian 8.1](./DEVELOPER_DOCUMENTATION.md#81-platform-admin-internal-operator-wabantu-owner)) |
 | 9 | File **`../api/.env`** ada (sumber secret) | `ls ../api/.env` — copy dari `api/.env.example` bila perlu |
 | 10 | **`encore check`** lulus | `cd api-go && encore check` |
 
@@ -146,6 +148,7 @@ Mapping nama secret (field di kode Go → nilai dari Nest `.env`):
 | `RajaOngkirAPIKey` | env RajaOngkir | Shipping |
 | `RajaOngkirAccountType` | `starter` | Shipping |
 | `SentryDSN` | `SENTRY_DSN` | Opsional |
+| `PlatformAdminBootstrapSecret` | *(buat manual, min. 32 karakter)* | **Hanya** untuk membuat akun `super_admin` internal (bukan password login) — lihat [Bagian 8.1](./DEVELOPER_DOCUMENTATION.md#81-platform-admin-internal-operator-wabantu-owner) |
 
 Set manual (contoh):
 
@@ -308,21 +311,51 @@ conn, err := appdb.TenantConn(ctx, tenant.DataDB.Stdlib(), user.TenantSchema)
 - **Execute** (`POST /import/execute`): kirim `jobId` + `columnMapping` → worker Pub/Sub `file-import`.
 - **Production berikutnya:** ganti staging Redis dengan **S3/R2** (seperti Jubelio) — interface tetap preview → execute by `jobId`.
 
-## Super admin (dev)
+## Platform admin (operator internal WABantu)
 
-- Email bootstrap: **`superadmin@gmail.com`** → role `super_admin` saat register, atau migrasi `system/migrations/3_promote_super_admin.up.sql`.
-- Akses: `GET /admin/tenants`, impersonation, audit logs.
-- UI: `/dashboard/admin` (frontend).
+Akun **`super_admin` tanpa toko** — untuk tim WABantu memantau tenant klien. **Bukan** untuk UMKM; klien **tidak bisa** jadi super admin lewat Register.
+
+**Panduan lengkap:** [DEVELOPER_DOCUMENTATION.md Bagian 8.1](./DEVELOPER_DOCUMENTATION.md#81-platform-admin-internal-operator-wabantu-owner)
+
+### Quick start (lokal)
+
+```bash
+# 1. Secret bootstrap (sekali, min. 32 karakter — BUKAN password login)
+encore secret set --type dev PlatformAdminBootstrapSecret
+
+# 2. API jalan
+encore run
+
+# 3. Buat akun internal (sekali per email)
+curl -X POST http://localhost:4000/api/v1/internal/platform-admin/bootstrap \
+  -H "Content-Type: application/json" \
+  -H "X-Platform-Bootstrap-Secret: SECRET_ANDA_DARI_LANGKAH_1" \
+  -d '{"email":"owner@wabantu.internal","password":"PasswordMinimal10","name":"Nama Anda"}'
+
+# 4. Login di web-frontend dengan email + password di atas → /dashboard/admin → Pantau tenant
+```
+
+| Endpoint | Fungsi |
+|----------|--------|
+| `POST /api/v1/internal/platform-admin/bootstrap` | Buat akun platform admin (header `X-Platform-Bootstrap-Secret`) |
+| `GET /api/v1/admin/tenants` | Daftar tenant |
+| `POST /api/v1/admin/impersonate/:tenantId` | Pantau tenant (update session Redis) |
+| `POST /api/v1/admin/stop-impersonation` | Keluar dari mode pantau |
+
+Migrasi DB: `system/migrations/4_platform_admin.up.sql` (`tenant_id` nullable untuk `super_admin`).
+
+> **Catatan:** Pola lama `superadmin@gmail.com` saat register **sudah tidak dipakai**. Akun lama yang masih punya tenant dummy bisa tetap login; untuk pola tanpa toko, buat akun baru via bootstrap di atas.
 
 ---
 
 ## Autentikasi
 
-- Login/register: endpoint **raw HTTP** di `auth/` — set cookie HttpOnly `wabantu_at` + body JSON berisi `accessToken`.
-- Endpoint bertag `//encore:api auth` membutuhkan header `Authorization: Bearer <token>` **atau** cookie (tergantung client).
-- Session disimpan di **Redis** (`RedisURL` secret); JWT hanya 15 menit, session sliding ~7 hari.
+- Login/register: endpoint **raw HTTP** di `auth/` — response JSON berisi `accessToken` (+ cookie `wabantu_at` opsional).
+- **Frontend saat ini:** `Authorization: Bearer <token>` dari `sessionStorage` (lihat `web-frontend/lib/auth/session.ts`).
+- Endpoint bertag `//encore:api auth` membutuhkan Bearer **atau** cookie **atau** query `access_token` (SSE).
+- Session disimpan di **Redis** (`RedisURL` secret); JWT 15 menit; state impersonation platform admin juga di Redis.
 
-Handler auth global: `auth.AuthHandler` (`//encore:authhandler`).
+Handler auth global: `auth.AuthHandler` (`//encore:authhandler`) → `buildAuthUser` (tenant efektif saat impersonate).
 
 ---
 
@@ -368,6 +401,8 @@ Stack compose contoh: `../infra/docker-compose.yml` (service `api-go`).
 | Inbox tidak live-update | SSE lewat rewrite gagal | Set `NEXT_PUBLIC_SSE_API_URL=http://localhost:4000` di `web-frontend/.env` |
 | `middleware` compile error | Versi Encore lama | Update Encore CLI; atau hapus `middleware/` dan andalkan limit di `auth` saja |
 | DB kosong setelah register | Normal di DB Encore baru | Register tenant baru; jangan expect data Nest lama |
+| `invalid bootstrap secret` | Header curl ≠ `PlatformAdminBootstrapSecret` | `encore secret set` ulang; samakan string di curl |
+| Login super admin OK, inbox 403 | Belum impersonate tenant | Admin → **Pantau** tenant (atau dropdown topbar) |
 
 ---
 
@@ -375,8 +410,11 @@ Stack compose contoh: `../infra/docker-compose.yml` (service `api-go`).
 
 | File | Isi |
 |------|-----|
+| [DEVELOPER_DOCUMENTATION.md](./DEVELOPER_DOCUMENTATION.md) | Dokumentasi teknis lengkap + [Bagian 8.1 Platform Admin](./DEVELOPER_DOCUMENTATION.md#81-platform-admin-internal-operator-wabantu-owner) |
 | [APP_FLOW_GUIDE.md](./APP_FLOW_GUIDE.md) | Alur end-to-end, peta endpoint, perintah step-by-step |
-| `auth/auth.go` | Register, login, JWT, cookie |
+| `auth/platform_bootstrap.go` | Buat akun `super_admin` internal |
+| `auth/impersonation.go` | Pantau / stop impersonation (Redis session) |
+| `auth/auth.go` | Register, login, JWT, `AuthHandler` |
 | `tenant/tenant.go` | Provisioning schema tenant |
 | `webhook/webhook.go` | Ingest WhatsApp + enqueue AI |
 | `ai/inbound_jobs.go` | Pub/Sub `ai-jobs`, retry + fallback |

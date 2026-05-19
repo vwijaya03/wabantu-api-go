@@ -88,7 +88,7 @@ func currentUser() (*types.AuthUser, error) {
 }
 
 func requireOwner(u *types.AuthUser) error {
-	if u.Role != "owner" {
+	if !u.CanPerformOwnerActions() {
 		return apperr.Forbidden("owner role required")
 	}
 	return nil

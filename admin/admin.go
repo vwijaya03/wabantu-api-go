@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"encore.dev/rlog"
 	"encore.dev/storage/sqldb"
 
+	appauth "encore.app/wabantu/auth"
 	"encore.app/wabantu/shared/types"
 )
 
@@ -46,12 +48,12 @@ type TenantDetailResponse struct {
 }
 
 type ImpersonateResponse struct {
-	Token     string    `json:"token"`
-	ExpiresAt time.Time `json:"expiresAt"`
-	TenantID  string    `json:"tenantId"`
+	OK     bool   `json:"ok"`
+	Tenant Tenant `json:"tenant"`
 }
 
 type StopImpersonationResponse struct {
+	OK      bool   `json:"ok"`
 	Message string `json:"message"`
 }
 
@@ -61,7 +63,7 @@ type StopImpersonationResponse struct {
 //
 //encore:api auth method=GET path=/api/v1/admin/tenants tag:super_admin
 func ListTenants(ctx context.Context) (*ListTenantsResponse, error) {
-	if err := requireSuperAdmin(ctx); err != nil {
+	if _, err := requireSuperAdmin(ctx); err != nil {
 		return nil, err
 	}
 
@@ -104,7 +106,7 @@ func ListTenants(ctx context.Context) (*ListTenantsResponse, error) {
 //
 //encore:api auth method=GET path=/api/v1/admin/tenant/:id tag:super_admin
 func GetTenant(ctx context.Context, id string) (*TenantDetailResponse, error) {
-	if err := requireSuperAdmin(ctx); err != nil {
+	if _, err := requireSuperAdmin(ctx); err != nil {
 		return nil, err
 	}
 
@@ -140,95 +142,107 @@ func GetTenant(ctx context.Context, id string) (*TenantDetailResponse, error) {
 	return &TenantDetailResponse{Tenant: t}, nil
 }
 
-// Impersonate creates an impersonation session for a tenant.
+// Impersonation switches the current session to view a tenant (Redis session update).
 //
 //encore:api auth method=POST path=/api/v1/admin/impersonate/:tenantId tag:super_admin
 func Impersonate(ctx context.Context, tenantId string) (*ImpersonateResponse, error) {
-	if err := requireSuperAdmin(ctx); err != nil {
+	userData, err := requireSuperAdmin(ctx)
+	if err != nil {
 		return nil, err
+	}
+
+	if err := appauth.StartImpersonation(ctx, userData.AccountID, userData.SessionID, tenantId); err != nil {
+		return nil, toEncoreErr(err)
 	}
 
 	uid, _ := auth.UserID()
 	adminID := string(uid)
 
 	var sessionID string
-	err := db.QueryRow(ctx, `
+	err = db.QueryRow(ctx, `
 		INSERT INTO admin_session (admin_account_id, impersonated_tenant_id)
 		VALUES ($1, $2)
 		RETURNING id`,
 		adminID, tenantId,
 	).Scan(&sessionID)
 	if err != nil {
-		return nil, &errs.Error{Code: errs.Internal, Message: "session creation failed"}
+		rlog.Error("admin_session insert failed", "err", err)
+	} else {
+		details, _ := json.Marshal(map[string]string{"tenantId": tenantId, "action": "start"})
+		_, _ = db.Exec(ctx, `
+			INSERT INTO impersonation_log (admin_session_id, action, details)
+			VALUES ($1, 'impersonation.start', $2)`,
+			sessionID, details)
 	}
 
-	details, _ := json.Marshal(map[string]string{"tenantId": tenantId, "action": "start"})
-	_, err = db.Exec(ctx, `
-		INSERT INTO impersonation_log (admin_session_id, action, details)
-		VALUES ($1, 'impersonation.start', $2)`,
-		sessionID, details)
-	if err != nil {
-		rlog.Error("failed to log impersonation start", "err", err)
-	}
+	var t Tenant
+	var status string
+	_ = db.QueryRow(ctx, `
+		SELECT t.id, t.name, tc.schema_name, t.status, t.created_at,
+			COALESCE(ta.email, '') AS owner_email
+		FROM tenant t
+		JOIN tenant_company tc ON tc.tenant_id = t.id
+		LEFT JOIN tenant_account ta ON ta.tenant_id = t.id AND ta.role = 'owner' AND ta.deleted_at IS NULL
+		WHERE t.id = $1 AND t.deleted_at IS NULL`,
+		tenantId,
+	).Scan(&t.ID, &t.CompanyName, &t.SchemaName, &status, &t.CreatedAt, &t.OwnerEmail)
+	t.IsActive = status == "active"
 
-	expiresAt := time.Now().Add(2 * time.Hour)
-	rlog.Info("impersonation started", "adminId", adminID, "tenantId", tenantId, "sessionId", sessionID)
-	return &ImpersonateResponse{
-		Token:     sessionID,
-		ExpiresAt: expiresAt,
-		TenantID:  tenantId,
-	}, nil
+	rlog.Info("impersonation started", "adminId", adminID, "tenantId", tenantId)
+	return &ImpersonateResponse{OK: true, Tenant: t}, nil
 }
 
-// StopImpersonation ends the current impersonation session.
+// StopImpersonation ends tenant view mode for the current session.
 //
 //encore:api auth method=POST path=/api/v1/admin/stop-impersonation tag:super_admin
 func StopImpersonation(ctx context.Context) (*StopImpersonationResponse, error) {
-	if err := requireSuperAdmin(ctx); err != nil {
+	userData, err := requireSuperAdmin(ctx)
+	if err != nil {
 		return nil, err
+	}
+
+	if err := appauth.StopImpersonation(ctx, userData.AccountID, userData.SessionID); err != nil {
+		return nil, toEncoreErr(err)
 	}
 
 	uid, _ := auth.UserID()
 	adminID := string(uid)
 
 	var sessionID string
-	err := db.QueryRow(ctx, `
+	err = db.QueryRow(ctx, `
 		UPDATE admin_session SET ended_at = NOW()
 		WHERE admin_account_id = $1 AND ended_at IS NULL
 		RETURNING id`,
 		adminID,
 	).Scan(&sessionID)
 	if err == sql.ErrNoRows {
-		return &StopImpersonationResponse{Message: "No active impersonation session"}, nil
+		return &StopImpersonationResponse{OK: true, Message: "Impersonation ended"}, nil
 	}
 	if err != nil {
-		return nil, &errs.Error{Code: errs.Internal, Message: "failed to end session"}
-	}
-
-	details, _ := json.Marshal(map[string]string{"sessionId": sessionID, "action": "stop"})
-	_, err = db.Exec(ctx, `
-		INSERT INTO impersonation_log (admin_session_id, action, details)
-		VALUES ($1, 'impersonation.stop', $2)`,
-		sessionID, details)
-	if err != nil {
-		rlog.Error("failed to log impersonation stop", "err", err)
+		rlog.Error("admin_session end failed", "err", err)
+	} else {
+		details, _ := json.Marshal(map[string]string{"sessionId": sessionID, "action": "stop"})
+		_, _ = db.Exec(ctx, `
+			INSERT INTO impersonation_log (admin_session_id, action, details)
+			VALUES ($1, 'impersonation.stop', $2)`,
+			sessionID, details)
 	}
 
 	rlog.Info("impersonation stopped", "adminId", adminID)
-	return &StopImpersonationResponse{Message: "Impersonation session ended"}, nil
+	return &StopImpersonationResponse{OK: true, Message: "Impersonation ended"}, nil
 }
 
 // ---------- Helpers ----------
 
-func requireSuperAdmin(ctx context.Context) error {
+func requireSuperAdmin(ctx context.Context) (*types.AuthUser, error) {
 	userData, ok := auth.Data().(*types.AuthUser)
 	if !ok || userData == nil {
-		return &errs.Error{Code: errs.Unauthenticated, Message: "not authenticated"}
+		return nil, &errs.Error{Code: errs.Unauthenticated, Message: "not authenticated"}
 	}
 	if userData.Role != "super_admin" {
-		return &errs.Error{Code: errs.PermissionDenied, Message: "super admin access required"}
+		return nil, &errs.Error{Code: errs.PermissionDenied, Message: "super admin access required"}
 	}
-	return nil
+	return userData, nil
 }
 
 func readPlanFromSchema(ctx context.Context, schema string) string {
@@ -240,4 +254,12 @@ func readPlanFromSchema(ctx context.Context, schema string) string {
 		return "starter"
 	}
 	return plan
+}
+
+func toEncoreErr(err error) error {
+	var e *errs.Error
+	if errors.As(err, &e) {
+		return e
+	}
+	return &errs.Error{Code: errs.Internal, Message: err.Error()}
 }

@@ -177,7 +177,7 @@ func UpdateProfile(ctx context.Context, req *UpdateProfileRequest) (*UpdateProfi
 	if err != nil {
 		return nil, err
 	}
-	if user.Role != "owner" {
+	if !user.CanPerformOwnerActions() {
 		return nil, apperr.Forbidden("only owner can update profile")
 	}
 
@@ -260,7 +260,7 @@ func ImportPreview(ctx context.Context, req *ImportPreviewRequest) (*ImportPrevi
 	if err != nil {
 		return nil, err
 	}
-	if user.Role != "owner" {
+	if !user.CanPerformOwnerActions() {
 		return nil, apperr.Forbidden("only owner can import from website")
 	}
 	return previewFromURL(ctx, req.URL, secrets.AnthropicAPIKey)

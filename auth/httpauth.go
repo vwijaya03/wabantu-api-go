@@ -31,15 +31,7 @@ func AuthenticateHTTP(ctx context.Context, r *http.Request) (*types.AuthUser, er
 		return nil, errs.Unauthenticated("session expired")
 	}
 
-	return &types.AuthUser{
-		AccountID:    sess.AccountID,
-		TenantID:     sess.TenantID,
-		TenantSchema: sess.TenantSchema,
-		Email:        sess.Email,
-		Name:         sess.Name,
-		Role:         sess.Role,
-		SessionID:    sessionID,
-	}, nil
+	return buildAuthUser(sess, sessionID), nil
 }
 
 // RedisClient returns the shared Redis client used for sessions and realtime.

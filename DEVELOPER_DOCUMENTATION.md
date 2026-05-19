@@ -4,7 +4,9 @@
 > **Codebase:** `api-go/` — Encore rewrite of NestJS `api/`.  
 > **Companion docs:** [README.md](./README.md) · [APP_FLOW_GUIDE.md](./APP_FLOW_GUIDE.md) · [ENDPOINT_COMPATIBILITY.md](./ENDPOINT_COMPATIBILITY.md)
 
-**Baru belajar Go?** Langsung ke **[§18 Go untuk developer Node.js](#18-go-language-guide-for-nodejs-developers-with-wabantu-examples)** — penjelasan pointer, error, context, interface, dll. dengan contoh nyata dari repo ini.
+**Baru belajar Go?** Langsung ke **[Bagian 18 Go untuk developer Node.js](#18-go-language-guide-for-nodejs-developers-with-wabantu-examples)** — penjelasan pointer, error, context, interface, dll. dengan contoh nyata dari repo ini.
+
+**Buat akun operator internal (super admin tanpa toko)?** Langsung ke **[Bagian 8.1 Platform Admin — panduan lengkap](#81-platform-admin-internal-operator-wabantu-owner)**.
 
 ---
 
@@ -251,8 +253,8 @@ sequenceDiagram
 
 | Folder | Domain |
 |--------|--------|
-| `auth/` | Register, login, logout, me, JWT, Redis sessions, team CRUD |
-| `admin/` | Super-admin tenant list, impersonation |
+| `auth/` | Register, login, logout, me, JWT, Redis sessions, team CRUD, **platform admin bootstrap** |
+| `admin/` | Super-admin tenant list, impersonation (session Redis) |
 | `inbox/` | Conversations, messages, contacts, unread, handoff, **SSE stream** |
 | `webhook/` | Meta WhatsApp ingest, reliability retry |
 | `whatsappapi/` | Channel list, Meta OAuth connect, test message |
@@ -300,7 +302,10 @@ sequenceDiagram
 |------|---------|
 | `auth/auth.go` | Register/login, `AuthHandler`, JWT |
 | `auth/httpauth.go` | `AuthenticateHTTP` for raw routes (SSE, logout) |
-| `auth/session.go` | Redis session CRUD |
+| `auth/session.go` | Redis session CRUD + impersonation fields |
+| `auth/platform_bootstrap.go` | One-time internal `super_admin` account (secret-gated) |
+| `auth/impersonation.go` | `StartImpersonation` / `StopImpersonation` (Redis) |
+| `auth/userctx.go` | `buildAuthUser` — effective tenant from session |
 | `tenant/tenant.go` | `tenantDDL` (all per-tenant tables), `RunTenantDDL` |
 | `tenant/schema_patch.go` | Idempotent `ALTER` for existing tenants |
 | `webhook/webhook.go` | Ingest pipeline |
@@ -342,6 +347,8 @@ func AuthHandler(ctx context.Context, token string) (encoreAuth.UID, *types.Auth
 
 **Session model:** JWT (15 min) encodes `accountId` + `sessionId`; **authoritative state** in Redis `session:{accountId}:{sessionId}`.
 
+**Impersonation (platform admin):** Redis session may include `impersonating`, `actAsTenantId`, `actAsTenantSchema`, etc. `AuthHandler` exposes **effective** `TenantID` / `TenantSchema` to all services (no separate JWT).
+
 **Frontend (current):** Bearer-only in `sessionStorage` — no reliance on `Set-Cookie`.
 
 ## Middleware
@@ -365,7 +372,14 @@ var secrets struct {
 }
 ```
 
-Set via CLI: `encore secret set --type local JWTSecret` (not `.env` in api-go).
+Set via CLI: `encore secret set --type dev JWTSecret` (not `.env` in api-go).
+
+| Secret | Package | Purpose |
+|--------|---------|---------|
+| `JWTSecret` | `auth` | Sign/verify access JWT |
+| `RedisURL` | `auth` | Sessions, rate limit, inbox SSE |
+| `DataEncryptionKey` | `auth` | Field encryption |
+| `PlatformAdminBootstrapSecret` | `auth` | **One-time** create internal `super_admin` (min. 32 chars) — [Bagian 8.1](#81-platform-admin-internal-operator-wabantu-owner) |
 
 ## Pub/Sub
 
@@ -416,9 +430,16 @@ var _ = cron.NewJob("reset-monthly-usage", cron.JobConfig{
 | POST | `/api/v1/auth/login` | public raw | `{ email, password }` |
 | POST | `/api/v1/auth/logout` | public raw | Bearer/cookie → `{ ok }` |
 | GET | `/api/v1/auth/me` | public raw | Bearer → user profile |
+| POST | `/api/v1/internal/platform-admin/bootstrap` | public raw | **Internal only** — see [Bagian 8.1](#81-platform-admin-internal-operator-wabantu-owner) |
 | GET/POST/DELETE | `/api/v1/team/members` | auth owner | Team CRUD |
+| GET | `/api/v1/admin/tenants` | auth `super_admin` | List all tenants |
+| GET | `/api/v1/admin/tenant/:id` | auth `super_admin` | Tenant detail + counts |
+| POST | `/api/v1/admin/impersonate/:tenantId` | auth `super_admin` | Switch session to tenant |
+| POST | `/api/v1/admin/stop-impersonation` | auth `super_admin` | Clear impersonation |
 
 **Register flow:** system TX → `RunTenantDDL` → seed `business_profile` → `branch.EnsureDefaultBranch` → JWT.
+
+**Platform admin login:** account with `role = super_admin` and `tenant_id IS NULL` — no register, no tenant DDL. See [Bagian 8.1](#81-platform-admin-internal-operator-wabantu-owner).
 
 ## Inbox (`inbox/`)
 
@@ -548,7 +569,7 @@ erDiagram
   tenant_account {
     uuid id PK
     string email_hash UK
-    uuid tenant_id FK
+    uuid tenant_id FK "nullable for super_admin"
     string role
   }
 ```
@@ -613,6 +634,7 @@ erDiagram
 1. **New tenants:** `RunTenantDDL` runs full `tenantDDL` constant on register.
 2. **Existing tenants:** `POST /api/v1/internal/tenant/migrate-schemas` → `RunSchemaPatches` (idempotent `ALTER` / `CREATE IF NOT EXISTS`).
 3. **System:** standard Encore SQL migrations on deploy.
+4. **Platform admin:** `system/migrations/4_platform_admin.up.sql` — `tenant_id` nullable for `super_admin`; CHECK: `owner`/`staff` must have `tenant_id`.
 
 ## Connection handling
 
@@ -658,7 +680,7 @@ Defined in `tenantDDL` — e.g. `idx_message_conv_created`, `idx_wa_channel_phon
 
 ## 7.3 Inbound webhook → AI reply
 
-See sequence in §5. Key branches:
+See sequence in Bagian 5. Key branches:
 
 - `workflow.TryRun` — keyword rules may skip AI
 - `ai.PublishInboundJob` — async
@@ -698,9 +720,228 @@ sequenceDiagram
 |------|----------------|
 | `owner` | Full tenant; team management; connect WA |
 | `staff` | Inbox, most read/write |
-| `super_admin` | `admin/*`, impersonation |
+| `super_admin` (with `tenant_id`) | Legacy/dev account tied to a store — same as owner for that tenant + `admin/*` |
+| `super_admin` ( **`tenant_id` NULL** ) | **Platform operator** — `admin/*`, login without store; tenant APIs only while **impersonating** |
 
-`tag:owner` endpoints call `requireOwner(user)`.
+`tag:owner` endpoints use `user.CanPerformOwnerActions()` (owner, or `super_admin` during impersonation).
+
+Inbox/SSE: `user.CanAccessInbox()` (owner, staff, or impersonating platform admin).
+
+---
+
+## 8.1 Platform Admin (Internal Operator — WABantu Owner)
+
+> **Bahasa Indonesia — ringkasan:** Akun ini **bukan** untuk klien UMKM. Dipakai **hanya internal** tim WABantu untuk login **tanpa register toko**, melihat daftar tenant, lalu **“Pantau”** satu tenant (impersonation). Klien **tidak bisa** jadi `super_admin` lewat halaman Register.
+
+### Apa bedanya dengan user biasa?
+
+| | Klien (owner/staff) | Platform admin (`super_admin`, tanpa tenant) |
+|--|---------------------|-----------------------------------------------|
+| Cara daftar | `POST /auth/register` (+ nama bisnis) | `POST /internal/platform-admin/bootstrap` (sekali, pakai secret) |
+| `tenant_id` di DB | Wajib ada | **NULL** |
+| Login | Email + password | Email + password (sama) |
+| Setelah login | Dashboard toko (inbox, katalog, …) | **Konsol platform** → pilih tenant → baru bisa inbox/dll. |
+| JWT | `accountId` + `sessionId` | Sama — tidak ada token impersonation terpisah |
+
+### Arsitektur singkat
+
+```mermaid
+flowchart LR
+  subgraph bootstrap [Sekali saja]
+    SEC[Encore secret PlatformAdminBootstrapSecret]
+    API[POST /internal/platform-admin/bootstrap]
+    DB[(tenant_account role=super_admin tenant_id=NULL)]
+    SEC --> API --> DB
+  end
+
+  subgraph daily [Setiap hari]
+    LOGIN[POST /auth/login]
+    REDIS[(Redis session)]
+    ADMIN[GET /admin/tenants]
+    IMP[POST /admin/impersonate/:tenantId]
+    LOGIN --> REDIS
+    ADMIN --> IMP
+    IMP -->|update session actAs*| REDIS
+  end
+
+  REDIS --> AUTH[AuthHandler effective TenantSchema]
+  AUTH --> INBOX[inbox / business / ...]
+```
+
+**File penting:**
+
+| File | Fungsi |
+|------|--------|
+| `auth/platform_bootstrap.go` | Buat akun platform admin |
+| `auth/impersonation.go` | Tulis/hapus `actAs*` di Redis session |
+| `auth/userctx.go` | `buildAuthUser` — isi `TenantSchema` efektif saat impersonate |
+| `admin/admin.go` | List tenant + panggil impersonation + audit `admin_session` |
+| `shared/types/auth.go` | `CanPerformOwnerActions`, `CanAccessInbox` |
+| `system/migrations/4_platform_admin.up.sql` | `tenant_id` nullable untuk `super_admin` |
+
+### Langkah 1 — Secret Encore (wajib, min. 32 karakter)
+
+Dari folder `api-go`:
+
+```bash
+encore secret set --type dev PlatformAdminBootstrapSecret
+```
+
+Saat prompt, masukkan string acak panjang (contoh: `wabantu-internal-bootstrap-dev-2026-xxxxxxxx`).
+
+| Environment | Perintah |
+|-------------|----------|
+| Local dev | `--type dev` |
+| Production | `--type prod` |
+
+**Ini bukan password login** — hanya untuk memanggil endpoint bootstrap. Simpan di password manager tim.
+
+Tambahkan juga secret standar jika belum: `JWTSecret`, `RedisURL`, `DataEncryptionKey` (lihat [README.md](./README.md)).
+
+### Langkah 2 — Jalankan API + migrasi
+
+```bash
+cd api-go
+encore check    # pastikan compile OK
+encore run      # :4000 — migrasi 4_platform_admin otomatis
+```
+
+Redis harus jalan (session). Lokal: `cd ../infra && docker compose up -d redis`.
+
+### Langkah 3 — Bootstrap akun (sekali per email)
+
+Ganti nilai di bawah sesuai tim Anda:
+
+```bash
+curl -s -X POST http://localhost:4000/api/v1/internal/platform-admin/bootstrap \
+  -H "Content-Type: application/json" \
+  -H "X-Platform-Bootstrap-Secret: PASTE_SECRET_ANDA_DISINI" \
+  -d '{
+    "email": "owner@wabantu.internal",
+    "password": "PasswordMinimal10Karakter",
+    "name": "Viko Owner"
+  }'
+```
+
+**Request:**
+
+| Field / header | Wajib | Keterangan |
+|----------------|-------|------------|
+| `X-Platform-Bootstrap-Secret` | Ya | Harus **sama persis** dengan `PlatformAdminBootstrapSecret` di Encore |
+| `email` | Ya | Dipakai untuk **login web** |
+| `password` | Ya | Min. **10** karakter — dipakai untuk login web |
+| `name` | Ya | Nama tampilan |
+
+**Response sukses (201):** envelope `{ success, data }` berisi `accessToken`, `user` dengan `role: "super_admin"`, `platform: true`, **tanpa** `tenant`.
+
+Anda bisa langsung pakai token itu atau login ulang lewat frontend.
+
+### Langkah 4 — Login di web-frontend
+
+1. `npm run dev` di `web-frontend` (proxy `/api/v1` → `:4000`).
+2. Buka `/login` — email + password dari langkah 3 (**bukan** secret bootstrap).
+3. Diarahkan ke **`/dashboard/admin`** (Konsol Platform).
+4. Klik **Pantau** pada tenant, atau pakai dropdown tenant di topbar.
+5. Banner kuning = mode internal aktif; **Keluar** = `POST /admin/stop-impersonation`.
+
+### Endpoint admin (setelah login sebagai `super_admin`)
+
+| Method | Path | Efek |
+|--------|------|------|
+| `GET` | `/api/v1/admin/tenants` | Daftar semua tenant |
+| `GET` | `/api/v1/admin/tenant/:id` | Detail + jumlah akun/pesan |
+| `POST` | `/api/v1/admin/impersonate/:tenantId` | Update Redis session → API lain pakai schema tenant itu |
+| `POST` | `/api/v1/admin/stop-impersonation` | Hapus `actAs*` dari session |
+
+**Tidak ada** token impersonation terpisah di response — client cukup `GET /auth/me` ulang setelah impersonate.
+
+### Bentuk session Redis
+
+Key: `session:{accountId}:{sessionId}`
+
+```json
+{
+  "accountId": "...",
+  "tenantId": "",
+  "tenantSchema": "",
+  "role": "super_admin",
+  "email": "owner@wabantu.internal",
+  "name": "Viko Owner",
+  "impersonating": true,
+  "actAsTenantId": "uuid-tenant-klien",
+  "actAsTenantSchema": "t_slug_toko",
+  "actAsTenantName": "Nama Toko",
+  "actAsTenantSlug": "slug-toko"
+}
+```
+
+`AuthHandler` memetakan ini ke `types.AuthUser` dengan `TenantSchema` = `actAsTenantSchema` saat impersonate.
+
+### Response `GET /auth/me` (contoh)
+
+**Platform home (belum pilih tenant):**
+
+```json
+{
+  "id": "...",
+  "email": "owner@wabantu.internal",
+  "role": "super_admin",
+  "platform": true
+}
+```
+
+**Sedang memantau tenant:**
+
+```json
+{
+  "id": "...",
+  "role": "super_admin",
+  "tenant": { "id": "...", "slug": "toko-a", "name": "Toko A" },
+  "impersonation": {
+    "active": true,
+    "tenant": { "id": "...", "slug": "toko-a", "name": "Toko A" }
+  }
+}
+```
+
+### Keamanan — apa yang sengaja diblokir
+
+| Ancaman | Mitigasi |
+|---------|----------|
+| Klien register jadi super admin | Register **selalu** `role = owner` — tidak ada promosi email khusus |
+| Siapa saja panggil bootstrap | Header secret + rate limit 5/menit/IP + secret min. 32 char |
+| Token impersonation bocor | Tidak ada token terpisah — hanya session Redis pada JWT yang sudah login |
+| Super admin ubah data semua tenant tanpa jejak | Impersonation log + `admin_session` / `impersonation_log` di system DB |
+| Super admin akses inbox tanpa sengaja | Inbox/SSE butuh `CanAccessInbox()` → impersonation aktif |
+| Owner API saat hanya di konsol platform | `CanPerformOwnerActions()` false jika `TenantSchema` kosong |
+
+**Production checklist:**
+
+- [ ] Set `PlatformAdminBootstrapSecret` hanya di Encore prod; rotate jika pernah bocor
+- [ ] Batasi siapa yang tahu secret bootstrap (founder/DevOps saja)
+- [ ] Jangan commit secret ke git / chat publik
+- [ ] Pertimbangkan nonaktifkan bootstrap di prod setelah akun operator dibuat (secret bisa di-rotate; endpoint tetap ada tapi secret tidak dibagikan)
+
+### Troubleshooting
+
+| Gejala | Penyebab umum | Solusi |
+|--------|---------------|--------|
+| `invalid bootstrap secret` | Header curl ≠ secret Encore | `encore secret set` ulang, copy paste exact |
+| `PlatformAdminBootstrapSecret not configured` | Secret belum di-set atau &lt; 32 char | Set secret panjang, restart `encore run` |
+| `Email sudah terdaftar` | Email sudah dipakai owner lain | Login dengan email itu, atau pakai email baru |
+| Login OK tapi 403 di inbox | Belum impersonate tenant | Admin → **Pantau** tenant |
+| `encore check` gagal di `admin/` | Compile error | Pull terbaru; pastikan `requireSuperAdmin` dipanggil `_, err :=` |
+| Akun lama `superadmin@gmail.com` masih punya toko | Dibuat sebelum fitur ini | Buat akun baru via bootstrap, atau manual SQL: `UPDATE tenant_account SET tenant_id = NULL WHERE ...` (hati-hati) |
+
+### Membuat akun operator kedua
+
+Ulangi **Langkah 3** dengan **email berbeda** (secret bootstrap sama). Tidak ada batas jumlah di kode, tetapi disarankan sedikit akun (auditable).
+
+### Hubungan dengan `ai` internal token
+
+`POST /api/v1/internal/ai/*` memakai header **`X-Ai-Internal-Token`** — **bukan** login platform admin. Itu service-to-service / worker, bukan UI dashboard.
+
+---
 
 ## Security practices
 
@@ -717,7 +958,7 @@ sequenceDiagram
 
 - `public` internal AI endpoints should verify `AiInternalToken` (check handlers before prod).
 - Raw SQL — watch for injection; use `$n` params and `QuoteIdent` for schema names only.
-- `withTenantDB` pool `search_path` — see §6.
+- `withTenantDB` pool `search_path` — see Bagian 6.
 - CORS on SSE — origins reflected from request `Origin` header.
 
 ---
@@ -916,7 +1157,7 @@ Secrets per Encore environment: `local`, `dev`, `prod` via `encore secret set --
 
 # 16. Diagrams
 
-Included above: architecture (§1), service deps (§2), auth sequence (§8), webhook+AI (§5), ERDs (§6).
+Included above: architecture (Bagian 1), service deps (Bagian 2), auth sequence (Bagian 8), webhook+AI (Bagian 5), ERDs (Bagian 6).
 
 ### Pub/Sub topics
 
@@ -1235,7 +1476,7 @@ for _, item := range items {
 }
 ```
 
-`_` = buang index/value yang tidak dipakai (lihat §18.10).
+`_` = buang index/value yang tidak dipakai (lihat Bagian 18.10).
 
 ---
 
@@ -1603,7 +1844,7 @@ func handleInboundAI(ctx context.Context, job *InboundAIJob) error {
 | Channel | Tidak dipakai |
 | Parallel request HTTP | Encore handle per request |
 | Pub/Sub | Bisa parallel consumer — race pada row DB → unique constraint |
-| `search_path` di pool AI | `ai.withTenantDB` set di `*sql.DB` — **hati-hati** jika 2 job beda schema bersamaan (technical debt §13) |
+| `search_path` di pool AI | `ai.withTenantDB` set di `*sql.DB` — **hati-hati** jika 2 job beda schema bersamaan (technical debt Bagian 13) |
 
 **Di Node:** event loop single-thread; race lebih jarang kecuali shared global. Di Go **banyak goroutine** — shared mutable state perlu mutex atau hindari (pakai Redis/DB).
 

@@ -98,7 +98,7 @@ type midtransNotification struct {
 //encore:api auth method=POST path=/api/v1/payment/create-qris
 func CreateQRIS(ctx context.Context, p *CreateQRISParams) (*QRISResponse, error) {
 	u, _ := auth.Data().(*types.AuthUser)
-	if u == nil || u.Role != "owner" {
+	if u == nil || !u.CanPerformOwnerActions() {
 		return nil, appErrs.Forbidden("owner access required")
 	}
 	if p.AmountIDR <= 0 {

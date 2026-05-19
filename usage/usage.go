@@ -107,7 +107,7 @@ var _ = cron.NewJob("reset-monthly-usage", cron.JobConfig{
 //encore:api auth method=GET path=/api/v1/usage/summary
 func Summary(ctx context.Context, p *SummaryParams) (*UsageSummary, error) {
 	u, _ := auth.Data().(*types.AuthUser)
-	if u == nil || u.Role != "owner" {
+	if u == nil || !u.CanPerformOwnerActions() {
 		return nil, appErrs.Forbidden("owner access required")
 	}
 

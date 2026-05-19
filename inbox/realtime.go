@@ -179,7 +179,7 @@ func InboxStream(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	if user.Role != "owner" && user.Role != "staff" {
+	if !user.CanAccessInbox() {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
