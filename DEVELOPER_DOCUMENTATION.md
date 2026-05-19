@@ -1,0 +1,1665 @@
+# WABantu API-Go — Developer Technical Documentation
+
+> **Audience:** Senior full-stack developers from Node.js/TypeScript (Express, NestJS, Prisma/TypeORM) learning **Go** and **Encore**.  
+> **Codebase:** `api-go/` — Encore rewrite of NestJS `api/`.  
+> **Companion docs:** [README.md](./README.md) · [APP_FLOW_GUIDE.md](./APP_FLOW_GUIDE.md) · [ENDPOINT_COMPATIBILITY.md](./ENDPOINT_COMPATIBILITY.md)
+
+**Baru belajar Go?** Langsung ke **[§18 Go untuk developer Node.js](#18-go-language-guide-for-nodejs-developers-with-wabantu-examples)** — penjelasan pointer, error, context, interface, dll. dengan contoh nyata dari repo ini.
+
+---
+
+# 1. Project Overview
+
+## What this project does
+
+**WABantu** is a multi-tenant SaaS backend for Indonesian SMBs (“UMKM”) that:
+
+1. Connects **WhatsApp Business (Meta Cloud API)** per tenant.
+2. Receives inbound messages via **webhooks**.
+3. Stores conversations in a **per-tenant PostgreSQL schema**.
+4. Runs **AI auto-reply** (Anthropic) with guardrails, knowledge base, and usage metering.
+5. Exposes a **REST API** (`/api/v1/...`) consumed by `web-frontend/` (Next.js).
+
+## Main business purpose
+
+- **Inbox:** staff read/reply to WhatsApp threads, hand off from AI to human.
+- **AI:** automated replies based on business profile + KB + conversation history.
+- **Growth:** leads capture, broadcast campaigns, orders, payments (Midtrans QRIS), shipping quotes (RajaOngkir).
+- **Platform:** billing plans, usage quotas, feature flags, super-admin impersonation.
+
+## High-level architecture
+
+```mermaid
+flowchart TB
+  subgraph clients [Clients]
+    FE[web-frontend Next.js :3000]
+    META[Meta WhatsApp Cloud]
+    MID[Midtrans Webhook]
+  end
+
+  subgraph encore [Encore App wabantu-viko-8vni]
+    GW[Encore API Gateway :4000]
+    subgraph services [Encore Services - Go packages]
+      AUTH[auth]
+      INBOX[inbox]
+      WEBHOOK[webhook]
+      AI[ai + Pub/Sub workers]
+      WA[whatsappapi]
+      BIZ[business / kb / leads / order ...]
+    end
+    MW[middleware RateLimit]
+  end
+
+  subgraph data [Data & Infra]
+    SYS[(system DB)]
+    TEN[(tenant DB - schemas t_*)]
+    REDIS[(Redis)]
+  end
+
+  FE -->|Bearer JWT /api/v1| GW
+  META -->|webhook POST| GW
+  MID -->|webhook POST| GW
+  GW --> MW --> services
+  AUTH --> SYS
+  AUTH --> REDIS
+  INBOX --> TEN
+  WEBHOOK --> TEN
+  WEBHOOK -->|Publish| AI
+  AI --> TEN
+  AI --> REDIS
+  INBOX -->|SSE pub/sub| REDIS
+```
+
+## Main technologies
+
+| Layer | Technology |
+|-------|------------|
+| Language | Go 1.26+ |
+| Framework | [Encore.go](https://encore.dev) |
+| HTTP | Encore-generated routes + some `raw` handlers |
+| DB | PostgreSQL via `encore.dev/storage/sqldb` |
+| Cache / session / rate limit / SSE | Redis (`github.com/redis/go-redis/v9`) |
+| Auth | JWT (short-lived) + Redis session payload |
+| AI | Anthropic API |
+| Payments | Midtrans |
+| Shipping | RajaOngkir |
+| Observability | `encore.dev/rlog`, optional Sentry (`platform` package) |
+
+## Why Encore is used
+
+| NestJS pain | Encore benefit in this project |
+|-------------|-------------------------------|
+| Manual wiring of modules, queues, DB pools | **Declarative** APIs, DBs, Pub/Sub, cron via code + `encore run` |
+| Separate `ai-worker` process (BullMQ) | **Pub/Sub subscribers** run inside same `encore run` |
+| Two Postgres DBs + env files | Encore provisions **`system`** and **`tenant`** DBs + migrations |
+| Scattered route registration | `//encore:api` comments → typed clients & OpenAPI |
+
+**Node analogy:** Encore ≈ Nest monorepo + built-in infrastructure-as-code, but **compiled**, **explicit errors**, and **no runtime decorator magic**.
+
+---
+
+# 2. Architecture Explanation
+
+## Overall pattern
+
+**Modular monolith** — one Encore application (`encore.app`), many **service packages** (Go packages = Encore services), **not** microservices deployed separately in dev.
+
+- **No heavy “repository layer”** everywhere: handlers often call `database/sql` directly with small helpers (`shared/db`, `tConn`).
+- **Cross-cutting** logic in `shared/*`, `middleware/`, `auth/`.
+- **Multi-tenancy:** row data in **schema-per-tenant** (`t_<slug>`) inside the `tenant` database; control plane in `system` DB.
+
+Compare to **NestJS:** one `AppModule` with feature modules — similar boundaries, but Go uses **packages** instead of `@Module()`, and **no DI container** (explicit constructors / package-level `var db`).
+
+## Encore service structure
+
+Each folder like `auth/`, `inbox/`, `webhook/` is an Encore **service** when it contains `//encore:api` endpoints.
+
+```
+api-go/
+├── encore.app              # app id + lang
+├── auth/                   # service: auth + team
+├── inbox/                  # service: inbox + SSE
+├── webhook/                # service: Meta webhooks
+├── ai/                     # service: AI HTTP + Pub/Sub consumers
+├── system/                 # NOT a service — defines system DB
+├── tenant/                 # service: internal tenant APIs + DDL
+├── shared/                 # libraries (not services)
+└── middleware/             # global middleware
+```
+
+**Go convention:** package name = folder name (`package inbox`). **Exported** identifiers start with uppercase (public to other packages). **Unexported** = lowercase (package-private). This replaces TypeScript `export` / file-private.
+
+## API layer
+
+Endpoints are declared with struct tags and comments:
+
+```go
+//encore:api auth method=GET path=/api/v1/inbox/conversations
+func ListConversations(ctx context.Context, p *ListConversationsParams) (*ListConversationsResponse, error)
+```
+
+| Encore tag | Meaning | Nest equivalent |
+|------------|---------|-----------------|
+| `auth` | Requires `AuthHandler` — JWT in `Authorization: Bearer` | `@UseGuards(JwtAuthGuard)` |
+| `public` | No auth | public route |
+| `public raw` | You implement `http.ResponseWriter` | `@Res()` bypass |
+| `private` | Only other Encore services (or internal calls) | internal microservice RPC |
+| `tag:owner` | **Convention only** — handlers call `requireOwner()` | custom `@Roles('owner')` |
+
+**Errors:** return `error` from handlers; use `shared/errs` wrapping `encore.dev/beta/errs` → HTTP status mapping (like Nest `HttpException`).
+
+## Business / domain layer
+
+Business logic lives **in the same package** as the API (e.g. `ai/autoreply.go`, `webhook/webhook.go`). There is no mandatory `XxxService` interface per domain — sometimes a struct (`AutoReplyService`) is used when state/dependencies exist.
+
+**Why simpler than Nest:** Go culture favors **flat packages** and **explicit functions** over deep abstraction until duplication hurts.
+
+## Data layer
+
+| DB | Encore name | Contents |
+|----|-------------|----------|
+| Control plane | `system` | `tenant`, `tenant_account`, `tenant_company`, flags, audit, admin |
+| Tenant data | `tenant` | All tables in schema `t_<slug>` per business |
+
+Access pattern:
+
+```go
+conn, err := appdb.TenantConn(ctx, db.Stdlib(), user.TenantSchema)
+defer conn.Close()
+// SET search_path TO "t_omah_apparel", public
+conn.QueryRowContext(ctx, `SELECT ... FROM conversation ...`)
+```
+
+**vs Prisma:** no code-generated client; **raw SQL** strings with `$1` placeholders. **vs TypeORM:** no entity decorators; schema from `tenant.RunTenantDDL` + `RunSchemaPatches`.
+
+## Background jobs & events
+
+| Mechanism | Use in WABantu |
+|-----------|----------------|
+| **Pub/Sub** (`pubsub.NewTopic`) | AI jobs, import, broadcast send, webhook retry |
+| **Cron** (`cron.NewJob`) | Monthly usage reset |
+| **Goroutines** | Not used heavily for request path; Pub/Sub handlers run concurrently |
+
+**Node:** BullMQ + `ai-worker` → **`ai-jobs` topic** + `handleInboundAI` subscriber.
+
+## Dependency graph (simplified)
+
+```mermaid
+flowchart LR
+  webhook --> ai
+  webhook --> workflow
+  webhook --> leads
+  webhook --> auth
+  webhook --> tenant
+  auth --> system
+  auth --> tenant
+  inbox --> whatsapp
+  importcsv --> business
+  ai --> usage
+  middleware --> auth
+  most_services --> shared_errs[shared/errs]
+  most_services --> shared_types[shared/types]
+```
+
+## Request lifecycle (authenticated API)
+
+```mermaid
+sequenceDiagram
+  participant C as Client
+  participant E as Encore Gateway
+  participant MW as RateLimit Middleware
+  participant AH as AuthHandler
+  participant H as Handler e.g. inbox
+  participant DB as tenant Postgres
+
+  C->>E: GET /api/v1/inbox/conversations + Bearer JWT
+  E->>MW: allow?
+  MW->>AH: validate JWT
+  AH->>AH: parseJWT + Redis getSession
+  AH-->>E: AuthUser in context
+  E->>H: ListConversations(ctx, params)
+  H->>H: auth.Data() -> TenantSchema
+  H->>DB: TenantConn + SQL
+  DB-->>H: rows
+  H-->>C: JSON response
+```
+
+## Idiomatic Go choices (vs Node)
+
+| Topic | Go / this codebase | Node habit |
+|-------|-------------------|------------|
+| Errors | `if err != nil { return err }` | `try/catch` |
+| Null | `sql.NullString`, pointers `*string` | `null` / `undefined` |
+| Context | `context.Context` on every IO call | `AsyncLocalStorage` / request scope |
+| Concurrency | goroutines + Pub/Sub (framework) | `async/await` event loop |
+| Typing | compile-time structs | interfaces at runtime |
+
+---
+
+# 3. Folder & File Structure
+
+## Root
+
+| Path | Responsibility |
+|------|----------------|
+| `encore.app` | App ID for Encore Cloud (`wabantu-viko-8vni`) |
+| `go.mod` | Module `encore.app/wabantu` |
+| `Dockerfile` | Production container build |
+| `scripts/setup-secrets-from-env.sh` | Map `../api/.env` → `encore secret set` |
+
+## Services (API packages)
+
+| Folder | Domain |
+|--------|--------|
+| `auth/` | Register, login, logout, me, JWT, Redis sessions, team CRUD |
+| `admin/` | Super-admin tenant list, impersonation |
+| `inbox/` | Conversations, messages, contacts, unread, handoff, **SSE stream** |
+| `webhook/` | Meta WhatsApp ingest, reliability retry |
+| `whatsappapi/` | Channel list, Meta OAuth connect, test message |
+| `whatsapp/` | **Library** — parse webhook, send text (no HTTP APIs) |
+| `ai/` | Auto-reply pipeline, Anthropic, Pub/Sub workers, summarization |
+| `business/` | Business profile, catalog, website import |
+| `kb/` | Knowledge base CRUD |
+| `leads/` | Lead pipeline + `CaptureFromMessage` (private) |
+| `order/` | Orders |
+| `payment/` | Midtrans QRIS + webhook |
+| `shipping/` | RajaOngkir provinces/cities/cost |
+| `billing/` | Plans, invoices overview |
+| `usage/` | Metering, quotas, monthly cron reset |
+| `broadcast/` | Campaigns + async send |
+| `importcsv/` | CSV/XLSX import preview/execute |
+| `workflow/` | Rule-based auto-replies before AI |
+| `branch/` | Multi-branch (Pro plan) |
+| `analytics/` | Dashboard metrics |
+| `audit/` | Audit log write (private) + read |
+| `flag/` | Feature flags (system DB) |
+| `health/` | Liveness/readiness |
+| `tenant/` | Internal tenant CRUD, **RunTenantDDL**, schema patches |
+
+## Infrastructure packages
+
+| Folder | Role |
+|--------|------|
+| `system/` | `sqldb.NewDatabase("system")` + SQL migrations |
+| `tenant/db.go` | `sqldb.NewDatabase("tenant")` |
+| `middleware/` | Global rate limit |
+| `platform/` | Blank import → Sentry init from `auth` |
+| `shared/db/` | `TenantConn`, `QuoteIdent` |
+| `shared/errs/` | Typed API errors |
+| `shared/types/` | `AuthUser`, soft-delete helpers |
+| `shared/inboxrealtime/` | Redis pub/sub + SSE framing |
+| `shared/ratelimit/` | Sliding window |
+| `shared/entitlement/` | Plan limits |
+| `shared/response/` | JSON envelope helpers |
+| `shared/crypto/` | AES for sensitive fields |
+| `shared/sentry/` | Sentry DSN secret |
+
+## Important files
+
+| File | Purpose |
+|------|---------|
+| `auth/auth.go` | Register/login, `AuthHandler`, JWT |
+| `auth/httpauth.go` | `AuthenticateHTTP` for raw routes (SSE, logout) |
+| `auth/session.go` | Redis session CRUD |
+| `tenant/tenant.go` | `tenantDDL` (all per-tenant tables), `RunTenantDDL` |
+| `tenant/schema_patch.go` | Idempotent `ALTER` for existing tenants |
+| `webhook/webhook.go` | Ingest pipeline |
+| `ai/inbound_jobs.go` | Pub/Sub `ai-jobs` |
+| `ai/autoreply.go` | Main AI logic (~1000 LOC) |
+
+**Node comparison:** instead of `src/modules/inbox/inbox.controller.ts` + `.service.ts` + `.module.ts`, you get **one package** with handlers + SQL. Encore replaces `main.ts` bootstrap.
+
+---
+
+# 4. Encore-Specific Concepts
+
+## Defining services & APIs
+
+```go
+//encore:api auth method=GET path=/api/v1/business/profile
+func GetProfile(ctx context.Context) (*ProfileResponse, error) {
+    user, err := currentUser() // auth.Data().(*types.AuthUser)
+    ...
+}
+```
+
+Encore generates:
+- HTTP router
+- Optional TypeScript/Go **client** (`encore.gen.go` per service)
+- Tracing, API explorer in dev dashboard `:9400`
+
+## Authentication
+
+**Two paths:**
+
+1. **Tagged endpoints (`auth`):** `AuthHandler` receives token string, returns `*types.AuthUser`.
+2. **Raw endpoints (`public raw`):** call `auth.AuthenticateHTTP(ctx, r)` — supports Bearer, cookie `wabantu_at`, query `access_token` (for SSE).
+
+```go
+//encore:authhandler
+func AuthHandler(ctx context.Context, token string) (encoreAuth.UID, *types.AuthUser, error)
+```
+
+**Session model:** JWT (15 min) encodes `accountId` + `sessionId`; **authoritative state** in Redis `session:{accountId}:{sessionId}`.
+
+**Frontend (current):** Bearer-only in `sessionStorage` — no reliance on `Set-Cookie`.
+
+## Middleware
+
+```go
+//encore:middleware global target=all
+func RateLimit(req encoremw.Request, next encoremw.Next) encoremw.Response
+```
+
+120 req/min/IP globally; auth routes also 20/min in `auth.allowAuthRate`.
+
+**Nest:** `@Injectable()` middleware class → Encore function with `next(req)`.
+
+## Secrets
+
+Per-package:
+
+```go
+var secrets struct {
+    JWTSecret string
+}
+```
+
+Set via CLI: `encore secret set --type local JWTSecret` (not `.env` in api-go).
+
+## Pub/Sub
+
+```go
+var InboundAIJobs = pubsub.NewTopic[*InboundAIJob]("ai-jobs", pubsub.TopicConfig{
+    DeliveryGuarantee: pubsub.AtLeastOnce,
+})
+pubsub.NewSubscription(InboundAIJobs, "ai-auto-reply", pubsub.SubscriptionConfig[*InboundAIJob]{
+    Handler: handleInboundAI,
+    RetryPolicy: &pubsub.RetryPolicy{MaxRetries: 3},
+})
+```
+
+**At-least-once:** handlers must be **idempotent** (e.g. check `message.external_id` before insert).
+
+## Cron
+
+```go
+var _ = cron.NewJob("reset-monthly-usage", cron.JobConfig{
+    Title:    "Reset monthly usage",
+    Schedule: "0 0 1 * *",
+    Endpoint: ResetMonthlyUsage,
+})
+```
+
+## Service-to-service
+
+- **`private` APIs** — e.g. `tenant.CreateTenant`, `leads.CaptureFromMessage`, `usage.Record`.
+- Called from Go: `leads.CaptureFromMessage(ctx, &leads.CaptureRequest{...})` — Encore generates RPC (no HTTP overhead in prod).
+
+## Deployment model
+
+- **Dev:** `encore run` — single process, local Postgres provisioned by Encore, Redis from `infra/`.
+- **Prod:** Encore Cloud or Docker image (`Dockerfile`) — compiled binary, secrets from Encore/env.
+
+---
+
+# 5. API Documentation
+
+> Full parity checklist: [ENDPOINT_COMPATIBILITY.md](./ENDPOINT_COMPATIBILITY.md).  
+> Below: grouped reference (~89 routes). Validation is mostly **manual** in handlers (not `go-playground/validator` everywhere).
+
+## Auth (`auth/`)
+
+| Method | Path | Auth | Body / notes |
+|--------|------|------|----------------|
+| POST | `/api/v1/auth/register` | public raw | `{ email, password, name, businessName, slug? }` → `{ accessToken, user, expiresInSeconds }` |
+| POST | `/api/v1/auth/login` | public raw | `{ email, password }` |
+| POST | `/api/v1/auth/logout` | public raw | Bearer/cookie → `{ ok }` |
+| GET | `/api/v1/auth/me` | public raw | Bearer → user profile |
+| GET/POST/DELETE | `/api/v1/team/members` | auth owner | Team CRUD |
+
+**Register flow:** system TX → `RunTenantDDL` → seed `business_profile` → `branch.EnsureDefaultBranch` → JWT.
+
+## Inbox (`inbox/`)
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| GET | `/api/v1/inbox/conversations` | auth | List + search + cursor |
+| GET | `/api/v1/inbox/conversations/:id/messages` | auth | Message history |
+| POST | `/api/v1/inbox/conversations/:id/messages` | auth | Staff outbound (calls Meta via `whatsapp`) |
+| PATCH | `/api/v1/inbox/conversations/:id/read` | auth | Zero unread |
+| POST | `.../handoff` | auth | Pause AI, system message |
+| POST | `.../ai-resume` | auth | Re-enable AI |
+| GET | `/api/v1/inbox/stream` | public raw | **SSE** — `access_token` query, Redis pub/sub |
+
+## Webhook (`webhook/`)
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| GET/POST | `/api/v1/webhook/whatsapp` | public raw | Meta verify + ingest |
+| GET/POST | `/api/v1/whatsapp/webhook/meta` | public raw | Nest-compatible alias |
+| * | `/whatsapp/webhook/meta`, `/webhook/whatsapp` | public raw | Legacy paths |
+
+## WhatsApp (`whatsappapi/`)
+
+| Method | Path | Auth |
+|--------|------|------|
+| GET | `/api/v1/whatsapp/channels` | auth |
+| POST | `/api/v1/whatsapp/meta/connect/init` | auth owner |
+| POST | `/api/v1/whatsapp/meta/connect/callback` | public |
+| DELETE | `/api/v1/whatsapp/channels/:id` | auth owner |
+| POST | `/api/v1/whatsapp/channels/:id/test-message` | auth owner |
+
+## AI (`ai/`)
+
+| Method | Path | Auth |
+|--------|------|------|
+| POST | `/api/v1/internal/ai/auto-reply` | public (token in practice) |
+| POST | `/api/v1/internal/ai/auto-reply/fallback` | public |
+
+Production path: **Pub/Sub** `ai-jobs`, not HTTP.
+
+## Other domains (summary)
+
+| Service | Base path | Auth |
+|---------|-----------|------|
+| business | `/api/v1/business/profile`, `/catalog` | auth |
+| kb | `/api/v1/knowledge-base` | auth |
+| leads | `/api/v1/leads` | auth |
+| order | `/api/v1/orders` | auth |
+| payment | `/api/v1/payment/*`, webhook | mixed |
+| shipping | `/api/v1/shipping/*` | auth |
+| billing | `/api/v1/billing/*` | auth |
+| usage | `/api/v1/usage/summary` | auth owner |
+| broadcast | `/api/v1/broadcast/campaigns` | auth |
+| importcsv | `/api/v1/import/*` | auth owner |
+| workflow | `/api/v1/workflows` | auth |
+| branch | `/api/v1/branches` | auth |
+| analytics | `/api/v1/analytics/overview` | auth |
+| admin | `/api/v1/admin/*` | super_admin |
+| flag | `/api/v1/flags` | auth |
+| health | `/api/v1/health`, `/ready` | public |
+| tenant | `/api/v1/internal/tenant/*` | private |
+
+## Example sequence: inbound WhatsApp message
+
+```mermaid
+sequenceDiagram
+  participant M as Meta
+  participant W as webhook.HandleMetaWebhook
+  participant DB as tenant schema
+  participant PS as Pub/Sub ai-jobs
+  participant AI as ai.handleInboundAI
+  participant R as Redis inbox SSE
+
+  M->>W: POST webhook payload
+  W->>W: ParseWebhook + verify signature
+  W->>W: resolveInboundChannel(phone_number_id)
+  W->>DB: INSERT contact/conversation/message
+  W->>PS: PublishInboundJob
+  W->>R: inboxrealtime.Publish(tenantId)
+  W-->>M: 200 { received: true }
+  PS->>AI: handleInboundAI
+  AI->>DB: load profile, history, KB
+  AI->>AI: Anthropic / rules / fallback
+  AI->>DB: INSERT message (outbound)
+  AI->>R: inboxrealtime.Publish
+```
+
+---
+
+# 6. Database Documentation
+
+## Database topology
+
+| Encore DB | Nest name | Migration files |
+|-----------|-----------|-----------------|
+| `system` | `jb_system` | `system/migrations/*.up.sql` |
+| `tenant` | `jb_tenant` | `tenant/migrations/1_init.up.sql` (placeholder) + **runtime DDL** |
+
+**Schema-per-tenant:** `tenant_company.schema_name` = `t_<slug>` (e.g. `t_omah_apparel`).
+
+## Why raw SQL (not GORM/Prisma)
+
+- Encore `sqldb` integrates with `database/sql`.
+- Multi-schema `search_path` switching is explicit.
+- Team ported from Nest TypeORM entities → SQL strings in Go.
+- **Tradeoff:** no compile-time query checking unless you add sqlc later.
+
+## System DB ERD (core)
+
+```mermaid
+erDiagram
+  tenant ||--o| tenant_company : has
+  tenant ||--o{ tenant_account : has
+  tenant_account ||--o{ admin_session : may_have
+  feature_flag ||--o{ audit_log : ""
+  tenant {
+    uuid id PK
+    string slug UK
+    string name
+    string status
+  }
+  tenant_company {
+    uuid id PK
+    uuid tenant_id UK
+    string schema_name UK
+  }
+  tenant_account {
+    uuid id PK
+    string email_hash UK
+    uuid tenant_id FK
+    string role
+  }
+```
+
+## Tenant schema ERD (core inbox)
+
+```mermaid
+erDiagram
+  whatsapp_channel ||--o{ conversation : has
+  contact ||--o{ conversation : has
+  conversation ||--o{ message : contains
+  conversation ||--o| conversation_summary : optional
+  business_profile ||--o{ business_catalog_item : ""
+  contact ||--o{ lead : ""
+
+  whatsapp_channel {
+    uuid id PK
+    string meta_phone_number_id
+    string phone_number
+    string access_token
+    string status
+  }
+  conversation {
+    uuid id PK
+    uuid channel_id FK
+    uuid contact_id FK
+    bool ai_handled
+    int unread_count
+  }
+  message {
+    uuid id PK
+    uuid conversation_id FK
+    string external_id UK
+    string direction
+    string author
+  }
+```
+
+## Table catalog (tenant schema)
+
+| Table | Purpose |
+|-------|---------|
+| `business_profile` | AI context, tone, timezone |
+| `business_catalog_item` | Products/services |
+| `knowledge_base_entry` | Q&A for AI |
+| `whatsapp_channel` | Meta connection |
+| `contact` | Customer phone |
+| `conversation` | Thread per channel+contact |
+| `message` | Inbound/outbound messages |
+| `lead` | Sales leads |
+| `subscription`, `invoice` | Billing |
+| `usage_event`, `usage_aggregate` | Metering |
+| `payment_transaction` | Midtrans |
+| `broadcast_campaign`, `broadcast_recipient` | Mass send |
+| `order` | Orders (quoted identifier) |
+| `conversation_summary` | AI memory |
+| `webhook_event` | Outbound webhook reliability |
+| `branch`, `workflow_rule` | Added via `schema_patch.go` |
+
+## Migrations strategy
+
+1. **New tenants:** `RunTenantDDL` runs full `tenantDDL` constant on register.
+2. **Existing tenants:** `POST /api/v1/internal/tenant/migrate-schemas` → `RunSchemaPatches` (idempotent `ALTER` / `CREATE IF NOT EXISTS`).
+3. **System:** standard Encore SQL migrations on deploy.
+
+## Connection handling
+
+```go
+// Per-request tenant isolation
+conn, err := appdb.TenantConn(ctx, pool, schema)
+defer conn.Close()
+```
+
+Uses one connection from pool with `SET search_path` — **not** a separate physical DB per tenant (same as Nest `TenantConnectionService`).
+
+## Transactions
+
+Used where needed (e.g. `auth` register system TX). Many handlers use single-statement autocommit.
+
+**Risk:** `ai.withTenantDB` sets `search_path` on **pool** — potential cross-request leakage if connection returned to pool without reset. Prefer `TenantConn` pattern for new code.
+
+## Indexing
+
+Defined in `tenantDDL` — e.g. `idx_message_conv_created`, `idx_wa_channel_phone`, `idx_lead_status_created`.
+
+---
+
+# 7. Business Logic Flow
+
+## 7.1 User registration
+
+1. **Trigger:** `POST /auth/register`
+2. Validate body; rate limit IP
+3. Check `email_hash` unique in `system.tenant_account`
+4. Generate unique slug → schema `t_<slug>`
+5. **Transaction:** insert `tenant`, `tenant_company`, `tenant_account`
+6. `tenant.RunTenantDDL(schema)` — create all tables
+7. Seed `business_profile`, default `branch`
+8. `createSession` + `signJWT` → JSON response
+
+## 7.2 WhatsApp OAuth connect
+
+1. Owner calls `meta/connect/init` → OAuth URL + state in Redis
+2. Meta redirects to frontend → `meta/connect/callback` with code
+3. Exchange code for access token; `fetchMetaWaba` for `meta_phone_number_id`
+4. `upsertChannel` in tenant schema
+
+## 7.3 Inbound webhook → AI reply
+
+See sequence in §5. Key branches:
+
+- `workflow.TryRun` — keyword rules may skip AI
+- `ai.PublishInboundJob` — async
+- AI: profile completeness → classifier → Anthropic or template reply
+- Failures: retry Pub/Sub → `FallbackAutoReply`
+
+## 7.4 Staff sends message from inbox
+
+1. `POST .../messages` with body
+2. Load channel token + `meta_phone_number_id`
+3. `whatsapp.SendText` → Meta API
+4. Insert `message` row; update `conversation` preview
+
+---
+
+# 8. Authentication & Security
+
+## Auth flow
+
+```mermaid
+sequenceDiagram
+  participant C as Client
+  participant A as auth.Login
+  participant DB as system DB
+  participant R as Redis
+
+  C->>A: email + password
+  A->>DB: verify bcrypt hash
+  A->>R: SET session:{accountId}:{sessionId}
+  A->>A: signJWT(accountId, sessionId)
+  A-->>C: accessToken (15m)
+```
+
+## Permission model
+
+| Role | Capabilities |
+|------|----------------|
+| `owner` | Full tenant; team management; connect WA |
+| `staff` | Inbox, most read/write |
+| `super_admin` | `admin/*`, impersonation |
+
+`tag:owner` endpoints call `requireOwner(user)`.
+
+## Security practices
+
+| Area | Implementation |
+|------|----------------|
+| Passwords | bcrypt cost 12 |
+| Email lookup | SHA-256 `email_hash` |
+| JWT | Short TTL; session revocable via Redis delete on logout |
+| Webhook | Optional `X-Hub-Signature-256` with `MetaAppSecret` |
+| Rate limit | Redis sliding window |
+| Encryption | `DataEncryptionKey` for sensitive fields (`shared/crypto`) |
+
+## Risks / gaps
+
+- `public` internal AI endpoints should verify `AiInternalToken` (check handlers before prod).
+- Raw SQL — watch for injection; use `$n` params and `QuoteIdent` for schema names only.
+- `withTenantDB` pool `search_path` — see §6.
+- CORS on SSE — origins reflected from request `Origin` header.
+
+---
+
+# 9. External Integrations
+
+| Integration | Package | Purpose |
+|-------------|---------|---------|
+| Meta Graph API | `whatsapp/`, `whatsappapi/` | Webhook, send message, OAuth |
+| Anthropic | `ai/anthropic.go`, `business/import.go` | Chat completion, website import |
+| Midtrans | `payment/` | QRIS create + webhook |
+| RajaOngkir | `shipping/` | Shipping cost |
+| Redis | `auth/session.go`, `shared/ratelimit`, `shared/inboxrealtime` | Session, limits, SSE |
+| Sentry | `platform/`, `shared/sentry/` | Error reporting |
+
+## Retry patterns
+
+- Pub/Sub: `MaxRetries: 3` (AI), `5` (webhook retry)
+- Webhook reliability: `webhook-retry` topic + DLQ topic
+- HTTP clients: `http.Client{Timeout: 15s}` typical
+
+**Go vs Node:** blocking HTTP in goroutine managed by Encore subscriber — no `await`, but similar semantics.
+
+---
+
+# 10. Local Development Guide
+
+## Prerequisites
+
+See [README.md](./README.md) checklist: Docker, Go 1.24+, Encore CLI, Redis, `encore auth login`, secrets.
+
+## Run
+
+```bash
+cd ../infra && docker compose up -d redis
+cd api-go
+./scripts/setup-secrets-from-env.sh
+encore check
+encore run   # API :4000, dashboard :9400
+```
+
+## Encore Postgres
+
+```bash
+encore db conn-uri system
+encore db conn-uri tenant
+```
+
+Separate from `infra/postgres` (Nest legacy).
+
+## Common issues
+
+| Symptom | Fix |
+|---------|-----|
+| `app_not_found` | `encore app link` / init |
+| Login works but inbox empty | Connect WhatsApp; check `meta_phone_number_id` |
+| AI errors on column | Run `migrate-schemas`; check table names (`message` not `messages`) |
+| SSE not realtime | Point frontend `NEXT_PUBLIC_SSE_API_URL` to `:4000` |
+
+## Testing
+
+No comprehensive `_test.go` suite documented — rely on `encore check`, manual flows, and frontend E2E.
+
+**Go tooling:** `go test ./...` works but may need Encore stubs.
+
+---
+
+# 11. Deployment & Infrastructure
+
+## Build
+
+- `Dockerfile` — multi-stage Go build → single binary
+- Encore Cloud — `encore deploy` (if using hosted Encore)
+
+## Environments
+
+Secrets per Encore environment: `local`, `dev`, `prod` via `encore secret set --type <env>`.
+
+## Scaling
+
+- Stateless API handlers → horizontal scale
+- Redis + Postgres are shared dependencies
+- Pub/Sub consumers scale with Encore infrastructure
+
+## Go vs Node deployment
+
+| Go | Node |
+|----|------|
+| Single compiled binary | `node_modules` + interpreter |
+| Lower memory per req | Event loop, higher baseline RAM |
+| Faster cold start in containers | Nest bootstrap heavier |
+
+---
+
+# 12. Observability
+
+| Tool | Usage |
+|------|--------|
+| `encore.dev/rlog` | Structured logs (`rlog.Info`, `Warn`, `Error`) |
+| Encore dashboard `:9400` | Traces, API catalog, Pub/Sub |
+| Sentry | Optional via `platform` import |
+| Correlation | Pub/Sub passes `x_correlation_id` in traces |
+
+**Debugging:** follow `trace_id` in logs; use dashboard request viewer.
+
+---
+
+# 13. Technical Debt & Code Quality Analysis
+
+| Item | Severity | Notes |
+|------|----------|-------|
+| `ai.withTenantDB` SET on pool | Medium | Use `TenantConn` consistently |
+| Mixed auth: Encore `auth` vs `AuthenticateHTTP` | Low | Document when to use which |
+| No sqlc/ORM | Low | SQL string drift (e.g. past `messages` vs `message` bug) |
+| AI send not calling Meta API yet | Medium | `sendAiMessage` persists only; TODO in code |
+| Webhook tenant scan | Low | Improved with `ListSchemaNames`; global phone→tenant index still TODO |
+| Internal AI endpoints `public` | High for prod | Protect with `AiInternalToken` |
+| Duplicate Anthropic secret names | Low | `AnthropicApiKey` vs `AnthropicAPIKey` |
+| Limited automated tests | Medium | Regression risk on schema patches |
+
+**Non-idiomatic Go:** large files (`autoreply.go`); acceptable for domain-heavy code but could split by pipeline stage.
+
+**Node habits to avoid:** deep DI hierarchies, excessive interfaces, `any` equivalents via `interface{}` without need.
+
+---
+
+# 14. Developer Onboarding Guide
+
+## Learn first (Go + Encore)
+
+1. Go tour: errors, pointers, structs, interfaces, packages
+2. `context.Context` propagation
+3. Encore: `//encore:api`, secrets, `sqldb`, Pub/Sub (docs.encore.dev)
+4. Read [APP_FLOW_GUIDE.md](./APP_FLOW_GUIDE.md) sections 2–6
+
+## Recommended reading order (code)
+
+1. `encore.app` + [README.md](./README.md)
+2. `auth/auth.go` — register + `AuthHandler`
+3. `shared/db/tenant.go` + `tenant/tenant.go` (DDL)
+4. `webhook/webhook.go` — ingest
+5. `ai/inbound_jobs.go` + `ai/autoreply.go`
+6. `inbox/inbox.go` + `inbox/realtime.go`
+7. Domain you will work on (e.g. `payment/`)
+
+## Adding a feature safely
+
+1. Add types + `//encore:api` in correct service package
+2. Use `auth.Data()` for tenant context
+3. Use `appdb.TenantConn` for tenant SQL
+4. Return errors via `shared/errs`
+5. If schema change: update `tenantDDL` **and** `schema_patch.go`
+6. Run `encore check`
+7. Update [ENDPOINT_COMPATIBILITY.md](./ENDPOINT_COMPATIBILITY.md) if FE-facing
+
+## Pitfalls
+
+- Forgetting `RunSchemaPatches` for existing tenants
+- Wrong table name singular/plural
+- Publishing Pub/Sub without idempotent handler
+- Testing only via Nest `api/` port 3001 — use **4000**
+
+---
+
+# 15. Request Flow Mapping
+
+## `GET /api/v1/inbox/conversations`
+
+| Step | Location |
+|------|----------|
+| Gateway | Encore |
+| Middleware | `middleware.RateLimit` |
+| Auth | `auth.AuthHandler` |
+| Handler | `inbox.ListConversations` |
+| User | `currentUser()` → `TenantSchema` |
+| DB | `tConn` → SQL on `conversation`, `contact`, `whatsapp_channel` |
+| Response | `ListConversationsResponse` JSON |
+
+**Concurrency:** single goroutine per request.  
+**Transaction:** none (read-only).  
+**Validation:** query params parsed by Encore into struct.
+
+## `POST` Meta webhook
+
+| Step | Location |
+|------|----------|
+| Handler | `webhook.handleMetaWebhook` → `receiveWebhook` |
+| Auth | Signature optional (`MetaAppSecret`) |
+| Parse | `whatsapp.ParseWebhook` |
+| Per message | `ingestMessage` |
+| Resolve tenant | `resolveInboundChannel` |
+| DB | `upsertContact`, `upsertConversation`, `insertMessage` |
+| Side effects | `workflow.TryRun`, `ai.PublishInboundJob`, `inboxrealtime.Publish`, `leads.CaptureFromMessage` |
+
+---
+
+# 16. Diagrams
+
+Included above: architecture (§1), service deps (§2), auth sequence (§8), webhook+AI (§5), ERDs (§6).
+
+### Pub/Sub topics
+
+```mermaid
+flowchart LR
+  WH[webhook] -->|Publish| AIQ[ai-jobs]
+  AIQ --> SUB[ai-auto-reply]
+  AI[ai] -->|Publish| SUM[conversation-summarize]
+  IMP[importcsv] --> FIM[file-import]
+  BC[broadcast] --> BS[broadcast-send]
+  WH --> WR[webhook-retry]
+  WR --> DLQ[webhook-retry-dlq]
+```
+
+---
+
+# 17. Important Notes
+
+## Anti-patterns found
+
+- Setting `search_path` on shared `*sql.DB` pool (`ai.withTenantDB`)
+- Swallowing Redis publish errors (`_ = rdb.Publish(...)`)
+- Large god-file `autoreply.go` without subpackage split
+
+## Hidden complexity
+
+- Multi-tenant schema resolution on **every** webhook (linear scan of tenants)
+- AI pipeline: classifier, order state machine, FAQ cache, usage limits — all in one service
+- Encore **raw** vs **typed** APIs coexist — two auth paths
+
+## Concurrency
+
+- Pub/Sub handlers may run **parallel** for same tenant — rely on DB uniqueness (`external_id`)
+- No in-process mutex for conversation state — Redis used for order/FAQ keys
+
+## Performance-sensitive areas
+
+- `ListConversations` with search JOINs
+- Webhook burst → many AI jobs → Anthropic rate/cost (`usage` package)
+- Broadcast send loop via Pub/Sub
+
+## Assumptions & uncertainty
+
+- Production deploy target (Encore Cloud vs k8s Docker) — confirm with team
+- Whether `AiInternalToken` is enforced on all internal routes — verify before prod
+- Exact Midtrans/RajaOngkir env mapping — see `scripts/setup-secrets-from-env.sh`
+
+---
+
+# 18. Go Language Guide for Node.js Developers (with WABantu Examples)
+
+Bagian ini **bukan tutorial Go umum** — setiap konsep dijelaskan lalu ditunjukkan di kode `api-go/` yang benar-benar ada. Kalau kamu paham NestJS/TypeScript, gunakan kolom **“Di Node…”** sebagai jangkar.
+
+## 18.0 Peta cepat: Node vs Go di project ini
+
+| Konsep | Node / TypeScript (`api/`) | Go (`api-go/`) di WABantu |
+|--------|---------------------------|---------------------------|
+| Unit organisasi | file + `export` | **package** (folder) + huruf besar/kecil |
+| Dependency injection | Nest `@Injectable()` | **Import package** + parameter function |
+| Config rahasia | `process.env` / `.env` | `var secrets struct { ... }` + Encore |
+| HTTP route | `@Get()` decorator | `//encore:api method=GET path=...` |
+| Async | `async/await` | Function biasa + **`error` return**; queue = Pub/Sub |
+| Null | `null` / `undefined` | **`nil`** + pointer `*T` / `sql.NullString` |
+| ORM | TypeORM entities | **SQL string** + `database/sql` |
+| Request scope | `req.user` (middleware) | `auth.Data().(*types.AuthUser)` |
+| Background job | BullMQ + `ai-worker` | `pubsub.NewTopic` + subscription |
+
+---
+
+## 18.1 Package, module, dan visibilitas nama
+
+### Apa itu?
+
+Di Go, **satu folder = satu package** (biasanya nama folder = nama package: `package inbox`).
+
+- Nama **huruf besar** = bisa di-import package lain: `TenantConn`, `AuthUser`.
+- Nama **huruf kecil** = hanya untuk dalam package: `currentUser`, `tConn`, `upsertContact`.
+
+**Di Node:** mirip `export function foo` vs function internal tanpa export — tapi di Go aturannya **lebih ketat** (per huruf pertama, bukan per `export` keyword).
+
+### Contoh di codebase
+
+```go
+// File: inbox/inbox.go — package inbox
+func ListConversations(...)  // huruf besar → endpoint Encore (exported)
+
+func currentUser() (*types.AuthUser, error)  // huruf kecil → helper internal
+func tConn(ctx context.Context, schema string) (*sql.Conn, error)
+```
+
+Module path di `go.mod`:
+
+```text
+module encore.app/wabantu
+```
+
+Import antar service:
+
+```go
+import (
+    "encore.app/wabantu/auth"
+    "encore.app/wabantu/shared/db"
+)
+```
+
+**Mengapa tidak ada `src/`?** Go community menaruh kode langsung di root module atau subfolder package — tidak ada konvensi `src/modules/inbox` seperti Nest.
+
+### Blank import (`_`)
+
+```go
+import _ "encore.app/wabantu/platform"  // di auth/auth.go
+```
+
+Hanya menjalankan `init()` side effect (mis. daftar Sentry), tanpa memakai nama package.
+
+**Di Node:** seperti `import './instrumentation'` hanya untuk efek samping.
+
+---
+
+## 18.2 Struct: data + “bentuk JSON”
+
+### Apa itu?
+
+**Struct** = kumpulan field bertipe — mirip `interface` TypeScript atau class tanpa method wajib.
+
+```go
+type ConversationItem struct {
+    ID          string     `json:"id"`
+    Status      string     `json:"status"`
+    AIHandled   bool       `json:"aiHandled"`
+    UnreadCount int        `json:"unreadCount"`
+    LastMessageAt *time.Time `json:"lastMessageAt"`  // pointer → bisa null di JSON
+}
+```
+
+### Struct tags (backtick)
+
+```go
+`json:"aiHandled"`
+```
+
+Memberi tahu `encoding/json` nama field di JSON. Mirip `@Expose()` / serialization di Nest, tapi **deklaratif di struct**.
+
+Encore juga memakai tag query:
+
+```go
+type ListConversationsParams struct {
+    Search     string `query:"search"`
+    UnreadOnly string `query:"unreadOnly"`
+    Limit      int    `query:"limit"`
+}
+```
+
+Encore mengisi struct ini dari query string HTTP — mirip `@Query()` DTO di Nest.
+
+### Struct vs class
+
+Go **tidak punya class**. Method bisa dilampirkan ke struct:
+
+```go
+func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReplyJobPayload) (bool, error)
+```
+
+`(s *AutoReplyService)` = receiver — mirip `this` di method class, tapi eksplisit.
+
+**File:** `ai/autoreply.go` — `AutoReplyService` punya method `sendAiMessage`, `ProcessAutoReply`.
+
+---
+
+## 18.3 Pointer (`*T`) dan address-of (`&`)
+
+### Apa itu?
+
+- `*string` = “alamat ke string” atau “string opsional di heap”.
+- `&x` = ambil alamat variabel `x`.
+- `*p` = dereference (baca nilai yang ditunjuk `p`).
+
+**Di Node:** semua object reference-by-reference; `null` mudah. Di Go, **string/int/bool biasanya disalin (copy)** — kalau perlu “nullable” atau ubah nilai di function lain, pakai pointer.
+
+### Pola 1: JSON nullable (`omitempty`)
+
+```go
+type ContactDetail struct {
+    DisplayName *string  `json:"displayName"`  // null di JSON jika nil
+    PhoneNumber string   `json:"phoneNumber"` // selalu ada
+}
+```
+
+**Di Node/TS:** `displayName?: string | null`.
+
+### Pola 2: PATCH — “field dikirim atau tidak”
+
+```go
+type UpdateProfileRequest struct {
+    BusinessName *string `json:"businessName"`
+}
+// di handler:
+addStr := func(col string, val *string) {
+    if val != nil {  // client mengirim field ini
+        sets = append(sets, fmt.Sprintf("%s = $%d", col, idx))
+        args = append(args, *val)  // dereference: ambil string dari pointer
+        idx++
+    }
+}
+```
+
+**Di Nest:** mirip `Partial<Dto>` + cek `undefined` per field sebelum update.
+
+**File:** `business/business.go` — `UpdateProfile`.
+
+### Pola 3: Membuat pointer dari literal
+
+```go
+n := strings.TrimSpace(msg.FromDisplayName)
+displayName := &n   // pointer ke variabel lokal
+// INSERT ... display_name = $2 dengan displayName
+```
+
+**File:** `webhook/webhook.go` — `upsertContact`.
+
+**Hati-hati:** jangan return pointer ke variabel loop tanpa copy — pola umum di Go; di codebase umumnya pointer ke hasil query atau field struct.
+
+### Pola 4: Return pointer ke struct besar
+
+```go
+func GetProfile(ctx context.Context) (*GetProfileResponse, error) {
+    ...
+    return &GetProfileResponse{Profile: p}, nil
+}
+```
+
+Encore meng-encode struct return ke JSON. Pointer ke struct = boleh, `nil` = masalah jika tidak dicek.
+
+### Pola 5: Helper `strOrEmpty`
+
+```go
+func strOrEmpty(s *string) string {
+    if s == nil {
+        return ""
+    }
+    return *s
+}
+```
+
+**File:** `ai/autoreply.go` — mengubah kolom DB nullable jadi string aman untuk prompt AI.
+
+### `nil` pointer
+
+`nil` = tidak menunjuk ke mana pun. Memanggil `*nil` → **panic** (crash). Selalu cek:
+
+```go
+if s == nil { return "" }
+```
+
+**Di Node:** seperti akses property dari `null` — di Go crash-nya lebih keras (panic), jadi idiomnya cek dulu.
+
+---
+
+## 18.4 `sql.NullString` vs `*string`
+
+Keduanya bisa represent “NULL di database”, tapi dipakai di konteks berbeda.
+
+| Tipe | Kapan dipakai | Contoh di WABantu |
+|------|----------------|-------------------|
+| `*string` | API JSON, optional field, INSERT nullable | `ContactDetail.DisplayName`, OAuth `MetaPhoneNumberID` |
+| `sql.NullString` | **Scan langsung** dari `database/sql` | `auth` register: `accountName sql.NullString` |
+
+```go
+var accountName sql.NullString
+err = tx.QueryRowContext(...).Scan(&accountID, &accountName, &accountRole)
+
+func nullStr(ns sql.NullString) string {
+    if ns.Valid {
+        return ns.String
+    }
+    return ""
+}
+```
+
+**Mengapa ada `NullString`?** Driver SQL perlu tahu “NULL” vs `""` string kosong. `Scan` ke `*string` bisa, tapi `NullString` lebih eksplisit untuk kolom DB.
+
+**Di Prisma:** `string | null` — Go memisahkan concern DB vs concern API.
+
+**File:** `auth/auth.go` (`nullStr`), `webhook/webhook.go` (`existingMeta sql.NullString` untuk backfill `meta_phone_number_id`).
+
+---
+
+## 18.5 Slice (`[]T`) dan map
+
+### Slice
+
+```go
+sets := []string{}           // slice kosong
+args := []interface{}{}      // args dinamis untuk SQL
+sets = append(sets, "status = $1")
+```
+
+**Di Node:** `const arr = []; arr.push(...)`.
+
+Slice **bukan** array fixed — mirip `Array` yang bisa grow.
+
+### Map
+
+```go
+seen := map[string]bool{}
+seen[id] = true
+```
+
+**Di Node:** `Record<string, boolean>` atau `Map`.
+
+### Loop `range`
+
+```go
+for _, item := range items {
+    id := fn(item)
+}
+```
+
+`_` = buang index/value yang tidak dipakai (lihat §18.10).
+
+---
+
+## 18.6 Generics (Go 1.18+) — sedikit di codebase
+
+```go
+func uniqueIDs[T any](items []T, fn func(T) string) []string {
+    seen := map[string]bool{}
+    var out []string
+    for _, item := range items {
+        id := fn(item)
+        if !seen[id] {
+            seen[id] = true
+            out = append(out, id)
+        }
+    }
+    return out
+}
+```
+
+**File:** `inbox/inbox.go`.
+
+**Di TS:** `function uniqueIDs<T>(items: T[], fn: (t: T) => string)`.
+
+Pub/Sub juga pakai generic pointer:
+
+```go
+pubsub.NewTopic[*InboundAIJob]("ai-jobs", ...)
+```
+
+Artinya message body di-deserialize ke tipe `*InboundAIJob`.
+
+---
+
+## 18.7 Multiple return values dan error handling
+
+### Pola standar
+
+Hampir setiap function I/O:
+
+```go
+func TenantConn(ctx context.Context, pool *sql.DB, schema string) (*sql.Conn, error) {
+    conn, err := pool.Conn(ctx)
+    if err != nil {
+        return nil, fmt.Errorf("get connection: %w", err)
+    }
+    ...
+    return conn, nil
+}
+```
+
+**Di Node:** biasanya `throw` atau `return [data, null]` — Go **tidak punya exception** untuk flow control bisnis (panic hanya untuk bug fatal).
+
+### Urutan return
+
+```go
+(user, err)  // data dulu, error terakhir — konvensi Go
+```
+
+### Named return (kadang)
+
+```go
+func parseJWT(tokenString string) (accountID, sessionID string, err error) {
+```
+
+**File:** `auth/auth.go`.
+
+### Membandingkan error khusus
+
+```go
+if err == sql.ErrNoRows {
+    // belum ada baris → insert
+}
+if errors.Is(err, sql.ErrNoRows) { ... }  // lebih aman untuk wrapped errors
+```
+
+**Di Node:** `if (err.code === 'P2025')` (Prisma) atau cek message.
+
+**File:** `webhook/webhook.go` — upsert contact/conversation; `business/business.go` — create profile jika no rows.
+
+### Encore errors → HTTP
+
+```go
+return nil, apperr.NotFound("Percakapan tidak ditemukan")
+// shared/errs → encore.dev/beta/errs → status HTTP
+```
+
+**Di Nest:** `throw new NotFoundException(...)`.
+
+**File:** `shared/errs/errors.go`.
+
+### `%w` wrap error
+
+```go
+return nil, fmt.Errorf("get connection: %w", err)
+```
+
+Mempertahankan chain untuk `errors.Is` / logging — mirip `cause` di Error modern JS.
+
+---
+
+## 18.8 `context.Context` — “request scope” tanpa middleware magic
+
+### Apa itu?
+
+`context.Context` membawa **deadline**, **cancellation**, dan nilai request-scoped (jarang dipakai untuk data bisnis di project ini).
+
+Setiap handler Encore:
+
+```go
+func ListConversations(ctx context.Context, p *ListConversationsParams) (*ListConversationsResponse, error)
+```
+
+Pass **selalu** ke DB:
+
+```go
+conn.QueryRowContext(ctx, `SELECT ...`, args...)
+```
+
+Kalau client putus, context bisa cancel → query berhenti.
+
+**Di Node:** `AbortSignal` di fetch; di Express tidak selalu dipropagasi ke DB — Go lebih konsisten.
+
+### Auth **bukan** disimpan di `context.Value` manual
+
+Encore menyimpan user setelah `AuthHandler`:
+
+```go
+func currentUser() (*types.AuthUser, error) {
+    data, ok := auth.Data().(*types.AuthUser)
+    if !ok || data == nil {
+        return nil, apperr.Unauthenticated("not authenticated")
+    }
+    return data, nil
+}
+```
+
+**Di Nest:** `@Req() req` dengan `req.user` dari Passport.
+
+**Type assertion:** `auth.Data()` mengembalikan `interface{}` (mirip `unknown`) → harus assert ke `*types.AuthUser`.
+
+**File:** `inbox/inbox.go`, hampir semua service `auth`.
+
+### Raw HTTP + context
+
+```go
+func Register(w http.ResponseWriter, req *http.Request) {
+    ctx := req.Context()
+    ...
+}
+```
+
+**File:** `auth/auth.go`.
+
+---
+
+## 18.9 `defer` — cleanup seperti `finally`
+
+```go
+tx, err := system.DB.Stdlib().BeginTx(ctx, nil)
+if err != nil { ... }
+defer tx.Rollback()  // jalan saat function keluar — commit akan “menang” jika sukses
+
+// ... banyak logic ...
+
+if err := tx.Commit(); err != nil { ... }
+```
+
+```go
+conn, err := tConn(ctx, user.TenantSchema)
+if err != nil { return nil, err }
+defer conn.Close()
+```
+
+**Di Node:** `try { ... } finally { conn.release() }` atau manual di setiap return.
+
+**Mengapa `Rollback` di defer?** Kalau ada `return` error di tengah, transaction tetap di-rollback — hindari connection leak / partial TX.
+
+**File:** `auth/auth.go` (register), `business/business.go`, `inbox/*`.
+
+---
+
+## 18.10 Blank identifier `_`
+
+```go
+_, err := conn.ExecContext(ctx, `UPDATE ...`)  // tidak peduli RowsAffected
+
+_, _ = conn.ExecContext(ctx, `INSERT ...`)    // sengaja abaikan error (hati-hati)
+
+_ = json.Unmarshal(tagsJSON, &c.Tags)        // abaikan error unmarshal
+
+var _ = pubsub.NewSubscription(...)           // subscription terdaftar via side effect
+```
+
+**Di Node:** tidak ada padanan langsung — kamu “tidak assign” hasil.
+
+**File:** `ai/inbound_jobs.go` — `var _ = pubsub.NewSubscription` mendaftarkan worker ke Encore saat package load.
+
+---
+
+## 18.11 Interface — kontrak kecil, implicit
+
+### Apa itu?
+
+```go
+type scanner interface{ Scan(...any) error }
+
+func scanProfile(scanner interface{ Scan(...any) error }) (ProfileResponse, error) {
+    return scanner.Scan(&p.ID, &p.BusinessName, ...)
+}
+```
+
+Siapa pun yang punya method `Scan` bisa dipakai — `*sql.Row`, `*sql.Rows`.
+
+**Di TS:** `interface Scanner { scan(): ... }` — di Go **tidak perlu** kata `implements`; jika method ada, otomatis memenuhi.
+
+### Interface kosong / `any`
+
+```go
+args := []interface{}{}  // slice argumen SQL dinamis (mirip any[])
+```
+
+```go
+func writeJSON(w http.ResponseWriter, status int, v interface{}) {
+    json.NewEncoder(w).Encode(v)
+}
+```
+
+### Interface untuk abstraction minimal
+
+```go
+func WriteSSE(w interface{ Write([]byte) (int, error) }, data []byte) error
+```
+
+Hanya butuh method `Write` — tidak import `http.ResponseWriter` wajib di signature (duck typing).
+
+**File:** `shared/inboxrealtime/realtime.go`.
+
+**Filosofi Go:** interface kecil (1–3 method) — berbeda dari enterprise Node yang kadang interface besar.
+
+---
+
+## 18.12 `database/sql` dan pointer di `Scan`
+
+`Scan` menulis **ke alamat** variabel:
+
+```go
+var tenantID string
+err := row.Scan(&tenantID)  // & = pointer ke variabel
+```
+
+Untuk nullable column ke `*string`:
+
+```go
+err := scanner.Scan(&c.ID, &c.DisplayName, ...)  // DisplayName *string
+```
+
+**Di TypeORM:** `getRawOne()` mengisi object — di Go kamu urutkan field manual; salah urut = bug silent.
+
+**File:** `business/scanProfile`, `inbox/scanContact`.
+
+---
+
+## 18.13 Variabel package-level dan `sync.Once`
+
+```go
+var db = sqldb.Named("tenant")  // di banyak service: inbox, webhook, ai, ...
+```
+
+Encore menginisialisasi DB saat startup — mirip singleton `DataSource` Nest.
+
+Redis client:
+
+```go
+var (
+    redisOnce sync.Once
+    rdb       *redis.Client
+)
+
+func getRedis() *redis.Client {
+    redisOnce.Do(func() {
+        rdb = redis.NewClient(...)
+    })
+    return rdb
+}
+```
+
+**`sync.Once`:** pastikan init hanya sekali meski banyak goroutine panggil `getRedis()` — thread-safe lazy init.
+
+**Di Node:** module cache natural; di Go perlu eksplisit kalau ada race saat startup parallel.
+
+**File:** `auth/session.go`.
+
+---
+
+## 18.14 Secrets Encore (bukan `process.env` langsung)
+
+```go
+var secrets struct {
+    JWTSecret         string
+    DataEncryptionKey string
+    RedisURL          string
+}
+```
+
+Encore inject nilai dari `encore secret set` ke struct ini saat runtime.
+
+**Di Node:** `configService.get('JWT_SECRET')` — di Go tidak ada `process.env` di repo; field harus **exported capital** di struct untuk mapping nama secret.
+
+---
+
+## 18.15 Encore API comments — “decorator” Go
+
+```go
+//encore:api auth method=GET path=/api/v1/inbox/conversations
+func ListConversations(ctx context.Context, p *ListConversationsParams) (*ListConversationsResponse, error)
+```
+
+| Tag | Arti |
+|-----|------|
+| `auth` | Panggil `AuthHandler` dulu |
+| `public` | Tanpa login |
+| `public raw` | Kamu tulis `http.ResponseWriter` sendiri |
+| `private` | Hanya RPC antar service Encore |
+| `tag:owner` | **Hanya dokumentasi** — tetap cek `user.Role` di kode |
+
+```go
+//encore:authhandler
+func AuthHandler(ctx context.Context, token string) (encoreAuth.UID, *types.AuthUser, error)
+```
+
+**Di Nest:** `@Controller` + `@Get` + `@UseGuards` — di Go satu baris komentar + function.
+
+---
+
+## 18.16 Pub/Sub — “async worker” tanpa `async function`
+
+**Tidak ada** `go func()` / channel di codebase untuk AI — Encore Pub/Sub yang menjalankan handler (framework spawn goroutine internal).
+
+```go
+var InboundAIJobs = pubsub.NewTopic[*InboundAIJob]("ai-jobs", pubsub.TopicConfig{
+    DeliveryGuarantee: pubsub.AtLeastOnce,
+})
+
+func handleInboundAI(ctx context.Context, job *InboundAIJob) error {
+    sent, procErr := ProcessAutoReplyJob(ctx, tenantID, job.TenantSchema, ...)
+    if procErr != nil {
+        return procErr  // Encore retry
+    }
+    return nil
+}
+```
+
+**Di Node:** `queue.add('ai', payload)` + worker process terpisah — di sini worker = masih dalam `encore run`.
+
+**Konsekuensi:** handler harus **idempotent** (cek `external_id` sudah ada, dll.) karena At-least-once = bisa diproses 2×.
+
+---
+
+## 18.17 Concurrency: apa yang perlu kamu khawatirkan
+
+| Topik | Di WABantu |
+|-------|------------|
+| Goroutine manual | Hampir tidak dipakai di kode aplikasi |
+| Channel | Tidak dipakai |
+| Parallel request HTTP | Encore handle per request |
+| Pub/Sub | Bisa parallel consumer — race pada row DB → unique constraint |
+| `search_path` di pool AI | `ai.withTenantDB` set di `*sql.DB` — **hati-hati** jika 2 job beda schema bersamaan (technical debt §13) |
+
+**Di Node:** event loop single-thread; race lebih jarang kecuali shared global. Di Go **banyak goroutine** — shared mutable state perlu mutex atau hindari (pakai Redis/DB).
+
+---
+
+## 18.18 Pola membaca file handler (cheat sheet)
+
+Saat buka endpoint baru, baca berurutan:
+
+1. Struct **request/response** di atas function.
+2. `currentUser()` / `requireOwner()` — auth & role.
+3. `tConn(ctx, user.TenantSchema)` + `defer conn.Close()`.
+4. SQL + `if err == sql.ErrNoRows`.
+5. Return `(*Response, error)` atau `error` saja.
+
+Contoh minimal mental model **`GetProfile`:**
+
+```text
+auth.Data → TenantSchema → TenantConn → SELECT/INSERT → scanProfile → JSON
+```
+
+---
+
+## 18.19 Kesalahan umum developer Node di codebase Go
+
+| Kebiasaan Node | Masalah di Go | Perbaikan |
+|----------------|---------------|-----------|
+| Abaikan `error` return | Bug silent | Selalu `if err != nil` |
+| Pakai `*string` tanpa cek nil | panic | Cek `== nil` sebelum `*s` |
+| Nama tabel jamak (`messages`) | SQL error | Ikuti DDL: `message`, `conversation` |
+| Expect `Set-Cookie` auth | FE pakai Bearer | Lihat `auth/completeLogin` — JSON token |
+| Asumsi ORM migrate otomatis | Tenant lama perlu `migrate-schemas` | `tenant.RunSchemaPatches` |
+| `async` di handler Encore | Tidak perlu; block OK | Pub/Sub untuk kerja panjang |
+
+---
+
+## 18.20 Latihan baca kode (urutan disarankan)
+
+1. `shared/types/auth.go` — struct user (5 menit).
+2. `auth/session.go` + `AuthHandler` — session + JWT (15 menit).
+3. `shared/db/tenant.go` — multi-tenant DB (10 menit).
+4. `webhook/webhook.go` — `upsertContact`, `resolveInboundChannel` (20 menit).
+5. `inbox/inbox.go` — `currentUser`, `ListConversations` (20 menit).
+6. `ai/inbound_jobs.go` + awal `autoreply.go` — queue + pipeline (30 menit).
+
+Setiap file: tandai **`?` di pointer**, **`error` return**, dan **`ctx` pass-through**.
+
+---
+
+## 18.21 Referensi eksternal (pelengkap)
+
+- [A Tour of Go](https://go.dev/tour/) — syntax dasar
+- [Effective Go](https://go.dev/doc/effective_go) — idiom
+- [Encore docs](https://encore.dev/docs) — `//encore:api`, databases, pubsub
+- Project: [APP_FLOW_GUIDE.md](./APP_FLOW_GUIDE.md) — alur bisnis bahasa Indonesia
+
+---
+
+*Document generated from codebase analysis. For endpoint-level parity with Nest, always cross-check [ENDPOINT_COMPATIBILITY.md](./ENDPOINT_COMPATIBILITY.md).*
