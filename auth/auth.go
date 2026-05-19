@@ -267,7 +267,7 @@ func Register(w http.ResponseWriter, req *http.Request) {
 	}
 	_ = branch.EnsureDefaultBranch(ctx, schemaName)
 
-	completeLogin(w, ctx, accountID, emailLower, nullStr(accountName), accountRole,
+	completeLogin(w, req, ctx, accountID, emailLower, nullStr(accountName), accountRole,
 		tenantID, tenantSlug, tenantName, schemaName, http.StatusCreated)
 }
 
@@ -359,34 +359,24 @@ func Login(w http.ResponseWriter, req *http.Request) {
 		time.Now(), accountID,
 	)
 
-	completeLogin(w, ctx, accountID, email, nullStr(accountName), accountRole,
+	completeLogin(w, req, ctx, accountID, email, nullStr(accountName), accountRole,
 		accountTenantID, tenantSlug, tenantName, schemaName, http.StatusOK)
 }
 
-// Logout destroys the current session and clears the auth cookie.
+// Logout destroys the current session (Bearer token required).
 //
-//encore:api auth raw method=POST path=/api/v1/auth/logout
+//encore:api public raw method=POST path=/api/v1/auth/logout
 func Logout(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 
-	userData, ok := encoreAuth.Data().(*types.AuthUser)
-	if !ok || userData == nil {
+	userData, err := AuthenticateHTTP(ctx, req)
+	if err != nil {
 		writeError(w, http.StatusUnauthorized, "not authenticated")
 		return
 	}
 
 	_ = destroySession(ctx, userData.AccountID, userData.SessionID)
 	audit.Log(ctx, userData.TenantID, userData.AccountID, "auth.logout", "account", userData.AccountID, nil)
-
-	http.SetCookie(w, &http.Cookie{
-		Name:     cookieName,
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   -1,
-	})
 
 	writeJSON(w, http.StatusOK, LogoutResponse{OK: true})
 }
@@ -398,37 +388,42 @@ type MeEnvelopeResponse struct {
 }
 
 // Me returns the current authenticated user's profile.
+// Raw HTTP so Cookie and Authorization Bearer both work (Encore auth tag only passes Bearer).
 //
-//encore:api auth method=GET path=/api/v1/auth/me
-func Me(ctx context.Context) (*MeEnvelopeResponse, error) {
-	userData, ok := encoreAuth.Data().(*types.AuthUser)
-	if !ok || userData == nil {
-		return nil, errs.Unauthenticated("not authenticated")
+//encore:api public raw method=GET path=/api/v1/auth/me
+func Me(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userData, err := AuthenticateHTTP(ctx, r)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "not authenticated")
+		return
 	}
 
 	var tenantSlug, tenantName string
-	err := system.DB.QueryRow(ctx,
+	err = system.DB.QueryRow(ctx,
 		`SELECT slug, name FROM tenant WHERE id = $1 AND deleted_at IS NULL`,
 		userData.TenantID,
 	).Scan(&tenantSlug, &tenantName)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "Tenant tidak ditemukan")
+		return
+	}
 	if err != nil {
-		return nil, errs.NotFound("Tenant tidak ditemukan")
+		writeError(w, http.StatusInternalServerError, "db error")
+		return
 	}
 
-	return &MeEnvelopeResponse{
-		Success: true,
-		Data: MeResponse{
-			ID:    userData.AccountID,
-			Email: userData.Email,
-			Name:  userData.Name,
-			Role:  userData.Role,
-			Tenant: TenantResponse{
-				ID:   userData.TenantID,
-				Slug: tenantSlug,
-				Name: tenantName,
-			},
+	writeJSON(w, http.StatusOK, MeResponse{
+		ID:    userData.AccountID,
+		Email: userData.Email,
+		Name:  userData.Name,
+		Role:  userData.Role,
+		Tenant: TenantResponse{
+			ID:   userData.TenantID,
+			Slug: tenantSlug,
+			Name: tenantName,
 		},
-	}, nil
+	})
 }
 
 // ---------- JWT helpers ----------
@@ -476,7 +471,7 @@ func parseJWT(tokenString string) (accountID, sessionID string, err error) {
 // ---------- internal helpers ----------
 
 func completeLogin(
-	w http.ResponseWriter, ctx context.Context,
+	w http.ResponseWriter, r *http.Request, ctx context.Context,
 	accountID, email, name, role,
 	tenantID, tenantSlug, tenantName, schemaName string,
 	statusCode int,
@@ -499,16 +494,6 @@ func completeLogin(
 		writeError(w, http.StatusInternalServerError, "sign jwt failed")
 		return
 	}
-
-	http.SetCookie(w, &http.Cookie{
-		Name:     cookieName,
-		Value:    accessToken,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   expiresIn,
-	})
 
 	audit.Log(ctx, tenantID, accountID, "auth.login", "account", accountID, map[string]string{
 		"email": email, "role": role,
