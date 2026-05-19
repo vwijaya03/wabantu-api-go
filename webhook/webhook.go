@@ -118,10 +118,12 @@ func receiveWebhook(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 func ingestMessage(ctx context.Context, msg whatsapp.InboundMessage) error {
-	schema, err := resolveSchema(ctx, msg.ToPhoneNumberID, msg.ToDisplayPhone)
+	resolved, err := resolveInboundChannel(ctx, msg.ToPhoneNumberID, msg.ToDisplayPhone)
 	if err != nil {
 		return fmt.Errorf("resolve tenant: %w", err)
 	}
+	schema := resolved.Schema
+	channelID := resolved.ChannelID
 
 	conn, err := appdb.TenantConn(ctx, db.Stdlib(), schema)
 	if err != nil {
@@ -143,11 +145,6 @@ func ingestMessage(ctx context.Context, msg whatsapp.InboundMessage) error {
 	contactID, err := upsertContact(ctx, conn, msg)
 	if err != nil {
 		return fmt.Errorf("upsert contact: %w", err)
-	}
-
-	channelID, err := findChannel(ctx, conn, msg.ToPhoneNumberID, msg.ToDisplayPhone)
-	if err != nil {
-		return fmt.Errorf("find channel: %w", err)
 	}
 
 	convoID, err := upsertConversation(ctx, conn, channelID, contactID)
@@ -257,20 +254,6 @@ func upsertContact(ctx context.Context, conn *sql.Conn, msg whatsapp.InboundMess
 	return id, nil
 }
 
-func findChannel(ctx context.Context, conn *sql.Conn, phoneNumberID, displayPhone string) (string, error) {
-	var id string
-	err := conn.QueryRowContext(ctx,
-		`SELECT id FROM whatsapp_channel
-		 WHERE meta_phone_number_id = $1
-		    OR phone_number = $2
-		 LIMIT 1`,
-		phoneNumberID, displayPhone).Scan(&id)
-	if err != nil {
-		return "", fmt.Errorf("no matching channel for phone_number_id=%s", phoneNumberID)
-	}
-	return id, nil
-}
-
 func upsertConversation(ctx context.Context, conn *sql.Conn, channelID, contactID string) (string, error) {
 	var id string
 	err := conn.QueryRowContext(ctx,
@@ -302,46 +285,71 @@ func insertMessage(ctx context.Context, conn *sql.Conn, convoID string, msg what
 // Tenant resolution
 // ---------------------------------------------------------------------------
 
-// resolveSchema finds the tenant schema that owns the given phone_number_id
-// by scanning all tenant schemas.
-// TODO: Replace with a proper lookup table once the tenant service is built.
-func resolveSchema(ctx context.Context, phoneNumberID, displayPhone string) (string, error) {
-	pool := db.Stdlib()
-	rows, err := pool.QueryContext(ctx,
-		`SELECT schema_name FROM information_schema.schemata
-		 WHERE schema_name NOT IN ('public','information_schema','pg_catalog','pg_toast')
-		   AND schema_name NOT LIKE 'pg_%'`)
+type inboundChannel struct {
+	Schema    string
+	ChannelID string
+}
+
+// resolveInboundChannel finds the tenant schema and whatsapp_channel row for an
+// inbound Meta webhook (phone_number_id + optional display_phone_number).
+// Matches Nest resolveTenantByInboundAddress: prefer meta_phone_number_id,
+// then normalized business phone, and backfill meta_phone_number_id when missing.
+func resolveInboundChannel(ctx context.Context, phoneNumberID, displayPhone string) (*inboundChannel, error) {
+	schemas, err := tenant.ListSchemaNames(ctx)
 	if err != nil {
-		return "", fmt.Errorf("list schemas: %w", err)
+		return nil, fmt.Errorf("list tenant schemas: %w", err)
 	}
-	defer rows.Close()
-
-	var schemas []string
-	for rows.Next() {
-		var s string
-		if err := rows.Scan(&s); err == nil {
-			schemas = append(schemas, s)
-		}
+	if len(schemas) == 0 {
+		return nil, fmt.Errorf("no tenant schemas registered")
 	}
 
+	pool := db.Stdlib()
+	phoneNumberID = strings.TrimSpace(phoneNumberID)
 	normDisplay := normalizePhone(displayPhone)
+
 	for _, schema := range schemas {
-		var found bool
-		_ = pool.QueryRowContext(ctx,
+		var id string
+		err := pool.QueryRowContext(ctx,
 			fmt.Sprintf(
-				`SELECT EXISTS(
-					SELECT 1 FROM %s.whatsapp_channel
-					WHERE meta_phone_number_id = $1
-					   OR phone_number = $2
-					   OR REGEXP_REPLACE(phone_number, '[^0-9]', '', 'g') = $3
-				)`, appdb.QuoteIdent(schema)),
-			phoneNumberID, displayPhone, normDisplay,
-		).Scan(&found)
-		if found {
-			return schema, nil
+				`SELECT id FROM %s.whatsapp_channel WHERE meta_phone_number_id = $1 LIMIT 1`,
+				appdb.QuoteIdent(schema)),
+			phoneNumberID,
+		).Scan(&id)
+		if err == nil {
+			return &inboundChannel{Schema: schema, ChannelID: id}, nil
 		}
 	}
-	return "", fmt.Errorf("no tenant found for phone_number_id=%s display=%s", phoneNumberID, displayPhone)
+
+	for _, schema := range schemas {
+		var id string
+		var existingMeta sql.NullString
+		q := fmt.Sprintf(`
+			SELECT id, meta_phone_number_id FROM %s.whatsapp_channel
+			WHERE ($1 <> '' AND REGEXP_REPLACE(phone_number, '[^0-9]', '', 'g') = $1)
+			   OR ($2 <> '' AND phone_number = $2)
+			LIMIT 1`, appdb.QuoteIdent(schema))
+		err := pool.QueryRowContext(ctx, q, normDisplay, strings.TrimSpace(displayPhone)).Scan(&id, &existingMeta)
+		if err == sql.ErrNoRows {
+			continue
+		}
+		if err != nil {
+			continue
+		}
+		if phoneNumberID != "" && (!existingMeta.Valid || strings.TrimSpace(existingMeta.String) == "") {
+			_, _ = pool.ExecContext(ctx,
+				fmt.Sprintf(
+					`UPDATE %s.whatsapp_channel SET meta_phone_number_id = $1, updated_at = NOW() WHERE id = $2`,
+					appdb.QuoteIdent(schema)),
+				phoneNumberID, id)
+			rlog.Info("backfilled meta_phone_number_id from webhook",
+				"schema", schema, "channelId", id, "phoneNumberId", phoneNumberID)
+		}
+		return &inboundChannel{Schema: schema, ChannelID: id}, nil
+	}
+
+	return nil, fmt.Errorf(
+		"no tenant channel for phone_number_id=%s display=%s — pastikan whatsapp_channel.meta_phone_number_id terisi atau phone_number bisnis cocok dengan OAuth",
+		phoneNumberID, displayPhone)
 }
 
 // ---------------------------------------------------------------------------

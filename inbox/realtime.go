@@ -161,10 +161,19 @@ func ResumeAI(ctx context.Context, id string) error {
 	return nil
 }
 
+func setInboxStreamCORS(w http.ResponseWriter, r *http.Request) {
+	if origin := strings.TrimSpace(r.Header.Get("Origin")); origin != "" {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Vary", "Origin")
+	}
+}
+
 // InboxStream streams inbox activity events via Server-Sent Events (Redis pub/sub).
 //
 //encore:api public raw method=GET path=/api/v1/inbox/stream
 func InboxStream(w http.ResponseWriter, r *http.Request) {
+	setInboxStreamCORS(w, r)
+
 	user, err := auth.AuthenticateHTTP(r.Context(), r)
 	if err != nil {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)

@@ -46,6 +46,27 @@ func TenantIDBySchema(ctx context.Context, schema string) (string, error) {
 	return id, nil
 }
 
+// ListSchemaNames returns tenant schema names registered in tenant_company.
+func ListSchemaNames(ctx context.Context) ([]string, error) {
+	rows, err := system.DB.Query(ctx,
+		`SELECT schema_name FROM tenant_company
+		 WHERE schema_name IS NOT NULL AND schema_name <> ''`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var names []string
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			continue
+		}
+		names = append(names, s)
+	}
+	return names, rows.Err()
+}
+
 // ---------- request / response ----------
 
 type CreateTenantParams struct {

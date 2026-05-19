@@ -14,6 +14,7 @@ import (
 	"encore.dev/rlog"
 	"encore.dev/storage/sqldb"
 
+	"encore.app/wabantu/shared/inboxrealtime"
 	"encore.app/wabantu/usage"
 	"github.com/redis/go-redis/v9"
 )
@@ -221,7 +222,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 
 	if !isBusinessProfileComplete(profile) {
 		rlog.Warn("AI job: business profile incomplete, using CS default response")
-		err = s.sendAiMessage(ctx, db, convo, channel, contact,
+		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact,
 			nonAiDefaultReply(profile), "system", reasonProfileIncomplete)
 		return err == nil, err
 	}
@@ -238,7 +239,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 				greet = "Selamat siang kak! Ada yang bisa aku bantu?"
 			}
 		}
-		err = s.sendAiMessage(ctx, db, convo, channel, contact, greet, "ai", reasonNonQuestion)
+		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, greet, "ai", reasonNonQuestion)
 		return err == nil, err
 	}
 
@@ -252,7 +253,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		if spike >= 3 {
 			text = nonAiDefaultReply(profile)
 		}
-		err = s.sendAiMessage(ctx, db, convo, channel, contact, text, "system", reasonOutOfScope)
+		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, text, "system", reasonOutOfScope)
 		return err == nil, err
 	}
 
@@ -286,7 +287,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 
 	// ── Handle: sensitive escalation ─────────────────────────────────────
 	if classifier.Label == "sensitive_escalate" {
-		err = s.sendAiMessage(ctx, db, convo, channel, contact,
+		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact,
 			"Maaf kak, untuk topik ini tim CS kami akan langsung mengambil alih dan segera menghubungi kakak 🙏",
 			"system", reasonOutOfScope)
 		if err != nil {
@@ -303,7 +304,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		if c >= 3 {
 			text = nonAiDefaultReply(profile)
 		}
-		err = s.sendAiMessage(ctx, db, convo, channel, contact, text, "system", reasonOutOfScope)
+		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, text, "system", reasonOutOfScope)
 		return err == nil, err
 	}
 
@@ -315,13 +316,13 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		if c >= 3 {
 			text = nonAiDefaultReply(profile)
 		}
-		err = s.sendAiMessage(ctx, db, convo, channel, contact, text, "system", reasonNonQuestion)
+		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, text, "system", reasonNonQuestion)
 		return err == nil, err
 	}
 
 	// ── Handle: low-confidence question ──────────────────────────────────
 	if classifier.Label == "in_scope_question" && classifier.Confidence < llmConfidenceThreshold {
-		err = s.sendAiMessage(ctx, db, convo, channel, contact,
+		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact,
 			scopeDirectionReply(profile), "system", reasonNonQuestion)
 		return err == nil, err
 	}
@@ -338,7 +339,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	cached, _ := s.getCachedAnswer(ctx, payload.TenantID, userText)
 	if cached != "" {
 		rlog.Info("AI job: using cached canonical answer")
-		err = s.sendAiMessage(ctx, db, convo, channel, contact, cached, "ai", reasonAIGenerated)
+		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, cached, "ai", reasonAIGenerated)
 		return err == nil, err
 	}
 
@@ -355,7 +356,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		rlog.Info("AI job: FAQ direct answer (no LLM)", "topScore", kbTopScore)
 		finalReply := applyOutputPolicy(direct)
 		s.setCachedAnswer(ctx, payload.TenantID, userText, finalReply)
-		err = s.sendAiMessage(ctx, db, convo, channel, contact, finalReply, "ai", reasonAIGenerated)
+		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, finalReply, "ai", reasonAIGenerated)
 		return err == nil, err
 	}
 
@@ -372,7 +373,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 
 	if ok, reason := usage.CheckAICostLimit(ctx, payload.TenantSchema, payload.TenantID); !ok {
 		rlog.Warn("AI job: tenant cost limit reached", "reason", reason)
-		err = s.sendAiMessage(ctx, db, convo, channel, contact,
+		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact,
 			"Maaf kak, kuota AI bulan ini sudah mencapai batas. Tim kami akan segera menghubungi kakak ya 🙏",
 			"system", reasonOutOfScope)
 		return err == nil, err
@@ -426,7 +427,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 
 	finalReply := applyOutputPolicy(reply)
 	s.setCachedAnswer(ctx, payload.TenantID, userText, finalReply)
-	err = s.sendAiMessage(ctx, db, convo, channel, contact, finalReply, "ai", reasonAIGenerated)
+	err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, finalReply, "ai", reasonAIGenerated)
 	return err == nil, err
 }
 
@@ -453,7 +454,7 @@ func (s *AutoReplyService) FallbackAutoReply(ctx context.Context, payload AiRepl
 		return nil
 	}
 
-	err = s.sendAiMessage(ctx, db, convo, channel, contact,
+	err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact,
 		"Maaf kak, saat ini sistem kami sedang sibuk. Tim kami akan bantu balas secepatnya ya 🙏",
 		"system", reasonNonQuestion)
 	if err != nil {
@@ -484,7 +485,7 @@ func (s *AutoReplyService) handleOrderFlow(
 
 	if state == nil {
 		s.setOrderState(ctx, tenantID, convo.ID, orderState{Step: "ask_product"})
-		err := s.sendAiMessage(ctx, db, convo, channel, contact,
+		err := s.sendAiMessage(ctx, db, tenantID, convo, channel, contact,
 			"Siap kak, mau order produk yang mana ya? Sekalian tulis varian/size kalau ada.",
 			"system", reasonNonQuestion)
 		return err == nil, err
@@ -497,7 +498,7 @@ func (s *AutoReplyService) handleOrderFlow(
 			product = product[:120]
 		}
 		s.setOrderState(ctx, tenantID, convo.ID, orderState{Step: "ask_variant", Product: product})
-		err := s.sendAiMessage(ctx, db, convo, channel, contact,
+		err := s.sendAiMessage(ctx, db, tenantID, convo, channel, contact,
 			"Baik kak. Untuk variannya apa ya (mis. size/warna)?",
 			"system", reasonNonQuestion)
 		return err == nil, err
@@ -512,7 +513,7 @@ func (s *AutoReplyService) handleOrderFlow(
 		s.setOrderState(ctx, tenantID, convo.ID, orderState{
 			Step: "ask_qty", Product: state.Product, Variant: variant,
 		})
-		err := s.sendAiMessage(ctx, db, convo, channel, contact,
+		err := s.sendAiMessage(ctx, db, tenantID, convo, channel, contact,
 			"Siap kak. Mau pesan berapa pcs?",
 			"system", reasonNonQuestion)
 		return err == nil, err
@@ -525,7 +526,7 @@ func (s *AutoReplyService) handleOrderFlow(
 		s.setOrderState(ctx, tenantID, convo.ID, orderState{
 			Step: "ask_address", Product: state.Product, Variant: state.Variant, Qty: qty,
 		})
-		err := s.sendAiMessage(ctx, db, convo, channel, contact,
+		err := s.sendAiMessage(ctx, db, tenantID, convo, channel, contact,
 			"Terima kasih kak. Boleh kirim alamat pengiriman lengkapnya ya.",
 			"system", reasonNonQuestion)
 		return err == nil, err
@@ -533,14 +534,14 @@ func (s *AutoReplyService) handleOrderFlow(
 	case "ask_address":
 		if addrRe.MatchString(userText) {
 			s.clearOrderState(ctx, tenantID, convo.ID)
-			err := s.sendAiMessage(ctx, db, convo, channel, contact,
+			err := s.sendAiMessage(ctx, db, tenantID, convo, channel, contact,
 				"Sip kak, datanya sudah lengkap. Tim CS kami akan segera konfirmasi order kakak ya 🙏",
 				"system", reasonNonQuestion)
 			return err == nil, err
 		}
 	}
 
-	err := s.sendAiMessage(ctx, db, convo, channel, contact,
+	err := s.sendAiMessage(ctx, db, tenantID, convo, channel, contact,
 		"Boleh kak lanjutkan data ordernya, nanti tim CS bantu proses sampai selesai ya.",
 		"system", reasonNonQuestion)
 	return err == nil, err
@@ -870,7 +871,7 @@ func loadBusinessProfile(ctx context.Context, db *sql.DB) (*dbBusinessProfile, e
 		SELECT business_name, description, address, opening_hours,
 		       products_services, base_pricing, delivery_area,
 		       greeting_template, tone, ai_enabled,
-		       COALESCE(catalog_url, '')
+		       COALESCE(catalog_website_url, '')
 		FROM business_profile ORDER BY created_at ASC LIMIT 1`)
 	p := &dbBusinessProfile{}
 	var catalogURL string
@@ -962,6 +963,7 @@ func loadKBEntries(ctx context.Context, db *sql.DB, limit int) ([]dbKBEntry, err
 func (s *AutoReplyService) sendAiMessage(
 	ctx context.Context,
 	db *sql.DB,
+	tenantID string,
 	convo *dbConversation,
 	channel *dbChannel,
 	contact *dbContact,
@@ -983,11 +985,11 @@ func (s *AutoReplyService) sendAiMessage(
 		preview = preview[:280]
 	}
 
-	metadataJSON := fmt.Sprintf(`{"reason":"%s"}`, reason)
+	metadataJSON, _ := json.Marshal(map[string]string{"reason": reason})
 	var msgCreatedAt time.Time
 	err := db.QueryRowContext(ctx, `
-		INSERT INTO messages (conversation_id, external_id, direction, author, type, body, metadata, status)
-		VALUES ($1, $2, 'out', $3, 'text', $4, $5, 'sent')
+		INSERT INTO message (conversation_id, external_id, direction, author, type, body, metadata, status)
+		VALUES ($1, $2, 'out', $3, 'text', $4, $5::jsonb, 'sent')
 		RETURNING created_at`,
 		convo.ID, externalID, author, text, metadataJSON,
 	).Scan(&msgCreatedAt)
@@ -997,7 +999,7 @@ func (s *AutoReplyService) sendAiMessage(
 	}
 
 	_, err = db.ExecContext(ctx, `
-		UPDATE conversations
+		UPDATE conversation
 		SET last_message_at = $1, last_message_preview = $2, status = 'open'
 		WHERE id = $3`,
 		msgCreatedAt, preview, convo.ID,
@@ -1006,12 +1008,16 @@ func (s *AutoReplyService) sendAiMessage(
 		rlog.Error("AI job: failed updating conversation", "err", err)
 		return fmt.Errorf("update conversation: %w", err)
 	}
+
+	if tenantID != "" && s.rdb != nil {
+		inboxrealtime.Publish(ctx, s.rdb, tenantID)
+	}
 	return nil
 }
 
 func pauseAI(ctx context.Context, db *sql.DB, convoID, reason string) error {
 	_, err := db.ExecContext(ctx, `
-		UPDATE conversations
+		UPDATE conversation
 		SET ai_handled = false, ai_paused_at = NOW(), handoff_reason = $1
 		WHERE id = $2`,
 		reason, convoID,

@@ -11,7 +11,7 @@ import (
 	"encore.app/wabantu/shared/types"
 )
 
-// AuthenticateHTTP validates the session from Authorization header or wabantu_at cookie.
+// AuthenticateHTTP validates JWT from Authorization Bearer, access_token query (SSE), or cookie.
 func AuthenticateHTTP(ctx context.Context, r *http.Request) (*types.AuthUser, error) {
 	token := extractBearerOrCookie(r)
 	if token == "" {
@@ -55,6 +55,9 @@ func extractBearerOrCookie(r *http.Request) string {
 	}
 	if c, err := r.Cookie(cookieName); err == nil && c.Value != "" {
 		return c.Value
+	}
+	if t := strings.TrimSpace(r.URL.Query().Get("access_token")); t != "" {
+		return t
 	}
 	return ""
 }
