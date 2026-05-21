@@ -34,6 +34,12 @@ func init() {
 		MaxTokens: defaultAnthropicMaxToks,
 	})
 	svc = NewAutoReplyService(rdb, client)
+	rlog.Info("ai model catalog",
+		"haiku", DefaultHaikuAPIID(),
+		"sonnet", DefaultSonnetAPIID(),
+		"activeReply", ActiveModelsForUse(ModelUseAutoReply),
+		"summarize", DefaultHaikuAPIID(),
+	)
 }
 
 func newRedisClient() *redis.Client {

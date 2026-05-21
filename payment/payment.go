@@ -16,6 +16,7 @@ import (
 	"encore.dev/storage/sqldb"
 
 	appErrs "encore.app/wabantu/shared/errs"
+	"encore.app/wabantu/billing"
 	"encore.app/wabantu/shared/types"
 )
 
@@ -103,6 +104,24 @@ func CreateQRIS(ctx context.Context, p *CreateQRISParams) (*QRISResponse, error)
 	}
 	if p.AmountIDR <= 0 {
 		return nil, appErrs.BadRequest("amountIdr must be positive")
+	}
+	if p.InvoiceID == "" {
+		return nil, appErrs.BadRequest("invoiceId wajib — pilih paket terlebih dahulu")
+	}
+
+	var invStatus string
+	var invAmount int
+	err := dataDB.QueryRow(ctx, fmt.Sprintf(
+		`SELECT status, amount_idr FROM "%s".invoice WHERE id=$1`, u.TenantSchema), p.InvoiceID,
+	).Scan(&invStatus, &invAmount)
+	if err != nil {
+		return nil, appErrs.NotFound("invoice tidak ditemukan")
+	}
+	if invStatus != "pending" {
+		return nil, appErrs.BadRequest("invoice sudah tidak menunggu pembayaran — buat checkout paket baru")
+	}
+	if int64(invAmount) != p.AmountIDR {
+		return nil, appErrs.BadRequest("nominal tidak sesuai invoice")
 	}
 
 	orderID := fmt.Sprintf("WB-%s-%d", p.InvoiceID, time.Now().UnixMilli())
@@ -236,6 +255,17 @@ func MidtransWebhook(w http.ResponseWriter, r *http.Request) {
 			 WHERE payment_transaction_id = (
 			   SELECT id FROM "%s".payment_transaction WHERE midtrans_order_id=$1 LIMIT 1
 			 ) AND status IN ('draft','confirmed')`, tenantSchema, tenantSchema), n.OrderID)
+		var invoiceID string
+		if err := dataDB.QueryRow(ctx, fmt.Sprintf(
+			`SELECT COALESCE(invoice_id::text,'') FROM "%s".payment_transaction WHERE midtrans_order_id=$1`,
+			tenantSchema), n.OrderID).Scan(&invoiceID); err == nil && invoiceID != "" {
+			if err := billing.ActivatePaidInvoice(ctx, &billing.ActivatePaidInvoiceParams{
+				TenantSchema: tenantSchema,
+				InvoiceID:    invoiceID,
+			}); err != nil {
+				rlog.Error("activate subscription after payment", "invoiceId", invoiceID, "err", err)
+			}
+		}
 	} else {
 		_, _ = dataDB.Exec(ctx, fmt.Sprintf(
 			`UPDATE "%s".payment_transaction SET status=$1, updated_at=NOW()

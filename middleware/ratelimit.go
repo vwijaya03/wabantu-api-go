@@ -11,7 +11,7 @@ import (
 	"encore.app/wabantu/shared/ratelimit"
 )
 
-// RateLimit applies a Redis sliding-window limit to all HTTP APIs (default 120 req/min per client IP).
+// RateLimit applies a Redis sliding-window limit to all HTTP APIs (default 400 req/min per client IP).
 //
 //encore:middleware global target=all
 func RateLimit(req encoremw.Request, next encoremw.Next) encoremw.Response {

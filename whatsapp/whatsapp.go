@@ -35,12 +35,33 @@ type InboundMessage struct {
 // Send
 // ---------------------------------------------------------------------------
 
+// NormalizeRecipient strips non-digits for Meta Cloud API "to" (E.164 without +).
+func NormalizeRecipient(phone string) string {
+	var b strings.Builder
+	for _, r := range phone {
+		if r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 // SendText sends a text message via Meta Cloud API and returns the external message ID.
 func SendText(ctx context.Context, accessToken, phoneNumberID, to, body string) (string, error) {
+	to = NormalizeRecipient(to)
+	if to == "" {
+		return "", fmt.Errorf("invalid recipient phone")
+	}
+	accessToken = strings.TrimSpace(accessToken)
+	phoneNumberID = strings.TrimSpace(phoneNumberID)
+	if accessToken == "" || phoneNumberID == "" {
+		return "", fmt.Errorf("missing channel credentials")
+	}
+
 	apiURL := fmt.Sprintf("https://graph.facebook.com/%s/%s/messages", graphVersion, phoneNumberID)
 	payload, _ := json.Marshal(map[string]interface{}{
 		"messaging_product": "whatsapp",
-		"to":                strings.TrimPrefix(to, "+"),
+		"to":                to,
 		"type":              "text",
 		"text":              map[string]interface{}{"preview_url": false, "body": body},
 	})

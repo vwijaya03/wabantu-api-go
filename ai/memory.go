@@ -9,7 +9,7 @@ import (
 
 	"encore.dev/pubsub"
 	"encore.dev/rlog"
-	"github.com/anthropics/anthropic-sdk-go"
+
 )
 
 // SummarizeRequest is published after every 20 messages in a conversation.
@@ -70,36 +70,19 @@ func SummarizeConversation(ctx context.Context, tenantSchema, convoID string) er
 	}
 	conversationText := strings.Join(lines, "\n")
 
-	client := NewAnthropicClient(secrets.AnthropicApiKey, DefaultAnthropicConfig())
+	client := NewAnthropicClient(secrets.AnthropicApiKey, AnthropicConfig{
+		Model:     DefaultHaikuAPIID(),
+		MaxTokens: 300,
+	})
 	systemPrompt := "Kamu adalah asisten yang merangkum percakapan customer service."
 	userPrompt := fmt.Sprintf(
 		"Rangkum percakapan ini dalam 3-5 kalimat bahasa Indonesia. Fokus pada topik utama, keputusan, dan status terakhir.\n\nPercakapan:\n%s",
 		conversationText,
 	)
 
-	resp, err := client.client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:     anthropic.Model(client.model),
-		MaxTokens: 300,
-		System: []anthropic.TextBlockParam{
-			{Text: systemPrompt},
-		},
-		Messages: []anthropic.MessageParam{
-			anthropic.NewUserMessage(anthropic.NewTextBlock(userPrompt)),
-		},
-	})
+	summary, err := client.CompleteText(ctx, DefaultHaikuAPIID(), systemPrompt, userPrompt, 300)
 	if err != nil {
-		return fmt.Errorf("anthropic summarize: %w", err)
-	}
-
-	var parts []string
-	for _, block := range resp.Content {
-		if block.Type == "text" {
-			parts = append(parts, block.Text)
-		}
-	}
-	summary := strings.TrimSpace(strings.Join(parts, "\n"))
-	if summary == "" {
-		return fmt.Errorf("empty summary from AI")
+		return err
 	}
 
 	err = storeSummary(ctx, db, tenantSchema, convoID, summary, len(messages))

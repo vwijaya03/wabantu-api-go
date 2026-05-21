@@ -235,11 +235,14 @@ encore db shell tenant --write
 
 **DB `encore run` ≠ `infra/postgres` (Nest)** kecuali Anda proxy manual. Data Nest tidak otomatis pindah.
 
-### Rate limiting
+### Rate limiting & kuota
 
-- Middleware global: `middleware/ratelimit.go` — **120 req/menit/IP** (Redis).
-- Login/register: **20 req/menit/IP** (`auth` + `shared/ratelimit`).
-- Nest `@nestjs/throttler` tidak ada padanan bawaan di Encore; ini pola yang dipakai.
+**Dokumen lengkap:** [LIMITS_AND_QUOTAS.md](./LIMITS_AND_QUOTAS.md).
+
+- Middleware global: **400 req/menit/IP** (Redis).
+- Login/register: **20 req/menit/IP**; platform bootstrap: **5/menit/IP**.
+- Kuota bulanan per plan di `usage/usage.go`; trial = semua fitur + cap ketat.
+- Checkout: invoice `pending` → QRIS → `paid` → subscription aktif (`billing` + `payment` webhook).
 
 ### Import file (staging)
 
@@ -335,11 +338,11 @@ Verify token: secret `WebhookVerifyToken`. Saat daftar app Meta, pilih path yang
 
 | Area | Contoh path |
 |------|-------------|
-| Billing | `GET /api/v1/billing/overview`, `POST /api/v1/billing/select-plan` |
-| Payment | `POST /api/v1/payment/create-qris`, webhook Midtrans |
+| Billing | `GET /api/v1/billing/overview`, `POST /api/v1/billing/select-plan` (invoice `pending`, lihat [LIMITS_AND_QUOTAS.md](./LIMITS_AND_QUOTAS.md)) |
+| Payment | `POST /api/v1/payment/create-qris` (wajib `invoiceId` pending), webhook Midtrans → aktivasi paket |
 | Orders | `GET/POST /api/v1/orders`, … |
 | Catalog | CRUD di `business/catalog.go` |
-| Broadcast | `POST /api/v1/broadcast/...` (plan Business+) |
+| Broadcast | `POST /api/v1/broadcast/...` (Business+ berbayar; **trial** boleh dengan kuota 20 kontak/bulan) |
 | Import | `POST /api/v1/import/preview`, `/import/execute` |
 | Branches | `GET/POST /api/v1/branches` (Pro) |
 | Workflow | `GET/POST/DELETE /api/v1/workflows` |
@@ -423,7 +426,7 @@ webhook.HandleWhatsAppWebhook (raw)
     │ parse payload
     ▼
 ingestMessage()
-    │ resolve tenant by meta_phone_number_id / display phone
+    │ resolve tenant via system.whatsapp_inbound_map (unik per meta_phone_number_id)
     │ SET search_path → schema tenant
     │ upsert contact, conversation, message (inbound)
     ▼
@@ -659,4 +662,4 @@ sequenceDiagram
 5. Uji `POST /api/v1/internal/ai/auto-reply` dengan token internal (opsional).
 6. Jalankan `web-frontend` (`npm run dev`) — login, inbox, billing, admin (`superadmin@gmail.com`).
 
-Plan subscription: `starter` | `business` | `pro` (alias `basic` = business). Entitlement: broadcast/workflow = business+, multi-branch = pro.
+Plan subscription: `starter` | `business` | `pro` (alias `basic` = business, tidak di UI). **Trial** (`is_trial`): semua fitur entitlement aktif, kuota di [LIMITS_AND_QUOTAS.md](./LIMITS_AND_QUOTAS.md). Berbayar: broadcast/workflow = business+, multi-branch = pro.

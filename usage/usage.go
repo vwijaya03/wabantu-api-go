@@ -20,6 +20,15 @@ var db = sqldb.Named("tenant")
 // ---------- plan quotas ----------
 
 var planQuotas = map[string]map[string]int{
+	// Trial: all features unlocked (see entitlement); quotas far below paid Starter.
+	"trial": {
+		"ai_conversation":   60,
+		"ai_token":          100_000,
+		"broadcast_contact": 20,
+		"storage_byte":      52_428_800, // 50 MB
+		"admin_seat":        1,
+		"workflow_exec":     8,
+	},
 	"starter": {
 		"ai_conversation":   1_500,
 		"ai_token":          2_000_000,
@@ -244,14 +253,25 @@ func TenantPlan(ctx context.Context, tenantSchema string) string {
 
 func getTenantPlan(ctx context.Context, tenantSchema string) string {
 	var plan string
+	var isTrial bool
 	err := db.QueryRow(ctx, fmt.Sprintf(
-		`SELECT COALESCE(plan_code,'starter')
+		`SELECT COALESCE(plan_code,'starter'), COALESCE(is_trial,false)
 		 FROM "%s".subscription
 		 WHERE status = 'active'
 		 ORDER BY updated_at DESC LIMIT 1`, tenantSchema),
-	).Scan(&plan)
+	).Scan(&plan, &isTrial)
 	if err != nil || plan == "" {
-		return "starter"
+		return "trial"
+	}
+	if isTrial {
+		return "trial"
+	}
+	return normalizePlanCode(plan)
+}
+
+func normalizePlanCode(plan string) string {
+	if plan == "basic" {
+		return "business"
 	}
 	return plan
 }

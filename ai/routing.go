@@ -4,12 +4,6 @@ import (
 	"strings"
 )
 
-// Anthropic model ids (override per-request; not tied to a single .env model).
-const (
-	ModelHaiku  = "claude-3-5-haiku-20241022"
-	ModelSonnet = "claude-sonnet-4-5-20250514"
-)
-
 // PlanAIRouting describes which routing strategy a subscription plan uses.
 type PlanAIRouting string
 
@@ -39,9 +33,9 @@ type RoutingDecision struct {
 // PlanRoutingMode maps subscription plan_code to AI routing strategy.
 func PlanRoutingMode(planCode string) PlanAIRouting {
 	switch strings.ToLower(strings.TrimSpace(planCode)) {
-	case "starter", "trial":
+	case "starter":
 		return PlanRoutingHaikuOnly
-	case "business", "basic":
+	case "trial", "business", "basic":
 		return PlanRoutingHybrid
 	case "pro", "enterprise":
 		return PlanRoutingHybridPriority
@@ -57,29 +51,29 @@ func ResolveRouting(planCode string, complexity MessageComplexity) RoutingDecisi
 	switch mode {
 	case PlanRoutingHaikuOnly:
 		return RoutingDecision{
-			Model: ModelHaiku, Tier: "haiku", Complexity: complexity,
+			Model: DefaultHaikuAPIID(), Tier: "haiku", Complexity: complexity,
 			PlanMode: mode, Reason: "plan_starter_haiku_only",
 		}
 	case PlanRoutingHybridPriority:
 		if complexity == ComplexitySimple {
 			return RoutingDecision{
-				Model: ModelHaiku, Tier: "haiku", Complexity: complexity,
+				Model: DefaultHaikuAPIID(), Tier: "haiku", Complexity: complexity,
 				PlanMode: mode, Reason: "pro_simple_faq",
 			}
 		}
 		return RoutingDecision{
-			Model: ModelSonnet, Tier: "sonnet", Complexity: complexity,
+			Model: DefaultSonnetAPIID(), Tier: "sonnet", Complexity: complexity,
 			PlanMode: mode, Reason: "pro_priority_sonnet",
 		}
 	default: // hybrid (business)
 		if complexity == ComplexitySimple {
 			return RoutingDecision{
-				Model: ModelHaiku, Tier: "haiku", Complexity: complexity,
+				Model: DefaultHaikuAPIID(), Tier: "haiku", Complexity: complexity,
 				PlanMode: mode, Reason: "hybrid_simple",
 			}
 		}
 		return RoutingDecision{
-			Model: ModelSonnet, Tier: "sonnet", Complexity: complexity,
+			Model: DefaultSonnetAPIID(), Tier: "sonnet", Complexity: complexity,
 			PlanMode: mode, Reason: "hybrid_complex",
 		}
 	}

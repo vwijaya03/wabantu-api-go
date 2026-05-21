@@ -45,7 +45,7 @@ var PlanCatalog = map[string]Plan{
 		Code: "business", Name: "Business", AmountIDR: 799_000,
 		Limits: PlanLimits{Channels: 2, Seats: 3, AIConversations: 6_000, AITokens: 8_000_000, BroadcastContacts: 500, StorageMB: 2_048, WorkflowExecs: 500},
 	},
-	"basic": { // legacy alias → business
+	"basic": { // legacy alias → business (API only, not shown in catalog)
 		Code: "basic", Name: "Business", AmountIDR: 799_000,
 		Limits: PlanLimits{Channels: 2, Seats: 3, AIConversations: 6_000, AITokens: 8_000_000, BroadcastContacts: 500, StorageMB: 2_048, WorkflowExecs: 500},
 	},
@@ -55,8 +55,49 @@ var PlanCatalog = map[string]Plan{
 	},
 }
 
+// Trial limits (enforced via usage.TenantPlan when subscription.is_trial=true).
+var trialLimits = PlanLimits{
+	Channels: 1, Seats: 1, AIConversations: 60, AITokens: 100_000,
+	BroadcastContacts: 20, StorageMB: 50, WorkflowExecs: 8,
+}
+
+// sellablePlanOrder is the UI/API catalog (no legacy duplicate "basic").
+var sellablePlanOrder = []string{"starter", "business", "pro"}
+
+func normalizePlanCode(code string) string {
+	if code == "basic" {
+		return "business"
+	}
+	return code
+}
+
+func resolvePlan(code string) (Plan, bool) {
+	code = normalizePlanCode(code)
+	if code == "trial" {
+		return Plan{Code: "trial", Name: "Trial", AmountIDR: 0, Limits: trialLimits}, true
+	}
+	p, ok := PlanCatalog[code]
+	if !ok && code == "basic" {
+		p, ok = PlanCatalog["basic"]
+	}
+	return p, ok
+}
+
+func listSellablePlans() []Plan {
+	out := make([]Plan, 0, len(sellablePlanOrder))
+	for _, code := range sellablePlanOrder {
+		if p, ok := PlanCatalog[code]; ok {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 func GetPlanLimits(planCode string) PlanLimits {
-	p, ok := PlanCatalog[planCode]
+	if planCode == "trial" {
+		return trialLimits
+	}
+	p, ok := resolvePlan(planCode)
 	if !ok {
 		return PlanCatalog["starter"].Limits
 	}
@@ -129,9 +170,10 @@ func ensureSubscription(ctx context.Context, d *sql.DB) (*Subscription, error) {
 // ---------- API ----------
 
 type OverviewResponse struct {
-	Subscription *Subscription `json:"subscription"`
-	Plans        []Plan        `json:"plans"`
-	Invoices     []Invoice     `json:"invoices"`
+	Subscription    *Subscription `json:"subscription"`
+	Plans           []Plan        `json:"plans"`
+	Invoices        []Invoice     `json:"invoices"`
+	PendingCheckout *Invoice      `json:"pendingCheckout,omitempty"`
 }
 
 //encore:api auth method=GET path=/api/v1/billing/overview
@@ -150,7 +192,9 @@ func Overview(ctx context.Context) (*OverviewResponse, error) {
 	}
 	rows, err := d.QueryContext(ctx,
 		`SELECT id, invoice_no, plan_code, plan_name, amount_idr, status, issued_at, paid_at, created_at
-		 FROM invoice ORDER BY issued_at DESC LIMIT 20`)
+		 FROM invoice
+		 WHERE status IN ('paid','issued')
+		 ORDER BY COALESCE(paid_at, issued_at) DESC LIMIT 20`)
 	if err != nil {
 		return nil, err
 	}
@@ -164,11 +208,23 @@ func Overview(ctx context.Context) (*OverviewResponse, error) {
 		}
 		invoices = append(invoices, inv)
 	}
-	plans := make([]Plan, 0, len(PlanCatalog))
-	for _, p := range PlanCatalog {
-		plans = append(plans, p)
+	var pending *Invoice
+	var p Invoice
+	err = d.QueryRowContext(ctx,
+		`SELECT id, invoice_no, plan_code, plan_name, amount_idr, status, issued_at, paid_at, created_at
+		 FROM invoice WHERE status='pending' ORDER BY issued_at DESC LIMIT 1`,
+	).Scan(&p.ID, &p.InvoiceNo, &p.PlanCode, &p.PlanName, &p.AmountIDR, &p.Status, &p.IssuedAt, &p.PaidAt, &p.CreatedAt)
+	if err == nil {
+		pending = &p
+	} else if err != sql.ErrNoRows {
+		return nil, err
 	}
-	return &OverviewResponse{Subscription: sub, Plans: plans, Invoices: invoices}, nil
+	return &OverviewResponse{
+		Subscription:    sub,
+		Plans:           listSellablePlans(),
+		Invoices:        invoices,
+		PendingCheckout: pending,
+	}, nil
 }
 
 type SelectPlanRequest struct {
@@ -176,9 +232,12 @@ type SelectPlanRequest struct {
 	Provider *string `json:"provider,omitempty"`
 }
 type SelectPlanResponse struct {
-	Subscription *Subscription `json:"subscription"`
+	Subscription   *Subscription `json:"subscription"`
+	PendingInvoice *Invoice      `json:"pendingInvoice,omitempty"`
 }
 
+// SelectPlan starts checkout: creates a pending invoice only. Subscription upgrades after QRIS payment (webhook).
+//
 //encore:api auth method=POST path=/api/v1/billing/select-plan
 func SelectPlan(ctx context.Context, req *SelectPlanRequest) (*SelectPlanResponse, error) {
 	uid, err := authUser(ctx)
@@ -188,9 +247,12 @@ func SelectPlan(ctx context.Context, req *SelectPlanRequest) (*SelectPlanRespons
 	if !uid.CanPerformOwnerActions() {
 		return nil, &errs.Error{Code: errs.PermissionDenied, Message: "owner only"}
 	}
-	plan, ok := PlanCatalog[req.PlanCode]
+	plan, ok := resolvePlan(req.PlanCode)
 	if !ok {
 		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "plan tidak valid"}
+	}
+	if plan.AmountIDR <= 0 {
+		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "paket gratis tidak perlu checkout"}
 	}
 	d, err := tenantDB(ctx, uid.TenantSchema)
 	if err != nil {
@@ -200,36 +262,77 @@ func SelectPlan(ctx context.Context, req *SelectPlanRequest) (*SelectPlanRespons
 	if err != nil {
 		return nil, err
 	}
-	provRef := ""
-	if req.Provider != nil && *req.Provider != "" {
-		provRef = fmt.Sprintf("%s_%s", *req.Provider, randStr(8))
-	}
-	var prov *string
-	var pr *string
-	if req.Provider != nil && *req.Provider != "" {
-		prov = req.Provider
-		pr = &provRef
-	}
+	// Replace older unpaid checkouts.
+	_, _ = d.ExecContext(ctx, `UPDATE invoice SET status='void' WHERE status='pending'`)
+
+	invNo := fmt.Sprintf("INV-%s-%s", time.Now().Format("20060102"), randStr(6))
+	var inv Invoice
 	err = d.QueryRowContext(ctx,
-		`UPDATE subscription SET plan_code=$1, plan_name=$2, is_trial=false, trial_ends_at=NULL, provider=$3, provider_ref=$4, updated_at=now()
-		 WHERE id=$5
-		 RETURNING id, plan_code, plan_name, is_trial, trial_ends_at, status, provider, provider_ref, created_at, updated_at`,
-		req.PlanCode, plan.Name, prov, pr, sub.ID,
-	).Scan(&sub.ID, &sub.PlanCode, &sub.PlanName, &sub.IsTrial, &sub.TrialEndsAt, &sub.Status, &sub.Provider, &sub.ProviderRef, &sub.CreatedAt, &sub.UpdatedAt)
+		`INSERT INTO invoice (invoice_no, plan_code, plan_name, amount_idr, status, issued_at)
+		 VALUES ($1,$2,$3,$4,'pending',now())
+		 RETURNING id, invoice_no, plan_code, plan_name, amount_idr, status, issued_at, paid_at, created_at`,
+		invNo, plan.Code, plan.Name, plan.AmountIDR,
+	).Scan(&inv.ID, &inv.InvoiceNo, &inv.PlanCode, &inv.PlanName, &inv.AmountIDR, &inv.Status, &inv.IssuedAt, &inv.PaidAt, &inv.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
-	if plan.AmountIDR > 0 {
-		invNo := fmt.Sprintf("INV-%s-%s", time.Now().Format("20060102"), randStr(6))
-		_, err = d.ExecContext(ctx,
-			`INSERT INTO invoice (invoice_no, plan_code, plan_name, amount_idr, status, issued_at)
-			 VALUES ($1,$2,$3,$4,'issued',now())`,
-			invNo, req.PlanCode, plan.Name, plan.AmountIDR)
-		if err != nil {
-			rlog.Error("create invoice", "err", err)
-		}
+	return &SelectPlanResponse{Subscription: sub, PendingInvoice: &inv}, nil
+}
+
+type ActivatePaidInvoiceParams struct {
+	TenantSchema string `json:"tenantSchema"`
+	InvoiceID    string `json:"invoiceId"`
+}
+
+// ActivatePaidInvoice applies a paid invoice to the active subscription (called from payment webhook).
+//
+//encore:api private method=POST path=/api/v1/billing/activate-paid-invoice
+func ActivatePaidInvoice(ctx context.Context, p *ActivatePaidInvoiceParams) error {
+	if p.TenantSchema == "" || p.InvoiceID == "" {
+		return &errs.Error{Code: errs.InvalidArgument, Message: "tenantSchema and invoiceId required"}
 	}
-	return &SelectPlanResponse{Subscription: sub}, nil
+	d, err := tenantDB(ctx, p.TenantSchema)
+	if err != nil {
+		return err
+	}
+	var inv Invoice
+	err = d.QueryRowContext(ctx,
+		`SELECT id, invoice_no, plan_code, plan_name, amount_idr, status, issued_at, paid_at, created_at
+		 FROM invoice WHERE id=$1`,
+		p.InvoiceID,
+	).Scan(&inv.ID, &inv.InvoiceNo, &inv.PlanCode, &inv.PlanName, &inv.AmountIDR, &inv.Status, &inv.IssuedAt, &inv.PaidAt, &inv.CreatedAt)
+	if err == sql.ErrNoRows {
+		return &errs.Error{Code: errs.NotFound, Message: "invoice tidak ditemukan"}
+	}
+	if err != nil {
+		return err
+	}
+	if inv.Status != "pending" && inv.Status != "paid" {
+		return &errs.Error{Code: errs.FailedPrecondition, Message: "invoice tidak bisa diaktifkan"}
+	}
+	plan, ok := resolvePlan(inv.PlanCode)
+	if !ok {
+		return &errs.Error{Code: errs.Internal, Message: "plan invoice tidak valid"}
+	}
+	sub, err := ensureSubscription(ctx, d)
+	if err != nil {
+		return err
+	}
+	_, err = d.ExecContext(ctx,
+		`UPDATE subscription SET plan_code=$1, plan_name=$2, is_trial=false, trial_ends_at=NULL,
+		 provider='midtrans', updated_at=now()
+		 WHERE id=$3`,
+		plan.Code, plan.Name, sub.ID,
+	)
+	if err != nil {
+		return err
+	}
+	_, err = d.ExecContext(ctx,
+		`UPDATE invoice SET status='paid', paid_at=COALESCE(paid_at, now()), issued_at=now()
+		 WHERE id=$1 AND status IN ('pending','paid')`,
+		inv.ID,
+	)
+	return err
 }
 
 type InvoicesResponse struct {

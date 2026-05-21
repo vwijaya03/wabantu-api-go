@@ -19,10 +19,11 @@ import (
 	"encore.dev/storage/sqldb"
 
 	appauth "encore.app/wabantu/auth"
+	apperr "encore.app/wabantu/shared/errs"
 	appdb "encore.app/wabantu/shared/db"
 	"encore.app/wabantu/system"
+	"encore.app/wabantu/tenant"
 	"encore.app/wabantu/whatsapp"
-	apperr "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/types"
 )
 
@@ -248,7 +249,7 @@ func CompleteMetaConnect(ctx context.Context, p *MetaConnectCallbackParams) (*Ch
 	}
 	defer conn.Close()
 
-	return upsertChannel(ctx, conn, channelConnectParams{
+	ch, err := upsertChannel(ctx, conn, channelConnectParams{
 		DisplayName:       p.DisplayName,
 		PhoneNumber:       p.PhoneNumber,
 		AccessToken:       accessToken,
@@ -257,6 +258,15 @@ func CompleteMetaConnect(ctx context.Context, p *MetaConnectCallbackParams) (*Ch
 		MetaAppID:         &st.MetaAppID,
 		MetaAppSecret:     &st.MetaAppSecret,
 	})
+	if err != nil {
+		return nil, err
+	}
+	if ch.MetaPhoneNumberID != nil && strings.TrimSpace(*ch.MetaPhoneNumberID) != "" {
+		if regErr := tenant.RegisterWhatsAppInbound(ctx, schema, ch.ID, *ch.MetaPhoneNumberID, ch.PhoneNumber); regErr != nil {
+			return nil, apperr.BadRequest(regErr.Error())
+		}
+	}
+	return ch, nil
 }
 
 // DisconnectChannel marks a channel as disconnected.
@@ -296,6 +306,9 @@ func DisconnectChannel(ctx context.Context, id string) (*Channel, error) {
 	}
 	if err != nil {
 		return nil, apperr.Internal("failed to disconnect channel")
+	}
+	if unregErr := tenant.UnregisterWhatsAppInbound(ctx, user.TenantSchema, id); unregErr != nil {
+		rlog.Warn("unregister whatsapp inbound map failed", "err", unregErr)
 	}
 	return &ch, nil
 }

@@ -7,7 +7,7 @@ import (
 	"encore.app/wabantu/usage"
 )
 
-// Feature keys used for plan gating.
+// Feature keys used for plan gating (trial bypasses map — all true; see HasFeature).
 const (
 	FeatureCRMLeads    = "crm_leads"
 	FeatureBroadcast   = "broadcast"
@@ -17,6 +17,7 @@ const (
 	FeatureMultiBranch = "multi_branch"
 )
 
+// Trial: all product surfaces enabled; tight caps live in usage.planQuotas["trial"].
 var planFeatures = map[string]map[string]bool{
 	"starter": {
 		FeatureCRMLeads:    false,
@@ -54,6 +55,12 @@ var planFeatures = map[string]map[string]bool{
 
 // HasFeature returns whether planCode includes the feature.
 func HasFeature(planCode, feature string) bool {
+	if planCode == "trial" {
+		return true
+	}
+	if planCode == "basic" {
+		planCode = "business"
+	}
 	feats, ok := planFeatures[planCode]
 	if !ok {
 		feats = planFeatures["starter"]

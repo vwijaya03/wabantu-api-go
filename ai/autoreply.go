@@ -16,6 +16,7 @@ import (
 
 	"encore.app/wabantu/shared/inboxrealtime"
 	"encore.app/wabantu/usage"
+	"encore.app/wabantu/whatsapp"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -221,9 +222,10 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	bp := toBusinessProfile(profile)
 
 	if !isBusinessProfileComplete(profile) {
-		rlog.Warn("AI job: business profile incomplete, using CS default response")
+		out := metaNoLLM(reasonProfileIncomplete, PathProfileIncomplete)
+		out.LogOutcome(convo.ID, payload.InboundMessageID)
 		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact,
-			nonAiDefaultReply(profile), "system", reasonProfileIncomplete)
+			nonAiDefaultReply(profile), "system", out)
 		return err == nil, err
 	}
 
@@ -239,7 +241,9 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 				greet = "Selamat siang kak! Ada yang bisa aku bantu?"
 			}
 		}
-		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, greet, "ai", reasonNonQuestion)
+		out := metaNoLLM(reasonNonQuestion, PathGreeting)
+		out.LogOutcome(convo.ID, payload.InboundMessageID)
+		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, greet, "ai", out)
 		return err == nil, err
 	}
 
@@ -253,7 +257,9 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		if spike >= 3 {
 			text = nonAiDefaultReply(profile)
 		}
-		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, text, "system", reasonOutOfScope)
+		out := metaNoLLM(reasonOutOfScope, PathInjectionGuard)
+		out.LogOutcome(convo.ID, payload.InboundMessageID)
+		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, text, "system", out)
 		return err == nil, err
 	}
 
@@ -287,9 +293,11 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 
 	// ── Handle: sensitive escalation ─────────────────────────────────────
 	if classifier.Label == "sensitive_escalate" {
+		out := metaNoLLM(reasonOutOfScope, PathEscalate)
+		out.LogOutcome(convo.ID, payload.InboundMessageID)
 		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact,
 			"Maaf kak, untuk topik ini tim CS kami akan langsung mengambil alih dan segera menghubungi kakak 🙏",
-			"system", reasonOutOfScope)
+			"system", out)
 		if err != nil {
 			return false, err
 		}
@@ -304,7 +312,9 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		if c >= 3 {
 			text = nonAiDefaultReply(profile)
 		}
-		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, text, "system", reasonOutOfScope)
+		out := metaNoLLM(reasonOutOfScope, PathOutOfScope)
+		out.LogOutcome(convo.ID, payload.InboundMessageID)
+		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, text, "system", out)
 		return err == nil, err
 	}
 
@@ -316,14 +326,18 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		if c >= 3 {
 			text = nonAiDefaultReply(profile)
 		}
-		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, text, "system", reasonNonQuestion)
+		out := metaNoLLM(reasonNonQuestion, PathNonQuestion)
+		out.LogOutcome(convo.ID, payload.InboundMessageID)
+		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, text, "system", out)
 		return err == nil, err
 	}
 
 	// ── Handle: low-confidence question ──────────────────────────────────
 	if classifier.Label == "in_scope_question" && classifier.Confidence < llmConfidenceThreshold {
+		out := metaNoLLM(reasonNonQuestion, PathLowConfidence)
+		out.LogOutcome(convo.ID, payload.InboundMessageID)
 		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact,
-			scopeDirectionReply(profile), "system", reasonNonQuestion)
+			scopeDirectionReply(profile), "system", out)
 		return err == nil, err
 	}
 
@@ -338,8 +352,9 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 
 	cached, _ := s.getCachedAnswer(ctx, payload.TenantID, userText)
 	if cached != "" {
-		rlog.Info("AI job: using cached canonical answer")
-		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, cached, "ai", reasonAIGenerated)
+		out := metaNoLLM(reasonAIGenerated, PathFAQCache)
+		out.LogOutcome(convo.ID, payload.InboundMessageID)
+		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, cached, "ai", out)
 		return err == nil, err
 	}
 
@@ -353,10 +368,11 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 
 	// FAQ bypass — no LLM call when KB match is strong (cost optimization).
 	if direct, ok := tryFAQDirectAnswer(userText, kbEntries); ok {
-		rlog.Info("AI job: FAQ direct answer (no LLM)", "topScore", kbTopScore)
 		finalReply := applyOutputPolicy(direct)
 		s.setCachedAnswer(ctx, payload.TenantID, userText, finalReply)
-		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, finalReply, "ai", reasonAIGenerated)
+		out := metaNoLLM(reasonAIGenerated, PathFAQDirect)
+		out.LogOutcome(convo.ID, payload.InboundMessageID)
+		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
 		return err == nil, err
 	}
 
@@ -368,14 +384,16 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		"complexity", complexity,
 		"model", route.Model,
 		"tier", route.Tier,
-		"reason", route.Reason,
+		"routeReason", route.Reason,
 	)
 
 	if ok, reason := usage.CheckAICostLimit(ctx, payload.TenantSchema, payload.TenantID); !ok {
 		rlog.Warn("AI job: tenant cost limit reached", "reason", reason)
+		out := metaNoLLM(reasonOutOfScope, PathCostLimit)
+		out.LogOutcome(convo.ID, payload.InboundMessageID)
 		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact,
 			"Maaf kak, kuota AI bulan ini sudah mencapai batas. Tim kami akan segera menghubungi kakak ya 🙏",
-			"system", reasonOutOfScope)
+			"system", out)
 		return err == nil, err
 	}
 
@@ -427,7 +445,9 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 
 	finalReply := applyOutputPolicy(reply)
 	s.setCachedAnswer(ctx, payload.TenantID, userText, finalReply)
-	err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, finalReply, "ai", reasonAIGenerated)
+	out := metaFromRoute(reasonAIGenerated, PathLLM, route)
+	out.LogOutcome(convo.ID, payload.InboundMessageID)
+	err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
 	return err == nil, err
 }
 
@@ -454,9 +474,11 @@ func (s *AutoReplyService) FallbackAutoReply(ctx context.Context, payload AiRepl
 		return nil
 	}
 
+	out := metaNoLLM(reasonNonQuestion, PathAutoFallback)
+	out.LogOutcome(convo.ID, payload.InboundMessageID)
 	err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact,
 		"Maaf kak, saat ini sistem kami sedang sibuk. Tim kami akan bantu balas secepatnya ya 🙏",
-		"system", reasonNonQuestion)
+		"system", out)
 	if err != nil {
 		return err
 	}
@@ -485,9 +507,10 @@ func (s *AutoReplyService) handleOrderFlow(
 
 	if state == nil {
 		s.setOrderState(ctx, tenantID, convo.ID, orderState{Step: "ask_product"})
+		orderMeta := metaNoLLM(reasonNonQuestion, PathOrderFlow)
 		err := s.sendAiMessage(ctx, db, tenantID, convo, channel, contact,
 			"Siap kak, mau order produk yang mana ya? Sekalian tulis varian/size kalau ada.",
-			"system", reasonNonQuestion)
+			"system", orderMeta)
 		return err == nil, err
 	}
 
@@ -498,9 +521,10 @@ func (s *AutoReplyService) handleOrderFlow(
 			product = product[:120]
 		}
 		s.setOrderState(ctx, tenantID, convo.ID, orderState{Step: "ask_variant", Product: product})
+		orderMeta := metaNoLLM(reasonNonQuestion, PathOrderFlow)
 		err := s.sendAiMessage(ctx, db, tenantID, convo, channel, contact,
 			"Baik kak. Untuk variannya apa ya (mis. size/warna)?",
-			"system", reasonNonQuestion)
+			"system", orderMeta)
 		return err == nil, err
 
 	case "ask_variant":
@@ -513,9 +537,10 @@ func (s *AutoReplyService) handleOrderFlow(
 		s.setOrderState(ctx, tenantID, convo.ID, orderState{
 			Step: "ask_qty", Product: state.Product, Variant: variant,
 		})
+		orderMeta := metaNoLLM(reasonNonQuestion, PathOrderFlow)
 		err := s.sendAiMessage(ctx, db, tenantID, convo, channel, contact,
 			"Siap kak. Mau pesan berapa pcs?",
-			"system", reasonNonQuestion)
+			"system", orderMeta)
 		return err == nil, err
 
 	case "ask_qty":
@@ -526,24 +551,27 @@ func (s *AutoReplyService) handleOrderFlow(
 		s.setOrderState(ctx, tenantID, convo.ID, orderState{
 			Step: "ask_address", Product: state.Product, Variant: state.Variant, Qty: qty,
 		})
+		orderMeta := metaNoLLM(reasonNonQuestion, PathOrderFlow)
 		err := s.sendAiMessage(ctx, db, tenantID, convo, channel, contact,
 			"Terima kasih kak. Boleh kirim alamat pengiriman lengkapnya ya.",
-			"system", reasonNonQuestion)
+			"system", orderMeta)
 		return err == nil, err
 
 	case "ask_address":
 		if addrRe.MatchString(userText) {
 			s.clearOrderState(ctx, tenantID, convo.ID)
+			orderMeta := metaNoLLM(reasonNonQuestion, PathOrderFlow)
 			err := s.sendAiMessage(ctx, db, tenantID, convo, channel, contact,
 				"Sip kak, datanya sudah lengkap. Tim CS kami akan segera konfirmasi order kakak ya 🙏",
-				"system", reasonNonQuestion)
+				"system", orderMeta)
 			return err == nil, err
 		}
 	}
 
+	orderMeta := metaNoLLM(reasonNonQuestion, PathOrderFlow)
 	err := s.sendAiMessage(ctx, db, tenantID, convo, channel, contact,
 		"Boleh kak lanjutkan data ordernya, nanti tim CS bantu proses sampai selesai ya.",
-		"system", reasonNonQuestion)
+		"system", orderMeta)
 	return err == nil, err
 }
 
@@ -826,16 +854,23 @@ func (s *AutoReplyService) resetScopeCounters(ctx context.Context, tenantID, con
 
 func loadSubscriptionPlanCode(ctx context.Context, db *sql.DB) (string, error) {
 	var planCode string
+	var isTrial bool
 	err := db.QueryRowContext(ctx, `
-		SELECT plan_code FROM subscription
+		SELECT plan_code, COALESCE(is_trial, false) FROM subscription
 		WHERE status = 'active'
 		ORDER BY created_at DESC LIMIT 1`,
-	).Scan(&planCode)
+	).Scan(&planCode, &isTrial)
 	if err == sql.ErrNoRows {
-		return "starter", nil
+		return "trial", nil
 	}
 	if err != nil {
 		return "starter", err
+	}
+	if isTrial {
+		return "trial", nil
+	}
+	if planCode == "basic" {
+		return "business", nil
 	}
 	return planCode, nil
 }
@@ -967,31 +1002,67 @@ func (s *AutoReplyService) sendAiMessage(
 	convo *dbConversation,
 	channel *dbChannel,
 	contact *dbContact,
-	text, author, reason string,
+	text, author string,
+	meta AiReplyMeta,
 ) error {
 	rlog.Info("AI job: sending WhatsApp text",
 		"len", len(text),
 		"author", author,
-		"reason", reason,
+		"path", meta.Path,
+		"reason", meta.Reason,
+		"llmUsed", meta.LLMUsed,
+		"model", meta.Model,
+		"tier", meta.Tier,
 	)
 
-	// TODO: call Meta Cloud API to actually send the WhatsApp message.
-	// For now we persist the message and assume external delivery is handled
-	// by a separate WhatsApp provider package (to be wired in Phase 2).
-	externalID := fmt.Sprintf("ai-%s-%d", convo.ID[:8], time.Now().UnixMilli())
+	if channel == nil || contact == nil {
+		return fmt.Errorf("missing channel or contact")
+	}
+	if channel.Provider != "meta_cloud" {
+		return fmt.Errorf("unsupported channel provider %q", channel.Provider)
+	}
+	if channel.Status != "connected" {
+		return fmt.Errorf("whatsapp channel not connected")
+	}
+	if channel.AccessToken == nil || strings.TrimSpace(*channel.AccessToken) == "" {
+		return fmt.Errorf("whatsapp channel missing access token")
+	}
+	if channel.MetaPhoneNumberID == nil || strings.TrimSpace(*channel.MetaPhoneNumberID) == "" {
+		return fmt.Errorf("whatsapp channel missing meta_phone_number_id")
+	}
+	contactPhone := whatsapp.NormalizeRecipient(contact.PhoneNumber)
+	if contactPhone == "" {
+		return fmt.Errorf("invalid contact phone")
+	}
+
+	extID, err := whatsapp.SendText(
+		ctx,
+		*channel.AccessToken,
+		*channel.MetaPhoneNumberID,
+		contactPhone,
+		text,
+	)
+	if err != nil {
+		rlog.Error("AI job: meta SendText failed",
+			"err", err,
+			"convoId", convo.ID,
+			"channelId", channel.ID,
+		)
+		return fmt.Errorf("send whatsapp: %w", err)
+	}
 
 	preview := text
 	if len(preview) > 280 {
 		preview = preview[:280]
 	}
 
-	metadataJSON, _ := json.Marshal(map[string]string{"reason": reason})
+	metadataJSON, _ := json.Marshal(meta)
 	var msgCreatedAt time.Time
-	err := db.QueryRowContext(ctx, `
+	err = db.QueryRowContext(ctx, `
 		INSERT INTO message (conversation_id, external_id, direction, author, type, body, metadata, status)
 		VALUES ($1, $2, 'out', $3, 'text', $4, $5::jsonb, 'sent')
 		RETURNING created_at`,
-		convo.ID, externalID, author, text, metadataJSON,
+		convo.ID, extID, author, text, string(metadataJSON),
 	).Scan(&msgCreatedAt)
 	if err != nil {
 		rlog.Error("AI job: failed inserting outbound message", "err", err)

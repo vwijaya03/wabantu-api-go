@@ -99,12 +99,14 @@ REST OAuth: package **`whatsappapi/`** · Graph send: **`whatsapp/`**.
 
 | Method | Path | FE | Status |
 |--------|------|-----|--------|
-| GET | `/api/v1/billing/overview` | ✅ | ✅ |
-| POST | `/api/v1/billing/select-plan` | ✅ | ✅ |
-| POST | `/api/v1/payment/create-qris` | ✅ billing | ✅ |
-| GET | `/api/v1/usage/summary` | ✅ billing | ✅ |
+| GET | `/api/v1/billing/overview` | ✅ | ✅ — `plans`: starter/business/pro; `pendingCheckout`; `invoices`: paid/issued only |
+| POST | `/api/v1/billing/select-plan` | ✅ | ✅ — buat invoice **`pending`**; subscription aktif setelah bayar |
+| POST | `/api/v1/payment/create-qris` | ✅ billing | ✅ — `invoiceId` wajib; validasi status `pending` |
+| GET | `/api/v1/usage/summary` | ✅ billing | ✅ — `plan`: `trial` jika `is_trial` |
 
-Plan codes: `starter`, `business`, `pro` (+ alias `basic` → business).
+Plan codes: `starter`, `business`, `pro` (+ alias `basic` → business, tidak di katalog UI).
+
+**Kuota & rate limit:** [LIMITS_AND_QUOTAS.md](./LIMITS_AND_QUOTAS.md).
 
 ---
 

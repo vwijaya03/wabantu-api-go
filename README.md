@@ -299,10 +299,19 @@ conn, err := appdb.TenantConn(ctx, tenant.DataDB.Stdlib(), user.TenantSchema)
 
 **Penting:** Postgres dari `encore run` **bukan** otomatis DB di `infra/postgres` untuk Nest. Migrasi data lama = manual.
 
-## Rate limiting
+## Batasan & kuota (dokumentasi lengkap)
 
-- **Global:** middleware Encore `middleware/ratelimit.go` — **120 req/menit per IP** (Redis sliding window).
-- **Auth:** login/register lebih ketat — **20 req/menit per IP** (`shared/ratelimit`).
+**→ [LIMITS_AND_QUOTAS.md](./LIMITS_AND_QUOTAS.md)** — rate limit HTTP, kuota trial/Starter/Business/Pro, entitlement, checkout QRIS, routing AI.
+
+Ringkas:
+
+| Topik | Nilai |
+|-------|--------|
+| Rate limit global | **400** req/menit / IP |
+| Auth login/register | **20** req/menit / IP |
+| Trial | Semua fitur aktif; kuota bulanan ketat (mis. AI 60 conv, 100k token, broadcast 20 kontak) |
+| Katalog UI | `starter`, `business`, `pro` (tanpa duplikat `basic`) |
+| Checkout | `select-plan` → invoice `pending` → QRIS → webhook `paid` → subscription aktif |
 - Encore tidak punya throttler bawaan seperti Nest `@nestjs/throttler`; pola ini = **Redis + middleware** (best practice untuk multi-instance).
 
 ## Import CSV/XLSX (staging)
@@ -368,7 +377,7 @@ Handler auth global: `auth.AuthHandler` (`//encore:authhandler`) → `buildAuthU
    - Retry hingga **4×** (Encore `RetryPolicy` + penghitung Redis per `inboundMessageId`)
    - Setelah gagal terus → **fallback** (`FallbackAutoReplyJob`, setara `ai-worker` Node)
 4. Pipeline lengkap di `ai/autoreply.go` (Anthropic + kirim WhatsApp).
-5. **Hybrid AI routing** (`ai/routing.go`): Haiku untuk FAQ sederhana, Sonnet untuk kompleks — per plan (`starter` = Haiku only, `business` = hybrid, `pro` = hybrid priority). FAQ match tinggi bisa bypass LLM.
+5. **Hybrid AI routing** (`ai/routing.go`): per plan — `starter` = Haiku only; **`trial` + business** = hybrid; `pro` = hybrid priority. FAQ match tinggi bisa bypass LLM. Lihat [LIMITS_AND_QUOTAS.md §2.3](./LIMITS_AND_QUOTAS.md#23-routing-ai-airoutinggo).
 
 `ai-worker-go/` hanya untuk eksperimen Asynq terpisah — **bukan** jalur default api-go. Lihat `../ai-worker-go/README.md`.
 

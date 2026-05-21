@@ -2,7 +2,7 @@
 
 > **Audience:** Senior full-stack developers from Node.js/TypeScript (Express, NestJS, Prisma/TypeORM) learning **Go** and **Encore**.  
 > **Codebase:** `api-go/` — Encore rewrite of NestJS `api/`.  
-> **Companion docs:** [README.md](./README.md) · [APP_FLOW_GUIDE.md](./APP_FLOW_GUIDE.md) · [ENDPOINT_COMPATIBILITY.md](./ENDPOINT_COMPATIBILITY.md)
+> **Companion docs:** [README.md](./README.md) · [APP_FLOW_GUIDE.md](./APP_FLOW_GUIDE.md) · [ENDPOINT_COMPATIBILITY.md](./ENDPOINT_COMPATIBILITY.md) · **[LIMITS_AND_QUOTAS.md](./LIMITS_AND_QUOTAS.md)** (rate limit, trial/paid kuota, billing checkout)
 
 **Baru belajar Go?** Langsung ke **[Bagian 18 Go untuk developer Node.js](#18-go-language-guide-for-nodejs-developers-with-wabantu-examples)** — penjelasan pointer, error, context, interface, dll. dengan contoh nyata dari repo ini.
 
@@ -360,9 +360,11 @@ func AuthHandler(ctx context.Context, token string) (encoreAuth.UID, *types.Auth
 func RateLimit(req encoremw.Request, next encoremw.Next) encoremw.Response
 ```
 
-120 req/min/IP globally; auth routes also 20/min in `auth.allowAuthRate`.
+400 req/min/IP globally; auth routes also 20/min in `auth.allowAuthRate`; platform bootstrap 5/min/IP.
 
 **Nest:** `@Injectable()` middleware class → Encore function with `next(req)`.
+
+**Tabel lengkap kuota trial/Starter/Business/Pro, entitlement, checkout QRIS, routing AI:** [LIMITS_AND_QUOTAS.md](./LIMITS_AND_QUOTAS.md).
 
 ## Secrets
 
@@ -899,6 +901,9 @@ Defined in `tenantDDL` — e.g. `idx_message_conv_created`, `idx_wa_channel_phon
 2. Meta redirects to frontend → `meta/connect/callback` with code
 3. Exchange code for access token; `fetchMetaWaba` for `meta_phone_number_id`
 4. `upsertChannel` in tenant schema
+5. `tenant.RegisterWhatsAppInbound` → baris di `system.whatsapp_inbound_map` (**satu** `meta_phone_number_id` global)
+
+**Penting:** Beberapa tenant **tidak boleh** menyimpan `meta_phone_number_id` / nomor Meta yang **sama**. Meta mengirim webhook hanya dengan `phone_number_id`; jika duplikat di DB, pesan masuk ke tenant pertama yang kebetulan ter-scan (bug lama) atau error **ambiguous** (perilaku baru). Satu nomor WA Cloud API = satu tenant di WABantu.
 
 ## 7.3 Inbound webhook → AI reply
 
@@ -1307,8 +1312,8 @@ Secrets per Encore environment: `local`, `dev`, `prod` via `encore secret set --
 | `ai.withTenantDB` SET on pool | Medium | Use `TenantConn` consistently |
 | Mixed auth: Encore `auth` vs `AuthenticateHTTP` | Low | Document when to use which |
 | No sqlc/ORM | Low | SQL string drift (e.g. past `messages` vs `message` bug) |
-| AI send not calling Meta API yet | Medium | `sendAiMessage` persists only; TODO in code |
-| Webhook tenant scan | Low | Improved with `ListSchemaNames`; global phone→tenant index still TODO |
+| AI outbound delivery | — | `sendAiMessage` calls `whatsapp.SendText` (Meta Cloud API) before persisting `message` |
+| Webhook tenant routing | — | `system.whatsapp_inbound_map`: satu `meta_phone_number_id` → satu `tenant_schema`; duplikat ditolak saat OAuth connect |
 | Internal AI endpoints `public` | High for prod | Protect with `AiInternalToken` |
 | Duplicate Anthropic secret names | Low | `AnthropicApiKey` vs `AnthropicAPIKey` |
 | Limited automated tests | Medium | Regression risk on schema patches |

@@ -14,7 +14,13 @@ type modelPricing struct {
 	OutputPer1M float64
 }
 
+const defaultSonnetModel = "claude-sonnet-4-6"
+
 var pricingTable = map[string]modelPricing{
+	"claude-haiku-4-5-20251001":   {InputPer1M: 1.00, OutputPer1M: 5.00},
+	"claude-sonnet-4-6":           {InputPer1M: 3.00, OutputPer1M: 15.00},
+	"claude-opus-4-7":             {InputPer1M: 5.00, OutputPer1M: 25.00},
+	"claude-sonnet-4-5-20250929":  {InputPer1M: 3.00, OutputPer1M: 15.00},
 	"claude-sonnet-4-5-20250514":  {InputPer1M: 3.00, OutputPer1M: 15.00},
 	"claude-3-5-sonnet-20241022":  {InputPer1M: 3.00, OutputPer1M: 15.00},
 	"claude-3-5-haiku-20241022":   {InputPer1M: 0.80, OutputPer1M: 4.00},
@@ -27,7 +33,7 @@ func EstimateTokenCost(model string, inputTokens, outputTokens int) float64 {
 	pricing, ok := pricingTable[model]
 	if !ok {
 		rlog.Warn("unknown model for cost estimation, using sonnet default", "model", model)
-		pricing = pricingTable["claude-sonnet-4-5-20250514"]
+		pricing = pricingTable[defaultSonnetModel]
 	}
 	inputCost := float64(inputTokens) / 1_000_000 * pricing.InputPer1M
 	outputCost := float64(outputTokens) / 1_000_000 * pricing.OutputPer1M
@@ -89,7 +95,7 @@ func GetTenantAICostEstimate(ctx context.Context, tenantSchema string, period Us
 		TotalRequests:     int(convCount),
 	}
 	result.EstimatedCostUSD = EstimateTokenCost(
-		"claude-sonnet-4-5-20250514",
+		defaultSonnetModel,
 		result.TotalInputTokens,
 		result.TotalOutputTokens,
 	)

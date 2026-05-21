@@ -10,6 +10,14 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 )
 
+func isModelNotFoundErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := strings.ToLower(err.Error())
+	return strings.Contains(s, "not_found") && strings.Contains(s, "model")
+}
+
 type AnthropicConfig struct {
 	Model     string
 	MaxTokens int
@@ -17,7 +25,7 @@ type AnthropicConfig struct {
 
 func DefaultAnthropicConfig() AnthropicConfig {
 	return AnthropicConfig{
-		Model:     "claude-sonnet-4-5-20250514",
+		Model:     DefaultSonnetAPIID(),
 		MaxTokens: 512,
 	}
 }
@@ -30,7 +38,7 @@ type AnthropicClient struct {
 
 func NewAnthropicClient(apiKey string, cfg AnthropicConfig) *AnthropicClient {
 	if cfg.Model == "" {
-		cfg.Model = "claude-sonnet-4-5-20250514"
+		cfg.Model = DefaultSonnetAPIID()
 	}
 	if cfg.MaxTokens <= 0 {
 		cfg.MaxTokens = 512
@@ -58,6 +66,27 @@ func (c *AnthropicClient) GenerateReplyWithModel(ctx context.Context, model, sys
 	if strings.TrimSpace(model) == "" {
 		model = c.model
 	}
+	model = ResolveAnthropicModel(model)
+
+	var lastErr error
+	for i, tryModel := range FallbackModels(model) {
+		text, usage, err = c.generateOnce(ctx, tryModel, system, business, kb, history, userMessage)
+		if err == nil {
+			if i > 0 {
+				rlog.Info("anthropic completion succeeded after fallback", "model", tryModel, "attempt", i+1)
+			}
+			return text, usage, nil
+		}
+		lastErr = err
+		if !isModelNotFoundErr(err) {
+			return "", usage, err
+		}
+		rlog.Warn("anthropic model not found, trying next", "model", tryModel, "err", err)
+	}
+	return "", usage, fmt.Errorf("anthropic API error: %w", lastErr)
+}
+
+func (c *AnthropicClient) generateOnce(ctx context.Context, model, system, business, kb, history, userMessage string) (text string, usage CompletionUsage, err error) {
 	prompt := strings.Join([]string{
 		"Konteks bisnis:",
 		business,
@@ -93,7 +122,7 @@ func (c *AnthropicClient) GenerateReplyWithModel(ctx context.Context, model, sys
 	})
 	if err != nil {
 		rlog.Error("anthropic messages.create failed", "err", err, "model", model)
-		return "", usage, fmt.Errorf("anthropic API error: %w", err)
+		return "", usage, err
 	}
 	usage = CompletionUsage{
 		InputTokens:  int(resp.Usage.InputTokens),
@@ -117,4 +146,48 @@ func (c *AnthropicClient) GenerateReplyWithModel(ctx context.Context, model, sys
 		text = text[:1200]
 	}
 	return text, usage, nil
+}
+
+// CompleteText runs a single user prompt with system instruction (summarize, etc.).
+func (c *AnthropicClient) CompleteText(ctx context.Context, model, system, user string, maxTokens int64) (string, error) {
+	if maxTokens <= 0 {
+		maxTokens = c.maxTok
+	}
+	model = ResolveAnthropicModel(model)
+	var lastErr error
+	for i, tryModel := range FallbackModels(model) {
+		resp, err := c.client.Messages.New(ctx, anthropic.MessageNewParams{
+			Model:     anthropic.Model(tryModel),
+			MaxTokens: maxTokens,
+			System: []anthropic.TextBlockParam{
+				{Text: system},
+			},
+			Messages: []anthropic.MessageParam{
+				anthropic.NewUserMessage(anthropic.NewTextBlock(user)),
+			},
+		})
+		if err != nil {
+			lastErr = err
+			if isModelNotFoundErr(err) {
+				rlog.Warn("anthropic CompleteText model not found", "model", tryModel)
+				continue
+			}
+			return "", fmt.Errorf("anthropic API error: %w", err)
+		}
+		var parts []string
+		for _, block := range resp.Content {
+			if block.Type == "text" {
+				parts = append(parts, block.Text)
+			}
+		}
+		text := strings.TrimSpace(strings.Join(parts, "\n"))
+		if text == "" {
+			return "", fmt.Errorf("empty completion from model %s", tryModel)
+		}
+		if i > 0 {
+			rlog.Info("anthropic CompleteText succeeded after fallback", "model", tryModel)
+		}
+		return text, nil
+	}
+	return "", fmt.Errorf("anthropic summarize: %w", lastErr)
 }

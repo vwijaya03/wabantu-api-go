@@ -14,7 +14,8 @@ import (
 
 const (
 	// DefaultPublicRPM is the default limit for authenticated/public API traffic per client key.
-	DefaultPublicRPM = 120
+	// Dashboard SPA can burst on navigation (React Query + layout); 120/min was too low in practice.
+	DefaultPublicRPM = 400
 	// AuthRPM limits login/register attempts per IP.
 	AuthRPM = 20
 )
