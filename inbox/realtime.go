@@ -29,9 +29,9 @@ func GetUnreadSummary(ctx context.Context) (*UnreadSummaryResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tConn(ctx, user.TenantSchema)
+	conn, err := tenantConn(ctx, user)
 	if err != nil {
-		return nil, apperr.Internal("database connection failed")
+		return nil, err
 	}
 	defer conn.Close()
 

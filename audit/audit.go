@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"encore.dev/beta/auth"
@@ -68,10 +69,18 @@ func RecordAudit(ctx context.Context, p *RecordAuditParams) error {
 		`INSERT INTO audit_log
 			(tenant_id, user_id, action, entity_type, entity_id, changes, ip_address, user_agent)
 		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-		p.TenantID, p.UserID, p.Action, p.EntityType, p.EntityID,
+		nullUUID(p.TenantID), nullUUID(p.UserID), p.Action, p.EntityType, p.EntityID,
 		changesJSON, p.IPAddress, p.UserAgent,
 	)
 	return err
+}
+
+// nullUUID maps empty string to SQL NULL (platform admin events have no tenant).
+func nullUUID(s string) any {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	return s
 }
 
 //encore:api auth method=GET path=/api/v1/audit/logs

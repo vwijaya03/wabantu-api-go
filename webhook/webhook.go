@@ -29,7 +29,6 @@ var db = sqldb.Named("tenant")
 
 var secrets struct {
 	WebhookVerifyToken string
-	MetaAppSecret      string
 }
 
 // ---------------------------------------------------------------------------
@@ -91,17 +90,21 @@ func receiveWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if secrets.MetaAppSecret != "" {
-		sig := r.Header.Get("X-Hub-Signature-256")
-		if sig != "" && !whatsapp.VerifyWebhookSignature(body, sig, secrets.MetaAppSecret) {
-			rlog.Warn("webhook signature verification failed")
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-	}
-
 	messages := whatsapp.ParseWebhook(body)
 	ctx := r.Context()
+
+	if sig := r.Header.Get("X-Hub-Signature-256"); sig != "" && len(messages) > 0 {
+		appSecret, err := lookupChannelMetaAppSecret(ctx, messages[0].ToPhoneNumberID)
+		if err != nil {
+			rlog.Warn("webhook signature skipped: channel not found", "phoneNumberId", messages[0].ToPhoneNumberID, "err", err)
+		} else if appSecret != "" {
+			if !whatsapp.VerifyWebhookSignature(body, sig, appSecret) {
+				rlog.Warn("webhook signature verification failed", "phoneNumberId", messages[0].ToPhoneNumberID)
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+		}
+	}
 	for _, msg := range messages {
 		if err := ingestMessage(ctx, msg); err != nil {
 			rlog.Warn("ingest failed", "externalId", msg.ExternalID, "err", err)
@@ -294,6 +297,40 @@ type inboundChannel struct {
 // inbound Meta webhook (phone_number_id + optional display_phone_number).
 // Matches Nest resolveTenantByInboundAddress: prefer meta_phone_number_id,
 // then normalized business phone, and backfill meta_phone_number_id when missing.
+// lookupChannelMetaAppSecret returns meta_app_secret saved during WhatsApp OAuth connect.
+// No Encore global secret — each channel stores credentials at onboarding.
+func lookupChannelMetaAppSecret(ctx context.Context, phoneNumberID string) (string, error) {
+	phoneNumberID = strings.TrimSpace(phoneNumberID)
+	if phoneNumberID == "" {
+		return "", fmt.Errorf("empty phone_number_id")
+	}
+	schemas, err := tenant.ListSchemaNames(ctx)
+	if err != nil {
+		return "", err
+	}
+	pool := db.Stdlib()
+	for _, schema := range schemas {
+		var secret sql.NullString
+		err := pool.QueryRowContext(ctx,
+			fmt.Sprintf(
+				`SELECT meta_app_secret FROM %s.whatsapp_channel WHERE meta_phone_number_id = $1 LIMIT 1`,
+				appdb.QuoteIdent(schema)),
+			phoneNumberID,
+		).Scan(&secret)
+		if err == sql.ErrNoRows {
+			continue
+		}
+		if err != nil {
+			continue
+		}
+		if secret.Valid && strings.TrimSpace(secret.String) != "" {
+			return strings.TrimSpace(secret.String), nil
+		}
+		return "", nil
+	}
+	return "", fmt.Errorf("no channel for phone_number_id=%s", phoneNumberID)
+}
+
 func resolveInboundChannel(ctx context.Context, phoneNumberID, displayPhone string) (*inboundChannel, error) {
 	schemas, err := tenant.ListSchemaNames(ctx)
 	if err != nil {

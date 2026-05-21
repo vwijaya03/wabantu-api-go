@@ -141,7 +141,7 @@ Mapping nama secret (field di kode Go → nilai dari Nest `.env`):
 | `AnthropicAPIKey` | sama (nama lain di service `business`) | Untuk import website |
 | `AiInternalToken` | `AI_INTERNAL_TOKEN` | Untuk worker AI |
 | `WebhookVerifyToken` | `META_WEBHOOK_VERIFY_TOKEN` | Untuk webhook Meta |
-| `MetaAppSecret` | (opsional, verifikasi signature webhook) | Opsional |
+| *(per channel)* `meta_app_secret` di DB | disimpan saat OAuth WhatsApp connect | Verifikasi webhook signature |
 | `MidtransServerKey` | env Midtrans | Payment |
 | `MidtransClientKey` | env Midtrans | Payment |
 | `MidtransIsProduction` | `false` / `true` | Payment |
@@ -321,7 +321,8 @@ Akun **`super_admin` tanpa toko** — untuk tim WABantu memantau tenant klien. *
 
 ```bash
 # 1. Secret bootstrap (sekali, min. 32 karakter — BUKAN password login)
-encore secret set --type dev PlatformAdminBootstrapSecret
+# encore run memakai --type LOCAL, bukan dev — lihat DEVELOPER_DOCUMENTATION Bagian 4.1
+printf '%s' 'wabantu-internal-bootstrap-2026-sangat-rahasia' | encore secret set --type local PlatformAdminBootstrapSecret
 
 # 2. API jalan
 encore run

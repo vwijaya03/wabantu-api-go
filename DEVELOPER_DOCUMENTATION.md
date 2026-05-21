@@ -8,6 +8,8 @@
 
 **Buat akun operator internal (super admin tanpa toko)?** Langsung ke **[Bagian 8.1 Platform Admin — panduan lengkap](#81-platform-admin-internal-operator-wabantu-owner)**.
 
+**Setup secret Encore (`encore secret set`)?** Langsung ke **[Bagian 4.1 Encore Secrets — panduan developer](#41-encore-secrets--panduan-developer)**.
+
 ---
 
 # 1. Project Overview
@@ -364,22 +366,36 @@ func RateLimit(req encoremw.Request, next encoremw.Next) encoremw.Response
 
 ## Secrets
 
-Per-package:
+Encore menyimpan konfigurasi rahasia **per environment** (`local`, `development`, `production`, …), **bukan** file `api-go/.env`.
 
 ```go
+// Setiap service/package mendeklarasikan sendiri:
 var secrets struct {
     JWTSecret string
 }
 ```
 
-Set via CLI: `encore secret set --type dev JWTSecret` (not `.env` in api-go).
+**Panduan lengkap (wajib baca developer baru):** [Bagian 4.1 Encore Secrets — panduan developer](#41-encore-secrets--panduan-developer) — daftar semua secret, mapping dari `api/.env`, `--type local` vs `dev`, troubleshooting `invalid bootstrap secret`.
 
-| Secret | Package | Purpose |
-|--------|---------|---------|
-| `JWTSecret` | `auth` | Sign/verify access JWT |
-| `RedisURL` | `auth` | Sessions, rate limit, inbox SSE |
-| `DataEncryptionKey` | `auth` | Field encryption |
-| `PlatformAdminBootstrapSecret` | `auth` | **One-time** create internal `super_admin` (min. 32 chars) — [Bagian 8.1](#81-platform-admin-internal-operator-wabantu-owner) |
+Ringkasan cepat:
+
+| Secret | Package | Wajib dev? |
+|--------|---------|------------|
+| `JWTSecret` | `auth` | Ya |
+| `RedisURL` | `auth` | Ya |
+| `DataEncryptionKey` | `auth` | Ya |
+| `PlatformAdminBootstrapSecret` | `auth` | Hanya untuk bootstrap platform admin ([Bagian 8.1](#81-platform-admin-internal-operator-wabantu-owner)) |
+| `AnthropicApiKey` / `AnthropicAPIKey` | `ai`, `business` | Untuk AI & import website |
+| `AiInternalToken` | `ai` | Untuk internal AI HTTP |
+| `WebhookVerifyToken` | `webhook` | Meta webhook GET challenge (`hub.verify_token`) |
+| `Midtrans*` | `payment` | Payment |
+| `RajaOngkir*` | `shipping` | Shipping |
+| `SentryDSN` | `shared/sentry` | Opsional |
+
+```bash
+cd api-go && ./scripts/setup-secrets-from-env.sh   # impor dari ../api/.env → --type local
+encore secret list                                 # cek kolom Local ✓
+```
 
 ## Pub/Sub
 
@@ -414,6 +430,212 @@ var _ = cron.NewJob("reset-monthly-usage", cron.JobConfig{
 
 - **Dev:** `encore run` — single process, local Postgres provisioned by Encore, Redis from `infra/`.
 - **Prod:** Encore Cloud or Docker image (`Dockerfile`) — compiled binary, secrets from Encore/env.
+
+---
+
+# 4.1 Encore Secrets — Panduan Developer
+
+> **Ringkasan:** `encore run` di laptop memakai secret bertipe **`local`**. Bukan `dev`. Kalau secret hanya di-set `--type dev`, aplikasi lokal melihat nilai **kosong** → login gagal, bootstrap `invalid bootstrap secret`, AI 401, dll.
+
+## Mengapa tidak pakai `api-go/.env`?
+
+| NestJS `api/` | Encore `api-go/` |
+|---------------|------------------|
+| `api/.env` dibaca saat start | Tidak ada `.env` di `api-go/` |
+| Satu file per mesin | Secret disimpan di **Encore Cloud** (terikat akun `encore auth login`) |
+| | CLI: `encore secret set --type <env> <NamaSecret>` |
+
+Nilai sumber tetap bisa di **`../api/.env`** (Nest) lalu diimpor lewat script — lihat di bawah.
+
+## Environment Encore (`--type`)
+
+| `--type` | Kapan dipakai | Perintah tipikal |
+|----------|---------------|------------------|
+| **`local`** | **`encore run` di laptop Anda** | `encore secret set --type local JWTSecret` |
+| `dev` | Deploy / environment **Development** di Encore Cloud | `encore secret set --type dev ...` |
+| `prod` | Production | `encore secret set --type prod ...` |
+
+**Cek apa yang terisi:**
+
+```bash
+cd api-go
+encore secret list
+```
+
+Contoh output (perhatikan kolom **Local**):
+
+```
+Secret Key                     Production   Development   Local   Preview
+JWTSecret                      ✗            ✗             ✓       ✗
+PlatformAdminBootstrapSecret   ✗            ✓             ✗       ✗   ← salah: hanya Development, Local kosong!
+```
+
+Untuk development lokal, semua secret yang dipakai **`encore run`** harus punya **✓ di kolom Local**.
+
+## Prasyarat (sekali per laptop)
+
+```bash
+encore auth login
+cd api-go
+encore app link    # jika pernah app_not_found
+```
+
+Tanpa login, `encore secret set` gagal.
+
+---
+
+## Cara 1 — Impor otomatis dari `api/.env` (disarankan)
+
+Script membaca `../api/.env` dan menulis ke **`--type local`**:
+
+```bash
+cd api-go
+# Pastikan ../api/.env ada (copy dari api/.env.example)
+./scripts/setup-secrets-from-env.sh
+encore secret list
+```
+
+**Yang diimpor** (lihat `scripts/setup-secrets-from-env.sh`):
+
+| Encore secret | Sumber di `api/.env` |
+|---------------|----------------------|
+| `JWTSecret` | `JWT_ACCESS_SECRET` |
+| `DataEncryptionKey` | `DATA_ENCRYPTION_KEY` |
+| `RedisURL` | `redis://{REDIS_HOST}:{REDIS_PORT}` (default `localhost:6379`) |
+| `AnthropicApiKey` | `ANTHROPIC_API_KEY` |
+| `AnthropicAPIKey` | `ANTHROPIC_API_KEY` (nama duplikat untuk package `business`) |
+| `AiInternalToken` | `AI_INTERNAL_TOKEN` |
+| `WebhookVerifyToken` | `META_WEBHOOK_VERIFY_TOKEN` |
+| `MidtransServerKey` | `MIDTRANS_SERVER_KEY` |
+| `MidtransClientKey` | `MIDTRANS_CLIENT_KEY` |
+| `MidtransIsProduction` | `MIDTRANS_IS_PRODUCTION` (default `false`) |
+| `RajaOngkirAPIKey` | `RAJAONGKIR_API_KEY` |
+| `RajaOngkirAccountType` | `RAJAONGKIR_ACCOUNT_TYPE` (default `starter`) |
+| `SentryDSN` | `SENTRY_DSN` |
+
+**Tidak diimpor oleh script** — set manual (lihat Cara 2):
+
+| Encore secret | Alasan |
+|---------------|--------|
+| `PlatformAdminBootstrapSecret` | Khusus internal WABantu; tidak ada di Nest `.env` |
+| *(tidak ada Encore secret)* | `webhook` | Verifikasi `X-Hub-Signature-256` memakai `whatsapp_channel.meta_app_secret` dari OAuth connect |
+
+---
+
+## Cara 2 — Set manual per secret (`--type local`)
+
+Format aman (tanpa newline di akhir string):
+
+```bash
+cd api-go
+
+printf '%s' 'nilai-rahasia-anda' | encore secret set --type local NamaSecret
+```
+
+Contoh minimal agar API jalan:
+
+```bash
+printf '%s' 'ganti-dengan-jwt-access-secret-panjang' | encore secret set --type local JWTSecret
+printf '%s' 'ganti-dengan-32-byte-encryption-key' | encore secret set --type local DataEncryptionKey
+printf '%s' 'redis://localhost:6379' | encore secret set --type local RedisURL
+```
+
+**Platform admin bootstrap** (min. 32 karakter — **bukan** password login):
+
+```bash
+printf '%s' 'wabantu-internal-bootstrap-2026-sangat-rahasia' | encore secret set --type local PlatformAdminBootstrapSecret
+```
+
+Header curl harus **sama persis** dengan string di atas:
+
+```bash
+-H 'X-Platform-Bootstrap-Secret: wabantu-internal-bootstrap-2026-sangat-rahasia'
+```
+
+Detail bootstrap: [Bagian 8.1](#81-platform-admin-internal-operator-wabantu-owner).
+
+**Webhook signature Meta:** tidak perlu secret Encore terpisah. Saat owner menghubungkan WhatsApp (`meta/connect`), `meta_app_secret` disimpan di tabel `whatsapp_channel` per tenant. Webhook POST memverifikasi signature dari secret channel tersebut.
+
+---
+
+## Cara 3 — Mode interaktif
+
+```bash
+encore secret set --type local JWTSecret
+# paste nilai saat diminta
+```
+
+---
+
+## Setelah mengubah secret
+
+1. **Hentikan** `encore run` (Ctrl+C)
+2. Jalankan lagi: `encore run`
+
+Secret tidak hot-reload. Lupa restart = perilaku aneh (nilai lama/kosong).
+
+---
+
+## Katalog lengkap secret per package
+
+| Encore secret | Package / file | Fungsi | Wajib lokal? |
+|---------------|----------------|--------|--------------|
+| `JWTSecret` | `auth/auth.go` | Tanda tangan JWT login | Ya |
+| `DataEncryptionKey` | `auth/auth.go` | Enkripsi field sensitif | Ya |
+| `RedisURL` | `auth/auth.go`, `ai/api.go` | Session, rate limit, SSE, AI retry counter | Ya |
+| `PlatformAdminBootstrapSecret` | `auth/auth.go` | Header bootstrap akun `super_admin` internal | Hanya jika pakai bootstrap |
+| `AnthropicApiKey` | `ai/api.go` | Model AI auto-reply | Untuk fitur AI |
+| `AnthropicAPIKey` | `business/business.go` | Import website → profil | Untuk import website |
+| `AiInternalToken` | `ai/api.go` | `X-Ai-Internal-Token` pada internal AI HTTP | Jika panggil internal AI |
+| `WebhookVerifyToken` | `webhook/webhook.go` | Verifikasi GET challenge Meta | Untuk webhook WA |
+| *(per channel)* `meta_app_secret` | `whatsapp_channel` (tenant DB) | `X-Hub-Signature-256` setelah OAuth connect | Disarankan prod |
+| `MidtransServerKey` | `payment/payment.go` | QRIS | Untuk payment |
+| `MidtransClientKey` | `payment/payment.go` | Client Midtrans | Untuk payment |
+| `MidtransIsProduction` | `payment/payment.go` | `"true"` / `"false"` | Untuk payment |
+| `RajaOngkirAPIKey` | `shipping/shipping.go` | Ongkir | Untuk shipping |
+| `RajaOngkirAccountType` | `shipping/shipping.go` | `starter` / `basic` / `pro` | Untuk shipping |
+| `SentryDSN` | `shared/sentry/sentry.go` | Error tracking | Opsional |
+
+---
+
+## Production
+
+```bash
+encore secret set --type prod JWTSecret
+encore secret set --type prod PlatformAdminBootstrapSecret
+# ... secret lain ...
+```
+
+Jangan pakai nilai dev di prod. Rotate secret jika pernah bocor.
+
+---
+
+## Troubleshooting secret
+
+| Gejala | Penyebab | Solusi |
+|--------|----------|--------|
+| `invalid bootstrap secret` | Header curl ≠ nilai di Encore, atau secret hanya di `dev` bukan **`local`** | `printf '%s' '...' \| encore secret set --type **local** PlatformAdminBootstrapSecret` lalu restart `encore run` |
+| `PlatformAdminBootstrapSecret not configured (min 32 chars)` | Secret kosong atau &lt; 32 karakter di environment aktif | Set string ≥ 32 char, `--type local`, restart |
+| `fetch secrets ... failed` / login aneh | Secret belum di-set | `./scripts/setup-secrets-from-env.sh` atau set manual |
+| `not logged in: run encore auth login` | CLI Encore belum login | `encore auth login` |
+| `app_not_found` | App belum link ke cloud | `encore app link` / `encore app init` |
+| AI / internal 401 | `AiInternalToken` kosong atau beda dengan caller | Samakan dengan `AI_INTERNAL_TOKEN` di `.env` |
+| Session selalu expired | `RedisURL` salah / Redis mati | `docker compose up -d redis`; set `redis://localhost:6379` |
+| Secret sudah di-set tapi masih gagal | `encore run` belum di-restart | Ctrl+C → `encore run` lagi |
+| Kolom **Local** ✗ di `secret list` | Hanya set `--type dev` | Ulangi dengan `--type local` |
+
+---
+
+## Checklist developer baru
+
+```bash
+encore auth login
+cd api-go
+./scripts/setup-secrets-from-env.sh
+printf '%s' 'bootstrap-secret-min-32-chars........' | encore secret set --type local PlatformAdminBootstrapSecret
+encore secret list    # semua yang dipakai harus ✓ di Local
+encore run
+```
 
 ---
 
@@ -781,22 +1003,29 @@ flowchart LR
 
 ### Langkah 1 — Secret Encore (wajib, min. 32 karakter)
 
+> **Penting:** `encore run` memakai **`--type local`**, bukan `dev`. Lihat [Bagian 4.1](#41-encore-secrets--panduan-developer).
+
 Dari folder `api-go`:
 
 ```bash
-encore secret set --type dev PlatformAdminBootstrapSecret
+# Secret standar (dari api/.env)
+./scripts/setup-secrets-from-env.sh
+
+# Bootstrap platform admin — min. 32 karakter, BUKAN password login
+printf '%s' 'wabantu-internal-bootstrap-2026-sangat-rahasia' | encore secret set --type local PlatformAdminBootstrapSecret
+
+encore secret list   # PlatformAdminBootstrapSecret harus ✓ di kolom Local
 ```
 
-Saat prompt, masukkan string acak panjang (contoh: `wabantu-internal-bootstrap-dev-2026-xxxxxxxx`).
+| Environment | `--type` untuk `encore secret set` |
+|-------------|-------------------------------------|
+| Laptop (`encore run`) | **`local`** |
+| Encore Cloud Development | `dev` |
+| Production | `prod` |
 
-| Environment | Perintah |
-|-------------|----------|
-| Local dev | `--type dev` |
-| Production | `--type prod` |
+**Ini bukan password login** — hanya untuk header `X-Platform-Bootstrap-Secret` saat `curl` bootstrap.
 
-**Ini bukan password login** — hanya untuk memanggil endpoint bootstrap. Simpan di password manager tim.
-
-Tambahkan juga secret standar jika belum: `JWTSecret`, `RedisURL`, `DataEncryptionKey` (lihat [README.md](./README.md)).
+Setelah set secret: **restart** `encore run`.
 
 ### Langkah 2 — Jalankan API + migrasi
 
@@ -926,8 +1155,8 @@ Key: `session:{accountId}:{sessionId}`
 
 | Gejala | Penyebab umum | Solusi |
 |--------|---------------|--------|
-| `invalid bootstrap secret` | Header curl ≠ secret Encore | `encore secret set` ulang, copy paste exact |
-| `PlatformAdminBootstrapSecret not configured` | Secret belum di-set atau &lt; 32 char | Set secret panjang, restart `encore run` |
+| `invalid bootstrap secret` | Header curl ≠ secret, atau secret hanya `--type dev` bukan **`local`** | [Bagian 4.1](#41-encore-secrets--panduan-developer): `encore secret set --type local`, restart `encore run` |
+| `PlatformAdminBootstrapSecret not configured` | Secret kosong / &lt; 32 char di environment **local** | Set dengan `printf` + `--type local`, restart |
 | `Email sudah terdaftar` | Email sudah dipakai owner lain | Login dengan email itu, atau pakai email baru |
 | Login OK tapi 403 di inbox | Belum impersonate tenant | Admin → **Pantau** tenant |
 | `encore check` gagal di `admin/` | Compile error | Pull terbaru; pastikan `requireSuperAdmin` dipanggil `_, err :=` |
@@ -950,7 +1179,7 @@ Ulangi **Langkah 3** dengan **email berbeda** (secret bootstrap sama). Tidak ada
 | Passwords | bcrypt cost 12 |
 | Email lookup | SHA-256 `email_hash` |
 | JWT | Short TTL; session revocable via Redis delete on logout |
-| Webhook | Optional `X-Hub-Signature-256` with `MetaAppSecret` |
+| Webhook | `X-Hub-Signature-256` with per-channel `meta_app_secret` (from OAuth) |
 | Rate limit | Redis sliding window |
 | Encryption | `DataEncryptionKey` for sensitive fields (`shared/crypto`) |
 
@@ -990,12 +1219,17 @@ Ulangi **Langkah 3** dengan **email berbeda** (secret bootstrap sama). Tidak ada
 
 See [README.md](./README.md) checklist: Docker, Go 1.24+, Encore CLI, Redis, `encore auth login`, secrets.
 
+**Secrets (wajib):** [Bagian 4.1 Encore Secrets — panduan developer](#41-encore-secrets--panduan-developer).
+
 ## Run
 
 ```bash
 cd ../infra && docker compose up -d redis
 cd api-go
+encore auth login
 ./scripts/setup-secrets-from-env.sh
+# Opsional platform admin: lihat Bagian 4.1 + 8.1
+encore secret list    # pastikan kolom Local ✓
 encore check
 encore run   # API :4000, dashboard :9400
 ```

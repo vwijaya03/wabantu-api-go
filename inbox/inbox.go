@@ -17,6 +17,7 @@ import (
 
 	appdb "encore.app/wabantu/shared/db"
 	apperr "encore.app/wabantu/shared/errs"
+	"encore.app/wabantu/shared/tenantctx"
 	"encore.app/wabantu/shared/types"
 	"encore.app/wabantu/whatsapp"
 )
@@ -151,6 +152,10 @@ func currentUser() (*types.AuthUser, error) {
 
 func tConn(ctx context.Context, schema string) (*sql.Conn, error) {
 	return appdb.TenantConn(ctx, db.Stdlib(), schema)
+}
+
+func tenantConn(ctx context.Context, user *types.AuthUser) (*sql.Conn, error) {
+	return tenantctx.Conn(ctx, db.Stdlib(), user)
 }
 
 func queryBool(s string) bool {
