@@ -312,7 +312,14 @@ sequenceDiagram
 | `tenant/schema_patch.go` | Idempotent `ALTER` for existing tenants |
 | `webhook/webhook.go` | Ingest pipeline |
 | `ai/inbound_jobs.go` | Pub/Sub `ai-jobs` |
-| `ai/autoreply.go` | Main AI logic (~1000 LOC) |
+| `ai/autoreply.go` | Orchestrator: scope, classifier, LLM send, counters |
+| `ai/order_flow.go` | Order state machine, purchase/payment follow-up helpers |
+| `ai/greeting.go` | Time-of-day greetings, casual openers |
+| `ai/product_scope.go` | Off-business product detection (apparel tenants) |
+| `ai/safety.go` | Scope, question-like, retail/payment keywords |
+| `ai/classifier_routing.go` | Haiku vs Sonnet + FAQ direct bypass |
+| `ai/reply_meta.go` | Outbound metadata paths + `LogAndRecord` |
+| `usage/ai_activity.go` | Tenant AI activity log API |
 
 **Node comparison:** instead of `src/modules/inbox/inbox.controller.ts` + `.service.ts` + `.module.ts`, you get **one package** with handlers + SQL. Encore replaces `main.ts` bootstrap.
 
@@ -715,13 +722,13 @@ Production path: **Pub/Sub** `ai-jobs`, not HTTP.
 | payment | `/api/v1/payment/*`, webhook | mixed |
 | shipping | `/api/v1/shipping/*` | auth |
 | billing | `/api/v1/billing/*` | auth |
-| usage | `/api/v1/usage/summary` | auth owner |
+| usage | `/api/v1/usage/summary`, `/api/v1/usage/ai-activity` (super_admin impersonate) | auth — kuota tenant |
 | broadcast | `/api/v1/broadcast/campaigns` | auth |
 | importcsv | `/api/v1/import/*` | auth owner |
-| workflow | `/api/v1/workflows` | auth |
+| workflow | `GET/POST/PATCH/DELETE /api/v1/workflows` | auth (PATCH/DELETE owner) |
 | branch | `/api/v1/branches` | auth |
 | analytics | `/api/v1/analytics/overview` | auth |
-| admin | `/api/v1/admin/*` | super_admin |
+| admin | `/api/v1/admin/*`, `GET .../tenant/:id/ai-activity` (+ summary) | super_admin |
 | flag | `/api/v1/flags` | auth |
 | health | `/api/v1/health`, `/ready` | public |
 | tenant | `/api/v1/internal/tenant/*` | private |
@@ -911,8 +918,17 @@ See sequence in Bagian 5. Key branches:
 
 - `workflow.TryRun` — keyword rules may skip AI
 - `ai.PublishInboundJob` — async
-- AI: profile completeness → classifier → Anthropic or template reply
+- AI pipeline (`ai/autoreply.go` + helpers):
+  1. Greeting / injection guards (`greeting.go`, `safety.go`)
+  2. Active **order flow** (Redis, `order_flow.go`) — product → variant → qty → address → draft `order`
+  3. Business scope + keyword classifier (`product_scope.go`, `safety.go`) — off-topic products (e.g. food at apparel shop), purchase intent (`pesen`, `mau` + pcs)
+  4. Post-checkout context (`IsActiveCheckoutFromHistory`) — payment/transfer/ongkir after order without re-classifying as out-of-scope
+  5. FAQ cache / KB direct answer / hybrid KB retrieval (`retrieveHybridKB`)
+  6. LLM reply (Haiku/Sonnet per plan) with history + conversation summary (`memory.go`)
+  7. Activity logging per tenant (`usage.RecordAIActivity`, paths in `reply_meta.go`)
 - Failures: retry Pub/Sub → `FallbackAutoReply`
+
+AI activity log (super_admin): `GET /api/v1/admin/tenant/:id/ai-activity` (+ `/summary`). Saat impersonate: juga `GET /api/v1/usage/ai-activity` (tenant efektif). Owner tenant **tidak** punya akses.
 
 ## 7.4 Staff sends message from inbox
 
@@ -1318,7 +1334,7 @@ Secrets per Encore environment: `local`, `dev`, `prod` via `encore secret set --
 | Duplicate Anthropic secret names | Low | `AnthropicApiKey` vs `AnthropicAPIKey` |
 | Limited automated tests | Medium | Regression risk on schema patches |
 
-**Non-idiomatic Go:** large files (`autoreply.go`); acceptable for domain-heavy code but could split by pipeline stage.
+**Non-idiomatic Go:** `autoreply.go` remains large; pipeline stages are partially split (`order_flow.go`, `greeting.go`, `product_scope.go`).
 
 **Node habits to avoid:** deep DI hierarchies, excessive interfaces, `any` equivalents via `interface{}` without need.
 
@@ -1339,7 +1355,7 @@ Secrets per Encore environment: `local`, `dev`, `prod` via `encore secret set --
 2. `auth/auth.go` — register + `AuthHandler`
 3. `shared/db/tenant.go` + `tenant/tenant.go` (DDL)
 4. `webhook/webhook.go` — ingest
-5. `ai/inbound_jobs.go` + `ai/autoreply.go`
+5. `ai/inbound_jobs.go` + `ai/autoreply.go` + `ai/order_flow.go`
 6. `inbox/inbox.go` + `inbox/realtime.go`
 7. Domain you will work on (e.g. `payment/`)
 
@@ -1419,7 +1435,7 @@ flowchart LR
 
 - Setting `search_path` on shared `*sql.DB` pool (`ai.withTenantDB`)
 - Swallowing Redis publish errors (`_ = rdb.Publish(...)`)
-- Large god-file `autoreply.go` without subpackage split
+- Large `autoreply.go` orchestrator (helpers split into `order_flow.go`, `greeting.go`, `product_scope.go`)
 
 ## Hidden complexity
 

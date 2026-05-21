@@ -149,7 +149,7 @@ func (c *AnthropicClient) generateOnce(ctx context.Context, model, system, busin
 }
 
 // CompleteText runs a single user prompt with system instruction (summarize, etc.).
-func (c *AnthropicClient) CompleteText(ctx context.Context, model, system, user string, maxTokens int64) (string, error) {
+func (c *AnthropicClient) CompleteText(ctx context.Context, model, system, user string, maxTokens int64) (string, CompletionUsage, error) {
 	if maxTokens <= 0 {
 		maxTokens = c.maxTok
 	}
@@ -172,7 +172,7 @@ func (c *AnthropicClient) CompleteText(ctx context.Context, model, system, user 
 				rlog.Warn("anthropic CompleteText model not found", "model", tryModel)
 				continue
 			}
-			return "", fmt.Errorf("anthropic API error: %w", err)
+			return "", CompletionUsage{}, fmt.Errorf("anthropic API error: %w", err)
 		}
 		var parts []string
 		for _, block := range resp.Content {
@@ -182,12 +182,16 @@ func (c *AnthropicClient) CompleteText(ctx context.Context, model, system, user 
 		}
 		text := strings.TrimSpace(strings.Join(parts, "\n"))
 		if text == "" {
-			return "", fmt.Errorf("empty completion from model %s", tryModel)
+			return "", CompletionUsage{}, fmt.Errorf("empty completion from model %s", tryModel)
+		}
+		usage := CompletionUsage{
+			InputTokens:  int(resp.Usage.InputTokens),
+			OutputTokens: int(resp.Usage.OutputTokens),
 		}
 		if i > 0 {
 			rlog.Info("anthropic CompleteText succeeded after fallback", "model", tryModel)
 		}
-		return text, nil
+		return text, usage, nil
 	}
-	return "", fmt.Errorf("anthropic summarize: %w", lastErr)
+	return "", CompletionUsage{}, fmt.Errorf("anthropic summarize: %w", lastErr)
 }

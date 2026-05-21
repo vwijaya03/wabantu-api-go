@@ -34,6 +34,35 @@ var greetingPrefixes = []string{
 	"halo", "hai", "assalamualaikum", "salam", "permisi",
 }
 
+// Short Indonesian time-of-day / chat openers (not only "selamat malam").
+var standaloneGreetingWords = []string{
+	"pagi", "siang", "sore", "malam", "halo", "hai", "salam", "permisi",
+}
+
+// Shopping intent — in-scope for apparel/retail even if profile keywords (jeans, etc.) are absent from the message.
+var retailIntentKeywords = []string{
+	"mau", "tanya", "nanya", "tny", "beli", "pesan", "order", "checkout",
+	"pcs", "pc", "biji", "buah", "qty", "jumlah", "unit", "saja",
+	"harga", "stok", "stock", "ready", "tersedia", "ada", "jual", "jualan",
+	"ukuran", "size", "warna", "model", "varian", "katalog", "produk", "barang",
+	"kirim", "ongkir", "pengiriman", "berapa", "apakah", "bisa", "cari", "butuh", "minat",
+	"bayar", "pembayaran", "transfer", "trf", "tf", "cod", "qris", "rekening", "total",
+	"invoice", "nota", "bukti", "lunasi",
+}
+
+// Customer engagement — replies about the bot/conversation stay in scope (not out_of_scope).
+var customerEngagementKeywords = []string{
+	"balas", "balasan", "kok", "salah", "keliru", "bilang", "kata", "maksud", "tadi",
+}
+
+// Apparel / fashion product terms (Omah-style tenants).
+var apparelProductKeywords = []string{
+	"celana", "jeans", "baju", "kaos", "pakaian", "fashion", "apparel", "busana",
+	"hotpants", "skinny", "highwaist", "high waist", "dalam", "boxer", "kemeja",
+	"dress", "rok", "hoodie", "jaket", "cardigan", "legging", "short", "pants",
+	"denim", "warna", "size", "ukuran",
+}
+
 var nonAlphaNum = regexp.MustCompile(`[^a-z0-9\s]`)
 var digitOnly = regexp.MustCompile(`^\d+$`)
 
@@ -97,6 +126,18 @@ func IsGreetingLike(raw string) bool {
 			return true
 		}
 	}
+	for _, w := range standaloneGreetingWords {
+		if text == w {
+			return true
+		}
+	}
+	// "selamat", "selamat kak", etc.
+	if text == "selamat" || strings.HasPrefix(text, "selamat ") {
+		return len(strings.Fields(text)) <= 4
+	}
+	if IsCasualChatOpener(text) {
+		return true
+	}
 	return false
 }
 
@@ -128,7 +169,37 @@ func ExtractScopeKeywords(scopeText string) []string {
 }
 
 func IsWithinBusinessScope(userText string, scopeKW, fallbackKW []string) bool {
-	text := strings.ToLower(userText)
+	text := strings.ToLower(strings.TrimSpace(userText))
+	if text == "" {
+		return false
+	}
+
+	// e.g. "pesan nasi goreng" at Omah Apparel — commerce words alone must not count as in-scope.
+	if IsOffBusinessProductRequest(userText, scopeKW) {
+		return false
+	}
+
+	// Product / fashion vocabulary (e.g. "celana dalam" even when profile only mentions jeans).
+	for _, kw := range apparelProductKeywords {
+		if strings.Contains(text, kw) {
+			return true
+		}
+	}
+
+	// General commerce intent (price, stock, order, "mau tanya", etc.).
+	for _, kw := range retailIntentKeywords {
+		if strings.Contains(text, kw) {
+			return true
+		}
+	}
+
+	for _, kw := range customerEngagementKeywords {
+		if strings.Contains(text, kw) {
+			return true
+		}
+	}
+
+	// Keyword from business profile / KB scope appears in the customer message.
 	lookup := scopeKW
 	if len(lookup) == 0 {
 		lookup = fallbackKW
@@ -137,7 +208,7 @@ func IsWithinBusinessScope(userText string, scopeKW, fallbackKW []string) bool {
 		return true
 	}
 	for _, kw := range lookup {
-		if strings.Contains(text, kw) {
+		if len(kw) >= 3 && strings.Contains(text, kw) {
 			return true
 		}
 	}

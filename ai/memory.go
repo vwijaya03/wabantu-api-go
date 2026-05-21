@@ -10,6 +10,7 @@ import (
 	"encore.dev/pubsub"
 	"encore.dev/rlog"
 
+	"encore.app/wabantu/usage"
 )
 
 // SummarizeRequest is published after every 20 messages in a conversation.
@@ -70,19 +71,46 @@ func SummarizeConversation(ctx context.Context, tenantSchema, convoID string) er
 	}
 	conversationText := strings.Join(lines, "\n")
 
+	businessCtx := ""
+	if profile, pErr := loadBusinessProfile(ctx, db); pErr == nil && profile != nil {
+		businessCtx = fmt.Sprintf(
+			"Konteks bisnis tenant (katalog resmi — pesanan di luar ini TIDAK valid):\n- Nama: %s\n- Produk/layanan: %s\n\n",
+			profile.BusinessName,
+			strOrEmpty(profile.ProductsServices),
+		)
+	}
+
 	client := NewAnthropicClient(secrets.AnthropicApiKey, AnthropicConfig{
 		Model:     DefaultHaikuAPIID(),
 		MaxTokens: 300,
 	})
-	systemPrompt := "Kamu adalah asisten yang merangkum percakapan customer service."
+	systemPrompt := "Kamu merangkum percakapan customer service WhatsApp. Jangan tulis bahwa pelanggan berhasil memesan barang yang tidak ada di katalog bisnis tenant."
 	userPrompt := fmt.Sprintf(
-		"Rangkum percakapan ini dalam 3-5 kalimat bahasa Indonesia. Fokus pada topik utama, keputusan, dan status terakhir.\n\nPercakapan:\n%s",
+		"%sRangkum percakapan ini dalam 3-5 kalimat bahasa Indonesia. Fokus topik yang relevan dengan bisnis tenant. Jika pelanggan minta produk di luar katalog, sebutkan itu di luar scope.\n\nPercakapan:\n%s",
+		businessCtx,
 		conversationText,
 	)
 
-	summary, err := client.CompleteText(ctx, DefaultHaikuAPIID(), systemPrompt, userPrompt, 300)
+	model := DefaultHaikuAPIID()
+	summary, compUsage, err := client.CompleteText(ctx, model, systemPrompt, userPrompt, 300)
 	if err != nil {
 		return err
+	}
+
+	_ = usage.RecordAIActivity(ctx, usage.AIActivityParams{
+		TenantSchema:   tenantSchema,
+		ConversationID: convoID,
+		Purpose:        usage.PurposeConversationSummary,
+		Path:           "conversation_summary",
+		Reason:         "ai_generated",
+		Model:          model,
+		Tier:           "haiku",
+		LLMUsed:        true,
+		InputTokens:    compUsage.InputTokens,
+		OutputTokens:   compUsage.OutputTokens,
+	})
+	if compUsage.InputTokens+compUsage.OutputTokens > 0 {
+		_ = usage.RecordEvent(ctx, tenantSchema, "ai_token", compUsage.InputTokens+compUsage.OutputTokens, nil)
 	}
 
 	err = storeSummary(ctx, db, tenantSchema, convoID, summary, len(messages))

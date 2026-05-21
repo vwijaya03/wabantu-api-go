@@ -376,8 +376,9 @@ Handler auth global: `auth.AuthHandler` (`//encore:authhandler`) → `buildAuthU
 3. Subscriber **`ai-auto-reply`** (`ai/inbound_jobs.go`) di proses yang sama dengan API:
    - Retry hingga **4×** (Encore `RetryPolicy` + penghitung Redis per `inboundMessageId`)
    - Setelah gagal terus → **fallback** (`FallbackAutoReplyJob`, setara `ai-worker` Node)
-4. Pipeline lengkap di `ai/autoreply.go` (Anthropic + kirim WhatsApp).
-5. **Hybrid AI routing** (`ai/routing.go`): per plan — `starter` = Haiku only; **`trial` + business** = hybrid; `pro` = hybrid priority. FAQ match tinggi bisa bypass LLM. Lihat [LIMITS_AND_QUOTAS.md §2.3](./LIMITS_AND_QUOTAS.md#23-routing-ai-airoutinggo).
+4. Pipeline di `ai/autoreply.go` (orchestrator) + `order_flow.go`, `greeting.go`, `product_scope.go`, `safety.go` — order Redis state, scope/classifier, lalu Anthropic + kirim WhatsApp.
+5. **Hybrid AI routing** (`ai/classifier_routing.go`, `ai/routing.go`): per plan — `starter` = Haiku only; **`trial` + business** = hybrid; `pro` = hybrid priority. FAQ match tinggi bisa bypass LLM. Lihat [LIMITS_AND_QUOTAS.md §2.3](./LIMITS_AND_QUOTAS.md#23-routing-ai-airoutinggo).
+6. Log aktivitas AI per tenant: `GET /api/v1/usage/ai-activity` (owner).
 
 `ai-worker-go/` hanya untuk eksperimen Asynq terpisah — **bukan** jalur default api-go. Lihat `../ai-worker-go/README.md`.
 
@@ -428,7 +429,9 @@ Stack compose contoh: `../infra/docker-compose.yml` (service `api-go`).
 | `tenant/tenant.go` | Provisioning schema tenant |
 | `webhook/webhook.go` | Ingest WhatsApp + enqueue AI |
 | `ai/inbound_jobs.go` | Pub/Sub `ai-jobs`, retry + fallback |
-| `ai/autoreply.go` | Pipeline balasan AI |
+| `ai/autoreply.go` | Orchestrator pipeline balasan AI |
+| `ai/order_flow.go` | State machine order + checkout follow-up |
+| `usage/ai_activity.go` | Log aktivitas model/path per tenant |
 | `inbox/inbox.go` | Inbox REST |
 | `../api/.env` | Sumber nilai secret (jangan commit) |
 

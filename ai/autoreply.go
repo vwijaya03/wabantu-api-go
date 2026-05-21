@@ -163,6 +163,12 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		rlog.Warn("AI job: missing conversation")
 		return false, nil
 	}
+	ctx = WithActivityContext(ctx, ActivityContext{
+		TenantSchema:     payload.TenantSchema,
+		TenantID:         payload.TenantID,
+		ConversationID:   convo.ID,
+		InboundMessageID: payload.InboundMessageID,
+	})
 
 	inbound, err := loadMessage(ctx, db, payload.InboundMessageID)
 	if err != nil {
@@ -223,7 +229,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 
 	if !isBusinessProfileComplete(profile) {
 		out := metaNoLLM(reasonProfileIncomplete, PathProfileIncomplete)
-		out.LogOutcome(convo.ID, payload.InboundMessageID)
+		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact,
 			nonAiDefaultReply(profile), "system", out)
 		return err == nil, err
@@ -233,16 +239,17 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	rlog.Info("AI job: inbound text", "lenUserText", len(userText))
 
 	if IsGreetingLike(userText) {
-		greet := strOrEmpty(profile.GreetingTemplate)
-		if greet == "" {
-			if strOrEmpty(profile.Tone) == "formal" {
-				greet = "Selamat siang, kak. Ada yang bisa kami bantu?"
-			} else {
-				greet = "Selamat siang kak! Ada yang bisa aku bantu?"
-			}
-		}
+		greet := GreetingReply(userText, strOrEmpty(profile.Tone), strOrEmpty(profile.GreetingTemplate))
 		out := metaNoLLM(reasonNonQuestion, PathGreeting)
-		out.LogOutcome(convo.ID, payload.InboundMessageID)
+		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
+		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, greet, "ai", out)
+		return err == nil, err
+	}
+
+	if IsGreetingFeedback(userText) {
+		greet := GreetingFeedbackReply(userText, strOrEmpty(profile.Tone))
+		out := metaNoLLM(reasonNonQuestion, PathGreeting)
+		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, greet, "ai", out)
 		return err == nil, err
 	}
@@ -258,7 +265,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 			text = nonAiDefaultReply(profile)
 		}
 		out := metaNoLLM(reasonOutOfScope, PathInjectionGuard)
-		out.LogOutcome(convo.ID, payload.InboundMessageID)
+		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, text, "system", out)
 		return err == nil, err
 	}
@@ -272,6 +279,35 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return false, err
 	}
 
+	// Active order flow — only when message is really continuing checkout (not greeting/harga/batal).
+	if orderSt, _ := s.getOrderState(ctx, payload.TenantID, convo.ID); orderSt != nil {
+		tone := strOrEmpty(profile.Tone)
+		if IsOrderFlowCancelled(userText) {
+			s.clearOrderState(ctx, payload.TenantID, convo.ID)
+			out := metaNoLLM(reasonNonQuestion, PathOrderFlow)
+			out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
+			err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact,
+				orderFlowCancelReply(tone), "system", out)
+			return err == nil, err
+		}
+		if ShouldBreakOrderFlow(userText, orderSt.Step) {
+			s.clearOrderState(ctx, payload.TenantID, convo.ID)
+			rlog.Info("AI job: order flow cleared for new intent", "prevStep", orderSt.Step)
+			if IsGreetingLike(userText) {
+				greet := GreetingReply(userText, tone, strOrEmpty(profile.GreetingTemplate))
+				out := metaNoLLM(reasonNonQuestion, PathGreeting)
+				out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
+				err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, greet, "ai", out)
+				return err == nil, err
+			}
+			// Fall through → classifier / LLM for harga, tanya produk, dll.
+		} else {
+			sent, oErr := s.handleOrderFlow(ctx, db, payload.TenantSchema, payload.TenantID, convo, channel, contact,
+				userText, profile, kbEntries, payload.InboundMessageID)
+			return sent, oErr
+		}
+	}
+
 	var scopeParts []string
 	scopeParts = append(scopeParts, profile.BusinessName)
 	scopeParts = append(scopeParts, strOrEmpty(profile.Description))
@@ -283,9 +319,28 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	}
 	scopeKeywords := ExtractScopeKeywords(strings.Join(scopeParts, " "))
 
-	fallbackKW := []string{"harga", "stok", "produk", "order", "pengiriman", "ukuran", "size"}
+	fallbackKW := []string{
+		"harga", "stok", "produk", "order", "pengiriman", "ukuran", "size",
+		"mau", "tanya", "beli", "ada", "celana", "jeans", "baju", "apparel",
+	}
 	inScope := IsWithinBusinessScope(userText, scopeKeywords, fallbackKW)
+	if !inScope && IsActiveCheckoutFromHistory(history, userText) {
+		inScope = true
+	}
 	classifier := classifyMessage(userText, inScope, profile)
+	if classifier.Label == "in_scope_non_question" &&
+		(HasPurchaseIntent(userText) || IsOrderFollowUpFromHistory(history, userText)) {
+		classifier = classifyResult{Label: "order_intent", Confidence: 0.85}
+	}
+	if ac, ok := ActivityContextFrom(ctx); ok {
+		ac.Classifier = classifier.Label
+		ctx = WithActivityContext(ctx, ac)
+	}
+	rlog.Info("AI job: scope check",
+		"inScope", inScope,
+		"classifier", classifier.Label,
+		"userPreview", previewText(userText, 80),
+	)
 	rlog.Info("AI job: classifier",
 		"label", classifier.Label,
 		"confidence", classifier.Confidence,
@@ -294,7 +349,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	// ── Handle: sensitive escalation ─────────────────────────────────────
 	if classifier.Label == "sensitive_escalate" {
 		out := metaNoLLM(reasonOutOfScope, PathEscalate)
-		out.LogOutcome(convo.ID, payload.InboundMessageID)
+		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact,
 			"Maaf kak, untuk topik ini tim CS kami akan langsung mengambil alih dan segera menghubungi kakak 🙏",
 			"system", out)
@@ -313,7 +368,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 			text = nonAiDefaultReply(profile)
 		}
 		out := metaNoLLM(reasonOutOfScope, PathOutOfScope)
-		out.LogOutcome(convo.ID, payload.InboundMessageID)
+		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, text, "system", out)
 		return err == nil, err
 	}
@@ -327,7 +382,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 			text = nonAiDefaultReply(profile)
 		}
 		out := metaNoLLM(reasonNonQuestion, PathNonQuestion)
-		out.LogOutcome(convo.ID, payload.InboundMessageID)
+		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, text, "system", out)
 		return err == nil, err
 	}
@@ -335,15 +390,16 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	// ── Handle: low-confidence question ──────────────────────────────────
 	if classifier.Label == "in_scope_question" && classifier.Confidence < llmConfidenceThreshold {
 		out := metaNoLLM(reasonNonQuestion, PathLowConfidence)
-		out.LogOutcome(convo.ID, payload.InboundMessageID)
+		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact,
 			scopeDirectionReply(profile), "system", out)
 		return err == nil, err
 	}
 
 	// ── Handle: order intent state machine ───────────────────────────────
-	if classifier.Label == "order_intent" {
-		sent, oErr := s.handleOrderFlow(ctx, db, payload.TenantID, convo, channel, contact, userText, profile)
+	if classifier.Label == "order_intent" || (IsOrderContinuationMessage(userText) && hasOrderIntentText(userText)) {
+		sent, oErr := s.handleOrderFlow(ctx, db, payload.TenantSchema, payload.TenantID, convo, channel, contact,
+			userText, profile, kbEntries, payload.InboundMessageID)
 		return sent, oErr
 	}
 
@@ -353,7 +409,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	cached, _ := s.getCachedAnswer(ctx, payload.TenantID, userText)
 	if cached != "" {
 		out := metaNoLLM(reasonAIGenerated, PathFAQCache)
-		out.LogOutcome(convo.ID, payload.InboundMessageID)
+		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, cached, "ai", out)
 		return err == nil, err
 	}
@@ -371,7 +427,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		finalReply := applyOutputPolicy(direct)
 		s.setCachedAnswer(ctx, payload.TenantID, userText, finalReply)
 		out := metaNoLLM(reasonAIGenerated, PathFAQDirect)
-		out.LogOutcome(convo.ID, payload.InboundMessageID)
+		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
 		return err == nil, err
 	}
@@ -379,6 +435,10 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	planCode, _ := loadSubscriptionPlanCode(ctx, db)
 	complexity := ClassifyComplexity(userText, classifier.Label, kbTopScore)
 	route := ResolveRouting(planCode, complexity)
+	if ac, ok := ActivityContextFrom(ctx); ok {
+		ac.RouteReason = route.Reason
+		ctx = WithActivityContext(ctx, ac)
+	}
 	rlog.Info("AI job: hybrid model routing",
 		"plan", planCode,
 		"complexity", complexity,
@@ -390,7 +450,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	if ok, reason := usage.CheckAICostLimit(ctx, payload.TenantSchema, payload.TenantID); !ok {
 		rlog.Warn("AI job: tenant cost limit reached", "reason", reason)
 		out := metaNoLLM(reasonOutOfScope, PathCostLimit)
-		out.LogOutcome(convo.ID, payload.InboundMessageID)
+		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact,
 			"Maaf kak, kuota AI bulan ini sudah mencapai batas. Tim kami akan segera menghubungi kakak ya 🙏",
 			"system", out)
@@ -446,7 +506,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	finalReply := applyOutputPolicy(reply)
 	s.setCachedAnswer(ctx, payload.TenantID, userText, finalReply)
 	out := metaFromRoute(reasonAIGenerated, PathLLM, route)
-	out.LogOutcome(convo.ID, payload.InboundMessageID)
+	out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, compUsage.InputTokens, compUsage.OutputTokens)
 	err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
 	return err == nil, err
 }
@@ -475,7 +535,7 @@ func (s *AutoReplyService) FallbackAutoReply(ctx context.Context, payload AiRepl
 	}
 
 	out := metaNoLLM(reasonNonQuestion, PathAutoFallback)
-	out.LogOutcome(convo.ID, payload.InboundMessageID)
+	out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 	err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact,
 		"Maaf kak, saat ini sistem kami sedang sibuk. Tim kami akan bantu balas secepatnya ya 🙏",
 		"system", out)
@@ -496,36 +556,89 @@ var (
 func (s *AutoReplyService) handleOrderFlow(
 	ctx context.Context,
 	db *sql.DB,
-	tenantID string,
+	tenantSchema, tenantID string,
 	convo *dbConversation,
 	channel *dbChannel,
 	contact *dbContact,
 	userText string,
 	profile *dbBusinessProfile,
+	kb []dbKBEntry,
+	inboundID string,
 ) (bool, error) {
+	scopeKW := businessScopeKeywords(profile)
+	if IsOffBusinessProductRequest(userText, scopeKW) {
+		s.clearOrderState(ctx, tenantID, convo.ID)
+		out := metaNoLLM(reasonOutOfScope, PathOutOfScope)
+		out.LogAndRecord(ctx, convo.ID, inboundID, 0, 0)
+		err := s.sendAiMessage(ctx, db, tenantID, convo, channel, contact,
+			outOfScopeReply(profile), "system", out)
+		return err == nil, err
+	}
+
+	tmpl := orderTemplatesFromKB(kb, strOrEmpty(profile.Tone) == "formal")
+	send := func(text string) (bool, error) {
+		out := metaNoLLM(reasonNonQuestion, PathOrderFlow)
+		out.LogAndRecord(ctx, convo.ID, inboundID, 0, 0)
+		err := s.sendAiMessage(ctx, db, tenantID, convo, channel, contact, text, "system", out)
+		return err == nil, err
+	}
+
 	state, _ := s.getOrderState(ctx, tenantID, convo.ID)
+	hints := parseOrderHints(userText)
 
 	if state == nil {
+		if hints.HasSize && strings.TrimSpace(hints.Product) != "" {
+			st := orderState{Product: hints.Product, Variant: hints.Variant}
+			if hints.HasQty {
+				st.Qty = hints.Qty
+				st.Step = "ask_address"
+				s.setOrderState(ctx, tenantID, convo.ID, st)
+				return send(tmpl.AskAddress)
+			}
+			st.Step = "ask_qty"
+			s.setOrderState(ctx, tenantID, convo.ID, st)
+			return send(tmpl.AskQty)
+		}
 		s.setOrderState(ctx, tenantID, convo.ID, orderState{Step: "ask_product"})
-		orderMeta := metaNoLLM(reasonNonQuestion, PathOrderFlow)
-		err := s.sendAiMessage(ctx, db, tenantID, convo, channel, contact,
-			"Siap kak, mau order produk yang mana ya? Sekalian tulis varian/size kalau ada.",
-			"system", orderMeta)
-		return err == nil, err
+		return send(tmpl.AskProduct)
 	}
 
 	switch state.Step {
 	case "ask_product":
-		product := userText
+		if IsOffBusinessProductRequest(userText, scopeKW) {
+			s.clearOrderState(ctx, tenantID, convo.ID)
+			out := metaNoLLM(reasonOutOfScope, PathOutOfScope)
+			out.LogAndRecord(ctx, convo.ID, inboundID, 0, 0)
+			err := s.sendAiMessage(ctx, db, tenantID, convo, channel, contact,
+				outOfScopeReply(profile), "system", out)
+			return err == nil, err
+		}
+		product := hints.Product
+		if product == "" {
+			product = userText
+		}
 		if len(product) > 120 {
 			product = product[:120]
 		}
+		variant := hints.Variant
+		if variant == "" {
+			if m := sizeRe.FindString(userText); m != "" {
+				variant = m
+			}
+		}
+		if variant != "" || hints.HasSize {
+			st := orderState{Product: product, Variant: variant, Step: "ask_qty"}
+			if hints.HasQty {
+				st.Qty = hints.Qty
+				st.Step = "ask_address"
+				s.setOrderState(ctx, tenantID, convo.ID, st)
+				return send(tmpl.AskAddress)
+			}
+			s.setOrderState(ctx, tenantID, convo.ID, st)
+			return send(tmpl.AskQty)
+		}
 		s.setOrderState(ctx, tenantID, convo.ID, orderState{Step: "ask_variant", Product: product})
-		orderMeta := metaNoLLM(reasonNonQuestion, PathOrderFlow)
-		err := s.sendAiMessage(ctx, db, tenantID, convo, channel, contact,
-			"Baik kak. Untuk variannya apa ya (mis. size/warna)?",
-			"system", orderMeta)
-		return err == nil, err
+		return send(tmpl.AskVariant)
 
 	case "ask_variant":
 		variant := userText
@@ -534,56 +647,55 @@ func (s *AutoReplyService) handleOrderFlow(
 		} else if len(variant) > 60 {
 			variant = variant[:60]
 		}
-		s.setOrderState(ctx, tenantID, convo.ID, orderState{
-			Step: "ask_qty", Product: state.Product, Variant: variant,
-		})
-		orderMeta := metaNoLLM(reasonNonQuestion, PathOrderFlow)
-		err := s.sendAiMessage(ctx, db, tenantID, convo, channel, contact,
-			"Siap kak. Mau pesan berapa pcs?",
-			"system", orderMeta)
-		return err == nil, err
+		st := orderState{Step: "ask_qty", Product: state.Product, Variant: variant}
+		if hints.HasQty {
+			st.Qty = hints.Qty
+			st.Step = "ask_address"
+			s.setOrderState(ctx, tenantID, convo.ID, st)
+			return send(tmpl.AskAddress)
+		}
+		s.setOrderState(ctx, tenantID, convo.ID, st)
+		return send(tmpl.AskQty)
 
 	case "ask_qty":
 		qty := 0
-		if m := qtyRe.FindStringSubmatch(userText); len(m) > 1 {
+		if hints.HasQty {
+			qty = hints.Qty
+		} else if m := qtyRe.FindStringSubmatch(userText); len(m) > 1 {
 			fmt.Sscanf(m[1], "%d", &qty)
+		}
+		if qty < 1 {
+			return send(tmpl.ClarifyQty)
 		}
 		s.setOrderState(ctx, tenantID, convo.ID, orderState{
 			Step: "ask_address", Product: state.Product, Variant: state.Variant, Qty: qty,
 		})
-		orderMeta := metaNoLLM(reasonNonQuestion, PathOrderFlow)
-		err := s.sendAiMessage(ctx, db, tenantID, convo, channel, contact,
-			"Terima kasih kak. Boleh kirim alamat pengiriman lengkapnya ya.",
-			"system", orderMeta)
-		return err == nil, err
+		return send(tmpl.AskAddress)
 
 	case "ask_address":
 		if addrRe.MatchString(userText) {
+			st := orderState{
+				Product: state.Product, Variant: state.Variant, Qty: state.Qty, Step: "done",
+			}
+			if _, err := persistDraftOrder(ctx, db, tenantSchema, convo.ID, convo.ContactID, st, userText); err != nil {
+				rlog.Warn("AI order: persist draft failed", "err", err, "convoId", convo.ID)
+			}
 			s.clearOrderState(ctx, tenantID, convo.ID)
-			orderMeta := metaNoLLM(reasonNonQuestion, PathOrderFlow)
-			err := s.sendAiMessage(ctx, db, tenantID, convo, channel, contact,
-				"Sip kak, datanya sudah lengkap. Tim CS kami akan segera konfirmasi order kakak ya 🙏",
-				"system", orderMeta)
-			return err == nil, err
+			return send(tmpl.Complete)
 		}
 	}
 
-	orderMeta := metaNoLLM(reasonNonQuestion, PathOrderFlow)
-	err := s.sendAiMessage(ctx, db, tenantID, convo, channel, contact,
-		"Boleh kak lanjutkan data ordernya, nanti tim CS bantu proses sampai selesai ya.",
-		"system", orderMeta)
-	return err == nil, err
+	return send(tmpl.RetryStep)
 }
 
 // ─── Message classifier ──────────────────────────────────────────────────────
 
-var orderKeywords = []string{"order", "pesan", "beli", "checkout", "jadi ambil", "jadi beli"}
 var sensitiveKeywords = []string{
 	"penipuan", "fraud", "komplain keras", "lapor polisi",
 	"ancam", "refund gagal", "tagihan salah",
 }
 
-func classifyMessage(userText string, inScope bool, _ *dbBusinessProfile) classifyResult {
+func classifyMessage(userText string, inScope bool, profile *dbBusinessProfile) classifyResult {
 	text := strings.ToLower(userText)
 
 	for _, kw := range sensitiveKeywords {
@@ -594,8 +706,14 @@ func classifyMessage(userText string, inScope bool, _ *dbBusinessProfile) classi
 	if !inScope {
 		return classifyResult{Label: "out_of_scope", Confidence: 0.9}
 	}
-	for _, kw := range orderKeywords {
-		if strings.Contains(text, kw) {
+	if HasPurchaseIntent(userText) {
+		if IsOffBusinessProductRequest(userText, businessScopeKeywords(profile)) {
+			return classifyResult{Label: "out_of_scope", Confidence: 0.92}
+		}
+		// "mau pesen jeans bisa?" = tanya dulu, bukan form order.
+		capabilityAsk := IsQuestionLike(userText) &&
+			!orderQtyLineRe.MatchString(text) && !orderSizeLineRe.MatchString(text)
+		if !capabilityAsk {
 			return classifyResult{Label: "order_intent", Confidence: 0.88}
 		}
 	}

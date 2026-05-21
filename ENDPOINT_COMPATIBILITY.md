@@ -119,7 +119,9 @@ Plan codes: `starter`, `business`, `pro` (+ alias `basic` → business, tidak di
 | Broadcast | `/api/v1/broadcast/...` | `/dashboard/broadcast` |
 | Import | `/api/v1/import/preview`, `/execute` | `/dashboard/import` |
 | Branches | `/api/v1/branches` | `/dashboard/branches` |
-| Workflow | `/api/v1/workflows` | `/dashboard/workflow` |
+| Workflow | `GET/POST/PATCH/DELETE /api/v1/workflows` | `/dashboard/workflow` |
+| Usage AI activity | `GET /api/v1/usage/ai-activity`, `GET /api/v1/usage/ai-activity/summary` | super_admin saat impersonate tenant |
+| Admin AI activity | `GET /api/v1/admin/tenant/:id/ai-activity`, `.../summary` | super_admin — `/dashboard/admin/ai-activity` |
 | Admin | `/api/v1/admin/*` | `/dashboard/admin` |
 | Shipping | `/api/v1/shipping/*` | (API client ada; UI minimal) |
 | Analytics | `/api/v1/analytics/overview` | `/dashboard/analytics` |

@@ -52,6 +52,20 @@ type CreateRuleResponse struct {
 	Rule Rule `json:"rule"`
 }
 
+type UpdateRuleRequest struct {
+	Name          string          `json:"name"`
+	TriggerType   string          `json:"triggerType"`
+	TriggerValue  string          `json:"triggerValue"`
+	ActionType    string          `json:"actionType"`
+	ActionPayload json.RawMessage `json:"actionPayload"`
+	Priority      int             `json:"priority"`
+	IsActive      *bool           `json:"isActive,omitempty"`
+}
+
+type UpdateRuleResponse struct {
+	Rule Rule `json:"rule"`
+}
+
 //encore:api auth method=GET path=/api/v1/workflows
 func ListRules(ctx context.Context) (*ListRulesResponse, error) {
 	u, err := user(ctx)
@@ -142,10 +156,73 @@ func CreateRule(ctx context.Context, req *CreateRuleRequest) (*CreateRuleRespons
 	return &CreateRuleResponse{Rule: r}, nil
 }
 
+//encore:api auth method=PATCH path=/api/v1/workflows/:id tag:owner
+func UpdateRule(ctx context.Context, id string, req *UpdateRuleRequest) (*UpdateRuleResponse, error) {
+	u, err := user(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := entitlement.Require(ctx, u.TenantSchema, entitlement.FeatureWorkflow); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.TriggerValue) == "" {
+		return nil, appErrs.BadRequest("name and triggerValue required")
+	}
+	trigger := req.TriggerType
+	if trigger == "" {
+		trigger = "message_contains"
+	}
+	action := req.ActionType
+	if action == "" {
+		action = "send_reply"
+	}
+	payload := req.ActionPayload
+	if len(payload) == 0 {
+		payload = json.RawMessage(`{}`)
+	}
+	isActive := true
+	if req.IsActive != nil {
+		isActive = *req.IsActive
+	}
+
+	conn, err := tConn(ctx, u.TenantSchema)
+	if err != nil {
+		return nil, appErrs.Internal("database connection failed")
+	}
+	defer conn.Close()
+
+	var r Rule
+	var branchID sql.NullString
+	err = conn.QueryRowContext(ctx, `
+		UPDATE workflow_rule
+		SET name = $2, trigger_type = $3, trigger_value = $4,
+		    action_type = $5, action_payload = $6, priority = $7,
+		    is_active = $8, updated_at = NOW()
+		WHERE id = $1 AND deleted_at IS NULL
+		RETURNING id, name, trigger_type, trigger_value, action_type, action_payload,
+		          branch_id, is_active, priority, created_at`,
+		id, req.Name, trigger, req.TriggerValue, action, payload, req.Priority, isActive,
+	).Scan(&r.ID, &r.Name, &r.TriggerType, &r.TriggerValue, &r.ActionType, &r.ActionPayload,
+		&branchID, &r.IsActive, &r.Priority, &r.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, appErrs.NotFound("workflow rule not found")
+	}
+	if err != nil {
+		return nil, appErrs.Internal("update workflow rule failed")
+	}
+	if branchID.Valid {
+		r.BranchID = &branchID.String
+	}
+	return &UpdateRuleResponse{Rule: r}, nil
+}
+
 //encore:api auth method=DELETE path=/api/v1/workflows/:id tag:owner
 func DeleteRule(ctx context.Context, id string) error {
 	u, err := user(ctx)
 	if err != nil {
+		return err
+	}
+	if err := entitlement.Require(ctx, u.TenantSchema, entitlement.FeatureWorkflow); err != nil {
 		return err
 	}
 	conn, err := tConn(ctx, u.TenantSchema)

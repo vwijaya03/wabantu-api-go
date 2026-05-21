@@ -345,7 +345,7 @@ Verify token: secret `WebhookVerifyToken`. Saat daftar app Meta, pilih path yang
 | Broadcast | `POST /api/v1/broadcast/...` (Business+ berbayar; **trial** boleh dengan kuota 20 kontak/bulan) |
 | Import | `POST /api/v1/import/preview`, `/import/execute` |
 | Branches | `GET/POST /api/v1/branches` (Pro) |
-| Workflow | `GET/POST/DELETE /api/v1/workflows` |
+| Workflow | `GET/POST/PATCH/DELETE /api/v1/workflows` |
 | Admin | `GET /api/v1/admin/tenants`, impersonation (`super_admin`) |
 | Usage | `GET /api/v1/usage/summary` |
 | Health | `GET /api/v1/health`, `/api/v1/health/ready` |
@@ -444,8 +444,9 @@ File: `webhook/webhook.go`, `whatsapp/whatsapp.go`.
 1. Webhook simpan pesan masuk → `ai.PublishInboundJob` → topic Pub/Sub **`ai-jobs`**.
 2. Subscriber **`ai-auto-reply`** (`ai/inbound_jobs.go`) jalan **di proses yang sama** dengan `encore run` (bukan proses Node terpisah).
 3. Retry Encore + counter Redis; gagal berulang → fallback internal.
-4. `ai/autoreply.go` — safety, profil, FAQ, routing model (Haiku/Sonnet per plan), Anthropic, kirim WhatsApp.
-5. **Workflow** (`workflow/`) bisa intercept sebelum AI (keyword → balasan / handoff).
+4. `ai/autoreply.go` — orchestrator: greeting, order flow (Redis), scope/classifier, FAQ, routing model (Haiku/Sonnet), Anthropic, kirim WhatsApp. Modul terkait: `order_flow.go`, `greeting.go`, `product_scope.go`, `safety.go`, `classifier_routing.go`.
+5. **Workflow** (`workflow/`) bisa intercept sebelum AI (keyword → balasan / handoff). CRUD: `GET/POST/PATCH/DELETE /api/v1/workflows` (PATCH/DELETE owner).
+6. Log AI (super_admin): `GET /api/v1/admin/tenant/:id/ai-activity` (+ summary); FE `/dashboard/admin/ai-activity`.
 
 Debug manual (opsional):
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"encore.dev/beta/auth"
@@ -91,6 +92,14 @@ type ListOrdersResponse struct {
 	Total  int     `json:"total"`
 }
 
+// orderSelectCols — UUID columns cast to text; COALESCE(uuid,'') fails with SQLSTATE 22P02.
+const orderSelectCols = `id,
+		COALESCE(conversation_id::text, ''), COALESCE(contact_id::text, ''), items,
+		COALESCE(shipping_address, '{}'), COALESCE(notes, ''), status,
+		COALESCE(tracking_number, ''), COALESCE(courier, ''),
+		COALESCE(payment_transaction_id::text, ''), subtotal, shipping_cost, total,
+		COALESCE(created_by::text, ''), created_at, updated_at`
+
 // ---------- endpoints ----------
 
 //encore:api auth method=GET path=/api/v1/orders
@@ -129,13 +138,8 @@ func List(ctx context.Context, p *ListOrdersParams) (*ListOrdersResponse, error)
 	}
 
 	q := fmt.Sprintf(
-		`SELECT id, COALESCE(conversation_id,''), COALESCE(contact_id,''), items,
-		        COALESCE(shipping_address,'{}'), COALESCE(notes,''), status,
-		        COALESCE(tracking_number,''), COALESCE(courier,''),
-		        COALESCE(payment_transaction_id,''), subtotal, shipping_cost, total,
-		        created_by, created_at, updated_at
-		 FROM "%s"."order" %s ORDER BY created_at DESC LIMIT $%d OFFSET $%d`,
-		u.TenantSchema, where, idx, idx+1)
+		`SELECT %s FROM "%s"."order" %s ORDER BY created_at DESC LIMIT $%d OFFSET $%d`,
+		orderSelectCols, u.TenantSchema, where, idx, idx+1)
 	args = append(args, pageSize, offset)
 
 	rows, err := db.Query(ctx, q, args...)
@@ -163,12 +167,8 @@ func Get(ctx context.Context, id string) (*Order, error) {
 	}
 
 	row := db.QueryRow(ctx, fmt.Sprintf(
-		`SELECT id, COALESCE(conversation_id,''), COALESCE(contact_id,''), items,
-		        COALESCE(shipping_address,'{}'), COALESCE(notes,''), status,
-		        COALESCE(tracking_number,''), COALESCE(courier,''),
-		        COALESCE(payment_transaction_id,''), subtotal, shipping_cost, total,
-		        created_by, created_at, updated_at
-		 FROM "%s"."order" WHERE id=$1 AND deleted_at IS NULL`, u.TenantSchema), id)
+		`SELECT %s FROM "%s"."order" WHERE id=$1 AND deleted_at IS NULL`,
+		orderSelectCols, u.TenantSchema), id)
 
 	o, err := scanOrder(row.Scan)
 	if err != nil {
@@ -194,19 +194,16 @@ func Create(ctx context.Context, p *CreateOrderParams) (*Order, error) {
 
 	itemsJSON, _ := json.Marshal(p.Items)
 	addrJSON, _ := json.Marshal(p.ShippingAddress)
+	convID, contactID := nullUUIDArg(p.ConversationID), nullUUIDArg(p.ContactID)
 
 	row := db.QueryRow(ctx, fmt.Sprintf(
 		`INSERT INTO "%s"."order"
 			(conversation_id, contact_id, items, shipping_address, notes,
 			 status, subtotal, shipping_cost, total, created_by)
 		 VALUES ($1,$2,$3,$4,$5,'draft',$6,0,$6,$7)
-		 RETURNING id, COALESCE(conversation_id,''), COALESCE(contact_id,''), items,
-		           COALESCE(shipping_address,'{}'), COALESCE(notes,''), status,
-		           COALESCE(tracking_number,''), COALESCE(courier,''),
-		           COALESCE(payment_transaction_id,''), subtotal, shipping_cost, total,
-		           created_by, created_at, updated_at`,
-		u.TenantSchema),
-		p.ConversationID, p.ContactID, itemsJSON, addrJSON, p.Notes,
+		 RETURNING %s`,
+		u.TenantSchema, orderSelectCols),
+		convID, contactID, itemsJSON, addrJSON, p.Notes,
 		subtotal, u.AccountID)
 
 	o, err := scanOrder(row.Scan)
@@ -274,13 +271,8 @@ func Update(ctx context.Context, id string, req *UpdateOrderParams) (*Order, err
 	args = append(args, id)
 
 	q := fmt.Sprintf(
-		`UPDATE "%s"."order" SET %s WHERE id=$%d AND deleted_at IS NULL
-		 RETURNING id, COALESCE(conversation_id,''), COALESCE(contact_id,''), items,
-		           COALESCE(shipping_address,'{}'), COALESCE(notes,''), status,
-		           COALESCE(tracking_number,''), COALESCE(courier,''),
-		           COALESCE(payment_transaction_id,''), subtotal, shipping_cost, total,
-		           created_by, created_at, updated_at`,
-		u.TenantSchema, joinStrings(sets, ", "), idx)
+		`UPDATE "%s"."order" SET %s WHERE id=$%d AND deleted_at IS NULL RETURNING %s`,
+		u.TenantSchema, joinStrings(sets, ", "), idx, orderSelectCols)
 
 	o, err := scanOrder(db.QueryRow(ctx, q, args...).Scan)
 	if err != nil {
@@ -312,13 +304,8 @@ func Cancel(ctx context.Context, id string) (*Order, error) {
 
 	row := db.QueryRow(ctx, fmt.Sprintf(
 		`UPDATE "%s"."order" SET status='cancelled', updated_at=NOW()
-		 WHERE id=$1 AND deleted_at IS NULL
-		 RETURNING id, COALESCE(conversation_id,''), COALESCE(contact_id,''), items,
-		           COALESCE(shipping_address,'{}'), COALESCE(notes,''), status,
-		           COALESCE(tracking_number,''), COALESCE(courier,''),
-		           COALESCE(payment_transaction_id,''), subtotal, shipping_cost, total,
-		           created_by, created_at, updated_at`,
-		u.TenantSchema), id)
+		 WHERE id=$1 AND deleted_at IS NULL RETURNING %s`,
+		u.TenantSchema, orderSelectCols), id)
 
 	o, err := scanOrder(row.Scan)
 	if err != nil {
@@ -375,6 +362,14 @@ func scanOrder(scan func(dest ...any) error) (Order, error) {
 		}
 	}
 	return o, nil
+}
+
+// nullUUIDArg maps "" to SQL NULL for optional UUID columns.
+func nullUUIDArg(s string) any {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	return s
 }
 
 func joinStrings(ss []string, sep string) string {

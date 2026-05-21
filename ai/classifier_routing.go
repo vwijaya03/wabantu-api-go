@@ -5,14 +5,17 @@ import (
 	"unicode/utf8"
 )
 
-// simpleFAQKeywords — Haiku-eligible intents (price, stock, hours, address).
+// simpleFAQKeywords — Haiku-eligible intents (FAQ, catalog, price, stock).
 var simpleFAQKeywords = []string{
 	"harga", "price", "berapa", "rp", "idr",
-	"stok", "stock", "ready", "tersedia",
+	"stok", "stock", "ready", "tersedia", "ada", "punya", "jual",
 	"alamat", "address", "lokasi", "dimana", "where",
 	"jam buka", "jam operasional", "buka", "tutup", "hours", "open",
 	"ongkir", "kirim", "pengiriman", "delivery",
 	"ukuran", "size", "warna",
+	"produk", "katalog", "koleksi", "jenis", "macam", "varian", "list",
+	"jeans", "celana", "baju", "kulot", "apparel", "fashion",
+	"mau", "tanya", "nanya", "boleh", "info",
 }
 
 // complexKeywords — Sonnet-eligible (complaints, negotiation, persuasion).
@@ -55,15 +58,10 @@ func ClassifyComplexity(userText string, classifierLabel string, kbTopScore floa
 		return ComplexitySimple
 	}
 
-	if runes > 280 {
+	// Long multi-topic messages may need Sonnet synthesis; typical short WA chats → Haiku.
+	if runes > 320 {
 		return ComplexityComplex
 	}
-
-	// Default: Sonnet for open-ended in-scope questions.
-	if classifierLabel == "in_scope_question" {
-		return ComplexityComplex
-	}
-
 	return ComplexitySimple
 }
 

@@ -1,6 +1,19 @@
 package ai
 
-import "encore.dev/rlog"
+import (
+	"context"
+
+	"encore.dev/rlog"
+	"strings"
+)
+
+func previewText(s string, max int) string {
+	s = strings.TrimSpace(s)
+	if max <= 0 || len(s) <= max {
+		return s
+	}
+	return s[:max] + "…"
+}
 
 // Delivery path — how the outbound reply was produced (for logs + message.metadata).
 const (
@@ -55,4 +68,10 @@ func (m AiReplyMeta) LogOutcome(convoID, inboundID string) {
 		args = append(args, "model", m.Model, "tier", m.Tier)
 	}
 	rlog.Info("AI job: outcome", args...)
+}
+
+// LogAndRecord logs outcome and persists per-tenant AI activity (usage_event).
+func (m AiReplyMeta) LogAndRecord(ctx context.Context, convoID, inboundID string, inputTok, outputTok int) {
+	m.LogOutcome(convoID, inboundID)
+	recordActivity(ctx, m, "", inputTok, outputTok)
 }
