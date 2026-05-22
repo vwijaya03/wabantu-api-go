@@ -28,21 +28,31 @@ var validTransitions = map[string][]string{
 // ---------- types ----------
 
 type OrderItem struct {
-	Name      string  `json:"name"`
-	Variant   string  `json:"variant"`
-	Qty       int     `json:"qty"`
-	UnitPrice float64 `json:"unitPrice"`
+	CatalogItemID string  `json:"catalogItemId,omitempty"`
+	ExternalCode  string  `json:"externalCode,omitempty"`
+	Name          string  `json:"name"`
+	Variant       string  `json:"variant,omitempty"`
+	Size          string  `json:"size,omitempty"`
+	Color         string  `json:"color,omitempty"`
+	Qty           int     `json:"qty"`
+	UnitPrice     float64 `json:"unitPrice"`
+	SellUnit      string  `json:"sellUnit,omitempty"`
 }
 
 type ShippingAddress struct {
 	Name       string `json:"name"`
 	Phone      string `json:"phone"`
 	Street     string `json:"street"`
+	RT         string `json:"rt,omitempty"`
+	RW         string `json:"rw,omitempty"`
+	Kelurahan  string `json:"kelurahan,omitempty"`
+	Kecamatan  string `json:"kecamatan,omitempty"`
 	City       string `json:"city"`
-	CityID     string `json:"cityId"`
+	CityID     string `json:"cityId,omitempty"`
 	Province   string `json:"province"`
-	ProvinceID string `json:"provinceId"`
+	ProvinceID string `json:"provinceId,omitempty"`
 	PostalCode string `json:"postalCode"`
+	Country    string `json:"country,omitempty"`
 }
 
 type Order struct {

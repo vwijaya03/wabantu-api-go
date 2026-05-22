@@ -1433,7 +1433,7 @@ flowchart LR
 
 ## Anti-patterns found
 
-- Setting `search_path` on shared `*sql.DB` pool (`ai.withTenantDB`)
+- ~~Setting `search_path` on shared `*sql.DB` pool~~ — fixed in `ai.openTenantConn` (use `shared/db.TenantConn` like webhook/inbox)
 - Swallowing Redis publish errors (`_ = rdb.Publish(...)`)
 - Large `autoreply.go` orchestrator (helpers split into `order_flow.go`, `greeting.go`, `product_scope.go`)
 

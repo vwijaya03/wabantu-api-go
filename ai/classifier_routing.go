@@ -89,6 +89,10 @@ func topKBMatchScore(query string, kb []dbKBEntry) float64 {
 
 // tryFAQDirectAnswer returns a KB answer without calling the LLM (cost optimization).
 func tryFAQDirectAnswer(query string, kb []dbKBEntry) (answer string, ok bool) {
+	// Katalog produk harus dari business_catalog_item, bukan FAQ yang mengarah ke IG/website.
+	if IsCatalogListQuestion(query) || IsCatalogProductInquiry(query) {
+		return "", false
+	}
 	if len(kb) == 0 {
 		return "", false
 	}

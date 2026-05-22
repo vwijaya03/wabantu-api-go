@@ -2,13 +2,14 @@ package ai
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
 
 	"encore.dev/rlog"
+
+	"encore.app/wabantu/order"
 )
 
 var (
@@ -18,35 +19,45 @@ var (
 
 // orderFlowTemplates — default WA copy; overridden by knowledge_base_entry when matched.
 type orderFlowTemplates struct {
-	AskProduct  string
-	AskVariant  string
-	AskQty      string
-	AskAddress  string
-	Complete    string
-	RetryStep   string
-	ClarifyQty  string
+	AskProduct     string
+	AskVariant     string
+	AskQty         string
+	AskRecipient   string
+	AskAddressFull string
+	Complete       string
+	RetryStep      string
+	ClarifyQty     string
+	ClarifyAddress string
 }
 
 func defaultOrderTemplates(formal bool) orderFlowTemplates {
 	if formal {
 		return orderFlowTemplates{
-			AskProduct: "Siap kak, mau order produk yang mana ya? Sekalian tulis varian/size kalau ada.",
-			AskVariant: "Baik kak. Untuk variannya apa ya (mis. size/warna)?",
+			AskProduct: "Siap kak. Sebutkan nama produk dari katalog kami (contoh: Jiniso Highwaist).",
+			AskVariant: "Baik kak. Tulis ukuran (S/M/L/XL) dan warna yang diinginkan ya.",
 			AskQty:     "Siap kak. Mau pesan berapa pcs?",
-			AskAddress: "Terima kasih kak. Boleh kirim alamat pengiriman lengkapnya ya.",
-			Complete:   "Sip kak, datanya sudah lengkap. Tim CS kami akan segera konfirmasi order kakak ya 🙏",
-			RetryStep:  "Boleh kak lanjutkan data ordernya, nanti tim CS bantu proses sampai selesai ya.",
-			ClarifyQty: "Maaf kak, jumlahnya berapa pcs ya? (contoh: 1 pcs)",
+			AskRecipient: "Terima kasih kak. Tulis nama penerima dan nomor HP/WA aktif ya.\n" +
+				"Contoh:\nNama: Budi Santoso\nHP: 081234567890",
+			AskAddressFull: "Mohon kirim alamat pengiriman lengkap (format resmi Indonesia):\n" +
+				"Jalan: ...\nRT/RW: ... (jika ada)\nKelurahan: ...\nKecamatan: ...\nKota/Kab: ...\nProvinsi: ...\nKode pos: 12345",
+			ClarifyAddress: "Alamat belum lengkap kak. Pastikan ada jalan, kota, provinsi, dan kode pos 5 digit ya.",
+			Complete:       "Sip kak, datanya sudah lengkap. Tim CS kami akan segera konfirmasi order kakak ya 🙏",
+			RetryStep:      "Boleh kak lanjutkan data ordernya, nanti tim CS bantu proses sampai selesai ya.",
+			ClarifyQty:     "Maaf kak, jumlahnya berapa pcs ya? (contoh: 1 pcs)",
 		}
 	}
 	return orderFlowTemplates{
-		AskProduct: "Siap kak, mau order produk yang mana? Tulis juga varian/size kalau ada ya.",
-		AskVariant: "Oke kak, varian/size-nya apa ya?",
+		AskProduct: "Siap kak. Mau order produk apa? Sebut nama produk dari katalog ya.",
+		AskVariant: "Oke kak. Ukuran (S/M/L/XL) dan warnanya apa?",
 		AskQty:     "Siap kak, mau pesan berapa pcs?",
-		AskAddress: "Makasih kak. Boleh kirim alamat pengiriman lengkapnya ya.",
-		Complete:   "Sip kak, datanya sudah lengkap. Tim CS akan konfirmasi ordernya ya 🙏",
-		RetryStep:  "Boleh kak lanjutin data ordernya, nanti tim CS bantu sampai selesai ya.",
-		ClarifyQty: "Maaf kak, jumlahnya berapa pcs? (misalnya: 1 pcs)",
+		AskRecipient: "Makasih kak. Kirim nama penerima + no HP/WA ya.\n" +
+			"Contoh:\nNama: Budi\nHP: 081234567890",
+		AskAddressFull: "Kirim alamat lengkap ya (format Indonesia):\n" +
+			"Jalan: ...\nRT/RW: ...\nKelurahan: ...\nKecamatan: ...\nKota/Kab: ...\nProvinsi: ...\nKode pos: 12345",
+		ClarifyAddress: "Alamatnya belum lengkap kak — butuh jalan, kota, provinsi, dan kode pos 5 digit.",
+		Complete:       "Sip kak, datanya sudah lengkap. Tim CS akan konfirmasi ordernya ya 🙏",
+		RetryStep:      "Boleh kak lanjutin data ordernya, nanti tim CS bantu sampai selesai ya.",
+		ClarifyQty:     "Maaf kak, jumlahnya berapa pcs? (misalnya: 1 pcs)",
 	}
 }
 
@@ -70,8 +81,10 @@ func orderTemplatesFromKB(kb []dbKBEntry, formal bool) orderFlowTemplates {
 			t.AskVariant = a
 		case strings.Contains(q, "pcs") || strings.Contains(q, "jumlah") || strings.Contains(q, "qty"):
 			t.AskQty = a
+		case strings.Contains(q, "penerima") || strings.Contains(q, "nama") && strings.Contains(q, "hp"):
+			t.AskRecipient = a
 		case strings.Contains(q, "alamat") || strings.Contains(q, "pengiriman"):
-			t.AskAddress = a
+			t.AskAddressFull = a
 		case strings.Contains(q, "selesai") || strings.Contains(q, "konfirmasi"):
 			t.Complete = a
 		}
@@ -125,6 +138,7 @@ func IsOrderContinuationMessage(userText string) bool {
 	for _, kw := range []string{
 		"pcs", "pc", "biji", "buah", "qty", "jumlah", "unit",
 		"alamat", "jalan", "jl.", "rt", "rw", "kel.", "kec.", "kota", "kab.", "kode pos",
+		"kodepos", "penerima", "provinsi", "kelurahan", "kecamatan",
 	} {
 		if strings.Contains(text, kw) {
 			return true
@@ -180,9 +194,66 @@ func HasPurchaseIntent(userText string) bool {
 	return false
 }
 
+// IsStoreLocationQuestion — "tokonya di kota mana", "alamat toko dimana".
+func IsStoreLocationQuestion(userText string) bool {
+	text := strings.ToLower(strings.TrimSpace(userText))
+	if text == "" {
+		return false
+	}
+	if strings.Contains(text, "alamat toko") || strings.Contains(text, "lokasi toko") {
+		return true
+	}
+	hasStore := strings.Contains(text, "toko") || strings.Contains(text, "belanja") || strings.Contains(text, "offline")
+	hasWhere := strings.Contains(text, "mana") || strings.Contains(text, "dimana") ||
+		strings.Contains(text, "dimananya") || strings.Contains(text, "lokasi") ||
+		strings.Contains(text, "kota") || strings.Contains(text, "daerah")
+	if hasStore && hasWhere {
+		return true
+	}
+	if strings.Contains(text, "tokonya") || strings.Contains(text, "toko nya") || strings.Contains(text, "toko kamu") {
+		return hasWhere || strings.Contains(text, "?")
+	}
+	return false
+}
+
+// IsShippingQuoteQuestion — minta hitung ongkir, bukan jawaban langkah order.
+func IsShippingQuoteQuestion(userText string) bool {
+	text := strings.ToLower(strings.TrimSpace(userText))
+	if !strings.Contains(text, "ongkir") && !strings.Contains(text, "ongkos kirim") {
+		return false
+	}
+	return strings.Contains(text, "?") || strings.Contains(text, "berapa") ||
+		strings.Contains(text, "hitung") || strings.Contains(text, "minta tolong") ||
+		strings.Contains(text, "tanya") || strings.Contains(text, "kena")
+}
+
+// IsAcknowledgmentLike — ucapan terima kasih / oke singkat setelah checkout.
+func IsAcknowledgmentLike(userText string) bool {
+	text := strings.ToLower(strings.TrimSpace(userText))
+	if text == "" || len(strings.Fields(text)) > 8 {
+		return false
+	}
+	phrases := []string{
+		"terima kasih", "makasih", "thanks", "thank you", "thx",
+		"oke terima", "ok terima", "siap terima", "baik terima",
+	}
+	for _, p := range phrases {
+		if strings.Contains(text, p) {
+			return true
+		}
+	}
+	return text == "oke" || text == "ok" || text == "siap" || text == "sip"
+}
+
 // IsOrderFollowUpFromHistory — qty/size reply after bot asked about order (no Redis state yet).
 func IsOrderFollowUpFromHistory(history []dbMessage, userText string) bool {
+	if IsStoreLocationQuestion(userText) || IsShippingQuoteQuestion(userText) {
+		return false
+	}
 	if !IsOrderContinuationMessage(userText) && !HasPurchaseIntent(userText) {
+		return false
+	}
+	if len(strings.Fields(strings.TrimSpace(userText))) > 14 {
 		return false
 	}
 	var lastOut []string
@@ -202,9 +273,13 @@ func IsOrderFollowUpFromHistory(history []dbMessage, userText string) bool {
 			strings.Contains(out, "size") || strings.Contains(out, "warna")
 		askedOrder := strings.Contains(out, "proses pesanan") || strings.Contains(out, "jenis jeans") ||
 			strings.Contains(out, "mau order") || strings.Contains(out, "sebutkan pilihan")
-		inOrderFlow := strings.Contains(out, "data order") || strings.Contains(out, "alamat pengiriman")
-		if askedQty || askedVariant || askedOrder || inOrderFlow {
+		inOrderFlow := strings.Contains(out, "data order") || strings.Contains(out, "alamat pengiriman") ||
+			strings.Contains(out, "kode pos") || strings.Contains(out, "nama penerima")
+		if askedQty || askedVariant || askedOrder {
 			return true
+		}
+		if inOrderFlow {
+			return IsOrderContinuationMessage(userText) || orderQtyLineRe.MatchString(strings.ToLower(userText))
 		}
 	}
 	return false
@@ -220,9 +295,12 @@ func IsActiveCheckoutFromHistory(history []dbMessage, userText string) bool {
 		strings.Contains(text, "bayar") || strings.Contains(text, "pembayaran") ||
 		strings.Contains(text, "cod") || strings.Contains(text, "qris") ||
 		strings.Contains(text, "rekening") || strings.Contains(text, "bukti")
-	totalHint := strings.Contains(text, "total") || strings.Contains(text, "ongkir") ||
-		(strings.Contains(text, "berapa") && (strings.Contains(text, "semua") || strings.Contains(text, "ongkir")))
-	if !paymentHint && !totalHint && !IsQuestionLike(userText) {
+	if IsShippingQuoteQuestion(userText) || IsStoreLocationQuestion(userText) {
+		return false
+	}
+	totalHint := strings.Contains(text, "total") ||
+		(strings.Contains(text, "berapa") && strings.Contains(text, "semua"))
+	if !paymentHint && !totalHint && !IsQuestionLike(userText) && !IsAcknowledgmentLike(userText) {
 		return false
 	}
 	var lastOut []string
@@ -262,7 +340,7 @@ func IsOrderFlowCancelled(userText string) bool {
 	return false
 }
 
-var orderAddrHintRe = regexp.MustCompile(`(?i)(jalan|jl\.|rt|rw|kel\.|kec\.|kota|kab\.|kode pos)`)
+var orderAddrHintRe = regexp.MustCompile(`(?i)(jalan|\bjl\.?\b|rt|rw|kel\.|kec\.|kota|kab\.|kode pos|taman|setiabudi)`)
 
 // ShouldBreakOrderFlow — new intent (greeting, harga, tanya produk) while Redis order state is active.
 func ShouldBreakOrderFlow(userText, step string) bool {
@@ -270,6 +348,12 @@ func ShouldBreakOrderFlow(userText, step string) bool {
 		return true
 	}
 	if IsGreetingLike(userText) {
+		return true
+	}
+	if IsStoreLocationQuestion(userText) || IsShippingQuoteQuestion(userText) {
+		return true
+	}
+	if IsAcknowledgmentLike(userText) {
 		return true
 	}
 
@@ -289,16 +373,20 @@ func ShouldBreakOrderFlow(userText, step string) bool {
 	}
 
 	// "mau tanya jeans" / info produk — bukan melanjutkan form order.
-	if strings.Contains(text, "tanya") && !strings.Contains(text, "pesan") && step != "ask_address" {
+	if strings.Contains(text, "tanya") && !strings.Contains(text, "pesan") &&
+		step != "ask_address_full" && step != "ask_address" && step != "ask_recipient" {
 		if strings.Contains(text, "jeans") || strings.Contains(text, "produk") ||
 			strings.Contains(text, "harga") || strings.Contains(text, "ukuran") {
 			return true
 		}
 	}
 
-	// Stuck on ask_address but user sends chat biasa.
-	if step == "ask_address" {
-		if orderAddrHintRe.MatchString(text) {
+	// Stuck on address/recipient steps but user sends unrelated chat.
+	if step == "ask_address" || step == "ask_address_full" || step == "ask_recipient" {
+		if orderAddrHintRe.MatchString(text) || postalCodeIDRe.MatchString(text) {
+			return false
+		}
+		if phoneIDRe.MatchString(text) {
 			return false
 		}
 		if IsOrderContinuationMessage(userText) && !strings.Contains(text, "berapa") {
@@ -308,6 +396,26 @@ func ShouldBreakOrderFlow(userText, step string) bool {
 	}
 
 	return false
+}
+
+func normalizeOrderState(st orderState) orderState {
+	if st.ProductName == "" && strings.TrimSpace(st.Product) != "" {
+		st.ProductName = strings.TrimSpace(st.Product)
+	}
+	if st.Variant != "" && st.Size == "" && st.Color == "" {
+		sz, cl := parseSizeAndColor(st.Variant)
+		if sz != "" {
+			st.Size = sz
+		}
+		if cl != "" {
+			st.Color = cl
+		}
+	}
+	switch st.Step {
+	case "ask_address":
+		st.Step = "ask_address_full"
+	}
+	return st
 }
 
 func orderFlowCancelReply(tone string) string {
@@ -320,31 +428,52 @@ func orderFlowCancelReply(tone string) string {
 // persistDraftOrder inserts a draft row into tenant.order after the flow collects enough data.
 func persistDraftOrder(
 	ctx context.Context,
-	db *sql.DB,
+	tq tenantQuerier,
 	tenantSchema string,
 	convoID, contactID string,
 	st orderState,
-	addressLine string,
 ) (orderID string, err error) {
+	st = normalizeOrderState(st)
 	qty := st.Qty
 	if qty < 1 {
 		qty = 1
 	}
-	item := map[string]any{
-		"name":      st.Product,
-		"variant":   st.Variant,
-		"qty":       qty,
-		"unitPrice": 0,
+	variant := buildVariantLabel(st.Size, st.Color)
+	if variant == "" {
+		variant = strings.TrimSpace(st.Variant)
 	}
-	itemsJSON, _ := json.Marshal([]map[string]any{item})
-	notes := strings.TrimSpace(addressLine)
-	if st.Qty < 1 {
-		if notes != "" {
-			notes = "Qty estimasi 1 (belum eksplisit dari chat). " + notes
-		} else {
-			notes = "Qty estimasi 1 (belum eksplisit dari chat)."
-		}
+	unitPrice := st.UnitPrice
+	item := order.OrderItem{
+		CatalogItemID: st.CatalogItemID,
+		ExternalCode:  st.ExternalCode,
+		Name:          st.ProductName,
+		Variant:       variant,
+		Size:          st.Size,
+		Color:         st.Color,
+		Qty:           qty,
+		UnitPrice:     unitPrice,
+		SellUnit:      st.SellUnit,
 	}
+	subtotal := float64(qty) * unitPrice
+	addr := order.ShippingAddress{
+		Name:       st.RecipientName,
+		Phone:      st.RecipientPhone,
+		Street:     st.Street,
+		RT:         st.RT,
+		RW:         st.RW,
+		Kelurahan:  st.Kelurahan,
+		Kecamatan:  st.Kecamatan,
+		City:       st.City,
+		Province:   st.Province,
+		PostalCode: st.PostalCode,
+		Country:    st.Country,
+	}
+	if addr.Country == "" {
+		addr.Country = "Indonesia"
+	}
+
+	itemsJSON, _ := json.Marshal([]order.OrderItem{item})
+	addrJSON, _ := json.Marshal(addr)
 
 	var convArg, contactArg any
 	if strings.TrimSpace(convoID) != "" {
@@ -354,21 +483,23 @@ func persistDraftOrder(
 		contactArg = contactID
 	}
 
-	q := fmt.Sprintf(`
+	insertQ := fmt.Sprintf(`
 		INSERT INTO "%s"."order"
-			(conversation_id, contact_id, items, notes, status, subtotal, shipping_cost, total)
-		VALUES ($1, $2, $3, $4, 'draft', 0, 0, 0)
+			(conversation_id, contact_id, items, shipping_address, notes,
+			 status, subtotal, shipping_cost, total)
+		VALUES ($1, $2, $3, $4, '', 'draft', $5, 0, $5)
 		RETURNING id::text`, tenantSchema)
 
-	err = db.QueryRowContext(ctx, q, convArg, contactArg, itemsJSON, notes).Scan(&orderID)
+	err = tq.QueryRowContext(ctx, insertQ, convArg, contactArg, itemsJSON, addrJSON, subtotal).Scan(&orderID)
 	if err != nil {
 		return "", err
 	}
 	rlog.Info("AI order: draft persisted",
 		"orderId", orderID,
 		"convoId", convoID,
-		"product", previewText(st.Product, 60),
+		"product", previewText(st.ProductName, 60),
 		"qty", qty,
+		"postalCode", st.PostalCode,
 	)
 	return orderID, nil
 }

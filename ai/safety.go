@@ -26,7 +26,7 @@ var idStopwords = map[string]struct{}{
 var questionKeywords = []string{
 	"apa", "apakah", "berapa", "gimana", "bagaimana",
 	"kapan", "bisa", "stok", "size", "ukuran",
-	"harga", "order", "pesan", "kirim",
+	"harga", "order", "pesan", "ongkir", "dimana", "lokasi", "mana",
 }
 
 var greetingPrefixes = []string{
@@ -46,6 +46,7 @@ var retailIntentKeywords = []string{
 	"harga", "stok", "stock", "ready", "tersedia", "ada", "jual", "jualan",
 	"ukuran", "size", "warna", "model", "varian", "katalog", "produk", "barang",
 	"kirim", "ongkir", "pengiriman", "berapa", "apakah", "bisa", "cari", "butuh", "minat",
+	"toko", "tokonya", "dimana", "lokasi", "alamat", "terima kasih", "makasih",
 	"bayar", "pembayaran", "transfer", "trf", "tf", "cod", "qris", "rekening", "total",
 	"invoice", "nota", "bukti", "lunasi",
 }

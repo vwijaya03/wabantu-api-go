@@ -25,6 +25,7 @@ const (
 	PathNonQuestion       = "in_scope_non_question"
 	PathLowConfidence     = "low_confidence"
 	PathOrderFlow         = "order_flow"
+	PathCatalogDB         = "catalog_db"
 	PathFAQCache          = "faq_cache"
 	PathFAQDirect         = "faq_direct"
 	PathLLM               = "llm"

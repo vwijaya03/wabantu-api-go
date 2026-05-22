@@ -14,6 +14,7 @@ import (
 	"encore.dev/rlog"
 	"encore.dev/storage/sqldb"
 
+	appdb "encore.app/wabantu/shared/db"
 	"encore.app/wabantu/shared/inboxrealtime"
 	"encore.app/wabantu/usage"
 	"encore.app/wabantu/whatsapp"
@@ -38,13 +39,17 @@ const (
 
 var aiDB = sqldb.Named("tenant")
 
-func withTenantDB(ctx context.Context, schema string) (*sql.DB, error) {
-	stdlib := aiDB.Stdlib()
-	_, err := stdlib.ExecContext(ctx, fmt.Sprintf(`SET search_path TO %q`, schema))
-	if err != nil {
-		return nil, fmt.Errorf("set search_path: %w", err)
-	}
-	return stdlib, nil
+// tenantQuerier is implemented by *sql.Conn (per-tenant search_path) and *sql.DB.
+type tenantQuerier interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}
+
+// openTenantConn returns a dedicated connection with search_path set for the tenant schema.
+// Do not use SET search_path on the shared pool (*sql.DB) — concurrent jobs race and break inserts.
+func openTenantConn(ctx context.Context, schema string) (*sql.Conn, error) {
+	return appdb.TenantConn(ctx, aiDB.Stdlib(), schema)
 }
 
 // ─── Payload & internal types ────────────────────────────────────────────────
@@ -122,10 +127,31 @@ type classifyResult struct {
 }
 
 type orderState struct {
-	Step    string `json:"step"`
-	Product string `json:"product,omitempty"`
-	Variant string `json:"variant,omitempty"`
-	Qty     int    `json:"qty,omitempty"`
+	Step string `json:"step"`
+
+	// Product is legacy Redis JSON; prefer ProductName.
+	Product       string  `json:"product,omitempty"`
+	CatalogItemID string  `json:"catalogItemId,omitempty"`
+	ExternalCode  string  `json:"externalCode,omitempty"`
+	ProductName   string  `json:"productName,omitempty"`
+	Size          string  `json:"size,omitempty"`
+	Color         string  `json:"color,omitempty"`
+	Variant       string  `json:"variant,omitempty"`
+	Qty           int     `json:"qty,omitempty"`
+	UnitPrice     float64 `json:"unitPrice,omitempty"`
+	SellUnit      string  `json:"sellUnit,omitempty"`
+
+	RecipientName  string `json:"recipientName,omitempty"`
+	RecipientPhone string `json:"recipientPhone,omitempty"`
+	Street         string `json:"street,omitempty"`
+	RT             string `json:"rt,omitempty"`
+	RW             string `json:"rw,omitempty"`
+	Kelurahan      string `json:"kelurahan,omitempty"`
+	Kecamatan      string `json:"kecamatan,omitempty"`
+	City           string `json:"city,omitempty"`
+	Province       string `json:"province,omitempty"`
+	PostalCode     string `json:"postalCode,omitempty"`
+	Country        string `json:"country,omitempty"`
 }
 
 // ─── AutoReplyService ────────────────────────────────────────────────────────
@@ -150,12 +176,13 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		"inboundId", payload.InboundMessageID,
 	)
 
-	db, err := withTenantDB(ctx, payload.TenantSchema)
+	conn, err := openTenantConn(ctx, payload.TenantSchema)
 	if err != nil {
 		return false, err
 	}
+	defer conn.Close()
 
-	convo, err := loadConversation(ctx, db, payload.ConversationID)
+	convo, err := loadConversation(ctx, conn, payload.ConversationID)
 	if err != nil {
 		return false, err
 	}
@@ -170,7 +197,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		InboundMessageID: payload.InboundMessageID,
 	})
 
-	inbound, err := loadMessage(ctx, db, payload.InboundMessageID)
+	inbound, err := loadMessage(ctx, conn, payload.InboundMessageID)
 	if err != nil {
 		return false, err
 	}
@@ -192,7 +219,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return false, nil
 	}
 
-	profile, err := loadBusinessProfile(ctx, db)
+	profile, err := loadBusinessProfile(ctx, conn)
 	if err != nil {
 		return false, err
 	}
@@ -201,11 +228,11 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return false, nil
 	}
 
-	contact, err := loadContact(ctx, db, convo.ContactID)
+	contact, err := loadContact(ctx, conn, convo.ContactID)
 	if err != nil {
 		return false, err
 	}
-	channel, err := loadChannel(ctx, db, convo.ChannelID)
+	channel, err := loadChannel(ctx, conn, convo.ChannelID)
 	if err != nil {
 		return false, err
 	}
@@ -230,7 +257,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	if !isBusinessProfileComplete(profile) {
 		out := metaNoLLM(reasonProfileIncomplete, PathProfileIncomplete)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact,
+		err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact,
 			nonAiDefaultReply(profile), "system", out)
 		return err == nil, err
 	}
@@ -242,7 +269,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		greet := GreetingReply(userText, strOrEmpty(profile.Tone), strOrEmpty(profile.GreetingTemplate))
 		out := metaNoLLM(reasonNonQuestion, PathGreeting)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, greet, "ai", out)
+		err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, greet, "ai", out)
 		return err == nil, err
 	}
 
@@ -250,7 +277,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		greet := GreetingFeedbackReply(userText, strOrEmpty(profile.Tone))
 		out := metaNoLLM(reasonNonQuestion, PathGreeting)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, greet, "ai", out)
+		err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, greet, "ai", out)
 		return err == nil, err
 	}
 
@@ -266,15 +293,15 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		}
 		out := metaNoLLM(reasonOutOfScope, PathInjectionGuard)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, text, "system", out)
+		err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, text, "system", out)
 		return err == nil, err
 	}
 
-	history, err := loadHistory(ctx, db, convo.ID, 12)
+	history, err := loadHistory(ctx, conn, convo.ID, 12)
 	if err != nil {
 		return false, err
 	}
-	kbEntries, err := loadKBEntries(ctx, db, 20)
+	kbEntries, err := loadKBEntries(ctx, conn, 20)
 	if err != nil {
 		return false, err
 	}
@@ -286,7 +313,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 			s.clearOrderState(ctx, payload.TenantID, convo.ID)
 			out := metaNoLLM(reasonNonQuestion, PathOrderFlow)
 			out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-			err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact,
+			err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact,
 				orderFlowCancelReply(tone), "system", out)
 			return err == nil, err
 		}
@@ -297,12 +324,12 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 				greet := GreetingReply(userText, tone, strOrEmpty(profile.GreetingTemplate))
 				out := metaNoLLM(reasonNonQuestion, PathGreeting)
 				out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-				err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, greet, "ai", out)
+				err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, greet, "ai", out)
 				return err == nil, err
 			}
 			// Fall through → classifier / LLM for harga, tanya produk, dll.
 		} else {
-			sent, oErr := s.handleOrderFlow(ctx, db, payload.TenantSchema, payload.TenantID, convo, channel, contact,
+			sent, oErr := s.handleOrderFlow(ctx, conn, payload.TenantSchema, payload.TenantID, convo, channel, contact,
 				userText, profile, kbEntries, payload.InboundMessageID)
 			return sent, oErr
 		}
@@ -324,11 +351,15 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		"mau", "tanya", "beli", "ada", "celana", "jeans", "baju", "apparel",
 	}
 	inScope := IsWithinBusinessScope(userText, scopeKeywords, fallbackKW)
-	if !inScope && IsActiveCheckoutFromHistory(history, userText) {
+	if !inScope && (IsActiveCheckoutFromHistory(history, userText) || IsAcknowledgmentLike(userText)) {
 		inScope = true
 	}
 	classifier := classifyMessage(userText, inScope, profile)
-	if classifier.Label == "in_scope_non_question" &&
+	if IsStoreLocationQuestion(userText) || IsShippingQuoteQuestion(userText) {
+		classifier = classifyResult{Label: "in_scope_question", Confidence: 0.9}
+	} else if IsAcknowledgmentLike(userText) {
+		classifier = classifyResult{Label: "in_scope_question", Confidence: 0.85}
+	} else if classifier.Label == "in_scope_non_question" &&
 		(HasPurchaseIntent(userText) || IsOrderFollowUpFromHistory(history, userText)) {
 		classifier = classifyResult{Label: "order_intent", Confidence: 0.85}
 	}
@@ -336,6 +367,12 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		ac.Classifier = classifier.Label
 		ctx = WithActivityContext(ctx, ac)
 	}
+
+	catalog, catLoadErr := loadActiveCatalog(ctx, conn, 50)
+	if catLoadErr != nil {
+		rlog.Warn("AI job: catalog load failed", "err", catLoadErr)
+	}
+
 	rlog.Info("AI job: scope check",
 		"inScope", inScope,
 		"classifier", classifier.Label,
@@ -346,17 +383,28 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		"confidence", classifier.Confidence,
 	)
 
+	// ── Katalog WABantu (business_catalog_item) — prioritas sebelum FAQ/LLM ──
+	if inScope {
+		if catReply, ok := replyFromBusinessCatalog(userText, profile, catalog); ok {
+			finalReply := applyOutputPolicy(catReply)
+			out := metaNoLLM(reasonAIGenerated, PathCatalogDB)
+			out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
+			err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
+			return err == nil, err
+		}
+	}
+
 	// ── Handle: sensitive escalation ─────────────────────────────────────
 	if classifier.Label == "sensitive_escalate" {
 		out := metaNoLLM(reasonOutOfScope, PathEscalate)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact,
+		err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact,
 			"Maaf kak, untuk topik ini tim CS kami akan langsung mengambil alih dan segera menghubungi kakak 🙏",
 			"system", out)
 		if err != nil {
 			return false, err
 		}
-		return true, pauseAI(ctx, db, convo.ID, "Sensitive/escalate detected")
+		return true, pauseAI(ctx, conn, convo.ID, "Sensitive/escalate detected")
 	}
 
 	// ── Handle: out of scope ─────────────────────────────────────────────
@@ -369,7 +417,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		}
 		out := metaNoLLM(reasonOutOfScope, PathOutOfScope)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, text, "system", out)
+		err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, text, "system", out)
 		return err == nil, err
 	}
 
@@ -383,7 +431,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		}
 		out := metaNoLLM(reasonNonQuestion, PathNonQuestion)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, text, "system", out)
+		err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, text, "system", out)
 		return err == nil, err
 	}
 
@@ -391,14 +439,14 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	if classifier.Label == "in_scope_question" && classifier.Confidence < llmConfidenceThreshold {
 		out := metaNoLLM(reasonNonQuestion, PathLowConfidence)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact,
+		err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact,
 			scopeDirectionReply(profile), "system", out)
 		return err == nil, err
 	}
 
 	// ── Handle: order intent state machine ───────────────────────────────
 	if classifier.Label == "order_intent" || (IsOrderContinuationMessage(userText) && hasOrderIntentText(userText)) {
-		sent, oErr := s.handleOrderFlow(ctx, db, payload.TenantSchema, payload.TenantID, convo, channel, contact,
+		sent, oErr := s.handleOrderFlow(ctx, conn, payload.TenantSchema, payload.TenantID, convo, channel, contact,
 			userText, profile, kbEntries, payload.InboundMessageID)
 		return sent, oErr
 	}
@@ -410,7 +458,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	if cached != "" {
 		out := metaNoLLM(reasonAIGenerated, PathFAQCache)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, cached, "ai", out)
+		err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, cached, "ai", out)
 		return err == nil, err
 	}
 
@@ -428,11 +476,11 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		s.setCachedAnswer(ctx, payload.TenantID, userText, finalReply)
 		out := metaNoLLM(reasonAIGenerated, PathFAQDirect)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
+		err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
 		return err == nil, err
 	}
 
-	planCode, _ := loadSubscriptionPlanCode(ctx, db)
+	planCode, _ := loadSubscriptionPlanCode(ctx, conn)
 	complexity := ClassifyComplexity(userText, classifier.Label, kbTopScore)
 	route := ResolveRouting(planCode, complexity)
 	if ac, ok := ActivityContextFrom(ctx); ok {
@@ -451,7 +499,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		rlog.Warn("AI job: tenant cost limit reached", "reason", reason)
 		out := metaNoLLM(reasonOutOfScope, PathCostLimit)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact,
+		err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact,
 			"Maaf kak, kuota AI bulan ini sudah mencapai batas. Tim kami akan segera menghubungi kakak ya 🙏",
 			"system", out)
 		return err == nil, err
@@ -472,6 +520,9 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 
 	sys := BuildSystemPrompt(bp)
 	business := BuildBusinessContext(bp)
+	if catCtx := BuildCatalogContext(catalog); catCtx != "" {
+		business = business + "\n\n" + catCtx
+	}
 	kbCtx := BuildKnowledgeContext(kbForPrompt)
 	summary, _ := GetLatestSummary(ctx, payload.TenantSchema, convo.ID)
 	histCtx := BuildConversationContextWithSummary(summary, histForPrompt)
@@ -507,26 +558,27 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	s.setCachedAnswer(ctx, payload.TenantID, userText, finalReply)
 	out := metaFromRoute(reasonAIGenerated, PathLLM, route)
 	out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, compUsage.InputTokens, compUsage.OutputTokens)
-	err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
+	err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
 	return err == nil, err
 }
 
 // FallbackAutoReply sends a generic fallback and pauses AI on the conversation.
 func (s *AutoReplyService) FallbackAutoReply(ctx context.Context, payload AiReplyJobPayload) error {
-	db, err := withTenantDB(ctx, payload.TenantSchema)
+	conn, err := openTenantConn(ctx, payload.TenantSchema)
 	if err != nil {
 		return err
 	}
+	defer conn.Close()
 
-	convo, err := loadConversation(ctx, db, payload.ConversationID)
+	convo, err := loadConversation(ctx, conn, payload.ConversationID)
 	if err != nil || convo == nil {
 		return err
 	}
-	contact, err := loadContact(ctx, db, convo.ContactID)
+	contact, err := loadContact(ctx, conn, convo.ContactID)
 	if err != nil {
 		return err
 	}
-	channel, err := loadChannel(ctx, db, convo.ChannelID)
+	channel, err := loadChannel(ctx, conn, convo.ChannelID)
 	if err != nil {
 		return err
 	}
@@ -536,26 +588,25 @@ func (s *AutoReplyService) FallbackAutoReply(ctx context.Context, payload AiRepl
 
 	out := metaNoLLM(reasonNonQuestion, PathAutoFallback)
 	out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-	err = s.sendAiMessage(ctx, db, payload.TenantID, convo, channel, contact,
+	err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact,
 		"Maaf kak, saat ini sistem kami sedang sibuk. Tim kami akan bantu balas secepatnya ya 🙏",
 		"system", out)
 	if err != nil {
 		return err
 	}
-	return pauseAI(ctx, db, convo.ID, "Auto fallback setelah retry AI gagal")
+	return pauseAI(ctx, conn, convo.ID, "Auto fallback setelah retry AI gagal")
 }
 
 // ─── Order flow state machine ────────────────────────────────────────────────
 
 var (
-	sizeRe   = regexp.MustCompile(`(?i)\b(xs|s|m|l|xl|xxl|xxxl|3xl|4xl|5xl|\d{2})\b`)
-	qtyRe    = regexp.MustCompile(`(?i)\b(\d{1,3})\s?(pcs|biji|buah|item)?\b`)
-	addrRe   = regexp.MustCompile(`(?i)(jalan|jl\.|rt|rw|kel\.|kec\.|kota|kab\.|kode pos)`)
+	sizeRe = regexp.MustCompile(`(?i)\b(xs|s|m|l|xl|xxl|xxxl|3xl|4xl|5xl|\d{2})\b`)
+	qtyRe  = regexp.MustCompile(`(?i)\b(\d{1,3})\s?(pcs|biji|buah|item)?\b`)
 )
 
 func (s *AutoReplyService) handleOrderFlow(
 	ctx context.Context,
-	db *sql.DB,
+	q tenantQuerier,
 	tenantSchema, tenantID string,
 	convo *dbConversation,
 	channel *dbChannel,
@@ -570,7 +621,7 @@ func (s *AutoReplyService) handleOrderFlow(
 		s.clearOrderState(ctx, tenantID, convo.ID)
 		out := metaNoLLM(reasonOutOfScope, PathOutOfScope)
 		out.LogAndRecord(ctx, convo.ID, inboundID, 0, 0)
-		err := s.sendAiMessage(ctx, db, tenantID, convo, channel, contact,
+		err := s.sendAiMessage(ctx, q, tenantID, convo, channel, contact,
 			outOfScopeReply(profile), "system", out)
 		return err == nil, err
 	}
@@ -579,85 +630,179 @@ func (s *AutoReplyService) handleOrderFlow(
 	send := func(text string) (bool, error) {
 		out := metaNoLLM(reasonNonQuestion, PathOrderFlow)
 		out.LogAndRecord(ctx, convo.ID, inboundID, 0, 0)
-		err := s.sendAiMessage(ctx, db, tenantID, convo, channel, contact, text, "system", out)
+		err := s.sendAiMessage(ctx, q, tenantID, convo, channel, contact, text, "system", out)
 		return err == nil, err
+	}
+	sendWithConfirm := func(st orderState, prompt string) (bool, error) {
+		line := catalogConfirmLine(st)
+		if line != "" {
+			prompt = line + "\n\n" + prompt
+		}
+		return send(prompt)
+	}
+
+	catalog, catErr := loadActiveCatalog(ctx, q, 40)
+	if catErr != nil {
+		rlog.Warn("AI order: catalog load failed", "err", catErr)
 	}
 
 	state, _ := s.getOrderState(ctx, tenantID, convo.ID)
 	hints := parseOrderHints(userText)
-
-	if state == nil {
-		if hints.HasSize && strings.TrimSpace(hints.Product) != "" {
-			st := orderState{Product: hints.Product, Variant: hints.Variant}
-			if hints.HasQty {
-				st.Qty = hints.Qty
-				st.Step = "ask_address"
-				s.setOrderState(ctx, tenantID, convo.ID, st)
-				return send(tmpl.AskAddress)
+	copyBase := func(st orderState) orderState {
+		st = normalizeOrderState(st)
+		if state != nil {
+			base := normalizeOrderState(*state)
+			base.Step = st.Step
+			if st.CatalogItemID != "" {
+				base.CatalogItemID = st.CatalogItemID
 			}
-			st.Step = "ask_qty"
-			s.setOrderState(ctx, tenantID, convo.ID, st)
-			return send(tmpl.AskQty)
+			if st.ProductName != "" {
+				base.ProductName = st.ProductName
+			}
+			if st.Size != "" {
+				base.Size = st.Size
+			}
+			if st.Color != "" {
+				base.Color = st.Color
+			}
+			if st.Qty > 0 {
+				base.Qty = st.Qty
+			}
+			if st.UnitPrice > 0 {
+				base.UnitPrice = st.UnitPrice
+			}
+			if st.ExternalCode != "" {
+				base.ExternalCode = st.ExternalCode
+			}
+			if st.SellUnit != "" {
+				base.SellUnit = st.SellUnit
+			}
+			if st.RecipientName != "" {
+				base.RecipientName = st.RecipientName
+			}
+			if st.RecipientPhone != "" {
+				base.RecipientPhone = st.RecipientPhone
+			}
+			if st.Street != "" {
+				base.Street = st.Street
+			}
+			if st.City != "" {
+				base.City = st.City
+			}
+			if st.Province != "" {
+				base.Province = st.Province
+			}
+			if st.PostalCode != "" {
+				base.PostalCode = st.PostalCode
+			}
+			return base
 		}
-		s.setOrderState(ctx, tenantID, convo.ID, orderState{Step: "ask_product"})
-		return send(tmpl.AskProduct)
+		return st
 	}
 
-	switch state.Step {
+	if state == nil {
+		st := orderState{Step: "ask_product"}
+		if match := matchCatalogItem(userText, catalog); match != nil {
+			applyCatalogMatch(&st, match)
+			sz, cl := parseSizeAndColor(userText)
+			st.Size, st.Color = sz, cl
+			if hints.HasQty {
+				st.Qty = hints.Qty
+			}
+			if st.variantComplete() {
+				if st.Qty > 0 {
+					st.Step = "ask_recipient"
+					s.setOrderState(ctx, tenantID, convo.ID, st)
+					return sendWithConfirm(st, tmpl.AskRecipient)
+				}
+				st.Step = "ask_qty"
+				s.setOrderState(ctx, tenantID, convo.ID, st)
+				return sendWithConfirm(st, tmpl.AskQty)
+			}
+			st.Step = "ask_variant"
+			s.setOrderState(ctx, tenantID, convo.ID, st)
+			return sendWithConfirm(st, tmpl.AskVariant)
+		}
+		s.setOrderState(ctx, tenantID, convo.ID, st)
+		msg := tmpl.AskProduct
+		if picker := formatCatalogPicker(catalog, 6); picker != "" {
+			msg += "\n\nContoh produk:\n" + picker
+		}
+		return send(msg)
+	}
+
+	stateNorm := normalizeOrderState(*state)
+
+	switch stateNorm.Step {
 	case "ask_product":
 		if IsOffBusinessProductRequest(userText, scopeKW) {
 			s.clearOrderState(ctx, tenantID, convo.ID)
 			out := metaNoLLM(reasonOutOfScope, PathOutOfScope)
 			out.LogAndRecord(ctx, convo.ID, inboundID, 0, 0)
-			err := s.sendAiMessage(ctx, db, tenantID, convo, channel, contact,
+			err := s.sendAiMessage(ctx, q, tenantID, convo, channel, contact,
 				outOfScopeReply(profile), "system", out)
 			return err == nil, err
 		}
-		product := hints.Product
-		if product == "" {
-			product = userText
-		}
-		if len(product) > 120 {
-			product = product[:120]
-		}
-		variant := hints.Variant
-		if variant == "" {
-			if m := sizeRe.FindString(userText); m != "" {
-				variant = m
+		st := copyBase(orderState{Step: "ask_product"})
+		if match := matchCatalogItem(userText, catalog); match != nil {
+			applyCatalogMatch(&st, match)
+		} else {
+			msg := "Maaf kak, produknya belum ketemu di katalog. Sebut nama produk yang ada di katalog ya."
+			if picker := formatCatalogPicker(catalog, 6); picker != "" {
+				msg += "\n\n" + picker
 			}
+			return send(msg)
 		}
-		if variant != "" || hints.HasSize {
-			st := orderState{Product: product, Variant: variant, Step: "ask_qty"}
-			if hints.HasQty {
-				st.Qty = hints.Qty
-				st.Step = "ask_address"
-				s.setOrderState(ctx, tenantID, convo.ID, st)
-				return send(tmpl.AskAddress)
-			}
+		sz, cl := parseSizeAndColor(userText)
+		if sz != "" {
+			st.Size = sz
+		}
+		if cl != "" {
+			st.Color = cl
+		}
+		if hints.HasQty {
+			st.Qty = hints.Qty
+		}
+		if !st.variantComplete() {
+			st.Step = "ask_variant"
+			s.setOrderState(ctx, tenantID, convo.ID, st)
+			return sendWithConfirm(st, tmpl.AskVariant)
+		}
+		if st.Qty < 1 {
+			st.Step = "ask_qty"
+			s.setOrderState(ctx, tenantID, convo.ID, st)
+			return sendWithConfirm(st, tmpl.AskQty)
+		}
+		st.Step = "ask_recipient"
+		s.setOrderState(ctx, tenantID, convo.ID, st)
+		return sendWithConfirm(st, tmpl.AskRecipient)
+
+	case "ask_variant":
+		st := copyBase(stateNorm)
+		sz, cl := parseSizeAndColor(userText)
+		if sz != "" {
+			st.Size = sz
+		}
+		if cl != "" {
+			st.Color = cl
+		}
+		if !st.variantComplete() {
+			return send(tmpl.AskVariant)
+		}
+		if hints.HasQty {
+			st.Qty = hints.Qty
+		}
+		if st.Qty < 1 {
+			st.Step = "ask_qty"
 			s.setOrderState(ctx, tenantID, convo.ID, st)
 			return send(tmpl.AskQty)
 		}
-		s.setOrderState(ctx, tenantID, convo.ID, orderState{Step: "ask_variant", Product: product})
-		return send(tmpl.AskVariant)
-
-	case "ask_variant":
-		variant := userText
-		if m := sizeRe.FindString(userText); m != "" {
-			variant = m
-		} else if len(variant) > 60 {
-			variant = variant[:60]
-		}
-		st := orderState{Step: "ask_qty", Product: state.Product, Variant: variant}
-		if hints.HasQty {
-			st.Qty = hints.Qty
-			st.Step = "ask_address"
-			s.setOrderState(ctx, tenantID, convo.ID, st)
-			return send(tmpl.AskAddress)
-		}
+		st.Step = "ask_recipient"
 		s.setOrderState(ctx, tenantID, convo.ID, st)
-		return send(tmpl.AskQty)
+		return send(tmpl.AskRecipient)
 
 	case "ask_qty":
+		st := copyBase(stateNorm)
 		qty := 0
 		if hints.HasQty {
 			qty = hints.Qty
@@ -667,22 +812,39 @@ func (s *AutoReplyService) handleOrderFlow(
 		if qty < 1 {
 			return send(tmpl.ClarifyQty)
 		}
-		s.setOrderState(ctx, tenantID, convo.ID, orderState{
-			Step: "ask_address", Product: state.Product, Variant: state.Variant, Qty: qty,
-		})
-		return send(tmpl.AskAddress)
+		st.Qty = qty
+		st.Step = "ask_recipient"
+		s.setOrderState(ctx, tenantID, convo.ID, st)
+		return send(tmpl.AskRecipient)
 
-	case "ask_address":
-		if addrRe.MatchString(userText) {
-			st := orderState{
-				Product: state.Product, Variant: state.Variant, Qty: state.Qty, Step: "done",
-			}
-			if _, err := persistDraftOrder(ctx, db, tenantSchema, convo.ID, convo.ContactID, st, userText); err != nil {
-				rlog.Warn("AI order: persist draft failed", "err", err, "convoId", convo.ID)
-			}
-			s.clearOrderState(ctx, tenantID, convo.ID)
-			return send(tmpl.Complete)
+	case "ask_recipient":
+		st := copyBase(stateNorm)
+		name, phone := parseRecipientLine(userText)
+		if name != "" {
+			st.RecipientName = name
 		}
+		if phone != "" {
+			st.RecipientPhone = phone
+		}
+		if st.RecipientName == "" || st.RecipientPhone == "" {
+			return send(tmpl.AskRecipient)
+		}
+		st.Step = "ask_address_full"
+		s.setOrderState(ctx, tenantID, convo.ID, st)
+		return send(tmpl.AskAddressFull)
+
+	case "ask_address", "ask_address_full":
+		st := copyBase(stateNorm)
+		mergeShippingText(&st, userText)
+		if !st.shippingComplete() {
+			s.setOrderState(ctx, tenantID, convo.ID, st)
+			return send(tmpl.ClarifyAddress)
+		}
+		if _, err := persistDraftOrder(ctx, q, tenantSchema, convo.ID, convo.ContactID, st); err != nil {
+			rlog.Warn("AI order: persist draft failed", "err", err, "convoId", convo.ID)
+		}
+		s.clearOrderState(ctx, tenantID, convo.ID)
+		return send(tmpl.Complete)
 	}
 
 	return send(tmpl.RetryStep)
@@ -970,10 +1132,10 @@ func (s *AutoReplyService) resetScopeCounters(ctx context.Context, tenantID, con
 
 // ─── DB loaders ──────────────────────────────────────────────────────────────
 
-func loadSubscriptionPlanCode(ctx context.Context, db *sql.DB) (string, error) {
+func loadSubscriptionPlanCode(ctx context.Context, q tenantQuerier) (string, error) {
 	var planCode string
 	var isTrial bool
-	err := db.QueryRowContext(ctx, `
+	err := q.QueryRowContext(ctx, `
 		SELECT plan_code, COALESCE(is_trial, false) FROM subscription
 		WHERE status = 'active'
 		ORDER BY created_at DESC LIMIT 1`,
@@ -993,8 +1155,8 @@ func loadSubscriptionPlanCode(ctx context.Context, db *sql.DB) (string, error) {
 	return planCode, nil
 }
 
-func loadConversation(ctx context.Context, db *sql.DB, id string) (*dbConversation, error) {
-	row := db.QueryRowContext(ctx, `
+func loadConversation(ctx context.Context, q tenantQuerier, id string) (*dbConversation, error) {
+	row := q.QueryRowContext(ctx, `
 		SELECT id, contact_id, channel_id, ai_handled, ai_paused_at,
 		       handoff_reason, last_message_at, last_message_preview, status
 		FROM conversation WHERE id = $1`, id)
@@ -1007,8 +1169,8 @@ func loadConversation(ctx context.Context, db *sql.DB, id string) (*dbConversati
 	return c, err
 }
 
-func loadMessage(ctx context.Context, db *sql.DB, id string) (*dbMessage, error) {
-	row := db.QueryRowContext(ctx, `
+func loadMessage(ctx context.Context, q tenantQuerier, id string) (*dbMessage, error) {
+	row := q.QueryRowContext(ctx, `
 		SELECT id, direction, author, type, COALESCE(body,''), created_at
 		FROM message WHERE id = $1`, id)
 	m := &dbMessage{}
@@ -1019,8 +1181,8 @@ func loadMessage(ctx context.Context, db *sql.DB, id string) (*dbMessage, error)
 	return m, err
 }
 
-func loadBusinessProfile(ctx context.Context, db *sql.DB) (*dbBusinessProfile, error) {
-	row := db.QueryRowContext(ctx, `
+func loadBusinessProfile(ctx context.Context, q tenantQuerier) (*dbBusinessProfile, error) {
+	row := q.QueryRowContext(ctx, `
 		SELECT business_name, description, address, opening_hours,
 		       products_services, base_pricing, delivery_area,
 		       greeting_template, tone, ai_enabled,
@@ -1040,8 +1202,8 @@ func loadBusinessProfile(ctx context.Context, db *sql.DB) (*dbBusinessProfile, e
 	return p, err
 }
 
-func loadContact(ctx context.Context, db *sql.DB, id string) (*dbContact, error) {
-	row := db.QueryRowContext(ctx, `
+func loadContact(ctx context.Context, q tenantQuerier, id string) (*dbContact, error) {
+	row := q.QueryRowContext(ctx, `
 		SELECT id, phone_number, display_name
 		FROM contact WHERE id = $1`, id)
 	c := &dbContact{}
@@ -1052,8 +1214,8 @@ func loadContact(ctx context.Context, db *sql.DB, id string) (*dbContact, error)
 	return c, err
 }
 
-func loadChannel(ctx context.Context, db *sql.DB, id string) (*dbChannel, error) {
-	row := db.QueryRowContext(ctx, `
+func loadChannel(ctx context.Context, q tenantQuerier, id string) (*dbChannel, error) {
+	row := q.QueryRowContext(ctx, `
 		SELECT id, provider, status, access_token, meta_phone_number_id,
 		       meta_waba_id, display_name, phone_number
 		FROM whatsapp_channel WHERE id = $1`, id)
@@ -1066,8 +1228,8 @@ func loadChannel(ctx context.Context, db *sql.DB, id string) (*dbChannel, error)
 	return ch, err
 }
 
-func loadHistory(ctx context.Context, db *sql.DB, convoID string, limit int) ([]dbMessage, error) {
-	rows, err := db.QueryContext(ctx, `
+func loadHistory(ctx context.Context, q tenantQuerier, convoID string, limit int) ([]dbMessage, error) {
+	rows, err := q.QueryContext(ctx, `
 		SELECT id, direction, author, type, COALESCE(body,''), created_at
 		FROM message WHERE conversation_id = $1
 		ORDER BY created_at DESC LIMIT $2`, convoID, limit)
@@ -1090,8 +1252,8 @@ func loadHistory(ctx context.Context, db *sql.DB, convoID string, limit int) ([]
 	return msgs, rows.Err()
 }
 
-func loadKBEntries(ctx context.Context, db *sql.DB, limit int) ([]dbKBEntry, error) {
-	rows, err := db.QueryContext(ctx, `
+func loadKBEntries(ctx context.Context, q tenantQuerier, limit int) ([]dbKBEntry, error) {
+	rows, err := q.QueryContext(ctx, `
 		SELECT id, question, answer, category, is_active
 		FROM knowledge_base_entry
 		WHERE is_active = true
@@ -1115,7 +1277,7 @@ func loadKBEntries(ctx context.Context, db *sql.DB, limit int) ([]dbKBEntry, err
 
 func (s *AutoReplyService) sendAiMessage(
 	ctx context.Context,
-	db *sql.DB,
+	q tenantQuerier,
 	tenantID string,
 	convo *dbConversation,
 	channel *dbChannel,
@@ -1176,7 +1338,7 @@ func (s *AutoReplyService) sendAiMessage(
 
 	metadataJSON, _ := json.Marshal(meta)
 	var msgCreatedAt time.Time
-	err = db.QueryRowContext(ctx, `
+	err = q.QueryRowContext(ctx, `
 		INSERT INTO message (conversation_id, external_id, direction, author, type, body, metadata, status)
 		VALUES ($1, $2, 'out', $3, 'text', $4, $5::jsonb, 'sent')
 		RETURNING created_at`,
@@ -1187,7 +1349,7 @@ func (s *AutoReplyService) sendAiMessage(
 		return fmt.Errorf("insert message: %w", err)
 	}
 
-	_, err = db.ExecContext(ctx, `
+	_, err = q.ExecContext(ctx, `
 		UPDATE conversation
 		SET last_message_at = $1, last_message_preview = $2, status = 'open'
 		WHERE id = $3`,
@@ -1204,8 +1366,8 @@ func (s *AutoReplyService) sendAiMessage(
 	return nil
 }
 
-func pauseAI(ctx context.Context, db *sql.DB, convoID, reason string) error {
-	_, err := db.ExecContext(ctx, `
+func pauseAI(ctx context.Context, q tenantQuerier, convoID, reason string) error {
+	_, err := q.ExecContext(ctx, `
 		UPDATE conversation
 		SET ai_handled = false, ai_paused_at = NOW(), handoff_reason = $1
 		WHERE id = $2`,
