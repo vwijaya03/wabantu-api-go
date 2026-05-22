@@ -715,7 +715,7 @@ Production path: **Pub/Sub** `ai-jobs`, not HTTP.
 
 | Service | Base path | Auth |
 |---------|-----------|------|
-| business | `/api/v1/business/profile`, `/catalog` | auth |
+| business | `/api/v1/business/profile`, `/catalog`, `/catalog/import-image/*` (vision preview + commit) | auth owner |
 | kb | `/api/v1/knowledge-base` | auth |
 | leads | `/api/v1/leads` | auth |
 | order | `/api/v1/orders` | auth |
@@ -844,7 +844,7 @@ erDiagram
 | Table | Purpose |
 |-------|---------|
 | `business_profile` | AI context, tone, timezone |
-| `business_catalog_item` | Products/services |
+| `business_catalog_item` | Products/services (`source`: `manual`, `import`, `image_import`) |
 | `knowledge_base_entry` | Q&A for AI |
 | `whatsapp_channel` | Meta connection |
 | `contact` | Customer phone |
@@ -920,12 +920,15 @@ See sequence in Bagian 5. Key branches:
 - `ai.PublishInboundJob` — async
 - AI pipeline (`ai/autoreply.go` + helpers):
   1. Greeting / injection guards (`greeting.go`, `safety.go`)
-  2. Active **order flow** (Redis, `order_flow.go`) — product → variant → qty → address → draft `order`
-  3. Business scope + keyword classifier (`product_scope.go`, `safety.go`) — off-topic products (e.g. food at apparel shop), purchase intent (`pesen`, `mau` + pcs)
-  4. Post-checkout context (`IsActiveCheckoutFromHistory`) — payment/transfer/ongkir after order without re-classifying as out-of-scope
-  5. FAQ cache / KB direct answer / hybrid KB retrieval (`retrieveHybridKB`)
-  6. LLM reply (Haiku/Sonnet per plan) with history + conversation summary (`memory.go`)
-  7. Activity logging per tenant (`usage.RecordAIActivity`, paths in `reply_meta.go`)
+  2. Active **order flow** (Redis, `order_flow.go` + `order_catalog.go`) — match `business_catalog_item` → size/color → qty → recipient → alamat lengkap + kode pos → draft `order` dengan `items` + `shipping_address` JSON
+  3. **Katalog DB** (`catalog_reply.go`) — minta list/harga: jawab dari `business_catalog_item` (path `catalog_db`), penanda `[Katalog WABantu: kosong]`; FAQ tidak mengalahkan list katalog
+  4. Business scope + keyword classifier (`product_scope.go`, `safety.go`) — off-topic products (e.g. food at apparel shop), purchase intent (`pesen`, `mau` + pcs)
+  5. Post-checkout context (`IsActiveCheckoutFromHistory`) — payment/transfer/ongkir after order without re-classifying as out-of-scope
+  6. FAQ cache / KB direct answer / hybrid KB retrieval (`retrieveHybridKB`; skip untuk pertanyaan list katalog)
+  7. LLM reply (Haiku/Sonnet per plan) with history + **katalog DB** di konteks + conversation summary (`memory.go`)
+  8. Activity logging per tenant (`usage.RecordAIActivity`, paths in `reply_meta.go` incl. `catalog_db`)
+
+**Import katalog dari gambar (dashboard, bukan WA):** `business/catalog_image.go` + `ai/vision.go` — lihat [docs/CATALOG_IMAGE_IMPORT.md](./docs/CATALOG_IMAGE_IMPORT.md).
 - Failures: retry Pub/Sub → `FallbackAutoReply`
 
 AI activity log (super_admin): `GET /api/v1/admin/tenant/:id/ai-activity` (+ `/summary`). Saat impersonate: juga `GET /api/v1/usage/ai-activity` (tenant efektif). Owner tenant **tidak** punya akses.

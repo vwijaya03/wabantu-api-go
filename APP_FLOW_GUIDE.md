@@ -342,8 +342,9 @@ Verify token: secret `WebhookVerifyToken`. Saat daftar app Meta, pilih path yang
 | Payment | `POST /api/v1/payment/create-qris` (wajib `invoiceId` pending), webhook Midtrans → aktivasi paket |
 | Orders | `GET/POST /api/v1/orders`, … |
 | Catalog | CRUD di `business/catalog.go` |
+| Catalog image (AI) | `POST .../import-image/preview`, `GET .../import-image-limits`, `GET/POST .../import-image/draft/:jobId` — [docs/CATALOG_IMAGE_IMPORT.md](./docs/CATALOG_IMAGE_IMPORT.md) |
 | Broadcast | `POST /api/v1/broadcast/...` (Business+ berbayar; **trial** boleh dengan kuota 20 kontak/bulan) |
-| Import | `POST /api/v1/import/preview`, `/import/execute` |
+| Import CSV | `POST /api/v1/import/preview`, `/import/execute` |
 | Branches | `GET/POST /api/v1/branches` (Pro) |
 | Workflow | `GET/POST/PATCH/DELETE /api/v1/workflows` |
 | Admin | `GET /api/v1/admin/tenants`, impersonation (`super_admin`) |
@@ -444,7 +445,7 @@ File: `webhook/webhook.go`, `whatsapp/whatsapp.go`.
 1. Webhook simpan pesan masuk → `ai.PublishInboundJob` → topic Pub/Sub **`ai-jobs`**.
 2. Subscriber **`ai-auto-reply`** (`ai/inbound_jobs.go`) jalan **di proses yang sama** dengan `encore run` (bukan proses Node terpisah).
 3. Retry Encore + counter Redis; gagal berulang → fallback internal.
-4. `ai/autoreply.go` — orchestrator: greeting, order flow (Redis), scope/classifier, FAQ, routing model (Haiku/Sonnet), Anthropic, kirim WhatsApp. Modul terkait: `order_flow.go`, `greeting.go`, `product_scope.go`, `safety.go`, `classifier_routing.go`.
+4. `ai/autoreply.go` — orchestrator: greeting, order flow (Redis + katalog DB), **catalog_reply** (list/harga dari DB), scope/classifier, FAQ, routing model (Haiku/Sonnet), Anthropic, kirim WhatsApp. Modul: `order_flow.go`, `order_catalog.go`, `catalog_reply.go`, `greeting.go`, `product_scope.go`, `safety.go`, `classifier_routing.go`.
 5. **Workflow** (`workflow/`) bisa intercept sebelum AI (keyword → balasan / handoff). CRUD: `GET/POST/PATCH/DELETE /api/v1/workflows` (PATCH/DELETE owner).
 6. Log AI (super_admin): `GET /api/v1/admin/tenant/:id/ai-activity` (+ summary); FE `/dashboard/admin/ai-activity`.
 

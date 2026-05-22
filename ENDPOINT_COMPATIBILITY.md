@@ -115,9 +115,10 @@ Plan codes: `starter`, `business`, `pro` (+ alias `basic` → business, tidak di
 | Area | Path contoh | Halaman FE |
 |------|-------------|------------|
 | Orders | `/api/v1/orders` | `/dashboard/orders` |
-| Catalog | `/api/v1/catalog/...` | `/dashboard/catalog` |
+| Catalog | `/api/v1/business/catalog` | `/dashboard/catalog` |
+| Catalog image AI | `GET/POST /api/v1/business/catalog/import-image/*` | `/dashboard/catalog/import-image` |
 | Broadcast | `/api/v1/broadcast/...` | `/dashboard/broadcast` |
-| Import | `/api/v1/import/preview`, `/execute` | `/dashboard/import` |
+| Import CSV | `/api/v1/import/preview`, `/execute` | `/dashboard/import` |
 | Branches | `/api/v1/branches` | `/dashboard/branches` |
 | Workflow | `GET/POST/PATCH/DELETE /api/v1/workflows` | `/dashboard/workflow` |
 | Usage AI activity | `GET /api/v1/usage/ai-activity`, `GET /api/v1/usage/ai-activity/summary` | super_admin saat impersonate tenant |

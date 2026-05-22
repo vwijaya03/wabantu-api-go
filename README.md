@@ -250,14 +250,15 @@ api-go/
   branch/                    # multi-cabang (Pro)
   workflow/                  # rule-based automation
   middleware/                # global rate limit
-  business/                  # profil bisnis, import website (Anthropic)
+  business/                  # profil bisnis, import website, katalog CRUD + import gambar (vision)
+  docs/CATALOG_IMAGE_IMPORT.md  # import screenshot → Haiku → konfirmasi → business_catalog_item
   kb/                        # knowledge base FAQ
   whatsapp/                  # library Meta Cloud API (kirim pesan, Graph)
   whatsappapi/               # REST OAuth + channels (/api/v1/whatsapp/*)
   webhook/                   # GET/POST webhook Meta (+ alias legacy)
   broadcast/                 # broadcast WA (plan Business+)
   inbox/                     # conversations, messages, contacts
-  ai/                        # auto-reply internal + Pub/Sub + Anthropic
+  ai/                        # auto-reply, order flow, catalog_reply, vision (import gambar)
   leads/                     # lead pipeline
   billing/                   # subscription overview, invoices
   payment/                   # Midtrans QRIS + webhook

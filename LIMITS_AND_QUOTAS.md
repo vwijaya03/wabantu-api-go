@@ -118,6 +118,7 @@ Periode: kalender **`YYYY-MM`** (`usage_aggregate.period`). Reset agregat: cron 
 | CRM / leads | `FeatureCRMLeads` | — |
 | Multi cabang | `FeatureMultiBranch` | — |
 | AI auto-reply | — | `ai_conversation`, `ai_token` via `CheckAICostLimit` |
+| Import katalog dari gambar (vision) | — | `ai_token` saat **preview** saja (`PurposeCatalogImport`); commit tanpa AI |
 | Undang staff | — | `admin_seat` |
 
 Pesan kuota habis: HTTP 403 / fallback pesan AI ramah (lihat `ai/autoreply.go`).
