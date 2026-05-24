@@ -252,6 +252,8 @@ api-go/
   middleware/                # global rate limit
   business/                  # profil bisnis, import website, katalog CRUD + import gambar (vision)
   docs/CATALOG_IMAGE_IMPORT.md  # import screenshot → Haiku → konfirmasi → business_catalog_item
+  docs/UNIT_ECONOMICS_AND_PRICING.md  # biaya Meta + Anthropic, margin paket, rekomendasi harga
+  docs/META_WHATSAPP_MESSAGING_AND_BILLING.md  # CSW 24 jam, template, skenario inbox, beda tagihan Meta vs kuota WABantu
   kb/                        # knowledge base FAQ
   whatsapp/                  # library Meta Cloud API (kirim pesan, Graph)
   whatsappapi/               # REST OAuth + channels (/api/v1/whatsapp/*)
@@ -378,7 +380,7 @@ Handler auth global: `auth.AuthHandler` (`//encore:authhandler`) → `buildAuthU
    - Retry hingga **4×** (Encore `RetryPolicy` + penghitung Redis per `inboundMessageId`)
    - Setelah gagal terus → **fallback** (`FallbackAutoReplyJob`, setara `ai-worker` Node)
 4. Pipeline di `ai/autoreply.go` (orchestrator) + `order_flow.go`, `greeting.go`, `product_scope.go`, `safety.go` — order Redis state, scope/classifier, lalu Anthropic + kirim WhatsApp.
-5. **Hybrid AI routing** (`ai/classifier_routing.go`, `ai/routing.go`): per plan — `starter` = Haiku only; **`trial` + business** = hybrid; `pro` = hybrid priority. FAQ match tinggi bisa bypass LLM. Lihat [LIMITS_AND_QUOTAS.md §2.3](./LIMITS_AND_QUOTAS.md#23-routing-ai-airoutinggo).
+5. **Hybrid AI routing** (`ai/classifier_routing.go`, `ai/routing.go`): per plan — `starter` = Haiku only; **`trial` + business** = hybrid; `pro` = hybrid priority. FAQ match tinggi bisa bypass LLM. Lihat [LIMITS_AND_QUOTAS.md bagian 2.3](./LIMITS_AND_QUOTAS.md#23-routing-ai-airoutinggo).
 6. Log aktivitas AI per tenant: `GET /api/v1/usage/ai-activity` (owner).
 
 `ai-worker-go/` hanya untuk eksperimen Asynq terpisah — **bukan** jalur default api-go. Lihat `../ai-worker-go/README.md`.

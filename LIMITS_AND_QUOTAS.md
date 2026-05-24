@@ -16,6 +16,10 @@ Dokumen **sumber kebenaran** untuk rate limit HTTP, kuota pemakaian bulanan, ent
 
 Frontend: `web-frontend/hooks/use-plan.ts`, halaman `/dashboard/billing`, `lib/api/rate-limit.ts` (pesan HTTP 429).
 
+**WhatsApp / Meta (CSW 24 jam, template berbayar, skenario inbox):** [docs/META_WHATSAPP_MESSAGING_AND_BILLING.md](./docs/META_WHATSAPP_MESSAGING_AND_BILLING.md) — beda dengan kuota di bawah.
+
+**Tampilan kuota untuk client:** `GET /api/v1/usage/summary` (owner) → dashboard ringkas + `/dashboard/billing` panel lengkap.
+
 ---
 
 ## 1. Rate limit HTTP (Redis, per IP)
@@ -45,7 +49,7 @@ Respons kelebihan: HTTP **429**, kode `resource_exhausted`, pesan `too many requ
 | `business` | Berbayar, business / alias `basic` | Business tier (broadcast, workflow, CRM, hybrid AI) |
 | `pro` | Berbayar, pro | Semua fitur Business + multi-branch + API access |
 
-Trial **bukan** Starter berbayar: menu & API terbuka seperti evaluasi penuh; **kuota** yang membatasi (lihat §3).
+Trial **bukan** Starter berbayar: menu & API terbuka seperti evaluasi penuh; **kuota** yang membatasi (lihat bagian 3).
 
 ### 2.2 Kuota pemakaian bulanan (`usage.planQuotas`)
 
@@ -67,6 +71,8 @@ Periode: kalender **`YYYY-MM`** (`usage_aggregate.period`). Reset agregat: cron 
 **Harga katalog (IDR/bulan):** Starter 299.000 · Business 799.000 · Pro 1.999.000 · Trial 0.
 
 **Katalog API/UI:** hanya `starter`, `business`, `pro` (`billing.listSellablePlans()`). Alias `basic` tidak ditampilkan di UI.
+
+**Pro vs Business (angka pasti, bukan “lebih besar”):** Pro = 10 channel, 10 seat, 20.000 percakapan AI, 30 juta token AI, **10.000** kontak broadcast/bulan, 10 GB storage, 5.000 workflow/bulan, multi-cabang + API. Business = 2 / 3 / 6.000 / 8 juta / **500** / 2 GB / 500. Detail biaya platform & margin: [docs/UNIT_ECONOMICS_AND_PRICING.md](./docs/UNIT_ECONOMICS_AND_PRICING.md).
 
 ### 2.3 Routing AI (`ai/routing.go`)
 
@@ -130,7 +136,7 @@ Pesan kuota habis: HTTP 403 / fallback pesan AI ramah (lihat `ai/autoreply.go`).
 `hooks/use-plan.ts`:
 
 - `isTrial === true` → `hasBroadcast`, `hasWorkflow`, `hasMultiBranch`, `hasCRMLeads` = **true**
-- Paket berbayar: gate seperti tabel §2.1
+- Paket berbayar: gate seperti tabel bagian 2.1
 
 Kuota tampilan: `GET /api/v1/usage/summary` → `plan: "trial"` saat trial.
 
