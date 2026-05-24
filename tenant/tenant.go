@@ -298,6 +298,9 @@ func RunTenantDDL(ctx context.Context, schemaName string) error {
 	if err := RunSchemaPatches(ctx, schemaName); err != nil {
 		return fmt.Errorf("schema patches: %w", err)
 	}
+	if err := seedFinanceTransactionTypes(ctx, conn); err != nil {
+		return fmt.Errorf("seed finance transaction types: %w", err)
+	}
 	if err := seedFinanceCategories(ctx, conn); err != nil {
 		return fmt.Errorf("seed finance categories: %w", err)
 	}
@@ -655,6 +658,23 @@ CREATE TABLE IF NOT EXISTS fin_category (
     deleted_at    TIMESTAMPTZ
 );
 
+CREATE TABLE IF NOT EXISTS fin_transaction_type (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    code           VARCHAR(40)  NOT NULL,
+    label          VARCHAR(100) NOT NULL,
+    flow           VARCHAR(20)  NOT NULL,
+    category_kind  VARCHAR(20)  NOT NULL DEFAULT 'any',
+    show_in_quick  BOOLEAN      NOT NULL DEFAULT false,
+    display_order  INT          NOT NULL DEFAULT 0,
+    is_system      BOOLEAN      NOT NULL DEFAULT false,
+    owner_only     BOOLEAN      NOT NULL DEFAULT false,
+    is_active      BOOLEAN      NOT NULL DEFAULT true,
+    created_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    deleted_at     TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_fin_txn_type_code ON fin_transaction_type(code) WHERE deleted_at IS NULL;
+
 CREATE TABLE IF NOT EXISTS fin_transaction (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     type             VARCHAR(20)   NOT NULL,
@@ -692,18 +712,27 @@ CREATE INDEX IF NOT EXISTS idx_fin_txn_status   ON fin_transaction(status) WHERE
 CREATE INDEX IF NOT EXISTS idx_fin_txn_asset    ON fin_transaction(asset_id) WHERE asset_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS fin_asset (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name        VARCHAR(100) NOT NULL,
-    ticker      VARCHAR(20),
-    type        VARCHAR(20)  NOT NULL DEFAULT 'stock',
-    unit_name   VARCHAR(20)  NOT NULL DEFAULT 'lot',
-    wallet_id   UUID         NOT NULL,
-    notes       TEXT,
-    is_active   BOOLEAN      NOT NULL DEFAULT true,
-    created_by  UUID         NOT NULL,
-    created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name             VARCHAR(100) NOT NULL,
+    ticker           VARCHAR(20),
+    type             VARCHAR(20)  NOT NULL DEFAULT 'stock',
+    unit_name        VARCHAR(20)  NOT NULL DEFAULT 'lot',
+    unit_multiplier  NUMERIC(18,6) NOT NULL DEFAULT 1,
+    price_unit_name  VARCHAR(20),
+    wallet_id        UUID         NOT NULL,
+    notes            TEXT,
+    is_active        BOOLEAN      NOT NULL DEFAULT true,
+    created_by       UUID         NOT NULL,
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
+
+ALTER TABLE fin_asset ADD COLUMN IF NOT EXISTS unit_multiplier NUMERIC(18,6) NOT NULL DEFAULT 1;
+ALTER TABLE fin_asset ADD COLUMN IF NOT EXISTS price_unit_name VARCHAR(20);
+UPDATE fin_asset SET unit_multiplier = 100
+  WHERE type = 'stock' AND lower(trim(unit_name)) = 'lot' AND unit_multiplier = 1;
+UPDATE fin_asset SET price_unit_name = 'lembar'
+  WHERE type = 'stock' AND lower(trim(unit_name)) = 'lot' AND (price_unit_name IS NULL OR price_unit_name = '');
 
 CREATE TABLE IF NOT EXISTS fin_asset_price (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),

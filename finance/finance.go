@@ -71,18 +71,51 @@ func refreshWalletBalance(ctx context.Context, conn *sql.Conn, walletID string) 
 	const q = `
 		WITH delta AS (
 			SELECT
-				COALESCE(SUM(CASE WHEN type IN ('income','dividend','interest','cashback','investment_sell') THEN amount
-					WHEN type = 'transfer' AND to_wallet_id = $1 THEN amount
-					WHEN type = 'adjustment' AND amount > 0 THEN amount
+				COALESCE(SUM(CASE
+					WHEN COALESCE(tt.flow,
+						CASE WHEN t.type IN ('income','dividend','interest','cashback','investment_sell') THEN 'income'
+						     WHEN t.type IN ('expense','investment_buy') THEN 'expense'
+						     WHEN t.type = 'transfer' THEN 'transfer'
+						     WHEN t.type = 'adjustment' THEN 'adjustment'
+						     ELSE 'expense' END) = 'income' AND t.wallet_id = $1 THEN t.amount
+					WHEN COALESCE(tt.flow,
+						CASE WHEN t.type IN ('income','dividend','interest','cashback','investment_sell') THEN 'income'
+						     WHEN t.type IN ('expense','investment_buy') THEN 'expense'
+						     WHEN t.type = 'transfer' THEN 'transfer'
+						     WHEN t.type = 'adjustment' THEN 'adjustment'
+						     ELSE 'expense' END) = 'transfer' AND t.to_wallet_id = $1 THEN t.amount
+					WHEN COALESCE(tt.flow,
+						CASE WHEN t.type IN ('income','dividend','interest','cashback','investment_sell') THEN 'income'
+						     WHEN t.type IN ('expense','investment_buy') THEN 'expense'
+						     WHEN t.type = 'transfer' THEN 'transfer'
+						     WHEN t.type = 'adjustment' THEN 'adjustment'
+						     ELSE 'expense' END) = 'adjustment' AND t.wallet_id = $1 AND t.amount > 0 THEN t.amount
 					ELSE 0 END), 0)
-				- COALESCE(SUM(CASE WHEN type IN ('expense','investment_buy') THEN amount
-					WHEN type = 'transfer' AND wallet_id = $1 AND to_wallet_id IS DISTINCT FROM $1 THEN amount
-					WHEN type = 'adjustment' AND amount < 0 THEN ABS(amount)
+				- COALESCE(SUM(CASE
+					WHEN COALESCE(tt.flow,
+						CASE WHEN t.type IN ('income','dividend','interest','cashback','investment_sell') THEN 'income'
+						     WHEN t.type IN ('expense','investment_buy') THEN 'expense'
+						     WHEN t.type = 'transfer' THEN 'transfer'
+						     WHEN t.type = 'adjustment' THEN 'adjustment'
+						     ELSE 'expense' END) = 'expense' AND t.wallet_id = $1 THEN t.amount
+					WHEN COALESCE(tt.flow,
+						CASE WHEN t.type IN ('income','dividend','interest','cashback','investment_sell') THEN 'income'
+						     WHEN t.type IN ('expense','investment_buy') THEN 'expense'
+						     WHEN t.type = 'transfer' THEN 'transfer'
+						     WHEN t.type = 'adjustment' THEN 'adjustment'
+						     ELSE 'expense' END) = 'transfer' AND t.wallet_id = $1 AND t.to_wallet_id IS DISTINCT FROM $1 THEN t.amount
+					WHEN COALESCE(tt.flow,
+						CASE WHEN t.type IN ('income','dividend','interest','cashback','investment_sell') THEN 'income'
+						     WHEN t.type IN ('expense','investment_buy') THEN 'expense'
+						     WHEN t.type = 'transfer' THEN 'transfer'
+						     WHEN t.type = 'adjustment' THEN 'adjustment'
+						     ELSE 'expense' END) = 'adjustment' AND t.wallet_id = $1 AND t.amount < 0 THEN ABS(t.amount)
 					ELSE 0 END), 0) AS net
-			FROM fin_transaction
-			WHERE (wallet_id = $1 OR to_wallet_id = $1)
-			  AND status = 'approved'
-			  AND deleted_at IS NULL
+			FROM fin_transaction t
+			LEFT JOIN fin_transaction_type tt ON tt.code = t.type AND tt.deleted_at IS NULL
+			WHERE (t.wallet_id = $1 OR t.to_wallet_id = $1)
+			  AND t.status = 'approved'
+			  AND t.deleted_at IS NULL
 		),
 		init AS (SELECT COALESCE(initial_balance,0) AS ib FROM fin_wallet WHERE id=$1)
 		INSERT INTO fin_wallet_balance (wallet_id, balance, computed_at)
@@ -346,6 +379,34 @@ func UpdateWallet(ctx context.Context, id string, p *UpdateWalletParams) (*Walle
 	return &Wallet{ID: id}, nil
 }
 
+func walletDeleteBlocked(ctx context.Context, conn *sql.Conn, walletID string) error {
+	var txnCount, assetCount, recurringCount int
+	_ = conn.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM fin_transaction
+		WHERE deleted_at IS NULL AND (wallet_id=$1 OR to_wallet_id=$1)`, walletID,
+	).Scan(&txnCount)
+	if finAssetTableReady(ctx, conn) {
+		_ = conn.QueryRowContext(ctx, `
+			SELECT COUNT(*) FROM fin_asset WHERE wallet_id=$1 AND is_active=true`, walletID,
+		).Scan(&assetCount)
+	}
+	_ = conn.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM fin_recurring
+		WHERE deleted_at IS NULL AND (wallet_id=$1 OR to_wallet_id=$1)`, walletID,
+	).Scan(&recurringCount)
+
+	if txnCount > 0 {
+		return appErrs.BadRequest("dompet masih memiliki transaksi. Hapus atau pindahkan transaksi terlebih dahulu.")
+	}
+	if assetCount > 0 {
+		return appErrs.BadRequest("dompet masih terhubung ke aset investasi aktif. Ubah dompet aset atau hapus aset terlebih dahulu.")
+	}
+	if recurringCount > 0 {
+		return appErrs.BadRequest("dompet masih dipakai transaksi berulang. Hapus transaksi berulang terlebih dahulu.")
+	}
+	return nil
+}
+
 //encore:api auth method=DELETE path=/api/v1/finance/wallets/:id
 func DeleteWallet(ctx context.Context, id string) (*OKResponse, error) {
 	u, err := mustUser(ctx)
@@ -355,15 +416,36 @@ func DeleteWallet(ctx context.Context, id string) (*OKResponse, error) {
 	if err := assertOwner(u); err != nil {
 		return nil, err
 	}
+	if strings.TrimSpace(id) == "" {
+		return nil, appErrs.BadRequest("dompet tidak valid")
+	}
 	conn, err := tenantConn(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer conn.Close()
-	_, err = conn.ExecContext(ctx,
+
+	var exists bool
+	if err := conn.QueryRowContext(ctx,
+		`SELECT EXISTS(SELECT 1 FROM fin_wallet WHERE id=$1 AND deleted_at IS NULL)`, id,
+	).Scan(&exists); err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	if !exists {
+		return nil, appErrs.NotFound("dompet tidak ditemukan")
+	}
+
+	if err := walletDeleteBlocked(ctx, conn, id); err != nil {
+		return nil, err
+	}
+
+	res, err := conn.ExecContext(ctx,
 		`UPDATE fin_wallet SET deleted_at=now() WHERE id=$1 AND deleted_at IS NULL`, id)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil, appErrs.NotFound("dompet tidak ditemukan")
 	}
 	auditFinance(ctx, conn, u, "wallet", id, "delete", nil, nil)
 	return &OKResponse{OK: true}, nil
@@ -489,11 +571,24 @@ func DeleteCategory(ctx context.Context, id string) (*OKResponse, error) {
 	}
 	defer conn.Close()
 	var isSystem bool
-	conn.QueryRowContext(ctx, `SELECT is_system FROM fin_category WHERE id=$1`, id).Scan(&isSystem)
+	if err := conn.QueryRowContext(ctx,
+		`SELECT is_system FROM fin_category WHERE id=$1 AND deleted_at IS NULL`, id,
+	).Scan(&isSystem); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, appErrs.NotFound("kategori tidak ditemukan")
+		}
+		return nil, appErrs.Internal(err.Error())
+	}
 	if isSystem {
 		return nil, appErrs.BadRequest("kategori bawaan tidak bisa dihapus")
 	}
-	conn.ExecContext(ctx, `UPDATE fin_category SET deleted_at=now() WHERE id=$1`, id)
+	res, err := conn.ExecContext(ctx, `UPDATE fin_category SET deleted_at=now() WHERE id=$1 AND deleted_at IS NULL`, id)
+	if err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil, appErrs.NotFound("kategori tidak ditemukan")
+	}
 	return &OKResponse{OK: true}, nil
 }
 
@@ -502,25 +597,30 @@ func DeleteCategory(ctx context.Context, id string) (*OKResponse, error) {
 // ============================================================
 
 type Transaction struct {
-	ID              string          `json:"id"`
-	Type            string          `json:"type"`
-	Amount          string          `json:"amount"`
-	Currency        string          `json:"currency"`
-	WalletID        string          `json:"walletId"`
-	WalletName      string          `json:"walletName"`
-	ToWalletID      *string         `json:"toWalletId,omitempty"`
-	ToWalletName    *string         `json:"toWalletName,omitempty"`
-	CategoryID      *string         `json:"categoryId,omitempty"`
-	CategoryName    *string         `json:"categoryName,omitempty"`
-	Description     *string         `json:"description,omitempty"`
-	Notes           *string         `json:"notes,omitempty"`
-	ReferenceNo     *string         `json:"referenceNo,omitempty"`
-	TransactionDate string          `json:"transactionDate"`
-	Status          string          `json:"status"`
-	Tags            []string        `json:"tags"`
-	AttachmentURLs  json.RawMessage `json:"attachmentUrls"`
-	CreatedBy       string          `json:"createdBy"`
-	CreatedAt       time.Time       `json:"createdAt"`
+	ID                string          `json:"id"`
+	Type              string          `json:"type"`
+	Amount            string          `json:"amount"`
+	Currency          string          `json:"currency"`
+	WalletID          string          `json:"walletId"`
+	WalletName        string          `json:"walletName"`
+	ToWalletID        *string         `json:"toWalletId,omitempty"`
+	ToWalletName      *string         `json:"toWalletName,omitempty"`
+	CategoryID        *string         `json:"categoryId,omitempty"`
+	CategoryName      *string         `json:"categoryName,omitempty"`
+	Description       *string         `json:"description,omitempty"`
+	Notes             *string         `json:"notes,omitempty"`
+	ReferenceNo       *string         `json:"referenceNo,omitempty"`
+	TransactionDate   string          `json:"transactionDate"`
+	Status            string          `json:"status"`
+	Tags              []string        `json:"tags"`
+	AttachmentURLs    json.RawMessage `json:"attachmentUrls"`
+	AssetID           *string         `json:"assetId,omitempty"`
+	AssetName         *string         `json:"assetName,omitempty"`
+	AssetTicker       *string         `json:"assetTicker,omitempty"`
+	AssetQty          *string         `json:"assetQty,omitempty"`
+	AssetPricePerUnit *string         `json:"assetPricePerUnit,omitempty"`
+	CreatedBy         string          `json:"createdBy"`
+	CreatedAt         time.Time       `json:"createdAt"`
 }
 
 type ListTransactionsParams struct {
@@ -528,6 +628,7 @@ type ListTransactionsParams struct {
 	CategoryID  string `query:"categoryId"`
 	Type        string `query:"type"`
 	Status      string `query:"status"`
+	Search      string `query:"search"`
 	StartDate   string `query:"startDate"`
 	EndDate     string `query:"endDate"`
 	Period      string `query:"period"` // YYYY-MM shortcut
@@ -564,14 +665,8 @@ type UpdateTransactionParams struct {
 	Tags            []string `json:"tags,omitempty"`
 }
 
-var validTxnTypes = map[string]bool{
-	"income": true, "expense": true, "transfer": true,
-	"investment_buy": true, "investment_sell": true,
-	"dividend": true, "interest": true, "cashback": true, "adjustment": true,
-}
-
 func validateCreateTransaction(p *CreateTransactionParams) error {
-	if !validTxnTypes[p.Type] {
+	if strings.TrimSpace(p.Type) == "" {
 		return appErrs.BadRequest("jenis transaksi tidak valid")
 	}
 	if p.Amount <= 0 {
@@ -620,21 +715,33 @@ func ListTransactions(ctx context.Context, p *ListTransactionsParams) (*ListTran
 	conditions := []string{"t.deleted_at IS NULL"}
 	args := []any{}
 	i := 1
-	addCond := func(cond string, v any) {
-		conditions = append(conditions, fmt.Sprintf(cond, i))
-		args = append(args, v)
-		i++
-	}
 
 	if !isOwner(u) {
 		conditions = append(conditions, `t.status IN ('approved','pending_approval')`)
+		conditions = append(conditions, staffTxnVisibilitySQL()[5:]) // trim leading " AND "
 	}
 	if p.WalletID != "" {
-		addCond("(t.wallet_id=$%d OR t.to_wallet_id=$%d)", p.WalletID)
-		// adjust: two params, one condition — rebuild
-		conditions[len(conditions)-1] = fmt.Sprintf("(t.wallet_id=$%d OR t.to_wallet_id=$%d)", i-1, i)
-		args = append(args, p.WalletID)
-		i++
+		conditions = append(conditions, fmt.Sprintf("(t.wallet_id=$%d OR t.to_wallet_id=$%d)", i, i+1))
+		args = append(args, p.WalletID, p.WalletID)
+		i += 2
+	}
+	if s := strings.TrimSpace(p.Search); s != "" {
+		like := "%" + s + "%"
+		conditions = append(conditions, fmt.Sprintf(`(
+			COALESCE(t.description,'') ILIKE $%d OR
+			COALESCE(t.notes,'') ILIKE $%d OR
+			COALESCE(t.reference_no,'') ILIKE $%d OR
+			COALESCE(w.name,'') ILIKE $%d OR
+			COALESCE(c.name,'') ILIKE $%d OR
+			COALESCE(a.name,'') ILIKE $%d OR
+			COALESCE(a.ticker,'') ILIKE $%d OR
+			t.type ILIKE $%d OR
+			CAST(t.amount AS TEXT) ILIKE $%d
+		)`, i, i, i, i, i, i, i, i, i))
+		for j := 0; j < 9; j++ {
+			args = append(args, like)
+		}
+		i += 9
 	}
 	if p.CategoryID != "" {
 		conditions = append(conditions, fmt.Sprintf("t.category_id=$%d", i))
@@ -671,7 +778,12 @@ func ListTransactions(ctx context.Context, p *ListTransactionsParams) (*ListTran
 	where := strings.Join(conditions, " AND ")
 	offset := (p.Page - 1) * p.PageSize
 
-	countQ := fmt.Sprintf(`SELECT COUNT(*) FROM fin_transaction t WHERE %s`, where)
+	countQ := fmt.Sprintf(`SELECT COUNT(*) FROM fin_transaction t
+		LEFT JOIN fin_wallet w ON w.id = t.wallet_id
+		LEFT JOIN fin_wallet tw ON tw.id = t.to_wallet_id
+		LEFT JOIN fin_category c ON c.id = t.category_id
+		LEFT JOIN fin_asset a ON a.id = t.asset_id
+		WHERE %s`, where)
 	var total int
 	conn.QueryRowContext(ctx, countQ, args...).Scan(&total)
 
@@ -682,11 +794,13 @@ func ListTransactions(ctx context.Context, p *ListTransactionsParams) (*ListTran
 		       t.category_id, c.name,
 		       t.description, t.notes, t.reference_no,
 		       t.transaction_date, t.status, t.tags, t.attachment_urls,
+		       t.asset_id, a.name, a.ticker, t.asset_qty, t.asset_price_per_unit,
 		       t.created_by, t.created_at
 		FROM fin_transaction t
 		LEFT JOIN fin_wallet w  ON w.id = t.wallet_id
 		LEFT JOIN fin_wallet tw ON tw.id = t.to_wallet_id
 		LEFT JOIN fin_category c ON c.id = t.category_id
+		LEFT JOIN fin_asset a ON a.id = t.asset_id
 		WHERE %s
 		ORDER BY t.transaction_date DESC, t.created_at DESC
 		LIMIT $%d OFFSET $%d`, where, i, i+1)
@@ -702,15 +816,18 @@ func ListTransactions(ctx context.Context, p *ListTransactionsParams) (*ListTran
 		var tx Transaction
 		var toWalletID, toWalletName, categoryID, categoryName sql.NullString
 		var description, notes, referenceNo sql.NullString
+		var assetID, assetName, assetTicker sql.NullString
+		var assetQty, assetPrice sql.NullFloat64
 		var amount float64
-		var tags []string
+		var tagsRaw sql.NullString
 		var attachments json.RawMessage
 		if err := rows.Scan(
 			&tx.ID, &tx.Type, &amount, &tx.Currency, &tx.WalletID,
 			&tx.WalletName, &toWalletID, &toWalletName,
 			&categoryID, &categoryName,
 			&description, &notes, &referenceNo,
-			&tx.TransactionDate, &tx.Status, (*[]string)(&tags), &attachments,
+			&tx.TransactionDate, &tx.Status, &tagsRaw, &attachments,
+			&assetID, &assetName, &assetTicker, &assetQty, &assetPrice,
 			&tx.CreatedBy, &tx.CreatedAt,
 		); err != nil {
 			rlog.Warn("scan transaction row", "err", err)
@@ -738,10 +855,24 @@ func ListTransactions(ctx context.Context, p *ListTransactionsParams) (*ListTran
 		if referenceNo.Valid {
 			tx.ReferenceNo = &referenceNo.String
 		}
-		tx.Tags = tags
-		if tx.Tags == nil {
-			tx.Tags = []string{}
+		if assetID.Valid {
+			tx.AssetID = &assetID.String
 		}
+		if assetName.Valid {
+			tx.AssetName = &assetName.String
+		}
+		if assetTicker.Valid {
+			tx.AssetTicker = &assetTicker.String
+		}
+		if assetQty.Valid {
+			s := fmt.Sprintf("%.6f", assetQty.Float64)
+			tx.AssetQty = &s
+		}
+		if assetPrice.Valid {
+			s := fmt.Sprintf("%.4f", assetPrice.Float64)
+			tx.AssetPricePerUnit = &s
+		}
+		tx.Tags = parsePostgreSQLStringArray(tagsRaw)
 		tx.AttachmentURLs = attachments
 		if tx.AttachmentURLs == nil {
 			tx.AttachmentURLs = json.RawMessage("[]")
@@ -763,12 +894,6 @@ func CreateTransaction(ctx context.Context, p *CreateTransactionParams) (*Transa
 	if err := validateCreateTransaction(p); err != nil {
 		return nil, err
 	}
-	// Only owner can create adjustment
-	if p.Type == "adjustment" {
-		if err := assertOwner(u); err != nil {
-			return nil, err
-		}
-	}
 
 	conn, err := tenantConn(ctx, u.TenantSchema)
 	if err != nil {
@@ -776,26 +901,38 @@ func CreateTransaction(ctx context.Context, p *CreateTransactionParams) (*Transa
 	}
 	defer conn.Close()
 
-	// Determine approval status
-	status := "approved"
-	if !isOwner(u) {
-		var apprEnabled bool
-		var threshold sql.NullFloat64
-		conn.QueryRowContext(ctx,
-			`SELECT enabled, amount_threshold FROM fin_approval_setting LIMIT 1`,
-		).Scan(&apprEnabled, &threshold)
-		if apprEnabled {
-			if !threshold.Valid || p.Amount >= threshold.Float64 {
-				status = "pending_approval"
-			}
+	txnType, err := loadTransactionTypeByCode(ctx, conn, p.Type)
+	if err != nil {
+		return nil, err
+	}
+	if txnType.OwnerOnly {
+		if err := assertOwner(u); err != nil {
+			return nil, err
+		}
+	}
+	if err := assertWalletAccessible(ctx, conn, u, p.WalletID); err != nil {
+		return nil, err
+	}
+	if p.ToWalletID != nil && *p.ToWalletID != "" {
+		if err := assertWalletAccessible(ctx, conn, u, *p.ToWalletID); err != nil {
+			return nil, err
 		}
 	}
 
-	// Check period lock
+	status := "approved"
+	if !isOwner(u) {
+		cfg, err := loadApprovalConfig(ctx, conn)
+		if err != nil {
+			return nil, appErrs.Internal(err.Error())
+		}
+		if staffNeedsApproval(cfg, p.Type, p.Amount) {
+			status = "pending_approval"
+		}
+	}
+
 	period := walletPeriod(p.TransactionDate)
-	locked, _ := periodLocked(ctx, conn, period)
-	if locked {
-		return nil, appErrs.Forbidden("periode " + period + " sudah dikunci")
+	if err := ensurePeriodUnlocked(ctx, conn, period); err != nil {
+		return nil, err
 	}
 
 	tags := p.Tags
@@ -828,12 +965,8 @@ func CreateTransaction(ctx context.Context, p *CreateTransactionParams) (*Transa
 		return nil, appErrs.Internal(err.Error())
 	}
 
-	// Refresh balance only if approved
 	if status == "approved" {
-		refreshWalletBalance(ctx, conn, p.WalletID)
-		if p.ToWalletID != nil {
-			refreshWalletBalance(ctx, conn, *p.ToWalletID)
-		}
+		refreshWallets(ctx, conn, p.WalletID, p.ToWalletID)
 	}
 
 	// Record usage event
@@ -887,9 +1020,14 @@ func UpdateTransaction(ctx context.Context, id string, p *UpdateTransactionParam
 	}
 
 	period := walletPeriod(txDate)
-	locked, _ := periodLocked(ctx, conn, period)
-	if locked {
-		return nil, appErrs.Forbidden("periode " + period + " sudah dikunci")
+	if err := ensurePeriodUnlocked(ctx, conn, period); err != nil {
+		return nil, err
+	}
+	if p.TransactionDate != nil {
+		newPeriod := walletPeriod(*p.TransactionDate)
+		if err := ensurePeriodUnlocked(ctx, conn, newPeriod); err != nil {
+			return nil, err
+		}
 	}
 
 	sets := []string{"updated_at=now()"}
@@ -933,11 +1071,17 @@ func UpdateTransaction(ctx context.Context, id string, p *UpdateTransactionParam
 		return nil, appErrs.Internal(err.Error())
 	}
 
-	// Re-fetch wallet_id to refresh balance if amount/date changed
-	var walletID string
-	conn.QueryRowContext(ctx, `SELECT wallet_id FROM fin_transaction WHERE id=$1`, id).Scan(&walletID)
 	if (p.Amount != nil || p.TransactionDate != nil) && txStatus == "approved" {
-		refreshWalletBalance(ctx, conn, walletID)
+		var walletID string
+		var toWalletID sql.NullString
+		conn.QueryRowContext(ctx,
+			`SELECT wallet_id, to_wallet_id FROM fin_transaction WHERE id=$1`, id,
+		).Scan(&walletID, &toWalletID)
+		var toPtr *string
+		if toWalletID.Valid && toWalletID.String != "" {
+			toPtr = &toWalletID.String
+		}
+		refreshWallets(ctx, conn, walletID, toPtr)
 	}
 
 	auditFinance(ctx, conn, u, "transaction", id, "edit", txStatus, p)
@@ -960,20 +1104,24 @@ func DeleteTransaction(ctx context.Context, id string) (*OKResponse, error) {
 	defer conn.Close()
 
 	var walletID, txDate string
+	var toWalletID sql.NullString
 	if err := conn.QueryRowContext(ctx,
-		`SELECT wallet_id, transaction_date::text FROM fin_transaction WHERE id=$1 AND deleted_at IS NULL`, id,
-	).Scan(&walletID, &txDate); err != nil {
+		`SELECT wallet_id, to_wallet_id, transaction_date::text FROM fin_transaction WHERE id=$1 AND deleted_at IS NULL`, id,
+	).Scan(&walletID, &toWalletID, &txDate); err != nil {
 		return nil, appErrs.NotFound("transaksi tidak ditemukan")
 	}
 
-	period := walletPeriod(txDate)
-	if locked, _ := periodLocked(ctx, conn, period); locked {
-		return nil, appErrs.Forbidden("periode sudah dikunci")
+	if err := ensurePeriodUnlocked(ctx, conn, walletPeriod(txDate)); err != nil {
+		return nil, err
 	}
 
 	conn.ExecContext(ctx,
 		`UPDATE fin_transaction SET deleted_at=now(), deleted_by=$1 WHERE id=$2`, u.AccountID, id)
-	refreshWalletBalance(ctx, conn, walletID)
+	var toPtr *string
+	if toWalletID.Valid && toWalletID.String != "" {
+		toPtr = &toWalletID.String
+	}
+	refreshWallets(ctx, conn, walletID, toPtr)
 	auditFinance(ctx, conn, u, "transaction", id, "delete", nil, nil)
 	return &OKResponse{OK: true}, nil
 }
@@ -1007,9 +1155,10 @@ func ApproveTransaction(ctx context.Context, p *ApproveParams) (*Transaction, er
 	defer conn.Close()
 
 	var walletID, curStatus string
+	var toWalletID sql.NullString
 	if err := conn.QueryRowContext(ctx,
-		`SELECT wallet_id, status FROM fin_transaction WHERE id=$1 AND deleted_at IS NULL`, p.ID,
-	).Scan(&walletID, &curStatus); err != nil {
+		`SELECT wallet_id, to_wallet_id, status FROM fin_transaction WHERE id=$1 AND deleted_at IS NULL`, p.ID,
+	).Scan(&walletID, &toWalletID, &curStatus); err != nil {
 		return nil, appErrs.NotFound("transaksi tidak ditemukan")
 	}
 	if curStatus != "pending_approval" {
@@ -1030,7 +1179,11 @@ func ApproveTransaction(ctx context.Context, p *ApproveParams) (*Transaction, er
 		return nil, appErrs.Internal(err.Error())
 	}
 	if newStatus == "approved" {
-		refreshWalletBalance(ctx, conn, walletID)
+		var toPtr *string
+		if toWalletID.Valid && toWalletID.String != "" {
+			toPtr = &toWalletID.String
+		}
+		refreshWallets(ctx, conn, walletID, toPtr)
 	}
 	auditFinance(ctx, conn, u, "transaction", p.ID, p.Action, curStatus, newStatus)
 	return &Transaction{ID: p.ID, Status: newStatus}, nil
@@ -1059,7 +1212,8 @@ func GetApprovalSetting(ctx context.Context) (*ApprovalSettingParams, error) {
 	var s ApprovalSettingParams
 	var threshold sql.NullFloat64
 	conn.QueryRowContext(ctx,
-		`SELECT enabled, amount_threshold, require_for_types FROM fin_approval_setting LIMIT 1`,
+		`SELECT enabled, amount_threshold, require_for_types FROM fin_approval_setting WHERE id=$1`,
+		approvalSettingID,
 	).Scan(&s.Enabled, &threshold, &s.RequireForTypes)
 	if threshold.Valid {
 		s.AmountThreshold = &threshold.Float64
@@ -1088,14 +1242,19 @@ func UpdateApprovalSetting(ctx context.Context, p *ApprovalSettingParams) (*Appr
 	if types == nil {
 		types = []string{}
 	}
-	conn.ExecContext(ctx,
-		`INSERT INTO fin_approval_setting (enabled, amount_threshold, require_for_types, updated_by)
-		 VALUES ($1,$2,$3,$4)
-		 ON CONFLICT DO NOTHING`,
-		p.Enabled, p.AmountThreshold, types, u.AccountID)
-	conn.ExecContext(ctx,
-		`UPDATE fin_approval_setting SET enabled=$1, amount_threshold=$2, require_for_types=$3, updated_by=$4, updated_at=now()`,
-		p.Enabled, p.AmountThreshold, types, u.AccountID)
+	_, err = conn.ExecContext(ctx,
+		`INSERT INTO fin_approval_setting (id, enabled, amount_threshold, require_for_types, updated_by)
+		 VALUES ($1,$2,$3,$4,$5)
+		 ON CONFLICT (id) DO UPDATE SET
+		   enabled=EXCLUDED.enabled,
+		   amount_threshold=EXCLUDED.amount_threshold,
+		   require_for_types=EXCLUDED.require_for_types,
+		   updated_by=EXCLUDED.updated_by,
+		   updated_at=now()`,
+		approvalSettingID, p.Enabled, p.AmountThreshold, types, u.AccountID)
+	if err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
 	return p, nil
 }
 
@@ -1175,6 +1334,9 @@ func DuplicateTransactions(ctx context.Context, p *DuplicateParams) (*CountRespo
 	if err != nil {
 		return nil, err
 	}
+	if err := assertOwner(u); err != nil {
+		return nil, err
+	}
 	if len(p.TransactionIDs) == 0 {
 		return nil, appErrs.BadRequest("pilih minimal satu transaksi")
 	}
@@ -1187,9 +1349,8 @@ func DuplicateTransactions(ctx context.Context, p *DuplicateParams) (*CountRespo
 	}
 	defer conn.Close()
 
-	period := walletPeriod(p.TargetDate)
-	if locked, _ := periodLocked(ctx, conn, period); locked {
-		return nil, appErrs.Forbidden("periode " + period + " sudah dikunci")
+	if err := ensurePeriodUnlocked(ctx, conn, walletPeriod(p.TargetDate)); err != nil {
+		return nil, err
 	}
 
 	count := 0
@@ -1209,10 +1370,7 @@ func DuplicateTransactions(ctx context.Context, p *DuplicateParams) (*CountRespo
 			rlog.Warn("duplicate txn failed", "src", txID, "err", err)
 			continue
 		}
-		// refresh balance for source wallet
-		var walletID string
-		conn.QueryRowContext(ctx, `SELECT wallet_id FROM fin_transaction WHERE id=$1`, newID).Scan(&walletID)
-		refreshWalletBalance(ctx, conn, walletID)
+		refreshWalletsForTransaction(ctx, conn, newID)
 		count++
 	}
 	return &CountResponse{Count: count}, nil
@@ -1263,20 +1421,28 @@ func GetDashboard(ctx context.Context, p *DashboardParams) (*DashboardSummary, e
 		period = time.Now().Format("2006-01")
 	}
 
+	flowSQL := flowFallbackSQL("t.type")
+	walletFilter := ""
+	if !isOwner(u) {
+		walletFilter = staffWalletBalanceFilter()
+	}
 	var income, expense float64
-	conn.QueryRowContext(ctx,
-		`SELECT
-		  COALESCE(SUM(CASE WHEN type IN ('income','dividend','interest','cashback') THEN amount ELSE 0 END),0),
-		  COALESCE(SUM(CASE WHEN type IN ('expense','investment_buy') THEN amount ELSE 0 END),0)
-		 FROM fin_transaction
-		 WHERE to_char(transaction_date,'YYYY-MM')=$1
-		   AND status='approved' AND deleted_at IS NULL`, period,
+	conn.QueryRowContext(ctx, fmt.Sprintf(`
+		SELECT
+		  COALESCE(SUM(CASE WHEN %s = 'income' THEN t.amount ELSE 0 END),0),
+		  COALESCE(SUM(CASE WHEN %s = 'expense' THEN t.amount ELSE 0 END),0)
+		 FROM fin_transaction t
+		 LEFT JOIN fin_transaction_type tt ON tt.code = t.type AND tt.deleted_at IS NULL
+		 JOIN fin_wallet w ON w.id = t.wallet_id
+		 WHERE to_char(t.transaction_date,'YYYY-MM')=$1
+		   AND t.status='approved' AND t.deleted_at IS NULL%s`, flowSQL, flowSQL, walletFilter), period,
 	).Scan(&income, &expense)
 
 	var totalWallets float64
-	conn.QueryRowContext(ctx,
-		`SELECT COALESCE(SUM(b.balance),0) FROM fin_wallet_balance b
-		 JOIN fin_wallet w ON w.id=b.wallet_id WHERE w.deleted_at IS NULL AND w.is_active=true`,
+	conn.QueryRowContext(ctx, fmt.Sprintf(`
+		SELECT COALESCE(SUM(b.balance),0) FROM fin_wallet_balance b
+		 JOIN fin_wallet w ON w.id=b.wallet_id
+		 WHERE w.deleted_at IS NULL AND w.is_active=true%s`, walletFilter),
 	).Scan(&totalWallets)
 
 	var pendingCount int

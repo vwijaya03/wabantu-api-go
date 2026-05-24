@@ -232,7 +232,8 @@ func GetTodayChecklist(ctx context.Context) (*TodayChecklistResponse, error) {
 		}
 		// Upsert — only insert if not yet existing for today
 		conn.ExecContext(ctx,
-			`INSERT INTO fin_checklist_item (template_id, due_date) VALUES ($1,$2) ON CONFLICT DO NOTHING`,
+			`INSERT INTO fin_checklist_item (template_id, due_date) VALUES ($1,$2)
+			 ON CONFLICT (template_id, due_date) DO NOTHING`,
 			id, today)
 	}
 

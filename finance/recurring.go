@@ -151,9 +151,6 @@ func CreateRecurring(ctx context.Context, p *CreateRecurringParams) (*Recurring,
 	if strings.TrimSpace(p.Title) == "" {
 		return nil, appErrs.BadRequest("judul harus diisi")
 	}
-	if !validTxnTypes[p.Type] {
-		return nil, appErrs.BadRequest("jenis transaksi tidak valid")
-	}
 	if p.Amount <= 0 {
 		return nil, appErrs.BadRequest("jumlah harus lebih dari 0")
 	}
@@ -175,6 +172,10 @@ func CreateRecurring(ctx context.Context, p *CreateRecurringParams) (*Recurring,
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer conn.Close()
+
+	if _, err := loadTransactionTypeByCode(ctx, conn, p.Type); err != nil {
+		return nil, err
+	}
 
 	var id string
 	err = conn.QueryRowContext(ctx,
@@ -254,10 +255,14 @@ func processRecurringForTenant(ctx context.Context, schema, today string) error 
 	}
 	defer conn.Close()
 
+	if !financeTablesReady(ctx, conn) {
+		return nil
+	}
+
 	rows, err := conn.QueryContext(ctx, `
 		SELECT id, type, amount, wallet_id, to_wallet_id, category_id, description,
 		       frequency, frequency_value, day_of_month, day_of_week, mode,
-		       end_date::text, max_occurrences, occurrences_done, next_run_date::text
+		       end_date::text, max_occurrences, occurrences_done, next_run_date::text, created_by
 		FROM fin_recurring
 		WHERE is_active=true AND deleted_at IS NULL AND next_run_date<=$1`, today)
 	if err != nil {
@@ -266,7 +271,7 @@ func processRecurringForTenant(ctx context.Context, schema, today string) error 
 	defer rows.Close()
 
 	type recRow struct {
-		id, typ, walletID string
+		id, typ, walletID, createdBy string
 		toWalletID, categoryID, description, endDate sql.NullString
 		mode, nextRunDate                            string
 		amount                                       float64
@@ -281,7 +286,7 @@ func processRecurringForTenant(ctx context.Context, schema, today string) error 
 		var domN, dowN sql.NullInt64
 		rows.Scan(&r.id, &r.typ, &r.amount, &r.walletID, &r.toWalletID,
 			&r.categoryID, &r.description, &r.frequency, &r.freqVal,
-			&domN, &dowN, &r.mode, &r.endDate, &r.maxOcc, &r.occDone, &r.nextRunDate)
+			&domN, &dowN, &r.mode, &r.endDate, &r.maxOcc, &r.occDone, &r.nextRunDate, &r.createdBy)
 		if domN.Valid {
 			r.dayOfMonth = int(domN.Int64)
 		}
@@ -306,45 +311,53 @@ func processRecurringForTenant(ctx context.Context, schema, today string) error 
 
 		var logStatus, errMsg, txnID string
 		if r.mode == "auto" {
-			// Create transaction
-			var newID string
-			err := conn.QueryRowContext(ctx,
-				`INSERT INTO fin_transaction
-				 (type,amount,currency,wallet_id,to_wallet_id,category_id,description,
-				  transaction_date,status,tags,recurring_id,created_by)
-				 VALUES ($1,$2,'IDR',$3,$4,$5,$6,$7,'approved','{}','00000000-0000-0000-0000-000000000000',$8)
-				 RETURNING id`,
-				r.typ, r.amount, r.walletID, nullStr(r.toWalletID), nullStr(r.categoryID),
-				nullStr(r.description), today, r.id,
-			).Scan(&newID)
-			if err != nil {
+			if err := ensurePeriodUnlocked(ctx, conn, walletPeriod(today)); err != nil {
 				logStatus = "failed"
 				errMsg = err.Error()
-				rlog.Warn("recurring txn failed", "id", r.id, "err", err)
 			} else {
-				logStatus = "success"
-				txnID = newID
-				refreshWalletBalance(ctx, conn, r.walletID)
-				if r.toWalletID.Valid {
-					refreshWalletBalance(ctx, conn, r.toWalletID.String)
+				var newID string
+				createdBy := r.createdBy
+				if createdBy == "" {
+					createdBy = "00000000-0000-0000-0000-000000000000"
+				}
+				err := conn.QueryRowContext(ctx,
+					`INSERT INTO fin_transaction
+					 (type,amount,currency,wallet_id,to_wallet_id,category_id,description,
+					  transaction_date,status,tags,recurring_id,created_by)
+					 VALUES ($1,$2,'IDR',$3,$4,$5,$6,$7,'approved','{}',$8,$9)
+					 RETURNING id`,
+					r.typ, r.amount, r.walletID, nullStr(r.toWalletID), nullStr(r.categoryID),
+					nullStr(r.description), today, r.id, createdBy,
+				).Scan(&newID)
+				if err != nil {
+					logStatus = "failed"
+					errMsg = err.Error()
+					rlog.Warn("recurring txn failed", "id", r.id, "err", err)
+				} else {
+					logStatus = "success"
+					txnID = newID
+					var toPtr *string
+					if r.toWalletID.Valid && r.toWalletID.String != "" {
+						toPtr = &r.toWalletID.String
+					}
+					refreshWallets(ctx, conn, r.walletID, toPtr)
 				}
 			}
 		} else {
-			// reminder mode — just log, notification handled by notif service
 			logStatus = "reminded"
 		}
 
-		// Log
 		conn.ExecContext(ctx,
 			`INSERT INTO fin_recurring_log (recurring_id, run_date, status, error_msg, txn_id)
 			 VALUES ($1,$2,$3,NULLIF($4,''),NULLIF($5,'')::uuid)`,
 			r.id, today, logStatus, errMsg, txnID)
 
-		// Update next_run_date and occurrences_done
-		nextRun := calcNextRunDate(today, r.frequency, r.freqVal, r.dayOfMonth, r.dayOfWeek)
-		conn.ExecContext(ctx,
-			`UPDATE fin_recurring SET next_run_date=$1, occurrences_done=occurrences_done+1, updated_at=now() WHERE id=$2`,
-			nextRun, r.id)
+		if logStatus != "failed" {
+			nextRun := calcNextRunDate(today, r.frequency, r.freqVal, r.dayOfMonth, r.dayOfWeek)
+			conn.ExecContext(ctx,
+				`UPDATE fin_recurring SET next_run_date=$1, occurrences_done=occurrences_done+1, updated_at=now() WHERE id=$2`,
+				nextRun, r.id)
+		}
 
 		// Pause after 3 consecutive failures
 		var failCount int

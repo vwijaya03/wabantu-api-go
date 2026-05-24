@@ -95,6 +95,12 @@ ALTER TABLE conversation ADD COLUMN IF NOT EXISTS branch_id UUID;
 
 -- Finance: drop invalid functional index (to_char is not IMMUTABLE in PostgreSQL).
 DROP INDEX IF EXISTS idx_fin_txn_period;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_fin_checklist_tpl_date ON fin_checklist_item(template_id, due_date);
+
+DELETE FROM fin_approval_setting a
+USING fin_approval_setting b
+WHERE a.id > b.id;
 `
 
 // RunSchemaPatches applies idempotent ALTERs for an existing tenant schema.

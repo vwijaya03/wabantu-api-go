@@ -14,12 +14,14 @@ Target: UMKM, toko kecil, bisnis keluarga.
 | File | Isi |
 |------|-----|
 | `finance/finance.go` | Wallet, kategori, transaksi (CRUD + duplikat), approval, period lock, audit log, dashboard summary |
+| `finance/helpers.go` | Refresh saldo, visibility staff, approval config, parse `TEXT[]` tags |
+| `finance/transaction_types.go` | CRUD jenis transaksi (`fin_transaction_type`) |
 | `finance/budget.go` | Anggaran per kategori + sisa + alert, category spending, monthly comparison |
-| `finance/investment.go` | Aset investasi, harga manual, portfolio summary (P&L, dividen) |
+| `finance/investment.go` | Aset investasi, trade beli/jual, harga manual, portfolio (P&L, dividen) |
 | `finance/recurring.go` | Transaksi berulang CRUD + cron harian 07:00 WIB |
 | `finance/checklist.go` | Checklist harian + template |
 | `finance/report.go` | Export laporan async (CSV placeholder; hookable ke S3/R2) |
-| `tenant/finance_seed.go` | Seed kategori default + wallet Kas Tunai + approval setting saat `RunTenantDDL` |
+| `tenant/finance_seed.go` | Seed kategori + jenis transaksi default + wallet Kas Tunai |
 
 ---
 
@@ -30,8 +32,9 @@ Target: UMKM, toko kecil, bisnis keluarga.
 | `fin_wallet` | Kas, bank, e-wallet, kripto, investasi |
 | `fin_wallet_balance` | Snapshot saldo materialized (recalculate saat transaksi berubah) |
 | `fin_category` | Kategori + sub-kategori (seeded otomatis) |
-| `fin_transaction` | Semua transaksi (append-only, soft delete) |
-| `fin_asset` | Definisi aset investasi |
+| `fin_transaction_type` | Label & flow jenis transaksi (seed + CRUD owner) |
+| `fin_transaction` | Semua transaksi (append-only, soft delete); kolom `asset_*` untuk investasi |
+| `fin_asset` | Definisi aset investasi (`unit_multiplier`, `price_unit_name` untuk saham IDX) |
 | `fin_asset_price` | Riwayat harga manual per aset |
 | `fin_recurring` | Konfigurasi transaksi berulang |
 | `fin_recurring_log` | Log eksekusi cron per recurring |
@@ -55,7 +58,7 @@ Target: UMKM, toko kecil, bisnis keluarga.
 | GET | `/api/v1/finance/wallets` | owner (semua) / staff (visibility=all) |
 | POST | `/api/v1/finance/wallets` | owner |
 | PUT | `/api/v1/finance/wallets/:id` | owner |
-| DELETE | `/api/v1/finance/wallets/:id` | owner |
+| DELETE | `/api/v1/finance/wallets/:id` | owner (ditolak jika masih ada transaksi/aset/recurring terkait) |
 
 ### Kategori
 
@@ -69,7 +72,7 @@ Target: UMKM, toko kecil, bisnis keluarga.
 
 | Method | Path | Role |
 |--------|------|------|
-| GET | `/api/v1/finance/transactions` | owner (semua) / staff (approved + pending milik sendiri) |
+| GET | `/api/v1/finance/transactions` | owner (semua) / staff (approved + pending milik sendiri); query `search`, `period`, `page` |
 | POST | `/api/v1/finance/transactions` | semua — status tergantung `approval_setting` |
 | PUT | `/api/v1/finance/transactions/:id` | owner / staff (draft/pending milik sendiri) |
 | DELETE | `/api/v1/finance/transactions/:id` | owner (jika periode tidak terkunci) |
@@ -87,14 +90,31 @@ Target: UMKM, toko kecil, bisnis keluarga.
 | GET | `/api/v1/finance/reports/category-spending` | semua |
 | GET | `/api/v1/finance/reports/monthly-comparison?months=6` | semua |
 
+### Jenis transaksi (konfigurasi)
+
+| Method | Path | Role |
+|--------|------|------|
+| GET | `/api/v1/finance/transaction-types` | owner |
+| POST | `/api/v1/finance/transaction-types` | owner |
+| PUT | `/api/v1/finance/transaction-types/:id` | owner |
+| DELETE | `/api/v1/finance/transaction-types/:id` | owner |
+
 ### Investasi
 
 | Method | Path | Role |
 |--------|------|------|
-| GET | `/api/v1/finance/investments/portfolio` | owner |
+| GET | `/api/v1/finance/investments/portfolio` | owner; query `search`, `page`, `pageSize` |
 | POST | `/api/v1/finance/investments/assets` | owner |
+| PUT | `/api/v1/finance/investments/assets/:id` | owner |
+| DELETE | `/api/v1/finance/investments/assets/:id` | owner (ditolak jika qty > 0) |
+| POST | `/api/v1/finance/investments/assets/:id/trades` | owner — body: `side`, `quantity`, `pricePerUnit`, `fee` atau `feePercent` |
+| GET | `/api/v1/finance/investments/assets/:id/trades` | owner |
+| DELETE | `/api/v1/finance/investments/assets/:id/trades/:txnId` | owner |
 | POST | `/api/v1/finance/investments/prices` | owner |
 | GET | `/api/v1/finance/investments/assets/:id/prices` | owner |
+
+**Saham IDX (default):** `unit_name=lot`, `unit_multiplier=100`, harga per **lembar**.  
+Qty di `asset_qty` = jumlah **lot**; nilai transaksi = `lot × multiplier × harga_per_lembar ± biaya`.
 
 ### Recurring
 
@@ -214,3 +234,4 @@ Patch di `tenant/finance_schema.go`; index `to_char(...)` pada periode **tidak**
 | Tanggal | Catatan |
 |---------|---------|
 | 2026-05 | Modul finance awal — wallet, transaksi, anggaran, investasi, recurring, checklist, laporan |
+| 2026-05-24 | Production hardening: `fin_transaction_type`, trade investasi, lot×100, biaya %, list transaksi + search, hapus dompet/aset dengan guard, dedupe kategori tenant, fix scan `tags` TEXT[] |

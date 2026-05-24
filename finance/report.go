@@ -2,6 +2,9 @@ package finance
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -41,6 +44,9 @@ func CreateReportJob(ctx context.Context, p *CreateReportJobParams) (*ReportJob,
 	if err != nil {
 		return nil, err
 	}
+	if err := assertOwner(u); err != nil {
+		return nil, err
+	}
 	if p.Format != "csv" {
 		p.Format = "pdf"
 	}
@@ -65,8 +71,13 @@ func CreateReportJob(ctx context.Context, p *CreateReportJobParams) (*ReportJob,
 	}
 	defer conn.Close()
 
-	params := fmt.Sprintf(`{"type":"%s","startDate":"%s","endDate":"%s","format":"%s"}`,
-		p.Type, p.StartDate, p.EndDate, p.Format)
+	paramsBytes, err := json.Marshal(map[string]string{
+		"type": p.Type, "startDate": p.StartDate, "endDate": p.EndDate, "format": p.Format,
+	})
+	if err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	params := string(paramsBytes)
 
 	var id string
 	err = conn.QueryRowContext(ctx,
@@ -105,12 +116,19 @@ func GetReportJob(ctx context.Context, id string) (*ReportJob, error) {
 
 	var j ReportJob
 	var dlURL, errMsg *string
-	err = conn.QueryRowContext(ctx,
-		`SELECT id, type, status, download_url, error_msg, created_at, updated_at
-		 FROM fin_report_job WHERE id=$1`, id,
-	).Scan(&j.ID, &j.Type, &j.Status, &dlURL, &errMsg, &j.CreatedAt, &j.UpdatedAt)
+	q := `SELECT id, type, status, download_url, error_msg, created_at, updated_at
+		 FROM fin_report_job WHERE id=$1`
+	args := []any{id}
+	if !isOwner(u) {
+		q += ` AND created_by=$2`
+		args = append(args, u.AccountID)
+	}
+	err = conn.QueryRowContext(ctx, q, args...).Scan(&j.ID, &j.Type, &j.Status, &dlURL, &errMsg, &j.CreatedAt, &j.UpdatedAt)
 	if err != nil {
-		return nil, appErrs.NotFound("job tidak ditemukan")
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, appErrs.NotFound("job tidak ditemukan")
+		}
+		return nil, appErrs.Internal(err.Error())
 	}
 	j.DownloadURL = dlURL
 	j.ErrorMsg = errMsg

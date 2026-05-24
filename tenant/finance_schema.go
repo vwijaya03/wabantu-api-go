@@ -46,6 +46,23 @@ CREATE TABLE IF NOT EXISTS fin_category (
     deleted_at    TIMESTAMPTZ
 );
 
+CREATE TABLE IF NOT EXISTS fin_transaction_type (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    code           VARCHAR(40)  NOT NULL,
+    label          VARCHAR(100) NOT NULL,
+    flow           VARCHAR(20)  NOT NULL,
+    category_kind  VARCHAR(20)  NOT NULL DEFAULT 'any',
+    show_in_quick  BOOLEAN      NOT NULL DEFAULT false,
+    display_order  INT          NOT NULL DEFAULT 0,
+    is_system      BOOLEAN      NOT NULL DEFAULT false,
+    owner_only     BOOLEAN      NOT NULL DEFAULT false,
+    is_active      BOOLEAN      NOT NULL DEFAULT true,
+    created_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    deleted_at     TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_fin_txn_type_code ON fin_transaction_type(code) WHERE deleted_at IS NULL;
+
 CREATE TABLE IF NOT EXISTS fin_transaction (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     type             VARCHAR(20)   NOT NULL,
@@ -83,18 +100,27 @@ CREATE INDEX IF NOT EXISTS idx_fin_txn_status   ON fin_transaction(status) WHERE
 CREATE INDEX IF NOT EXISTS idx_fin_txn_asset    ON fin_transaction(asset_id) WHERE asset_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS fin_asset (
-    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name        VARCHAR(100) NOT NULL,
-    ticker      VARCHAR(20),
-    type        VARCHAR(20)  NOT NULL DEFAULT 'stock',
-    unit_name   VARCHAR(20)  NOT NULL DEFAULT 'lot',
-    wallet_id   UUID         NOT NULL,
-    notes       TEXT,
-    is_active   BOOLEAN      NOT NULL DEFAULT true,
-    created_by  UUID         NOT NULL,
-    created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
-    updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name             VARCHAR(100) NOT NULL,
+    ticker           VARCHAR(20),
+    type             VARCHAR(20)  NOT NULL DEFAULT 'stock',
+    unit_name        VARCHAR(20)  NOT NULL DEFAULT 'lot',
+    unit_multiplier  NUMERIC(18,6) NOT NULL DEFAULT 1,
+    price_unit_name  VARCHAR(20),
+    wallet_id        UUID         NOT NULL,
+    notes            TEXT,
+    is_active        BOOLEAN      NOT NULL DEFAULT true,
+    created_by       UUID         NOT NULL,
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
+
+ALTER TABLE fin_asset ADD COLUMN IF NOT EXISTS unit_multiplier NUMERIC(18,6) NOT NULL DEFAULT 1;
+ALTER TABLE fin_asset ADD COLUMN IF NOT EXISTS price_unit_name VARCHAR(20);
+UPDATE fin_asset SET unit_multiplier = 100
+  WHERE type = 'stock' AND lower(trim(unit_name)) = 'lot' AND unit_multiplier = 1;
+UPDATE fin_asset SET price_unit_name = 'lembar'
+  WHERE type = 'stock' AND lower(trim(unit_name)) = 'lot' AND (price_unit_name IS NULL OR price_unit_name = '');
 
 CREATE TABLE IF NOT EXISTS fin_asset_price (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -181,6 +207,7 @@ CREATE TABLE IF NOT EXISTS fin_checklist_item (
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_fin_checklist_date ON fin_checklist_item(due_date, status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_fin_checklist_tpl_date ON fin_checklist_item(template_id, due_date);
 
 CREATE TABLE IF NOT EXISTS fin_approval_setting (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -227,9 +254,78 @@ CREATE TABLE IF NOT EXISTS fin_report_job (
 );
 `
 
+// financeCategoryDedupeSQL removes duplicate system categories, then adds unique indexes.
+const financeCategoryDedupeSQL = `
+UPDATE fin_category child SET parent_id = dup.keep_id
+FROM (
+  SELECT d.id AS dupe_id,
+         (SELECT k.id FROM fin_category k
+          WHERE k.deleted_at IS NULL AND k.parent_id IS NULL AND k.is_system = true AND k.name = d.name
+          ORDER BY k.display_order, k.created_at, k.id LIMIT 1) AS keep_id
+  FROM (
+    SELECT id, name,
+           ROW_NUMBER() OVER (PARTITION BY name ORDER BY display_order, created_at, id) AS rn
+    FROM fin_category
+    WHERE deleted_at IS NULL AND parent_id IS NULL AND is_system = true
+  ) d
+  WHERE d.rn > 1
+) dup
+WHERE child.parent_id = dup.dupe_id AND child.deleted_at IS NULL;
+
+UPDATE fin_category SET deleted_at = now()
+WHERE id IN (
+  SELECT id FROM (
+    SELECT id,
+           ROW_NUMBER() OVER (PARTITION BY name ORDER BY display_order, created_at, id) AS rn
+    FROM fin_category
+    WHERE deleted_at IS NULL AND parent_id IS NULL AND is_system = true
+  ) s WHERE rn > 1
+);
+
+WITH ranked AS (
+  SELECT id,
+         FIRST_VALUE(id) OVER (
+           PARTITION BY name, parent_id ORDER BY display_order, created_at, id
+         ) AS keep_id,
+         ROW_NUMBER() OVER (
+           PARTITION BY name, parent_id ORDER BY display_order, created_at, id
+         ) AS rn
+  FROM fin_category
+  WHERE deleted_at IS NULL AND parent_id IS NOT NULL AND is_system = true
+)
+UPDATE fin_transaction t SET category_id = r.keep_id
+FROM ranked r
+WHERE t.category_id = r.id AND r.rn > 1;
+
+UPDATE fin_category SET deleted_at = now()
+WHERE id IN (
+  SELECT id FROM (
+    SELECT id,
+           ROW_NUMBER() OVER (PARTITION BY name, parent_id ORDER BY display_order, created_at, id) AS rn
+    FROM fin_category
+    WHERE deleted_at IS NULL AND parent_id IS NOT NULL AND is_system = true
+  ) s WHERE rn > 1
+);
+
+DROP INDEX IF EXISTS idx_fin_cat_sys_parent_name;
+DROP INDEX IF EXISTS idx_fin_cat_sys_child_name_parent;
+
+CREATE UNIQUE INDEX idx_fin_cat_sys_parent_name
+  ON fin_category (name) WHERE deleted_at IS NULL AND is_system = true AND parent_id IS NULL;
+
+CREATE UNIQUE INDEX idx_fin_cat_sys_child_name_parent
+  ON fin_category (name, parent_id) WHERE deleted_at IS NULL AND is_system = true AND parent_id IS NOT NULL;
+`
+
 func runFinanceSchemaAndSeed(ctx context.Context, conn *sql.Conn) error {
 	if _, err := conn.ExecContext(ctx, financeSchemaPatchSQL); err != nil {
 		return fmt.Errorf("finance DDL: %w", err)
+	}
+	if _, err := conn.ExecContext(ctx, financeCategoryDedupeSQL); err != nil {
+		return fmt.Errorf("finance category dedupe: %w", err)
+	}
+	if err := seedFinanceTransactionTypes(ctx, conn); err != nil {
+		return fmt.Errorf("finance seed transaction types: %w", err)
 	}
 	if err := seedFinanceCategories(ctx, conn); err != nil {
 		return fmt.Errorf("finance seed categories: %w", err)
