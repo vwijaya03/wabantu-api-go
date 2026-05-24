@@ -17,7 +17,8 @@ Target: UMKM, toko kecil, bisnis keluarga.
 | `finance/helpers.go` | Refresh saldo, visibility staff, approval config, parse `TEXT[]` tags |
 | `finance/transaction_types.go` | CRUD jenis transaksi (`fin_transaction_type`) |
 | `finance/budget.go` | Anggaran per kategori + sisa + alert, category spending, monthly comparison |
-| `finance/investment.go` | Aset investasi, trade beli/jual, harga manual, portfolio (P&L, dividen) |
+| `finance/investment.go` | Aset investasi, trade beli/jual, dividen per aset, harga manual, portfolio (P&L) |
+| `finance/investment_units.go` | Default satuan & multiplier per tipe aset (lot/lembar, gram, unit, koin) |
 | `finance/recurring.go` | Transaksi berulang CRUD + cron harian 07:00 WIB |
 | `finance/checklist.go` | Checklist harian + template |
 | `finance/report.go` | Export laporan async (CSV placeholder; hookable ke S3/R2) |
@@ -108,13 +109,28 @@ Target: UMKM, toko kecil, bisnis keluarga.
 | PUT | `/api/v1/finance/investments/assets/:id` | owner |
 | DELETE | `/api/v1/finance/investments/assets/:id` | owner (ditolak jika qty > 0) |
 | POST | `/api/v1/finance/investments/assets/:id/trades` | owner — body: `side`, `quantity`, `pricePerUnit`, `fee` atau `feePercent` |
-| GET | `/api/v1/finance/investments/assets/:id/trades` | owner |
+| POST | `/api/v1/finance/investments/assets/:id/dividends` | owner — body: `amount`, `transactionDate`, `description?`; insert `type=dividend` + `asset_id` |
+| GET | `/api/v1/finance/investments/assets/:id/trades` | owner (beli/jual/dividen terkait aset) |
 | DELETE | `/api/v1/finance/investments/assets/:id/trades/:txnId` | owner |
 | POST | `/api/v1/finance/investments/prices` | owner |
 | GET | `/api/v1/finance/investments/assets/:id/prices` | owner |
 
-**Saham IDX (default):** `unit_name=lot`, `unit_multiplier=100`, harga per **lembar**.  
-Qty di `asset_qty` = jumlah **lot**; nilai transaksi = `lot × multiplier × harga_per_lembar ± biaya`.
+**Satuan default saat create aset** (`investment_units.go`):
+
+| Tipe | `unit_name` | `unit_multiplier` | `price_unit_name` |
+|------|-------------|-------------------|-------------------|
+| `stock` | `lot` | 100 | `lembar` |
+| `gold` | `gram` | 1 | `gram` |
+| `mutual_fund` | `unit` | 1 | `unit` |
+| `crypto` | `coin` | 1 | `coin` |
+| `other` | `unit` | 1 | `unit` |
+
+**Saham IDX (lot):** qty di `asset_qty` = jumlah **lot**; nilai transaksi = `lot × multiplier × harga_per_lembar ± biaya`.
+
+**Dividen:** `totalDividend` di portfolio = `SUM(amount)` transaksi `type=dividend` + `asset_id` + `status=approved`.  
+`POST /finance/transactions` **tidak** mengisi `asset_id` — dividen harus lewat endpoint dividen di atas.
+
+**Seed jenis transaksi:** `investment_buy`, `investment_sell`, `dividend` → `show_in_quick=false` (UI Catat Transaksi tidak menampilkan beli/jual/dividen).
 
 ### Recurring
 
@@ -235,3 +251,4 @@ Patch di `tenant/finance_schema.go`; index `to_char(...)` pada periode **tidak**
 |---------|---------|
 | 2026-05 | Modul finance awal — wallet, transaksi, anggaran, investasi, recurring, checklist, laporan |
 | 2026-05-24 | Production hardening: `fin_transaction_type`, trade investasi, lot×100, biaya %, list transaksi + search, hapus dompet/aset dengan guard, dedupe kategori tenant, fix scan `tags` TEXT[] |
+| 2026-05-25 | Dividen per aset (`POST .../dividends`), satuan per tipe aset + migrasi lot→gram/unit/coin, beli/jual/dividen off quick picker, wallet update type guard |

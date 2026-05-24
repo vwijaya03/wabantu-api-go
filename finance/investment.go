@@ -129,6 +129,18 @@ type AssetTradesResponse struct {
 	Items []AssetTrade `json:"items"`
 }
 
+type RecordAssetDividendParams struct {
+	Amount          float64 `json:"amount"`
+	TransactionDate string  `json:"transactionDate"`
+	Description     *string `json:"description,omitempty"`
+}
+
+type RecordAssetDividendResponse struct {
+	TransactionID string `json:"transactionId"`
+	Amount        string `json:"amount"`
+	Status        string `json:"status"`
+}
+
 type RecordInvestmentTradeResponse struct {
 	TransactionID string `json:"transactionId"`
 	QtyHeld       string `json:"qtyHeld"`
@@ -138,25 +150,6 @@ type RecordInvestmentTradeResponse struct {
 
 var validAssetTypes = map[string]bool{
 	"stock": true, "crypto": true, "gold": true, "mutual_fund": true, "other": true,
-}
-
-// defaultUnitMultiplier: saham IDX — 1 lot = 100 lembar.
-func defaultUnitMultiplier(assetType, unitName string) float64 {
-	if assetType == "stock" && strings.EqualFold(strings.TrimSpace(unitName), "lot") {
-		return 100
-	}
-	return 1
-}
-
-func defaultPriceUnitName(assetType, unitName string) string {
-	if assetType == "stock" && strings.EqualFold(strings.TrimSpace(unitName), "lot") {
-		return "lembar"
-	}
-	u := strings.TrimSpace(unitName)
-	if u == "" {
-		return "unit"
-	}
-	return u
 }
 
 func resolveUnitMultiplier(assetType, unitName string, stored float64) float64 {
@@ -435,8 +428,10 @@ func CreateAsset(ctx context.Context, p *CreateAssetParams) (*Asset, error) {
 	if !validAssetTypes[p.Type] {
 		return nil, appErrs.BadRequest("tipe aset tidak valid")
 	}
-	if p.UnitName == "" {
-		p.UnitName = "lot"
+	if strings.TrimSpace(p.UnitName) == "" {
+		p.UnitName = defaultUnitNameForType(p.Type)
+	} else {
+		p.UnitName = strings.TrimSpace(p.UnitName)
 	}
 	if strings.TrimSpace(p.WalletID) == "" {
 		return nil, appErrs.BadRequest("dompet wajib dipilih")
@@ -845,6 +840,99 @@ func RecordInvestmentTrade(ctx context.Context, id string, p *RecordInvestmentTr
 		TransactionID: txnID,
 		QtyHeld:       fmt.Sprintf("%.6f", newQty),
 		Amount:        fmt.Sprintf("%.2f", amount),
+		Status:        status,
+	}, nil
+}
+
+//encore:api auth method=POST path=/api/v1/finance/investments/assets/:id/dividends
+func RecordAssetDividend(ctx context.Context, id string, p *RecordAssetDividendParams) (*RecordAssetDividendResponse, error) {
+	u, err := mustUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := assertOwner(u); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(id) == "" {
+		return nil, appErrs.BadRequest("aset tidak valid")
+	}
+	if p.Amount <= 0 {
+		return nil, appErrs.BadRequest("jumlah dividen harus lebih dari 0")
+	}
+	if p.TransactionDate == "" {
+		p.TransactionDate = time.Now().Format("2006-01-02")
+	}
+
+	conn, err := tenantConn(ctx, u.TenantSchema)
+	if err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	defer conn.Close()
+
+	var walletID, assetName string
+	var isActive bool
+	err = conn.QueryRowContext(ctx,
+		`SELECT wallet_id, name, is_active FROM fin_asset WHERE id=$1`, id,
+	).Scan(&walletID, &assetName, &isActive)
+	if err == sql.ErrNoRows {
+		return nil, appErrs.NotFound("aset tidak ditemukan")
+	}
+	if err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	if !isActive {
+		return nil, appErrs.BadRequest("aset tidak aktif")
+	}
+	if err := assertWalletAccessible(ctx, conn, u, walletID); err != nil {
+		return nil, err
+	}
+	if _, err := loadTransactionTypeByCode(ctx, conn, "dividend"); err != nil {
+		return nil, err
+	}
+
+	period := walletPeriod(p.TransactionDate)
+	if err := ensurePeriodUnlocked(ctx, conn, period); err != nil {
+		return nil, err
+	}
+
+	status := "approved"
+	if !isOwner(u) {
+		cfg, err := loadApprovalConfig(ctx, conn)
+		if err != nil {
+			return nil, appErrs.Internal(err.Error())
+		}
+		if staffNeedsApproval(cfg, "dividend", p.Amount) {
+			status = "pending_approval"
+		}
+	}
+
+	desc := p.Description
+	if desc == nil || strings.TrimSpace(*desc) == "" {
+		d := fmt.Sprintf("Dividen %s", assetName)
+		desc = &d
+	}
+
+	var txnID string
+	err = conn.QueryRowContext(ctx,
+		`INSERT INTO fin_transaction
+		 (type,amount,currency,wallet_id,description,transaction_date,status,asset_id,created_by)
+		 VALUES ('dividend',$1,'IDR',$2,$3,$4,$5,$6,$7)
+		 RETURNING id`,
+		p.Amount, walletID, desc, p.TransactionDate, status, id, u.AccountID,
+	).Scan(&txnID)
+	if err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+
+	if status == "approved" {
+		refreshWallets(ctx, conn, walletID, nil)
+	}
+	usage.RecordEvent(ctx, u.TenantSchema, "fin_transaction_created", 1, nil)
+	auditFinance(ctx, conn, u, "transaction", txnID, "create", nil, p)
+
+	return &RecordAssetDividendResponse{
+		TransactionID: txnID,
+		Amount:        fmt.Sprintf("%.2f", p.Amount),
 		Status:        status,
 	}, nil
 }

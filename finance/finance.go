@@ -190,6 +190,7 @@ type CreateWalletParams struct {
 type UpdateWalletParams struct {
 	ID           string  `json:"id"`
 	Name         *string `json:"name,omitempty"`
+	Type         *string `json:"type,omitempty"`
 	Institution  *string `json:"institution,omitempty"`
 	Color        *string `json:"color,omitempty"`
 	Icon         *string `json:"icon,omitempty"`
@@ -348,7 +349,13 @@ func UpdateWallet(ctx context.Context, id string, p *UpdateWalletParams) (*Walle
 		i++
 	}
 	if p.Name != nil {
-		add("name", *p.Name)
+		add("name", strings.TrimSpace(*p.Name))
+	}
+	if p.Type != nil {
+		if !validWalletTypes[*p.Type] {
+			return nil, appErrs.BadRequest("tipe wallet tidak valid")
+		}
+		add("type", *p.Type)
 	}
 	if p.Institution != nil {
 		add("institution", *p.Institution)
@@ -367,6 +374,9 @@ func UpdateWallet(ctx context.Context, id string, p *UpdateWalletParams) (*Walle
 	}
 	if p.DisplayOrder != nil {
 		add("display_order", *p.DisplayOrder)
+	}
+	if len(sets) == 1 {
+		return nil, appErrs.BadRequest("tidak ada perubahan")
 	}
 	args = append(args, id)
 	_, err = conn.ExecContext(ctx,

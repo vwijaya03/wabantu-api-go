@@ -315,6 +315,19 @@ CREATE UNIQUE INDEX idx_fin_cat_sys_parent_name
 
 CREATE UNIQUE INDEX idx_fin_cat_sys_child_name_parent
   ON fin_category (name, parent_id) WHERE deleted_at IS NULL AND is_system = true AND parent_id IS NOT NULL;
+
+-- Beli/jual/dividen hanya dari menu Investasi (bukan Catat Transaksi cepat).
+UPDATE fin_transaction_type SET show_in_quick = false
+WHERE code IN ('investment_buy', 'investment_sell', 'dividend')
+  AND is_system = true AND deleted_at IS NULL;
+
+-- Satuan default yang lebih tepat per tipe aset (emas/RD tidak memakai lot).
+UPDATE fin_asset SET unit_name = 'gram', unit_multiplier = 1, price_unit_name = 'gram'
+  WHERE type = 'gold' AND lower(trim(unit_name)) = 'lot';
+UPDATE fin_asset SET unit_name = 'unit', unit_multiplier = 1, price_unit_name = 'unit'
+  WHERE type = 'mutual_fund' AND lower(trim(unit_name)) = 'lot';
+UPDATE fin_asset SET unit_name = 'coin', unit_multiplier = 1, price_unit_name = 'coin'
+  WHERE type = 'crypto' AND lower(trim(unit_name)) = 'lot';
 `
 
 func runFinanceSchemaAndSeed(ctx context.Context, conn *sql.Conn) error {
