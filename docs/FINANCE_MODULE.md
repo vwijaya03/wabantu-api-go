@@ -1,0 +1,216 @@
+# Finance Module — Dokumentasi Teknis (api-go)
+
+Modul keuangan operasional untuk tenant WABantu.  
+**Bukan** sistem akuntansi penuh — tidak ada double-entry, jurnal ledger, atau tax engine.
+
+Target: UMKM, toko kecil, bisnis keluarga.
+
+> Panduan produk (untuk CS/sales/owner): lihat `web-frontend/docs/FINANCE_MODULE.md`.
+
+---
+
+## Daftar layanan & file
+
+| File | Isi |
+|------|-----|
+| `finance/finance.go` | Wallet, kategori, transaksi (CRUD + duplikat), approval, period lock, audit log, dashboard summary |
+| `finance/budget.go` | Anggaran per kategori + sisa + alert, category spending, monthly comparison |
+| `finance/investment.go` | Aset investasi, harga manual, portfolio summary (P&L, dividen) |
+| `finance/recurring.go` | Transaksi berulang CRUD + cron harian 07:00 WIB |
+| `finance/checklist.go` | Checklist harian + template |
+| `finance/report.go` | Export laporan async (CSV placeholder; hookable ke S3/R2) |
+| `tenant/finance_seed.go` | Seed kategori default + wallet Kas Tunai + approval setting saat `RunTenantDDL` |
+
+---
+
+## Tabel database (tenant schema `t_<slug>`)
+
+| Tabel | Keterangan |
+|-------|------------|
+| `fin_wallet` | Kas, bank, e-wallet, kripto, investasi |
+| `fin_wallet_balance` | Snapshot saldo materialized (recalculate saat transaksi berubah) |
+| `fin_category` | Kategori + sub-kategori (seeded otomatis) |
+| `fin_transaction` | Semua transaksi (append-only, soft delete) |
+| `fin_asset` | Definisi aset investasi |
+| `fin_asset_price` | Riwayat harga manual per aset |
+| `fin_recurring` | Konfigurasi transaksi berulang |
+| `fin_recurring_log` | Log eksekusi cron per recurring |
+| `fin_budget` | Anggaran per kategori per periode |
+| `fin_checklist_template` | Template checklist harian/bulanan |
+| `fin_checklist_item` | Instance checklist per tanggal |
+| `fin_approval_setting` | Konfigurasi workflow persetujuan |
+| `fin_period_lock` | Kunci periode (YYYY-MM) — blokir edit/hapus |
+| `fin_audit_log` | Riwayat perubahan (append-only, tidak bisa dihapus) |
+| `fin_report_job` | Job export async (status: queued → done/failed) |
+
+---
+
+## Endpoint ringkas
+
+### Dashboard & Wallet
+
+| Method | Path | Role |
+|--------|------|------|
+| GET | `/api/v1/finance/dashboard?period=YYYY-MM` | owner + staff |
+| GET | `/api/v1/finance/wallets` | owner (semua) / staff (visibility=all) |
+| POST | `/api/v1/finance/wallets` | owner |
+| PUT | `/api/v1/finance/wallets/:id` | owner |
+| DELETE | `/api/v1/finance/wallets/:id` | owner |
+
+### Kategori
+
+| Method | Path | Role |
+|--------|------|------|
+| GET | `/api/v1/finance/categories` | semua |
+| POST | `/api/v1/finance/categories` | owner |
+| DELETE | `/api/v1/finance/categories/:id` | owner (non-system) |
+
+### Transaksi
+
+| Method | Path | Role |
+|--------|------|------|
+| GET | `/api/v1/finance/transactions` | owner (semua) / staff (approved + pending milik sendiri) |
+| POST | `/api/v1/finance/transactions` | semua — status tergantung `approval_setting` |
+| PUT | `/api/v1/finance/transactions/:id` | owner / staff (draft/pending milik sendiri) |
+| DELETE | `/api/v1/finance/transactions/:id` | owner (jika periode tidak terkunci) |
+| POST | `/api/v1/finance/transactions/duplicate` | semua |
+| POST | `/api/v1/finance/transactions/approve` | owner |
+
+### Budget & Laporan
+
+| Method | Path | Role |
+|--------|------|------|
+| GET | `/api/v1/finance/budgets?period=YYYY-MM` | semua |
+| POST | `/api/v1/finance/budgets` | owner |
+| DELETE | `/api/v1/finance/budgets/:id` | owner |
+| GET | `/api/v1/finance/budgets/summary` | semua |
+| GET | `/api/v1/finance/reports/category-spending` | semua |
+| GET | `/api/v1/finance/reports/monthly-comparison?months=6` | semua |
+
+### Investasi
+
+| Method | Path | Role |
+|--------|------|------|
+| GET | `/api/v1/finance/investments/portfolio` | owner |
+| POST | `/api/v1/finance/investments/assets` | owner |
+| POST | `/api/v1/finance/investments/prices` | owner |
+| GET | `/api/v1/finance/investments/assets/:id/prices` | owner |
+
+### Recurring
+
+| Method | Path | Role |
+|--------|------|------|
+| GET | `/api/v1/finance/recurring` | owner |
+| POST | `/api/v1/finance/recurring` | owner |
+| DELETE | `/api/v1/finance/recurring/:id` | owner |
+
+### Checklist
+
+| Method | Path | Role |
+|--------|------|------|
+| GET | `/api/v1/finance/checklist/today` | semua |
+| POST | `/api/v1/finance/checklist/action` | semua |
+| GET | `/api/v1/finance/checklist/templates` | semua |
+| POST | `/api/v1/finance/checklist/templates` | owner |
+| DELETE | `/api/v1/finance/checklist/templates/:id` | owner |
+
+### Lainnya
+
+| Method | Path | Role |
+|--------|------|------|
+| GET/PUT | `/api/v1/finance/approval-setting` | owner |
+| POST | `/api/v1/finance/period-lock` | owner |
+| GET | `/api/v1/finance/locked-periods` | owner |
+| GET | `/api/v1/finance/audit-log` | owner |
+| POST | `/api/v1/finance/reports/export` | semua |
+| GET | `/api/v1/finance/reports/jobs/:id` | semua |
+| GET | `/api/v1/finance/reports/jobs` | semua |
+
+---
+
+## Arsitektur saldo wallet
+
+Saldo **tidak** disimpan sebagai kolom mutable di `fin_wallet`. Pola yang dipakai:
+
+1. Setiap transaksi di-insert ke `fin_transaction` (append-only).
+2. `refreshWalletBalance(ctx, conn, walletID)` dipanggil setelah setiap perubahan — kalkulasi ulang dari semua transaksi `approved`.
+3. Hasil disimpan di `fin_wallet_balance` via `INSERT ... ON CONFLICT DO UPDATE`.
+4. Concurrent update diamankan oleh connection pool Postgres — setiap `TenantConn` memakai koneksi terpisah.
+
+Keuntungan: saldo bisa di-replay dari history, tidak ada race condition, rollback cukup soft-delete transaksi.
+
+---
+
+## Cron recurring
+
+```
+Jadwal: 00:00 UTC = 07:00 WIB (setiap hari)
+Job: "finance-recurring"
+```
+
+Alur per tenant:
+1. Query semua `fin_recurring` aktif dengan `next_run_date <= TODAY`.
+2. Jika `mode=auto` → insert `fin_transaction` status `approved` + refresh balance.
+3. Jika `mode=reminder` → catat di `fin_recurring_log` status `reminded` (notifikasi dihandle service lain).
+4. Hitung `next_run_date` berikutnya (`calcNextRunDate`).
+5. Jika 3 kegagalan berturut-turut → pause otomatis (`is_active=false`).
+
+---
+
+## Period lock
+
+Owner bisa mengunci periode `YYYY-MM` via `POST /finance/period-lock`.  
+Setelah dikunci, semua create/edit/delete transaksi di periode itu **diblokir** di level API (bukan hanya UI).
+
+```go
+// Cek di setiap endpoint yang memodifikasi transaksi
+locked, _ := periodLocked(ctx, conn, period)
+if locked {
+    return nil, appErrs.Forbidden("periode sudah dikunci")
+}
+```
+
+---
+
+## Approval workflow
+
+Dikonfigurasi per tenant via `fin_approval_setting`:
+
+| Setting | Perilaku |
+|---------|----------|
+| `enabled=false` | Semua transaksi langsung `approved` |
+| `enabled=true, amount_threshold=null` | Semua transaksi staff → `pending_approval` |
+| `enabled=true, amount_threshold=500000` | Transaksi staff ≥ Rp 500.000 → `pending_approval` |
+
+Owner selalu `approved` langsung. `adjustment` selalu owner-only.
+
+---
+
+## Seed default saat tenant baru
+
+`tenant/finance_seed.go` dipanggil dari `RunTenantDDL` **dan** setelah `runFinanceSchemaAndSeed` pada migrasi tenant lama:
+
+- Kategori sistem: Pemasukan (4 sub), Pengeluaran (8 sub), Investasi (6 sub)
+- Wallet default: **Kas Tunai** (type=cash, visibility=all)
+- Approval setting: disabled
+
+Idempoten — skip jika sudah ada data.
+
+## Migrasi tenant yang sudah ada
+
+Tabel `fin_*` **tidak** otomatis muncul hanya karena deploy kode. Jalankan sekali:
+
+```bash
+encore exec ./cmd/migrate-tenant-schemas
+```
+
+atau `POST /api/v1/admin/migrate-tenant-schemas` (super_admin).  
+Patch di `tenant/finance_schema.go`; index `to_char(...)` pada periode **tidak** dipakai (bukan IMMUTABLE di PostgreSQL).
+
+---
+
+## Changelog
+
+| Tanggal | Catatan |
+|---------|---------|
+| 2026-05 | Modul finance awal — wallet, transaksi, anggaran, investasi, recurring, checklist, laporan |

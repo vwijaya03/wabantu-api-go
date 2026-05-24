@@ -15,6 +15,7 @@ import (
 
 	appauth "encore.app/wabantu/auth"
 	"encore.app/wabantu/shared/types"
+	"encore.app/wabantu/tenant"
 )
 
 var db = sqldb.Named("system")
@@ -230,6 +231,16 @@ func StopImpersonation(ctx context.Context) (*StopImpersonationResponse, error) 
 
 	rlog.Info("impersonation stopped", "adminId", adminID)
 	return &StopImpersonationResponse{OK: true, Message: "Impersonation ended"}, nil
+}
+
+// MigrateTenantSchemas applies idempotent DDL patches (incl. finance tables) to every tenant schema.
+//
+//encore:api auth method=POST path=/api/v1/admin/migrate-tenant-schemas tag:super_admin
+func MigrateTenantSchemas(ctx context.Context) (*tenant.MigrateSchemasResponse, error) {
+	if _, err := requireSuperAdmin(ctx); err != nil {
+		return nil, err
+	}
+	return tenant.RunMigrateAllTenantSchemas(ctx)
 }
 
 // ---------- Helpers ----------

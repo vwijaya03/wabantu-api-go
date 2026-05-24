@@ -126,6 +126,18 @@ Plan codes: `starter`, `business`, `pro` (+ alias `basic` → business, tidak di
 | Admin | `/api/v1/admin/*` | `/dashboard/admin` |
 | Shipping | `/api/v1/shipping/*` | (API client ada; UI minimal) |
 | Analytics | `/api/v1/analytics/overview` | `/dashboard/analytics` |
+| Finance — Dashboard | `GET /api/v1/finance/dashboard` | `/dashboard/finance` |
+| Finance — Wallet | `GET/POST/PUT/DELETE /api/v1/finance/wallets` | `/dashboard/finance/wallets` |
+| Finance — Category | `GET/POST/DELETE /api/v1/finance/categories` | `/dashboard/finance/transactions` |
+| Finance — Transaction | `GET/POST/PUT/DELETE /api/v1/finance/transactions` | `/dashboard/finance/transactions` |
+| Finance — Duplikat | `POST /api/v1/finance/transactions/duplicate` | `/dashboard/finance/transactions` |
+| Finance — Approval | `POST /api/v1/finance/transactions/approve` | `/dashboard/finance/transactions` |
+| Finance — Budget | `GET/POST/DELETE /api/v1/finance/budgets` | `/dashboard/finance/budget` |
+| Finance — Investasi | `GET /api/v1/finance/investments/portfolio`, `/assets`, `/prices` | `/dashboard/finance/investment` |
+| Finance — Recurring | `GET/POST/DELETE /api/v1/finance/recurring` | `/dashboard/finance/recurring` |
+| Finance — Checklist | `GET /api/v1/finance/checklist/today`, `/templates`, `/action` | `/dashboard/finance/checklist` |
+| Finance — Laporan | `POST /api/v1/finance/reports/export`, `GET /reports/jobs/:id` | `/dashboard/finance/reports` |
+| Finance — Audit | `GET /api/v1/finance/audit-log` | `/dashboard/finance` (owner) |
 | Leads | `/api/v1/leads` | `/dashboard/contacts` |
 
 ---

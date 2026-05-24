@@ -134,6 +134,9 @@ type Invoice struct {
 // ---------- helpers ----------
 
 func tenantDB(ctx context.Context, schema string) (*sql.DB, error) {
+	if schema == "" {
+		return nil, &errs.Error{Code: errs.PermissionDenied, Message: "tenant context required"}
+	}
 	stdlib := db.Stdlib()
 	_, err := stdlib.ExecContext(ctx, fmt.Sprintf(`SET search_path TO %q`, schema))
 	if err != nil {
@@ -373,6 +376,9 @@ func authUser(ctx context.Context) (*types.AuthUser, error) {
 	u, ok := auth.Data().(*types.AuthUser)
 	if !ok || u == nil {
 		return nil, &errs.Error{Code: errs.Unauthenticated, Message: "not authenticated"}
+	}
+	if !u.HasEffectiveTenantContext() {
+		return nil, &errs.Error{Code: errs.PermissionDenied, Message: "tenant context required"}
 	}
 	return u, nil
 }

@@ -20,6 +20,8 @@ Frontend: `web-frontend/hooks/use-plan.ts`, halaman `/dashboard/billing`, `lib/a
 
 **Tampilan kuota untuk client:** `GET /api/v1/usage/summary` (owner) → dashboard ringkas + `/dashboard/billing` panel lengkap.
 
+**Finance module:** `GET /api/v1/finance/dashboard` — lihat [docs/FINANCE_MODULE.md](./docs/FINANCE_MODULE.md).
+
 ---
 
 ## 1. Rate limit HTTP (Redis, per IP)

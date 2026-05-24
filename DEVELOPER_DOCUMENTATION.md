@@ -2,7 +2,7 @@
 
 > **Audience:** Senior full-stack developers from Node.js/TypeScript (Express, NestJS, Prisma/TypeORM) learning **Go** and **Encore**.  
 > **Codebase:** `api-go/` — Encore rewrite of NestJS `api/`.  
-> **Companion docs:** [README.md](./README.md) · [APP_FLOW_GUIDE.md](./APP_FLOW_GUIDE.md) · [ENDPOINT_COMPATIBILITY.md](./ENDPOINT_COMPATIBILITY.md) · **[LIMITS_AND_QUOTAS.md](./LIMITS_AND_QUOTAS.md)** (rate limit, trial/paid kuota, billing checkout)
+> **Companion docs:** [README.md](./README.md) · [APP_FLOW_GUIDE.md](./APP_FLOW_GUIDE.md) · [ENDPOINT_COMPATIBILITY.md](./ENDPOINT_COMPATIBILITY.md) · **[LIMITS_AND_QUOTAS.md](./LIMITS_AND_QUOTAS.md)** (rate limit, trial/paid kuota, billing checkout) · **[docs/FINANCE_MODULE.md](./docs/FINANCE_MODULE.md)** (modul keuangan — endpoint, schema, arsitektur)
 
 **Baru belajar Go?** Langsung ke **[Bagian 18 Go untuk developer Node.js](#18-go-language-guide-for-nodejs-developers-with-wabantu-examples)** — penjelasan pointer, error, context, interface, dll. dengan contoh nyata dari repo ini.
 
@@ -667,6 +667,7 @@ encore run
 | GET | `/api/v1/admin/tenant/:id` | auth `super_admin` | Tenant detail + counts |
 | POST | `/api/v1/admin/impersonate/:tenantId` | auth `super_admin` | Switch session to tenant |
 | POST | `/api/v1/admin/stop-impersonation` | auth `super_admin` | Clear impersonation |
+| POST | `/api/v1/admin/migrate-tenant-schemas` | auth `super_admin` | `RunMigrateAllTenantSchemas` — patch DDL + finance seed per tenant |
 
 **Register flow:** system TX → `RunTenantDDL` → seed `business_profile` → `branch.EnsureDefaultBranch` → JWT.
 
@@ -859,13 +860,19 @@ erDiagram
 | `conversation_summary` | AI memory |
 | `webhook_event` | Outbound webhook reliability |
 | `branch`, `workflow_rule` | Added via `schema_patch.go` |
+| `fin_*` (finance) | `tenantDDL` on register; `tenant/finance_schema.go` via `RunSchemaPatches` for existing tenants |
 
 ## Migrations strategy
 
-1. **New tenants:** `RunTenantDDL` runs full `tenantDDL` constant on register.
-2. **Existing tenants:** `POST /api/v1/internal/tenant/migrate-schemas` → `RunSchemaPatches` (idempotent `ALTER` / `CREATE IF NOT EXISTS`).
+1. **New tenants:** `RunTenantDDL` runs full `tenantDDL` constant on register (+ `finance_seed`).
+2. **Existing tenants:** `tenant.RunMigrateAllTenantSchemas` → `RunSchemaPatches` + `runFinanceSchemaAndSeed` (idempotent).
+   - **Ops:** `encore exec ./cmd/migrate-tenant-schemas` (CLI v1.57+ — tidak ada `encore call`).
+   - **UI:** `POST /api/v1/admin/migrate-tenant-schemas` (super_admin).
+   - **Private RPC:** `POST /api/v1/internal/tenant/migrate-schemas` (service-to-service only).
 3. **System:** standard Encore SQL migrations on deploy.
 4. **Platform admin:** `system/migrations/4_platform_admin.up.sql` — `tenant_id` nullable for `super_admin`; CHECK: `owner`/`staff` must have `tenant_id`.
+
+**Billing / tenant APIs:** `GET /api/v1/billing/overview` and tenant-scoped handlers return **403** if `TenantSchema` kosong (super_admin belum impersonate).
 
 ## Connection handling
 
@@ -1105,8 +1112,11 @@ Anda bisa langsung pakai token itu atau login ulang lewat frontend.
 | `GET` | `/api/v1/admin/tenant/:id` | Detail + jumlah akun/pesan |
 | `POST` | `/api/v1/admin/impersonate/:tenantId` | Update Redis session → API lain pakai schema tenant itu |
 | `POST` | `/api/v1/admin/stop-impersonation` | Hapus `actAs*` dari session |
+| `POST` | `/api/v1/admin/migrate-tenant-schemas` | Patch DDL semua tenant (finance + schema_patch) |
 
 **Tidak ada** token impersonation terpisah di response — client cukup `GET /auth/me` ulang setelah impersonate.
+
+**Workflow / Cabang / Finance** hanya bisa dipakai setelah **Pantau** (tenant context). Tanpa impersonate, billing overview mengembalikan 403.
 
 ### Bentuk session Redis
 

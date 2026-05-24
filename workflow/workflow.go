@@ -333,6 +333,9 @@ func user(ctx context.Context) (*types.AuthUser, error) {
 	if !ok || u == nil {
 		return nil, appErrs.Unauthenticated("not authenticated")
 	}
+	if !u.HasEffectiveTenantContext() {
+		return nil, appErrs.Forbidden("tenant context required")
+	}
 	return u, nil
 }
 

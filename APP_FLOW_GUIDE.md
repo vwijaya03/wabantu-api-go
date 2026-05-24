@@ -348,6 +348,7 @@ Verify token: secret `WebhookVerifyToken`. Saat daftar app Meta, pilih path yang
 | Branches | `GET/POST /api/v1/branches` (Pro) |
 | Workflow | `GET/POST/PATCH/DELETE /api/v1/workflows` |
 | Admin | `GET /api/v1/admin/tenants`, impersonation (`super_admin`) |
+| Finance | `GET /api/v1/finance/dashboard`, `/finance/wallets`, `/finance/transactions`, `/finance/budgets`, `/finance/investments/portfolio`, `/finance/recurring`, `/finance/checklist/today`, `/finance/reports/export` |
 | Usage | `GET /api/v1/usage/summary` |
 | Health | `GET /api/v1/health`, `/api/v1/health/ready` |
 

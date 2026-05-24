@@ -254,10 +254,12 @@ api-go/
   docs/CATALOG_IMAGE_IMPORT.md  # import screenshot → Haiku → konfirmasi → business_catalog_item
   docs/UNIT_ECONOMICS_AND_PRICING.md  # biaya Meta + Anthropic, margin paket, rekomendasi harga
   docs/META_WHATSAPP_MESSAGING_AND_BILLING.md  # CSW 24 jam, template, skenario inbox, beda tagihan Meta vs kuota WABantu
+  docs/FINANCE_MODULE.md        # modul keuangan — endpoint, schema, arsitektur saldo, approval, cron
   kb/                        # knowledge base FAQ
   whatsapp/                  # library Meta Cloud API (kirim pesan, Graph)
   whatsappapi/               # REST OAuth + channels (/api/v1/whatsapp/*)
   webhook/                   # GET/POST webhook Meta (+ alias legacy)
+  finance/                   # modul keuangan (wallet, transaksi, anggaran, investasi, recurring, checklist, laporan)
   broadcast/                 # broadcast WA (plan Business+)
   inbox/                     # conversations, messages, contacts
   ai/                        # auto-reply, order flow, catalog_reply, vision (import gambar)
@@ -354,6 +356,17 @@ curl -X POST http://localhost:4000/api/v1/internal/platform-admin/bootstrap \
 | `GET /api/v1/admin/tenants` | Daftar tenant |
 | `POST /api/v1/admin/impersonate/:tenantId` | Pantau tenant (update session Redis) |
 | `POST /api/v1/admin/stop-impersonation` | Keluar dari mode pantau |
+| `POST /api/v1/admin/migrate-tenant-schemas` | Patch DDL semua tenant (termasuk tabel `fin_*`) — super_admin |
+
+**Migrasi schema tenant lama** (setelah deploy modul baru, mis. Finance):
+
+```bash
+encore run   # terminal 1
+encore exec ./cmd/migrate-tenant-schemas   # terminal 2 — bukan `encore call`
+```
+
+Atau dari web: login super_admin → **Konsol Platform** → tombol **Migrasi schema tenant**.  
+Internal API (private): `POST /api/v1/internal/tenant/migrate-schemas` — hanya dari service Encore lain, bukan curl publik.
 
 Migrasi DB: `system/migrations/4_platform_admin.up.sql` (`tenant_id` nullable untuk `super_admin`).
 
@@ -426,6 +439,13 @@ Stack compose contoh: `../infra/docker-compose.yml` (service `api-go`).
 |------|-----|
 | [DEVELOPER_DOCUMENTATION.md](./DEVELOPER_DOCUMENTATION.md) | Dokumentasi teknis lengkap + [Bagian 8.1 Platform Admin](./DEVELOPER_DOCUMENTATION.md#81-platform-admin-internal-operator-wabantu-owner) |
 | [APP_FLOW_GUIDE.md](./APP_FLOW_GUIDE.md) | Alur end-to-end, peta endpoint, perintah step-by-step |
+| `finance/finance.go` | Wallet, kategori, transaksi, approval, period lock, audit, dashboard finance |
+| `finance/budget.go` | Anggaran per kategori, spending report, perbandingan bulanan |
+| `finance/investment.go` | Aset investasi, harga manual, portfolio summary (P&L) |
+| `finance/recurring.go` | Transaksi berulang + cron scheduler harian (07:00 WIB) |
+| `finance/checklist.go` | Checklist keuangan harian + template |
+| `finance/report.go` | Export laporan async (CSV/PDF job) |
+| `tenant/finance_seed.go` | Seed kategori default + wallet Kas Tunai saat tenant baru daftar |
 | `auth/platform_bootstrap.go` | Buat akun `super_admin` internal |
 | `auth/impersonation.go` | Pantau / stop impersonation (Redis session) |
 | `auth/auth.go` | Register, login, JWT, `AuthHandler` |

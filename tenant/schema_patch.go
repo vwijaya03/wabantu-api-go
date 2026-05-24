@@ -92,6 +92,9 @@ CREATE TABLE IF NOT EXISTS workflow_rule (
 
 ALTER TABLE whatsapp_channel ADD COLUMN IF NOT EXISTS branch_id UUID;
 ALTER TABLE conversation ADD COLUMN IF NOT EXISTS branch_id UUID;
+
+-- Finance: drop invalid functional index (to_char is not IMMUTABLE in PostgreSQL).
+DROP INDEX IF EXISTS idx_fin_txn_period;
 `
 
 // RunSchemaPatches applies idempotent ALTERs for an existing tenant schema.
@@ -104,6 +107,8 @@ func RunSchemaPatches(ctx context.Context, schemaName string) error {
 		return err
 	}
 	defer conn.Close()
-	_, err = conn.ExecContext(ctx, tenantSchemaPatchSQL)
-	return err
+	if _, err = conn.ExecContext(ctx, tenantSchemaPatchSQL); err != nil {
+		return err
+	}
+	return runFinanceSchemaAndSeed(ctx, conn)
 }
