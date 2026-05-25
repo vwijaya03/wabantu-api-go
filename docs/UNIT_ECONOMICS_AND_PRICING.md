@@ -199,6 +199,15 @@ Asumsi: tenant rata-rata pakai 50–70% kuota; broadcast Pro dibatasi **1.000 in
 
 **Overage contoh:** +Rp 75.000 per 500.000 token AI tambahan; +Rp 550 per 1.000 pesan marketing broadcast.
 
+**Top-up kecil (implementasi billing):** untuk tenant UMKM yang belum siap upgrade paket, WABantu boleh menjual top-up AI kecil dengan margin ketat:
+
+| Top-up | Harga | Token tambahan | Percakapan AI tambahan | Dasar kalkulasi |
+|--------|-------|----------------|-------------------------|-----------------|
+| AI Top-up 20rb | Rp 20.000 | 133.000 token | 59 percakapan | Prorata Rp75k/500k token, percakapan dibulatkan turun dari ~2.250 token/chat |
+| AI Top-up 30rb | Rp 30.000 | 200.000 token | 88 percakapan | Prorata Rp75k/500k token, percakapan dibulatkan turun dari ~2.250 token/chat |
+
+Aturan produk: top-up berlaku **hanya bulan berjalan**, tidak recurring, dan tidak membuka broadcast/storage/seat tambahan. Jika `ai_token` atau `ai_conversation` habis lagi, tenant harus top-up ulang atau upgrade paket.
+
 ---
 
 ## 9. Contoh satu tenant Business (bulan normal)

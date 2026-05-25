@@ -66,11 +66,11 @@ var planQuotas = map[string]map[string]int{
 // ---------- types ----------
 
 type UsageEvent struct {
-	ID        string         `json:"id"`
-	EventType string         `json:"eventType"`
-	Quantity  int            `json:"quantity"`
+	ID        string          `json:"id"`
+	EventType string          `json:"eventType"`
+	Quantity  int             `json:"quantity"`
 	Metadata  json.RawMessage `json:"metadata,omitempty"`
-	CreatedAt time.Time      `json:"createdAt"`
+	CreatedAt time.Time       `json:"createdAt"`
 }
 
 type UsageAggregate struct {
@@ -93,9 +93,9 @@ type UsageSummary struct {
 }
 
 type RecordEventParams struct {
-	TenantSchema string         `json:"tenantSchema"`
-	EventType    string         `json:"eventType"`
-	Quantity     int            `json:"quantity"`
+	TenantSchema string          `json:"tenantSchema"`
+	EventType    string          `json:"eventType"`
+	Quantity     int             `json:"quantity"`
 	Metadata     json.RawMessage `json:"metadata,omitempty"`
 }
 
@@ -184,6 +184,9 @@ func CheckQuota(ctx context.Context, tenantSchema, eventType string) (allowed bo
 	}
 
 	period := time.Now().Format("2006-01")
+	if extra := quotaTopups(ctx, tenantSchema, period)[eventType]; extra > 0 {
+		limit += int(extra)
+	}
 	var used int64
 	_ = db.QueryRow(ctx, fmt.Sprintf(
 		`SELECT COALESCE(quantity,0) FROM "%s".usage_aggregate
@@ -207,6 +210,7 @@ func GetSummary(ctx context.Context, tenantSchema, period string) (*UsageSummary
 	if !ok {
 		quotas = planQuotas["starter"]
 	}
+	extras := quotaTopups(ctx, tenantSchema, period)
 
 	rows, err := db.Query(ctx, fmt.Sprintf(
 		`SELECT event_type, COALESCE(quantity,0)
@@ -228,6 +232,9 @@ func GetSummary(ctx context.Context, tenantSchema, period string) (*UsageSummary
 
 	items := make([]QuotaItem, 0, len(quotas))
 	for et, lim := range quotas {
+		if extra := extras[et]; extra > 0 {
+			lim += int(extra)
+		}
 		used := usedMap[et]
 		rem := int(lim) - int(used)
 		if rem < 0 {
@@ -274,6 +281,31 @@ func normalizePlanCode(plan string) string {
 		return "business"
 	}
 	return plan
+}
+
+func quotaTopups(ctx context.Context, tenantSchema, period string) map[string]int64 {
+	out := map[string]int64{}
+	if err := validateSchema(tenantSchema); err != nil {
+		return out
+	}
+	rows, err := db.Query(ctx, fmt.Sprintf(
+		`SELECT event_type, COALESCE(SUM(quantity),0)
+		 FROM "%s".quota_topup
+		 WHERE period=$1 AND status='paid'
+		 GROUP BY event_type`, tenantSchema),
+		period)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var eventType string
+		var qty int64
+		if err := rows.Scan(&eventType, &qty); err == nil {
+			out[eventType] = qty
+		}
+	}
+	return out
 }
 
 func validateSchema(schema string) error {

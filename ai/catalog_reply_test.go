@@ -24,7 +24,7 @@ func TestIsCatalogListQuestion(t *testing.T) {
 
 func TestBuildCatalogListReplyEmpty(t *testing.T) {
 	p := &dbBusinessProfile{
-		BusinessName: strPtr("Omah Apparel"),
+		BusinessName: "Omah Apparel",
 		Tone:         strPtr("casual"),
 		CatalogURL:   strPtr("https://instagram.com/omah"),
 	}
@@ -41,7 +41,7 @@ func TestBuildCatalogListReplyFilled(t *testing.T) {
 	catalog := []dbCatalogItem{
 		{ExternalCode: "A1", Name: "Jeans Katun", SellPrice: 150000, SellUnit: "pcs"},
 	}
-	p := &dbBusinessProfile{BusinessName: strPtr("Toko"), CatalogURL: strPtr("https://instagram.com/x")}
+	p := &dbBusinessProfile{BusinessName: "Toko", CatalogURL: strPtr("https://instagram.com/x")}
 	reply := buildCatalogListReply(false, "Toko", catalog, p)
 	if !strings.Contains(reply, "Jeans Katun") || strings.Contains(reply, catalogEmptyMarker) {
 		t.Fatalf("unexpected reply: %s", reply)

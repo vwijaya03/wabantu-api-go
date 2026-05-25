@@ -13,6 +13,20 @@ ALTER TABLE usage_aggregate ADD COLUMN IF NOT EXISTS period VARCHAR(7);
 ALTER TABLE usage_aggregate ADD COLUMN IF NOT EXISTS quantity BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE usage_aggregate ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
 
+CREATE TABLE IF NOT EXISTS quota_topup (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    invoice_id  UUID,
+    topup_code  VARCHAR(60)  NOT NULL,
+    event_type  VARCHAR(60)  NOT NULL,
+    period      VARCHAR(7)   NOT NULL,
+    quantity    BIGINT       NOT NULL CHECK (quantity > 0),
+    amount_idr  INTEGER      NOT NULL,
+    status      VARCHAR(20)  NOT NULL DEFAULT 'paid',
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_quota_topup_period_event
+    ON quota_topup(period, event_type) WHERE status = 'paid';
+
 ALTER TABLE payment_transaction ADD COLUMN IF NOT EXISTS midtrans_order_id VARCHAR(120);
 ALTER TABLE payment_transaction ADD COLUMN IF NOT EXISTS midtrans_transaction_id VARCHAR(120);
 ALTER TABLE payment_transaction ADD COLUMN IF NOT EXISTS description TEXT;

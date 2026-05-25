@@ -8,8 +8,8 @@ import (
 	"regexp"
 	"time"
 
-	"encore.app/wabantu/system"
 	appErrs "encore.app/wabantu/shared/errs"
+	"encore.app/wabantu/system"
 )
 
 // ---------- schema-name validation ----------
@@ -37,7 +37,11 @@ type CompanyRow struct {
 func TenantIDBySchema(ctx context.Context, schema string) (string, error) {
 	var id string
 	err := system.DB.QueryRow(ctx,
-		`SELECT tenant_id FROM tenant_company WHERE schema_name = $1 LIMIT 1`,
+		`SELECT tc.tenant_id
+		 FROM tenant_company tc
+		 JOIN tenant t ON t.id = tc.tenant_id
+		 WHERE tc.schema_name = $1 AND t.deleted_at IS NULL
+		 LIMIT 1`,
 		schema,
 	).Scan(&id)
 	if err != nil {
@@ -49,8 +53,11 @@ func TenantIDBySchema(ctx context.Context, schema string) (string, error) {
 // ListSchemaNames returns tenant schema names registered in tenant_company.
 func ListSchemaNames(ctx context.Context) ([]string, error) {
 	rows, err := system.DB.Query(ctx,
-		`SELECT schema_name FROM tenant_company
-		 WHERE schema_name IS NOT NULL AND schema_name <> ''`)
+		`SELECT tc.schema_name
+		 FROM tenant_company tc
+		 JOIN tenant t ON t.id = tc.tenant_id
+		 WHERE tc.schema_name IS NOT NULL AND tc.schema_name <> ''
+		   AND t.deleted_at IS NULL`)
 	if err != nil {
 		return nil, err
 	}
@@ -514,6 +521,21 @@ CREATE TABLE IF NOT EXISTS usage_aggregate (
     updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE(event_type, period)
 );
+
+-- quota_topup: paid add-on quota for the current period (strict, non-recurring)
+CREATE TABLE IF NOT EXISTS quota_topup (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    invoice_id  UUID,
+    topup_code  VARCHAR(60)  NOT NULL,
+    event_type  VARCHAR(60)  NOT NULL,
+    period      VARCHAR(7)   NOT NULL,
+    quantity    BIGINT       NOT NULL CHECK (quantity > 0),
+    amount_idr  INTEGER      NOT NULL,
+    status      VARCHAR(20)  NOT NULL DEFAULT 'paid',
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_quota_topup_period_event
+    ON quota_topup(period, event_type) WHERE status = 'paid';
 
 -- payment_transaction (Midtrans QRIS)
 CREATE TABLE IF NOT EXISTS payment_transaction (

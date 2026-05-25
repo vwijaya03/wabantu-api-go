@@ -371,7 +371,7 @@ func RateLimit(req encoremw.Request, next encoremw.Next) encoremw.Response
 
 **Nest:** `@Injectable()` middleware class → Encore function with `next(req)`.
 
-**Tabel lengkap kuota trial/Starter/Business/Pro, entitlement, checkout QRIS, routing AI:** [LIMITS_AND_QUOTAS.md](./LIMITS_AND_QUOTAS.md).
+**Tabel lengkap kuota trial/Starter/Business/Pro, entitlement, checkout QRIS, top-up AI, routing AI:** [LIMITS_AND_QUOTAS.md](./LIMITS_AND_QUOTAS.md).
 
 ## Secrets
 
@@ -663,8 +663,10 @@ encore run
 | GET | `/api/v1/auth/me` | public raw | Bearer → user profile |
 | POST | `/api/v1/internal/platform-admin/bootstrap` | public raw | **Internal only** — see [Bagian 8.1](#81-platform-admin-internal-operator-wabantu-owner) |
 | GET/POST/DELETE | `/api/v1/team/members` | auth owner | Team CRUD |
-| GET | `/api/v1/admin/tenants` | auth `super_admin` | List all tenants |
+| GET | `/api/v1/admin/tenants?q=&page=&pageSize=` | auth `super_admin` | List tenants with search + pagination |
 | GET | `/api/v1/admin/tenant/:id` | auth `super_admin` | Tenant detail + counts |
+| PUT | `/api/v1/admin/tenant/:id/plan` | auth `super_admin` | Internal package override (`starter`, `business`, `pro`) |
+| DELETE | `/api/v1/admin/tenant/:id` | auth `super_admin` | Permanently drop tenant schema + soft-delete metadata; requires schema confirmation |
 | POST | `/api/v1/admin/impersonate/:tenantId` | auth `super_admin` | Switch session to tenant |
 | POST | `/api/v1/admin/stop-impersonation` | auth `super_admin` | Clear impersonation |
 | POST | `/api/v1/admin/migrate-tenant-schemas` | auth `super_admin` | `RunMigrateAllTenantSchemas` — patch DDL + finance seed per tenant |
@@ -722,7 +724,7 @@ Production path: **Pub/Sub** `ai-jobs`, not HTTP.
 | order | `/api/v1/orders` | auth |
 | payment | `/api/v1/payment/*`, webhook | mixed |
 | shipping | `/api/v1/shipping/*` | auth |
-| billing | `/api/v1/billing/*` | auth |
+| billing | `/api/v1/billing/*` (`overview`, `select-plan`, `top-up`) | auth |
 | usage | `/api/v1/usage/summary`, `/api/v1/usage/ai-activity` (super_admin impersonate) | auth — kuota tenant |
 | broadcast | `/api/v1/broadcast/campaigns` | auth |
 | importcsv | `/api/v1/import/*` | auth owner |
@@ -1108,8 +1110,10 @@ Anda bisa langsung pakai token itu atau login ulang lewat frontend.
 
 | Method | Path | Efek |
 |--------|------|------|
-| `GET` | `/api/v1/admin/tenants` | Daftar semua tenant |
+| `GET` | `/api/v1/admin/tenants?q=&page=&pageSize=` | Daftar tenant dengan search + pagination |
 | `GET` | `/api/v1/admin/tenant/:id` | Detail + jumlah akun/pesan |
+| `PUT` | `/api/v1/admin/tenant/:id/plan` | Override paket tenant dari konsol internal |
+| `DELETE` | `/api/v1/admin/tenant/:id` | Hapus tenant permanen: drop schema + soft-delete metadata; body wajib `confirmSchemaName` |
 | `POST` | `/api/v1/admin/impersonate/:tenantId` | Update Redis session → API lain pakai schema tenant itu |
 | `POST` | `/api/v1/admin/stop-impersonation` | Hapus `actAs*` dari session |
 | `POST` | `/api/v1/admin/migrate-tenant-schemas` | Patch DDL semua tenant (finance + schema_patch) |
@@ -1288,9 +1292,7 @@ Separate from `infra/postgres` (Nest legacy).
 
 ## Testing
 
-No comprehensive `_test.go` suite documented — rely on `encore check`, manual flows, and frontend E2E.
-
-**Go tooling:** `go test ./...` works but may need Encore stubs.
+Run `encore check` for API/resource graph validation and `encore test ./...` for Go tests. Use Encore test runner because packages may declare `sqldb`, cache, and Pub/Sub resources at package level; plain `go test ./...` can panic outside the Encore runtime.
 
 ---
 

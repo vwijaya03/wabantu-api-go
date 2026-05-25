@@ -20,13 +20,13 @@ var db = sqldb.Named("tenant")
 // ---------- plan catalog ----------
 
 type PlanLimits struct {
-	Channels         int `json:"channels"`
-	Seats            int `json:"seats"`
-	AIConversations  int `json:"aiConversations"`
-	AITokens         int `json:"aiTokens"`
+	Channels          int `json:"channels"`
+	Seats             int `json:"seats"`
+	AIConversations   int `json:"aiConversations"`
+	AITokens          int `json:"aiTokens"`
 	BroadcastContacts int `json:"broadcastContacts"`
-	StorageMB        int `json:"storageMb"`
-	WorkflowExecs    int `json:"workflowExecs"`
+	StorageMB         int `json:"storageMb"`
+	WorkflowExecs     int `json:"workflowExecs"`
 }
 
 type Plan struct {
@@ -34,6 +34,15 @@ type Plan struct {
 	Name      string     `json:"name"`
 	AmountIDR int        `json:"amountIdr"`
 	Limits    PlanLimits `json:"limits"`
+}
+
+type TopUpOption struct {
+	Code            string `json:"code"`
+	Name            string `json:"name"`
+	AmountIDR       int    `json:"amountIdr"`
+	AITokens        int    `json:"aiTokens"`
+	AIConversations int    `json:"aiConversations"`
+	ValidForPeriod  string `json:"validForPeriod"`
 }
 
 var PlanCatalog = map[string]Plan{
@@ -64,6 +73,19 @@ var trialLimits = PlanLimits{
 // sellablePlanOrder is the UI/API catalog (no legacy duplicate "basic").
 var sellablePlanOrder = []string{"starter", "business", "pro"}
 
+var aiTopUpOptions = []TopUpOption{
+	{
+		Code: "topup_ai_20000", Name: "AI Top-up 20rb", AmountIDR: 20_000,
+		// UNIT_ECONOMICS_AND_PRICING.md: Rp75k ≈ 500k token.
+		// 20k prorata = 133k token; conversations rounded down at ~2.250 token/chat.
+		AITokens: 133_000, AIConversations: 59,
+	},
+	{
+		Code: "topup_ai_30000", Name: "AI Top-up 30rb", AmountIDR: 30_000,
+		AITokens: 200_000, AIConversations: 88,
+	},
+}
+
 func normalizePlanCode(code string) string {
 	if code == "basic" {
 		return "business"
@@ -91,6 +113,24 @@ func listSellablePlans() []Plan {
 		}
 	}
 	return out
+}
+
+func listTopUpOptions(period string) []TopUpOption {
+	out := make([]TopUpOption, 0, len(aiTopUpOptions))
+	for _, opt := range aiTopUpOptions {
+		opt.ValidForPeriod = period
+		out = append(out, opt)
+	}
+	return out
+}
+
+func resolveTopUp(code string) (TopUpOption, bool) {
+	for _, opt := range aiTopUpOptions {
+		if opt.Code == code {
+			return opt, true
+		}
+	}
+	return TopUpOption{}, false
 }
 
 func GetPlanLimits(planCode string) PlanLimits {
@@ -175,6 +215,7 @@ func ensureSubscription(ctx context.Context, d *sql.DB) (*Subscription, error) {
 type OverviewResponse struct {
 	Subscription    *Subscription `json:"subscription"`
 	Plans           []Plan        `json:"plans"`
+	TopUpOptions    []TopUpOption `json:"topUpOptions"`
 	Invoices        []Invoice     `json:"invoices"`
 	PendingCheckout *Invoice      `json:"pendingCheckout,omitempty"`
 }
@@ -225,6 +266,7 @@ func Overview(ctx context.Context) (*OverviewResponse, error) {
 	return &OverviewResponse{
 		Subscription:    sub,
 		Plans:           listSellablePlans(),
+		TopUpOptions:    listTopUpOptions(time.Now().Format("2006-01")),
 		Invoices:        invoices,
 		PendingCheckout: pending,
 	}, nil
@@ -237,6 +279,15 @@ type SelectPlanRequest struct {
 type SelectPlanResponse struct {
 	Subscription   *Subscription `json:"subscription"`
 	PendingInvoice *Invoice      `json:"pendingInvoice,omitempty"`
+}
+
+type CreateTopUpRequest struct {
+	Code string `json:"code"`
+}
+
+type CreateTopUpResponse struct {
+	TopUp          TopUpOption `json:"topUp"`
+	PendingInvoice *Invoice    `json:"pendingInvoice,omitempty"`
 }
 
 // SelectPlan starts checkout: creates a pending invoice only. Subscription upgrades after QRIS payment (webhook).
@@ -282,6 +333,51 @@ func SelectPlan(ctx context.Context, req *SelectPlanRequest) (*SelectPlanRespons
 	return &SelectPlanResponse{Subscription: sub, PendingInvoice: &inv}, nil
 }
 
+// CreateTopUpCheckout creates a pending invoice for one-off AI quota top-up.
+//
+// Top-ups are strict add-ons for the current calendar month. They do not change
+// subscription plan and are activated only after QRIS payment webhook succeeds.
+//
+//encore:api auth method=POST path=/api/v1/billing/top-up
+func CreateTopUpCheckout(ctx context.Context, req *CreateTopUpRequest) (*CreateTopUpResponse, error) {
+	uid, err := authUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !uid.CanPerformOwnerActions() {
+		return nil, &errs.Error{Code: errs.PermissionDenied, Message: "owner only"}
+	}
+	opt, ok := resolveTopUp(req.Code)
+	if !ok {
+		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "top-up tidak valid"}
+	}
+	opt.ValidForPeriod = time.Now().Format("2006-01")
+	d, err := tenantDB(ctx, uid.TenantSchema)
+	if err != nil {
+		return nil, err
+	}
+	var hasPending bool
+	if err := d.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM invoice WHERE status='pending')`).Scan(&hasPending); err != nil {
+		return nil, err
+	}
+	if hasPending {
+		return nil, &errs.Error{Code: errs.FailedPrecondition, Message: "selesaikan invoice pending terlebih dahulu"}
+	}
+
+	invNo := fmt.Sprintf("TOPUP-%s-%s", time.Now().Format("20060102"), randStr(6))
+	var inv Invoice
+	err = d.QueryRowContext(ctx,
+		`INSERT INTO invoice (invoice_no, plan_code, plan_name, amount_idr, status, issued_at)
+		 VALUES ($1,$2,$3,$4,'pending',now())
+		 RETURNING id, invoice_no, plan_code, plan_name, amount_idr, status, issued_at, paid_at, created_at`,
+		invNo, opt.Code, opt.Name, opt.AmountIDR,
+	).Scan(&inv.ID, &inv.InvoiceNo, &inv.PlanCode, &inv.PlanName, &inv.AmountIDR, &inv.Status, &inv.IssuedAt, &inv.PaidAt, &inv.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &CreateTopUpResponse{TopUp: opt, PendingInvoice: &inv}, nil
+}
+
 type ActivatePaidInvoiceParams struct {
 	TenantSchema string `json:"tenantSchema"`
 	InvoiceID    string `json:"invoiceId"`
@@ -313,6 +409,17 @@ func ActivatePaidInvoice(ctx context.Context, p *ActivatePaidInvoiceParams) erro
 	if inv.Status != "pending" && inv.Status != "paid" {
 		return &errs.Error{Code: errs.FailedPrecondition, Message: "invoice tidak bisa diaktifkan"}
 	}
+	if topUp, ok := resolveTopUp(inv.PlanCode); ok {
+		if err := applyPaidTopUp(ctx, d, inv, topUp); err != nil {
+			return err
+		}
+		_, err = d.ExecContext(ctx,
+			`UPDATE invoice SET status='paid', paid_at=COALESCE(paid_at, now()), issued_at=now()
+			 WHERE id=$1 AND status IN ('pending','paid')`,
+			inv.ID,
+		)
+		return err
+	}
 	plan, ok := resolvePlan(inv.PlanCode)
 	if !ok {
 		return &errs.Error{Code: errs.Internal, Message: "plan invoice tidak valid"}
@@ -336,6 +443,42 @@ func ActivatePaidInvoice(ctx context.Context, p *ActivatePaidInvoiceParams) erro
 		inv.ID,
 	)
 	return err
+}
+
+func applyPaidTopUp(ctx context.Context, d *sql.DB, inv Invoice, topUp TopUpOption) error {
+	period := time.Now().Format("2006-01")
+	var exists bool
+	if err := d.QueryRowContext(ctx,
+		`SELECT EXISTS(SELECT 1 FROM quota_topup WHERE invoice_id=$1 AND status='paid')`,
+		inv.ID,
+	).Scan(&exists); err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+
+	entries := []struct {
+		eventType string
+		quantity  int
+	}{
+		{eventType: "ai_token", quantity: topUp.AITokens},
+		{eventType: "ai_conversation", quantity: topUp.AIConversations},
+	}
+	for _, entry := range entries {
+		if entry.quantity <= 0 {
+			continue
+		}
+		if _, err := d.ExecContext(ctx,
+			`INSERT INTO quota_topup
+			 (invoice_id, topup_code, event_type, period, quantity, amount_idr, status)
+			 VALUES ($1,$2,$3,$4,$5,$6,'paid')`,
+			inv.ID, topUp.Code, entry.eventType, period, entry.quantity, topUp.AmountIDR,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type InvoicesResponse struct {

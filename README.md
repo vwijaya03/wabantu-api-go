@@ -208,6 +208,12 @@ encore run
 # Cek error schema/API tanpa full run
 encore check
 
+# Unit test Encore
+# Pakai Encore runtime karena beberapa package mendeklarasikan sqldb/cache/pubsub.
+encore test ./...
+# Atau paket tertentu:
+encore test ./ai ./usage
+
 # Shell ke database system / tenant
 encore db shell system
 encore db shell tenant
@@ -264,7 +270,7 @@ api-go/
   inbox/                     # conversations, messages, contacts
   ai/                        # auto-reply, order flow, catalog_reply, vision (import gambar)
   leads/                     # lead pipeline
-  billing/                   # subscription overview, invoices
+  billing/                   # subscription overview, invoices, AI quota top-up
   payment/                   # Midtrans QRIS + webhook
   order/                     # pesanan ringan
   shipping/                  # RajaOngkir
@@ -306,7 +312,7 @@ conn, err := appdb.TenantConn(ctx, tenant.DataDB.Stdlib(), user.TenantSchema)
 
 ## Batasan & kuota (dokumentasi lengkap)
 
-**→ [LIMITS_AND_QUOTAS.md](./LIMITS_AND_QUOTAS.md)** — rate limit HTTP, kuota trial/Starter/Business/Pro, entitlement, checkout QRIS, routing AI.
+**→ [LIMITS_AND_QUOTAS.md](./LIMITS_AND_QUOTAS.md)** — rate limit HTTP, kuota trial/Starter/Business/Pro, entitlement, checkout QRIS, top-up AI, routing AI.
 
 Ringkas:
 
@@ -317,6 +323,7 @@ Ringkas:
 | Trial | Semua fitur aktif; kuota bulanan ketat (mis. AI 60 conv, 100k token, broadcast 20 kontak) |
 | Katalog UI | `starter`, `business`, `pro` (tanpa duplikat `basic`) |
 | Checkout | `select-plan` → invoice `pending` → QRIS → webhook `paid` → subscription aktif |
+| AI top-up | `topup_ai_20000` / `topup_ai_30000` → invoice `pending` → QRIS → `quota_topup` bulan berjalan |
 - Encore tidak punya throttler bawaan seperti Nest `@nestjs/throttler`; pola ini = **Redis + middleware** (best practice untuk multi-instance).
 
 ## Import CSV/XLSX (staging)
@@ -353,7 +360,9 @@ curl -X POST http://localhost:4000/api/v1/internal/platform-admin/bootstrap \
 | Endpoint | Fungsi |
 |----------|--------|
 | `POST /api/v1/internal/platform-admin/bootstrap` | Buat akun platform admin (header `X-Platform-Bootstrap-Secret`) |
-| `GET /api/v1/admin/tenants` | Daftar tenant |
+| `GET /api/v1/admin/tenants?q=&page=&pageSize=` | Daftar tenant dengan search + pagination |
+| `PUT /api/v1/admin/tenant/:id/plan` | Override paket tenant (`starter`, `business`, `pro`) |
+| `DELETE /api/v1/admin/tenant/:id` | Hapus tenant permanen: `DROP SCHEMA ... CASCADE` + soft-delete metadata (wajib konfirmasi schema) |
 | `POST /api/v1/admin/impersonate/:tenantId` | Pantau tenant (update session Redis) |
 | `POST /api/v1/admin/stop-impersonation` | Keluar dari mode pantau |
 | `POST /api/v1/admin/migrate-tenant-schemas` | Patch DDL semua tenant (termasuk tabel `fin_*`) — super_admin |

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"encore.dev/beta/auth"
@@ -14,6 +15,7 @@ import (
 	"encore.dev/storage/sqldb"
 
 	appauth "encore.app/wabantu/auth"
+	"encore.app/wabantu/billing"
 	"encore.app/wabantu/shared/types"
 	"encore.app/wabantu/tenant"
 )
@@ -40,8 +42,16 @@ type TenantDetail struct {
 }
 
 type ListTenantsResponse struct {
-	Tenants []Tenant `json:"tenants"`
-	Total   int      `json:"total"`
+	Tenants  []Tenant `json:"tenants"`
+	Total    int      `json:"total"`
+	Page     int      `json:"page"`
+	PageSize int      `json:"pageSize"`
+}
+
+type ListTenantsParams struct {
+	Q        string `query:"q"`
+	Page     int    `query:"page"`
+	PageSize int    `query:"pageSize"`
 }
 
 type TenantDetailResponse struct {
@@ -58,25 +68,87 @@ type StopImpersonationResponse struct {
 	Message string `json:"message"`
 }
 
+type UpdateTenantPlanParams struct {
+	PlanCode string `json:"planCode"`
+}
+
+type UpdateTenantPlanResponse struct {
+	Tenant Tenant `json:"tenant"`
+}
+
+type DeleteTenantParams struct {
+	ConfirmSchemaName string `json:"confirmSchemaName"`
+}
+
+type DeleteTenantResponse struct {
+	OK         bool   `json:"ok"`
+	TenantID   string `json:"tenantId"`
+	SchemaName string `json:"schemaName"`
+}
+
 // ---------- Endpoints ----------
 
-// ListTenants returns all tenants in the system.
+// ListTenants returns tenants with pagination and search.
 //
 //encore:api auth method=GET path=/api/v1/admin/tenants tag:super_admin
-func ListTenants(ctx context.Context) (*ListTenantsResponse, error) {
+func ListTenants(ctx context.Context, p *ListTenantsParams) (*ListTenantsResponse, error) {
 	if _, err := requireSuperAdmin(ctx); err != nil {
 		return nil, err
 	}
 
-	rows, err := db.Query(ctx, `
-		SELECT t.id, t.name, tc.schema_name, t.status, t.created_at,
-			COALESCE(ta.email, '') AS owner_email
+	if p.Page <= 0 {
+		p.Page = 1
+	}
+	if p.PageSize <= 0 {
+		p.PageSize = 10
+	}
+	if p.PageSize > 100 {
+		p.PageSize = 100
+	}
+
+	conditions := []string{"t.deleted_at IS NULL"}
+	args := []any{}
+	if q := strings.TrimSpace(p.Q); q != "" {
+		like := "%" + q + "%"
+		conditions = append(conditions, `(t.name ILIKE $1 OR tc.schema_name ILIKE $1 OR COALESCE(owner.email,'') ILIKE $1)`)
+		args = append(args, like)
+	}
+	where := strings.Join(conditions, " AND ")
+
+	var total int
+	countSQL := fmt.Sprintf(`
+		SELECT COUNT(*)
 		FROM tenant t
 		JOIN tenant_company tc ON tc.tenant_id = t.id
-		LEFT JOIN tenant_account ta ON ta.tenant_id = t.id AND ta.role = 'owner' AND ta.deleted_at IS NULL
-		WHERE t.deleted_at IS NULL
+		LEFT JOIN LATERAL (
+			SELECT email FROM tenant_account ta
+			WHERE ta.tenant_id = t.id AND ta.role = 'owner' AND ta.deleted_at IS NULL
+			ORDER BY ta.created_at ASC LIMIT 1
+		) owner ON true
+		WHERE %s`, where)
+	if err := db.QueryRow(ctx, countSQL, args...).Scan(&total); err != nil {
+		return nil, &errs.Error{Code: errs.Internal, Message: "count tenants failed"}
+	}
+
+	queryArgs := append([]any{}, args...)
+	queryArgs = append(queryArgs, p.PageSize, (p.Page-1)*p.PageSize)
+	limitParam := len(queryArgs) - 1
+	offsetParam := len(queryArgs)
+
+	rows, err := db.Query(ctx, fmt.Sprintf(`
+		SELECT t.id, t.name, tc.schema_name, t.status, t.created_at,
+			COALESCE(owner.email, '') AS owner_email
+		FROM tenant t
+		JOIN tenant_company tc ON tc.tenant_id = t.id
+		LEFT JOIN LATERAL (
+			SELECT email FROM tenant_account ta
+			WHERE ta.tenant_id = t.id AND ta.role = 'owner' AND ta.deleted_at IS NULL
+			ORDER BY ta.created_at ASC LIMIT 1
+		) owner ON true
+		WHERE %s
 		ORDER BY t.created_at DESC
-	`)
+		LIMIT $%d OFFSET $%d
+	`, where, limitParam, offsetParam), queryArgs...)
 	if err != nil {
 		return nil, &errs.Error{Code: errs.Internal, Message: "query failed"}
 	}
@@ -89,7 +161,7 @@ func ListTenants(ctx context.Context) (*ListTenantsResponse, error) {
 		if err := rows.Scan(&t.ID, &t.CompanyName, &t.SchemaName, &status, &t.CreatedAt, &t.OwnerEmail); err != nil {
 			return nil, &errs.Error{Code: errs.Internal, Message: "scan failed"}
 		}
-		t.PlanTier = "starter"
+		t.PlanTier = readPlanFromSchema(ctx, t.SchemaName)
 		t.IsActive = status == "active"
 		tenants = append(tenants, t)
 	}
@@ -100,7 +172,7 @@ func ListTenants(ctx context.Context) (*ListTenantsResponse, error) {
 		tenants = []Tenant{}
 	}
 
-	return &ListTenantsResponse{Tenants: tenants, Total: len(tenants)}, nil
+	return &ListTenantsResponse{Tenants: tenants, Total: total, Page: p.Page, PageSize: p.PageSize}, nil
 }
 
 // GetTenant returns detailed info about a specific tenant.
@@ -233,6 +305,105 @@ func StopImpersonation(ctx context.Context) (*StopImpersonationResponse, error) 
 	return &StopImpersonationResponse{OK: true, Message: "Impersonation ended"}, nil
 }
 
+// UpdateTenantPlan applies a package change directly from the platform console.
+//
+// This is an internal override for support/sales operations. Paid self-serve
+// upgrades still go through billing.SelectPlan + payment webhook.
+//
+//encore:api auth method=PUT path=/api/v1/admin/tenant/:id/plan tag:super_admin
+func UpdateTenantPlan(ctx context.Context, id string, p *UpdateTenantPlanParams) (*UpdateTenantPlanResponse, error) {
+	if _, err := requireSuperAdmin(ctx); err != nil {
+		return nil, err
+	}
+	planCode := strings.ToLower(strings.TrimSpace(p.PlanCode))
+	plan, ok := billing.PlanCatalog[planCode]
+	if !ok || planCode == "basic" {
+		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "plan tidak valid"}
+	}
+
+	t, err := loadTenant(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	schema := quoteIdent(t.SchemaName)
+
+	var subID string
+	err = db.QueryRow(ctx, fmt.Sprintf(
+		`SELECT id FROM %s.subscription WHERE status='active' ORDER BY updated_at DESC LIMIT 1`,
+		schema),
+	).Scan(&subID)
+	if err == sql.ErrNoRows {
+		_, err = db.Exec(ctx, fmt.Sprintf(
+			`INSERT INTO %s.subscription
+			 (plan_code, plan_name, is_trial, trial_ends_at, status, provider, updated_at)
+			 VALUES ($1,$2,false,NULL,'active','platform_admin',now())`,
+			schema), plan.Code, plan.Name)
+	} else if err == nil {
+		_, err = db.Exec(ctx, fmt.Sprintf(
+			`UPDATE %s.subscription
+			 SET plan_code=$1, plan_name=$2, is_trial=false, trial_ends_at=NULL,
+			     status='active', provider='platform_admin', updated_at=now()
+			 WHERE id=$3`,
+			schema), plan.Code, plan.Name, subID)
+	}
+	if err != nil {
+		return nil, &errs.Error{Code: errs.Internal, Message: "update plan failed"}
+	}
+
+	t.PlanTier = plan.Code
+	return &UpdateTenantPlanResponse{Tenant: *t}, nil
+}
+
+// DeleteTenant drops the tenant schema and soft-deletes system metadata.
+//
+// Destructive by design: callers must send the exact schema name to confirm.
+//
+//encore:api auth method=DELETE path=/api/v1/admin/tenant/:id tag:super_admin
+func DeleteTenant(ctx context.Context, id string, p *DeleteTenantParams) (*DeleteTenantResponse, error) {
+	if _, err := requireSuperAdmin(ctx); err != nil {
+		return nil, err
+	}
+	t, err := loadTenant(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if p == nil || strings.TrimSpace(p.ConfirmSchemaName) != t.SchemaName {
+		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "konfirmasi schema tidak sesuai"}
+	}
+	if !strings.HasPrefix(t.SchemaName, "t_") || !validSchemaName(t.SchemaName) {
+		return nil, &errs.Error{Code: errs.FailedPrecondition, Message: "schema tenant tidak aman untuk dihapus"}
+	}
+
+	tx, err := db.Stdlib().BeginTx(ctx, nil)
+	if err != nil {
+		return nil, &errs.Error{Code: errs.Internal, Message: "begin delete failed"}
+	}
+	defer tx.Rollback()
+
+	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`DROP SCHEMA IF EXISTS %s CASCADE`, quoteIdent(t.SchemaName))); err != nil {
+		return nil, &errs.Error{Code: errs.Internal, Message: "drop schema failed"}
+	}
+	if _, err = tx.ExecContext(ctx,
+		`UPDATE tenant SET status='deleted', deleted_at=now(), updated_at=now()
+		 WHERE id=$1 AND deleted_at IS NULL`, id); err != nil {
+		return nil, &errs.Error{Code: errs.Internal, Message: "delete tenant failed"}
+	}
+	if _, err = tx.ExecContext(ctx,
+		`UPDATE tenant_account SET deleted_at=now()
+		 WHERE tenant_id=$1 AND deleted_at IS NULL`, id); err != nil {
+		return nil, &errs.Error{Code: errs.Internal, Message: "delete tenant accounts failed"}
+	}
+	if err = tx.Commit(); err != nil {
+		return nil, &errs.Error{Code: errs.Internal, Message: "commit delete failed"}
+	}
+	if _, err = db.Exec(ctx, `DELETE FROM payment_webhook_map WHERE tenant_schema=$1`, t.SchemaName); err != nil {
+		rlog.Warn("delete payment webhook mappings failed", "tenantId", id, "err", err)
+	}
+
+	rlog.Warn("tenant schema wiped", "tenantId", id, "schema", t.SchemaName)
+	return &DeleteTenantResponse{OK: true, TenantID: id, SchemaName: t.SchemaName}, nil
+}
+
 // MigrateTenantSchemas applies idempotent DDL patches (incl. finance tables) to every tenant schema.
 //
 //encore:api auth method=POST path=/api/v1/admin/migrate-tenant-schemas tag:super_admin
@@ -257,14 +428,62 @@ func requireSuperAdmin(ctx context.Context) (*types.AuthUser, error) {
 }
 
 func readPlanFromSchema(ctx context.Context, schema string) string {
+	if !validSchemaName(schema) {
+		return "starter"
+	}
 	var plan string
 	err := db.QueryRow(ctx, fmt.Sprintf(
-		`SELECT COALESCE(plan_code,'starter') FROM "%s".subscription ORDER BY updated_at DESC LIMIT 1`, schema),
+		`SELECT COALESCE(plan_code,'starter') FROM %s.subscription ORDER BY updated_at DESC LIMIT 1`, quoteIdent(schema)),
 	).Scan(&plan)
 	if err != nil || plan == "" {
 		return "starter"
 	}
 	return plan
+}
+
+func loadTenant(ctx context.Context, id string) (*Tenant, error) {
+	var t Tenant
+	var status string
+	err := db.QueryRow(ctx, `
+		SELECT t.id, t.name, tc.schema_name, t.status, t.created_at,
+			COALESCE(owner.email, '') AS owner_email
+		FROM tenant t
+		JOIN tenant_company tc ON tc.tenant_id = t.id
+		LEFT JOIN LATERAL (
+			SELECT email FROM tenant_account ta
+			WHERE ta.tenant_id = t.id AND ta.role = 'owner' AND ta.deleted_at IS NULL
+			ORDER BY ta.created_at ASC LIMIT 1
+		) owner ON true
+		WHERE t.id = $1 AND t.deleted_at IS NULL`, id,
+	).Scan(&t.ID, &t.CompanyName, &t.SchemaName, &status, &t.CreatedAt, &t.OwnerEmail)
+	if err == sql.ErrNoRows {
+		return nil, &errs.Error{Code: errs.NotFound, Message: "tenant not found"}
+	}
+	if err != nil {
+		return nil, &errs.Error{Code: errs.Internal, Message: "query tenant failed"}
+	}
+	t.PlanTier = readPlanFromSchema(ctx, t.SchemaName)
+	t.IsActive = status == "active"
+	return &t, nil
+}
+
+func validSchemaName(schema string) bool {
+	if schema == "" || len(schema) > 63 {
+		return false
+	}
+	for i, c := range schema {
+		if i == 0 && !((c >= 'a' && c <= 'z') || c == '_') {
+			return false
+		}
+		if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_') {
+			return false
+		}
+	}
+	return true
+}
+
+func quoteIdent(s string) string {
+	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }
 
 func toEncoreErr(err error) error {

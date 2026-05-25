@@ -99,10 +99,11 @@ REST OAuth: package **`whatsappapi/`** · Graph send: **`whatsapp/`**.
 
 | Method | Path | FE | Status |
 |--------|------|-----|--------|
-| GET | `/api/v1/billing/overview` | ✅ | ✅ — `plans`: starter/business/pro; `pendingCheckout`; `invoices`: paid/issued only |
+| GET | `/api/v1/billing/overview` | ✅ | ✅ — `plans`: starter/business/pro; `topUpOptions`; `pendingCheckout`; `invoices`: paid/issued only |
 | POST | `/api/v1/billing/select-plan` | ✅ | ✅ — buat invoice **`pending`**; subscription aktif setelah bayar |
+| POST | `/api/v1/billing/top-up` | ✅ | ✅ — buat invoice top-up AI **`pending`**; kuota masuk setelah QRIS lunas |
 | POST | `/api/v1/payment/create-qris` | ✅ billing | ✅ — `invoiceId` wajib; validasi status `pending` |
-| GET | `/api/v1/usage/summary` | ✅ billing | ✅ — `plan`: `trial` jika `is_trial` |
+| GET | `/api/v1/usage/summary` | ✅ billing | ✅ — `plan`: `trial` jika `is_trial`; limit efektif termasuk `quota_topup` paid bulan berjalan |
 
 Plan codes: `starter`, `business`, `pro` (+ alias `basic` → business, tidak di katalog UI).
 
@@ -123,7 +124,7 @@ Plan codes: `starter`, `business`, `pro` (+ alias `basic` → business, tidak di
 | Workflow | `GET/POST/PATCH/DELETE /api/v1/workflows` | `/dashboard/workflow` |
 | Usage AI activity | `GET /api/v1/usage/ai-activity`, `GET /api/v1/usage/ai-activity/summary` | super_admin saat impersonate tenant |
 | Admin AI activity | `GET /api/v1/admin/tenant/:id/ai-activity`, `.../summary` | super_admin — `/dashboard/admin/ai-activity` |
-| Admin | `/api/v1/admin/*` | `/dashboard/admin` |
+| Admin | `/api/v1/admin/*` | `/dashboard/admin` — tenant search/pagination, impersonate, plan override, delete tenant |
 | Shipping | `/api/v1/shipping/*` | (API client ada; UI minimal) |
 | Analytics | `/api/v1/analytics/overview` | `/dashboard/analytics` |
 | Finance — Dashboard | `GET /api/v1/finance/dashboard` | `/dashboard/finance` |

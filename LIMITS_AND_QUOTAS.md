@@ -11,6 +11,7 @@ Dokumen **sumber kebenaran** untuk rate limit HTTP, kuota pemakaian bulanan, ent
 | Fitur on/off per plan | `shared/entitlement/entitlement.go` |
 | Rate limit HTTP | `middleware/ratelimit.go`, `shared/ratelimit/ratelimit.go`, `auth/auth.go` |
 | Checkout & invoice | `billing/billing.go` → `SelectPlan`, `ActivatePaidInvoice` |
+| Top-up kuota AI | `billing/billing.go` → `CreateTopUpCheckout`, tabel `quota_topup` |
 | Pembayaran QRIS | `payment/payment.go` + webhook → `billing.ActivatePaidInvoice` |
 | Routing model AI | `ai/routing.go`, `ai/autoreply.go` → `loadSubscriptionPlanCode` |
 
@@ -76,7 +77,18 @@ Periode: kalender **`YYYY-MM`** (`usage_aggregate.period`). Reset agregat: cron 
 
 **Pro vs Business (angka pasti, bukan “lebih besar”):** Pro = 10 channel, 10 seat, 20.000 percakapan AI, 30 juta token AI, **10.000** kontak broadcast/bulan, 10 GB storage, 5.000 workflow/bulan, multi-cabang + API. Business = 2 / 3 / 6.000 / 8 juta / **500** / 2 GB / 500. Detail biaya platform & margin: [docs/UNIT_ECONOMICS_AND_PRICING.md](./docs/UNIT_ECONOMICS_AND_PRICING.md).
 
-### 2.3 Routing AI (`ai/routing.go`)
+### 2.3 Top-up kuota AI (non-recurring)
+
+Top-up menambah limit efektif di `usage.CheckQuota` dan `GET /usage/summary` melalui tabel `quota_topup`.
+
+| Top-up | Harga | Tambahan `ai_token` | Tambahan `ai_conversation` | Berlaku |
+|--------|-------|---------------------|-----------------------------|---------|
+| `topup_ai_20000` | Rp 20.000 | 133.000 | 59 | Bulan berjalan |
+| `topup_ai_30000` | Rp 30.000 | 200.000 | 88 | Bulan berjalan |
+
+Top-up tidak mengubah paket, tidak recurring, dan tidak menambah broadcast/storage/seat. Dasar kalkulasi: [docs/UNIT_ECONOMICS_AND_PRICING.md](./docs/UNIT_ECONOMICS_AND_PRICING.md).
+
+### 2.4 Routing AI (`ai/routing.go`)
 
 | Plan | Mode | Model (ringkas) |
 |------|------|-----------------|
@@ -97,7 +109,8 @@ Periode: kalender **`YYYY-MM`** (`usage_aggregate.period`). Reset agregat: cron 
 2. Backend membuat invoice status **`pending`** — **tidak** mengubah `subscription` / **tidak** menganggap lunas
 3. Owner bayar → `POST /api/v1/payment/create-qris` (wajib `invoiceId` pending, nominal harus cocok)
 4. Webhook Midtrans `PAID` → `billing.ActivatePaidInvoice`:
-   - `subscription`: `plan_code`, `is_trial=false`, `trial_ends_at=NULL`
+   - Invoice paket: update `subscription` (`plan_code`, `is_trial=false`, `trial_ends_at=NULL`)
+   - Invoice top-up: insert `quota_topup` untuk bulan berjalan
    - `invoice`: status **`paid`**, `paid_at` diisi
 
 ### Status invoice

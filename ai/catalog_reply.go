@@ -193,7 +193,7 @@ func catalogExternalFooter(profile *dbBusinessProfile, catalogEmpty bool) string
 	if catalogEmpty {
 		return "\n\nInfo tambahan (di luar katalog WABantu): " + url
 	}
-	return "\n\nInfo lengkap tambahan: " + url
+	return ""
 }
 
 // BuildCatalogContext injects DB catalog into LLM system context.

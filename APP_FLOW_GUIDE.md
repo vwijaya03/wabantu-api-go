@@ -216,7 +216,7 @@ Saat **register**:
 1. Transaksi di **`system`**: insert `tenant`, `tenant_company`, `tenant_account`.
 2. `tenant.RunTenantDDL("t_slug")` di DB **`tenant`**: `CREATE SCHEMA` + tabel.
 3. Seed `business_profile` + cabang default (`branch.EnsureDefaultBranch`).
-4. Email **`superadmin@gmail.com`** → role `super_admin` (dev bootstrap).
+4. Akun pelanggan hasil register selalu punya tenant; akun platform admin internal dibuat terpisah lewat bootstrap API.
 
 Akses data tenant:
 
@@ -252,9 +252,9 @@ encore db shell tenant --write
 
 ### Super admin
 
-- Dev email: **`superadmin@gmail.com`**
-- Migrasi: `system/migrations/3_promote_super_admin.up.sql`
-- API: `/api/v1/admin/*`, UI: `/dashboard/admin`
+- Akun internal dibuat lewat `POST /api/v1/internal/platform-admin/bootstrap` (lihat README).
+- API: `/api/v1/admin/*`, UI: `/dashboard/admin`.
+- Konsol admin: list tenant dengan search/pagination, pantau tenant, override paket, delete tenant dengan konfirmasi schema, dan migrasi schema tenant.
 
 ---
 
@@ -338,7 +338,7 @@ Verify token: secret `WebhookVerifyToken`. Saat daftar app Meta, pilih path yang
 
 | Area | Contoh path |
 |------|-------------|
-| Billing | `GET /api/v1/billing/overview`, `POST /api/v1/billing/select-plan` (invoice `pending`, lihat [LIMITS_AND_QUOTAS.md](./LIMITS_AND_QUOTAS.md)) |
+| Billing | `GET /api/v1/billing/overview`, `POST /api/v1/billing/select-plan`, `POST /api/v1/billing/top-up` (invoice `pending`, lihat [LIMITS_AND_QUOTAS.md](./LIMITS_AND_QUOTAS.md)) |
 | Payment | `POST /api/v1/payment/create-qris` (wajib `invoiceId` pending), webhook Midtrans → aktivasi paket |
 | Orders | `GET/POST /api/v1/orders`, … |
 | Catalog | CRUD di `business/catalog.go` |
@@ -347,7 +347,7 @@ Verify token: secret `WebhookVerifyToken`. Saat daftar app Meta, pilih path yang
 | Import CSV | `POST /api/v1/import/preview`, `/import/execute` |
 | Branches | `GET/POST /api/v1/branches` (Pro) |
 | Workflow | `GET/POST/PATCH/DELETE /api/v1/workflows` |
-| Admin | `GET /api/v1/admin/tenants`, impersonation (`super_admin`) |
+| Admin | `GET /api/v1/admin/tenants?q=&page=&pageSize=`, impersonation, override paket, delete tenant (`super_admin`) |
 | Finance | `GET /api/v1/finance/dashboard`, `/finance/wallets`, `/finance/transactions`, `/finance/budgets`, `/finance/investments/portfolio`, `/finance/recurring`, `/finance/checklist/today`, `/finance/reports/export` |
 | Usage | `GET /api/v1/usage/summary` |
 | Health | `GET /api/v1/health`, `/api/v1/health/ready` |
@@ -663,6 +663,6 @@ sequenceDiagram
 3. `GET /auth/me` dengan token.
 4. `PATCH /business/profile` — lengkapi profil.
 5. Uji `POST /api/v1/internal/ai/auto-reply` dengan token internal (opsional).
-6. Jalankan `web-frontend` (`npm run dev`) — login, inbox, billing, admin (`superadmin@gmail.com`).
+6. Jalankan `web-frontend` (`npm run dev`) — login owner untuk flow tenant, atau login akun bootstrap platform admin untuk `/dashboard/admin`.
 
 Plan subscription: `starter` | `business` | `pro` (alias `basic` = business, tidak di UI). **Trial** (`is_trial`): semua fitur entitlement aktif, kuota di [LIMITS_AND_QUOTAS.md](./LIMITS_AND_QUOTAS.md). Berbayar: broadcast/workflow = business+, multi-branch = pro.

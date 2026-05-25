@@ -29,7 +29,7 @@ var sessionKS = cache.NewStructKeyspace[string, AISession](aiCluster, cache.Keys
 const (
 	maxExchangesPerSession = 10
 	maxTokensPerSession    = 15_000
-	tokenAnomalyThreshold = 30_000
+	tokenAnomalyThreshold  = 30_000
 )
 
 // TrackAIExchange tracks one exchange in the current AI session.
