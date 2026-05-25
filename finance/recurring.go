@@ -46,21 +46,21 @@ type RecurringListResponse struct {
 }
 
 type CreateRecurringParams struct {
-	Title          string   `json:"title"`
-	Type           string   `json:"type"`
-	Amount         float64  `json:"amount"`
-	WalletID       string   `json:"walletId"`
-	ToWalletID     *string  `json:"toWalletId,omitempty"`
-	CategoryID     *string  `json:"categoryId,omitempty"`
-	Description    *string  `json:"description,omitempty"`
-	Frequency      string   `json:"frequency"`
-	FrequencyValue int      `json:"frequencyValue"`
-	DayOfMonth     *int     `json:"dayOfMonth,omitempty"`
-	DayOfWeek      *int     `json:"dayOfWeek,omitempty"`
-	Mode           string   `json:"mode"`
-	StartDate      string   `json:"startDate"`
-	EndDate        *string  `json:"endDate,omitempty"`
-	MaxOccurrences *int     `json:"maxOccurrences,omitempty"`
+	Title          string  `json:"title"`
+	Type           string  `json:"type"`
+	Amount         float64 `json:"amount"`
+	WalletID       string  `json:"walletId"`
+	ToWalletID     *string `json:"toWalletId,omitempty"`
+	CategoryID     *string `json:"categoryId,omitempty"`
+	Description    *string `json:"description,omitempty"`
+	Frequency      string  `json:"frequency"`
+	FrequencyValue int     `json:"frequencyValue"`
+	DayOfMonth     *int    `json:"dayOfMonth,omitempty"`
+	DayOfWeek      *int    `json:"dayOfWeek,omitempty"`
+	Mode           string  `json:"mode"`
+	StartDate      string  `json:"startDate"`
+	EndDate        *string `json:"endDate,omitempty"`
+	MaxOccurrences *int    `json:"maxOccurrences,omitempty"`
 }
 
 var validFrequencies = map[string]bool{"daily": true, "weekly": true, "monthly": true, "yearly": true}
@@ -163,15 +163,15 @@ func CreateRecurring(ctx context.Context, p *CreateRecurringParams) (*Recurring,
 	if p.Mode != "reminder" {
 		p.Mode = "auto"
 	}
-	if p.StartDate == "" {
-		p.StartDate = time.Now().Format("2006-01-02")
-	}
-
 	conn, err := tenantConn(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer conn.Close()
+
+	if p.StartDate == "" {
+		p.StartDate = financeToday(ctx, conn)
+	}
 
 	if _, err := loadTransactionTypeByCode(ctx, conn, p.Type); err != nil {
 		return nil, err
@@ -195,7 +195,7 @@ func CreateRecurring(ctx context.Context, p *CreateRecurringParams) (*Recurring,
 	}
 	return &Recurring{
 		ID: id, Title: p.Title, Type: p.Type,
-		Amount: fmt.Sprintf("%.2f", p.Amount),
+		Amount:   fmt.Sprintf("%.2f", p.Amount),
 		WalletID: p.WalletID, Frequency: p.Frequency,
 		FrequencyValue: p.FrequencyValue, Mode: p.Mode,
 		StartDate: p.StartDate, NextRunDate: p.StartDate,
@@ -239,16 +239,15 @@ func ProcessAllRecurring(ctx context.Context) error {
 		return err
 	}
 
-	today := time.Now().Format("2006-01-02")
 	for _, schema := range schemas {
-		if err := processRecurringForTenant(ctx, schema, today); err != nil {
+		if err := processRecurringForTenant(ctx, schema); err != nil {
 			rlog.Warn("recurring: tenant failed", "schema", schema, "err", err)
 		}
 	}
 	return nil
 }
 
-func processRecurringForTenant(ctx context.Context, schema, today string) error {
+func processRecurringForTenant(ctx context.Context, schema string) error {
 	conn, err := tenantConn(ctx, schema)
 	if err != nil {
 		return err
@@ -258,6 +257,7 @@ func processRecurringForTenant(ctx context.Context, schema, today string) error 
 	if !financeTablesReady(ctx, conn) {
 		return nil
 	}
+	today := financeToday(ctx, conn)
 
 	rows, err := conn.QueryContext(ctx, `
 		SELECT id, type, amount, wallet_id, to_wallet_id, category_id, description,
@@ -271,7 +271,7 @@ func processRecurringForTenant(ctx context.Context, schema, today string) error 
 	defer rows.Close()
 
 	type recRow struct {
-		id, typ, walletID, createdBy string
+		id, typ, walletID, createdBy                 string
 		toWalletID, categoryID, description, endDate sql.NullString
 		mode, nextRunDate                            string
 		amount                                       float64
@@ -362,7 +362,8 @@ func processRecurringForTenant(ctx context.Context, schema, today string) error 
 		// Pause after 3 consecutive failures
 		var failCount int
 		conn.QueryRowContext(ctx,
-			`SELECT COUNT(*) FROM fin_recurring_log WHERE recurring_id=$1 AND status='failed' AND run_date>=(CURRENT_DATE-3)`, r.id,
+			`SELECT COUNT(*) FROM fin_recurring_log WHERE recurring_id=$1 AND status='failed' AND run_date>=($2::date-3)`,
+			r.id, today,
 		).Scan(&failCount)
 		if failCount >= 3 {
 			conn.ExecContext(ctx, `UPDATE fin_recurring SET is_active=false WHERE id=$1`, r.id)
@@ -382,7 +383,7 @@ func nullStr(n sql.NullString) interface{} {
 func calcNextRunDate(from, frequency string, value, dayOfMonth, dayOfWeek int) string {
 	t, err := time.Parse("2006-01-02", from)
 	if err != nil {
-		return time.Now().AddDate(0, 1, 0).Format("2006-01-02")
+		return from
 	}
 	switch frequency {
 	case "daily":

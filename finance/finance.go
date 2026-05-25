@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -49,6 +50,13 @@ func assertOwner(u *types.AuthUser) error {
 	return nil
 }
 
+func moneyString(v float64) string {
+	if math.Abs(v) < 0.005 {
+		v = 0
+	}
+	return fmt.Sprintf("%.2f", v)
+}
+
 // periodLocked returns true if the given YYYY-MM period is locked.
 func periodLocked(ctx context.Context, conn *sql.Conn, period string) (bool, error) {
 	var exists bool
@@ -63,7 +71,8 @@ func walletPeriod(d string) string {
 	if len(d) >= 7 {
 		return d[:7]
 	}
-	return time.Now().Format("2006-01")
+	loc, _ := time.LoadLocation(defaultFinanceTimezone)
+	return time.Now().In(loc).Format("2006-01")
 }
 
 // refreshWalletBalance recalculates and upserts fin_wallet_balance for one wallet.
@@ -320,7 +329,7 @@ func CreateWallet(ctx context.Context, p *CreateWalletParams) (*Wallet, error) {
 	w := &Wallet{ID: id, Name: p.Name, Type: p.Type, Currency: p.Currency,
 		InitialBalance: fmt.Sprintf("%.2f", p.InitialBalance),
 		Balance:        fmt.Sprintf("%.2f", p.InitialBalance),
-		IsActive: true, Visibility: p.Visibility, DisplayOrder: p.DisplayOrder,
+		IsActive:       true, Visibility: p.Visibility, DisplayOrder: p.DisplayOrder,
 		Color: p.Color, Icon: p.Icon, Institution: p.Institution, CreatedAt: time.Now()}
 	return w, nil
 }
@@ -634,16 +643,16 @@ type Transaction struct {
 }
 
 type ListTransactionsParams struct {
-	WalletID    string `query:"walletId"`
-	CategoryID  string `query:"categoryId"`
-	Type        string `query:"type"`
-	Status      string `query:"status"`
-	Search      string `query:"search"`
-	StartDate   string `query:"startDate"`
-	EndDate     string `query:"endDate"`
-	Period      string `query:"period"` // YYYY-MM shortcut
-	Page        int    `query:"page"`
-	PageSize    int    `query:"pageSize"`
+	WalletID   string `query:"walletId"`
+	CategoryID string `query:"categoryId"`
+	Type       string `query:"type"`
+	Status     string `query:"status"`
+	Search     string `query:"search"`
+	StartDate  string `query:"startDate"`
+	EndDate    string `query:"endDate"`
+	Period     string `query:"period"` // YYYY-MM shortcut
+	Page       int    `query:"page"`
+	PageSize   int    `query:"pageSize"`
 }
 
 type ListTransactionsResponse struct {
@@ -693,9 +702,6 @@ func validateCreateTransaction(p *CreateTransactionParams) error {
 	}
 	if p.Type == "transfer" && p.ToWalletID != nil && *p.ToWalletID == p.WalletID {
 		return appErrs.BadRequest("wallet asal dan tujuan tidak boleh sama")
-	}
-	if p.TransactionDate == "" {
-		p.TransactionDate = time.Now().Format("2006-01-02")
 	}
 	if p.Currency == "" {
 		p.Currency = "IDR"
@@ -803,7 +809,7 @@ func ListTransactions(ctx context.Context, p *ListTransactionsParams) (*ListTran
 		       COALESCE(w.name,''), t.to_wallet_id, tw.name,
 		       t.category_id, c.name,
 		       t.description, t.notes, t.reference_no,
-		       t.transaction_date, t.status, t.tags, t.attachment_urls,
+		       t.transaction_date::text, t.status, t.tags, t.attachment_urls,
 		       t.asset_id, a.name, a.ticker, t.asset_qty, t.asset_price_per_unit,
 		       t.created_by, t.created_at
 		FROM fin_transaction t
@@ -911,6 +917,10 @@ func CreateTransaction(ctx context.Context, p *CreateTransactionParams) (*Transa
 	}
 	defer conn.Close()
 
+	if p.TransactionDate == "" {
+		p.TransactionDate = financeToday(ctx, conn)
+	}
+
 	txnType, err := loadTransactionTypeByCode(ctx, conn, p.Type)
 	if err != nil {
 		return nil, err
@@ -986,7 +996,7 @@ func CreateTransaction(ctx context.Context, p *CreateTransactionParams) (*Transa
 
 	return &Transaction{
 		ID: id, Type: p.Type,
-		Amount: fmt.Sprintf("%.2f", p.Amount),
+		Amount:   fmt.Sprintf("%.2f", p.Amount),
 		Currency: p.Currency, WalletID: p.WalletID,
 		ToWalletID: p.ToWalletID, CategoryID: p.CategoryID,
 		TransactionDate: p.TransactionDate, Status: status,
@@ -1391,21 +1401,21 @@ func DuplicateTransactions(ctx context.Context, p *DuplicateParams) (*CountRespo
 // ============================================================
 
 type DashboardSummary struct {
-	Period        string       `json:"period"`
-	TotalIncome   string       `json:"totalIncome"`
-	TotalExpense  string       `json:"totalExpense"`
-	NetBalance    string       `json:"netBalance"`
-	TotalWallets  string       `json:"totalWallets"`
-	PendingCount  int          `json:"pendingCount"`
-	Wallets       []WalletSnap `json:"wallets"`
+	Period       string       `json:"period"`
+	TotalIncome  string       `json:"totalIncome"`
+	TotalExpense string       `json:"totalExpense"`
+	NetBalance   string       `json:"netBalance"`
+	TotalWallets string       `json:"totalWallets"`
+	PendingCount int          `json:"pendingCount"`
+	Wallets      []WalletSnap `json:"wallets"`
 }
 
 type WalletSnap struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Type     string `json:"type"`
-	Balance  string `json:"balance"`
-	Currency string `json:"currency"`
+	ID       string  `json:"id"`
+	Name     string  `json:"name"`
+	Type     string  `json:"type"`
+	Balance  string  `json:"balance"`
+	Currency string  `json:"currency"`
 	Color    *string `json:"color,omitempty"`
 	Icon     *string `json:"icon,omitempty"`
 }
@@ -1428,7 +1438,7 @@ func GetDashboard(ctx context.Context, p *DashboardParams) (*DashboardSummary, e
 
 	period := p.Period
 	if period == "" {
-		period = time.Now().Format("2006-01")
+		period = financePeriod(ctx, conn)
 	}
 
 	flowSQL := flowFallbackSQL("t.type")
@@ -1481,7 +1491,7 @@ func GetDashboard(ctx context.Context, p *DashboardParams) (*DashboardSummary, e
 			var color, icon sql.NullString
 			var bal float64
 			rows.Scan(&ws.ID, &ws.Name, &ws.Type, &bal, &ws.Currency, &color, &icon)
-			ws.Balance = fmt.Sprintf("%.2f", bal)
+			ws.Balance = moneyString(bal)
 			if color.Valid {
 				ws.Color = &color.String
 			}
@@ -1498,10 +1508,10 @@ func GetDashboard(ctx context.Context, p *DashboardParams) (*DashboardSummary, e
 	net := income - expense
 	return &DashboardSummary{
 		Period:       period,
-		TotalIncome:  fmt.Sprintf("%.2f", income),
-		TotalExpense: fmt.Sprintf("%.2f", expense),
-		NetBalance:   fmt.Sprintf("%.2f", net),
-		TotalWallets: fmt.Sprintf("%.2f", totalWallets),
+		TotalIncome:  moneyString(income),
+		TotalExpense: moneyString(expense),
+		NetBalance:   moneyString(net),
+		TotalWallets: moneyString(totalWallets),
 		PendingCount: pendingCount,
 		Wallets:      wallets,
 	}, nil

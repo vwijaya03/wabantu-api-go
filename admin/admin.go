@@ -77,7 +77,7 @@ type UpdateTenantPlanResponse struct {
 }
 
 type DeleteTenantParams struct {
-	ConfirmSchemaName string `json:"confirmSchemaName"`
+	ConfirmSchemaName string `query:"confirmSchemaName"`
 }
 
 type DeleteTenantResponse struct {
@@ -205,12 +205,13 @@ func GetTenant(ctx context.Context, id string) (*TenantDetailResponse, error) {
 	_ = db.QueryRow(ctx, `
 		SELECT COUNT(*) FROM tenant_account WHERE tenant_id = $1 AND deleted_at IS NULL`, id,
 	).Scan(&t.AccountCount)
-	_ = db.QueryRow(ctx, fmt.Sprintf(
-		`SELECT COUNT(*) FROM "%s".conversation WHERE deleted_at IS NULL`, t.SchemaName),
-	).Scan(&t.ConversationCount)
-	_ = db.QueryRow(ctx, fmt.Sprintf(
-		`SELECT COUNT(*) FROM "%s".message`, t.SchemaName),
-	).Scan(&t.MessageCount)
+	if conn, err := tenant.TenantConn(ctx, t.SchemaName); err == nil {
+		defer conn.Close()
+		_ = conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM conversation WHERE deleted_at IS NULL`).Scan(&t.ConversationCount)
+		_ = conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM message`).Scan(&t.MessageCount)
+	} else {
+		rlog.Warn("tenant detail counts failed to open tenant db", "tenantId", id, "schema", t.SchemaName, "err", err)
+	}
 
 	return &TenantDetailResponse{Tenant: t}, nil
 }
@@ -315,6 +316,9 @@ func UpdateTenantPlan(ctx context.Context, id string, p *UpdateTenantPlanParams)
 	if _, err := requireSuperAdmin(ctx); err != nil {
 		return nil, err
 	}
+	if p == nil {
+		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "plan tidak valid"}
+	}
 	planCode := strings.ToLower(strings.TrimSpace(p.PlanCode))
 	plan, ok := billing.PlanCatalog[planCode]
 	if !ok || planCode == "basic" {
@@ -325,28 +329,33 @@ func UpdateTenantPlan(ctx context.Context, id string, p *UpdateTenantPlanParams)
 	if err != nil {
 		return nil, err
 	}
-	schema := quoteIdent(t.SchemaName)
+	conn, err := tenant.TenantConn(ctx, t.SchemaName)
+	if err != nil {
+		rlog.Error("open tenant db for plan update failed", "tenantId", id, "schema", t.SchemaName, "err", err)
+		return nil, &errs.Error{Code: errs.Internal, Message: "update plan failed"}
+	}
+	defer conn.Close()
 
 	var subID string
-	err = db.QueryRow(ctx, fmt.Sprintf(
-		`SELECT id FROM %s.subscription WHERE status='active' ORDER BY updated_at DESC LIMIT 1`,
-		schema),
+	err = conn.QueryRowContext(ctx,
+		`SELECT id FROM subscription WHERE status='active' ORDER BY updated_at DESC LIMIT 1`,
 	).Scan(&subID)
 	if err == sql.ErrNoRows {
-		_, err = db.Exec(ctx, fmt.Sprintf(
-			`INSERT INTO %s.subscription
+		_, err = conn.ExecContext(ctx,
+			`INSERT INTO subscription
 			 (plan_code, plan_name, is_trial, trial_ends_at, status, provider, updated_at)
 			 VALUES ($1,$2,false,NULL,'active','platform_admin',now())`,
-			schema), plan.Code, plan.Name)
+			plan.Code, plan.Name)
 	} else if err == nil {
-		_, err = db.Exec(ctx, fmt.Sprintf(
-			`UPDATE %s.subscription
+		_, err = conn.ExecContext(ctx,
+			`UPDATE subscription
 			 SET plan_code=$1, plan_name=$2, is_trial=false, trial_ends_at=NULL,
 			     status='active', provider='platform_admin', updated_at=now()
 			 WHERE id=$3`,
-			schema), plan.Code, plan.Name, subID)
+			plan.Code, plan.Name, subID)
 	}
 	if err != nil {
+		rlog.Error("tenant plan update query failed", "tenantId", id, "schema", t.SchemaName, "plan", plan.Code, "err", err)
 		return nil, &errs.Error{Code: errs.Internal, Message: "update plan failed"}
 	}
 
@@ -374,15 +383,25 @@ func DeleteTenant(ctx context.Context, id string, p *DeleteTenantParams) (*Delet
 		return nil, &errs.Error{Code: errs.FailedPrecondition, Message: "schema tenant tidak aman untuk dihapus"}
 	}
 
+	tenantTx, err := tenant.DataDB.Stdlib().BeginTx(ctx, nil)
+	if err != nil {
+		return nil, &errs.Error{Code: errs.Internal, Message: "begin delete failed"}
+	}
+	defer tenantTx.Rollback()
+
+	if _, err = tenantTx.ExecContext(ctx, fmt.Sprintf(`DROP SCHEMA IF EXISTS %s CASCADE`, quoteIdent(t.SchemaName))); err != nil {
+		return nil, &errs.Error{Code: errs.Internal, Message: "drop schema failed"}
+	}
+	if err = tenantTx.Commit(); err != nil {
+		return nil, &errs.Error{Code: errs.Internal, Message: "commit drop schema failed"}
+	}
+
 	tx, err := db.Stdlib().BeginTx(ctx, nil)
 	if err != nil {
 		return nil, &errs.Error{Code: errs.Internal, Message: "begin delete failed"}
 	}
 	defer tx.Rollback()
 
-	if _, err = tx.ExecContext(ctx, fmt.Sprintf(`DROP SCHEMA IF EXISTS %s CASCADE`, quoteIdent(t.SchemaName))); err != nil {
-		return nil, &errs.Error{Code: errs.Internal, Message: "drop schema failed"}
-	}
 	if _, err = tx.ExecContext(ctx,
 		`UPDATE tenant SET status='deleted', deleted_at=now(), updated_at=now()
 		 WHERE id=$1 AND deleted_at IS NULL`, id); err != nil {
@@ -431,9 +450,16 @@ func readPlanFromSchema(ctx context.Context, schema string) string {
 	if !validSchemaName(schema) {
 		return "starter"
 	}
+	conn, err := tenant.TenantConn(ctx, schema)
+	if err != nil {
+		rlog.Warn("read plan failed to open tenant db", "schema", schema, "err", err)
+		return "starter"
+	}
+	defer conn.Close()
+
 	var plan string
-	err := db.QueryRow(ctx, fmt.Sprintf(
-		`SELECT COALESCE(plan_code,'starter') FROM %s.subscription ORDER BY updated_at DESC LIMIT 1`, quoteIdent(schema)),
+	err = conn.QueryRowContext(ctx,
+		`SELECT COALESCE(plan_code,'starter') FROM subscription ORDER BY updated_at DESC LIMIT 1`,
 	).Scan(&plan)
 	if err != nil || plan == "" {
 		return "starter"

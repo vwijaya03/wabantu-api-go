@@ -727,15 +727,15 @@ func RecordInvestmentTrade(ctx context.Context, id string, p *RecordInvestmentTr
 	if p.PricePerUnit <= 0 {
 		return nil, appErrs.BadRequest("harga per unit harus lebih dari 0")
 	}
-	if p.TransactionDate == "" {
-		p.TransactionDate = time.Now().Format("2006-01-02")
-	}
-
 	conn, err := tenantConn(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer conn.Close()
+
+	if p.TransactionDate == "" {
+		p.TransactionDate = financeToday(ctx, conn)
+	}
 
 	var walletID, assetName string
 	var isActive bool
@@ -859,15 +859,15 @@ func RecordAssetDividend(ctx context.Context, id string, p *RecordAssetDividendP
 	if p.Amount <= 0 {
 		return nil, appErrs.BadRequest("jumlah dividen harus lebih dari 0")
 	}
-	if p.TransactionDate == "" {
-		p.TransactionDate = time.Now().Format("2006-01-02")
-	}
-
 	conn, err := tenantConn(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer conn.Close()
+
+	if p.TransactionDate == "" {
+		p.TransactionDate = financeToday(ctx, conn)
+	}
 
 	var walletID, assetName string
 	var isActive bool

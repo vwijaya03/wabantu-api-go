@@ -731,6 +731,7 @@ CREATE INDEX IF NOT EXISTS idx_fin_txn_wallet   ON fin_transaction(wallet_id, tr
 CREATE INDEX IF NOT EXISTS idx_fin_txn_category ON fin_transaction(category_id);
 CREATE INDEX IF NOT EXISTS idx_fin_txn_date     ON fin_transaction(transaction_date DESC);
 CREATE INDEX IF NOT EXISTS idx_fin_txn_status   ON fin_transaction(status) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_fin_txn_export   ON fin_transaction(status, transaction_date DESC, created_at DESC) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_fin_txn_asset    ON fin_transaction(asset_id) WHERE asset_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS fin_asset (

@@ -362,7 +362,7 @@ curl -X POST http://localhost:4000/api/v1/internal/platform-admin/bootstrap \
 | `POST /api/v1/internal/platform-admin/bootstrap` | Buat akun platform admin (header `X-Platform-Bootstrap-Secret`) |
 | `GET /api/v1/admin/tenants?q=&page=&pageSize=` | Daftar tenant dengan search + pagination |
 | `PUT /api/v1/admin/tenant/:id/plan` | Override paket tenant (`starter`, `business`, `pro`) |
-| `DELETE /api/v1/admin/tenant/:id` | Hapus tenant permanen: `DROP SCHEMA ... CASCADE` + soft-delete metadata (wajib konfirmasi schema) |
+| `DELETE /api/v1/admin/tenant/:id?confirmSchemaName=...` | Hapus tenant permanen: `DROP SCHEMA ... CASCADE` + soft-delete metadata (wajib konfirmasi schema) |
 | `POST /api/v1/admin/impersonate/:tenantId` | Pantau tenant (update session Redis) |
 | `POST /api/v1/admin/stop-impersonation` | Keluar dari mode pantau |
 | `POST /api/v1/admin/migrate-tenant-schemas` | Patch DDL semua tenant (termasuk tabel `fin_*`) — super_admin |

@@ -6,6 +6,7 @@ require (
 	encore.dev v1.44.6
 	github.com/anthropics/anthropic-sdk-go v1.43.0
 	github.com/getsentry/sentry-go v0.31.1
+	github.com/lvillar/gofpdf v1.1.0
 	github.com/redis/go-redis/v9 v9.19.0
 	github.com/xuri/excelize/v2 v2.9.0
 )

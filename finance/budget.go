@@ -56,7 +56,7 @@ func ListBudgets(ctx context.Context, p *BudgetListParams) (*BudgetListResponse,
 
 	period := p.Period
 	if period == "" {
-		period = time.Now().Format("2006-01")
+		period = financePeriod(ctx, conn)
 	}
 
 	rows, err := conn.QueryContext(ctx, `
@@ -125,15 +125,15 @@ func UpsertBudget(ctx context.Context, p *UpsertBudgetParams) (*Budget, error) {
 	if p.CategoryID == "" {
 		return nil, appErrs.BadRequest("kategori harus dipilih")
 	}
-	if p.Period == "" {
-		p.Period = time.Now().Format("2006-01")
-	}
-
 	conn, err := tenantConn(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer conn.Close()
+
+	if p.Period == "" {
+		p.Period = financePeriod(ctx, conn)
+	}
 
 	var id string
 	err = conn.QueryRowContext(ctx,
@@ -172,11 +172,11 @@ func DeleteBudget(ctx context.Context, id string) (*OKResponse, error) {
 // BudgetSummary returns category spending vs budget for a period,
 // used to show over-budget warnings.
 type BudgetSummaryResponse struct {
-	Period       string   `json:"period"`
-	TotalBudget  string   `json:"totalBudget"`
-	TotalSpent   string   `json:"totalSpent"`
-	OverBudget   []string `json:"overBudget"`   // category names
-	WarnBudget   []string `json:"warnBudget"`
+	Period      string   `json:"period"`
+	TotalBudget string   `json:"totalBudget"`
+	TotalSpent  string   `json:"totalSpent"`
+	OverBudget  []string `json:"overBudget"` // category names
+	WarnBudget  []string `json:"warnBudget"`
 }
 
 //encore:api auth method=GET path=/api/v1/finance/budgets/summary
@@ -193,7 +193,7 @@ func BudgetSummary(ctx context.Context, p *BudgetListParams) (*BudgetSummaryResp
 
 	period := p.Period
 	if period == "" {
-		period = time.Now().Format("2006-01")
+		period = financePeriod(ctx, conn)
 	}
 
 	rows, err := conn.QueryContext(ctx, `
@@ -272,7 +272,7 @@ func CategorySpending(ctx context.Context, p *BudgetListParams) (*CategorySpendi
 
 	period := p.Period
 	if period == "" {
-		period = time.Now().Format("2006-01")
+		period = financePeriod(ctx, conn)
 	}
 
 	rows, err := conn.QueryContext(ctx, `
@@ -336,10 +336,7 @@ func MonthlyComparison(ctx context.Context, p *MonthlyComparisonParams) (*Monthl
 		months = 6
 	}
 
-	periods := make([]string, months)
-	for i := 0; i < months; i++ {
-		periods[i] = time.Now().AddDate(0, -i, 0).Format("2006-01")
-	}
+	periods := financePeriods(ctx, conn, months)
 
 	placeholders := make([]string, len(periods))
 	args := make([]any, len(periods))

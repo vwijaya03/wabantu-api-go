@@ -666,7 +666,7 @@ encore run
 | GET | `/api/v1/admin/tenants?q=&page=&pageSize=` | auth `super_admin` | List tenants with search + pagination |
 | GET | `/api/v1/admin/tenant/:id` | auth `super_admin` | Tenant detail + counts |
 | PUT | `/api/v1/admin/tenant/:id/plan` | auth `super_admin` | Internal package override (`starter`, `business`, `pro`) |
-| DELETE | `/api/v1/admin/tenant/:id` | auth `super_admin` | Permanently drop tenant schema + soft-delete metadata; requires schema confirmation |
+| DELETE | `/api/v1/admin/tenant/:id?confirmSchemaName=...` | auth `super_admin` | Permanently drop tenant schema + soft-delete metadata; requires schema confirmation |
 | POST | `/api/v1/admin/impersonate/:tenantId` | auth `super_admin` | Switch session to tenant |
 | POST | `/api/v1/admin/stop-impersonation` | auth `super_admin` | Clear impersonation |
 | POST | `/api/v1/admin/migrate-tenant-schemas` | auth `super_admin` | `RunMigrateAllTenantSchemas` — patch DDL + finance seed per tenant |
@@ -1113,7 +1113,7 @@ Anda bisa langsung pakai token itu atau login ulang lewat frontend.
 | `GET` | `/api/v1/admin/tenants?q=&page=&pageSize=` | Daftar tenant dengan search + pagination |
 | `GET` | `/api/v1/admin/tenant/:id` | Detail + jumlah akun/pesan |
 | `PUT` | `/api/v1/admin/tenant/:id/plan` | Override paket tenant dari konsol internal |
-| `DELETE` | `/api/v1/admin/tenant/:id` | Hapus tenant permanen: drop schema + soft-delete metadata; body wajib `confirmSchemaName` |
+| `DELETE` | `/api/v1/admin/tenant/:id?confirmSchemaName=...` | Hapus tenant permanen: drop schema + soft-delete metadata; query wajib `confirmSchemaName` |
 | `POST` | `/api/v1/admin/impersonate/:tenantId` | Update Redis session → API lain pakai schema tenant itu |
 | `POST` | `/api/v1/admin/stop-impersonation` | Hapus `actAs*` dari session |
 | `POST` | `/api/v1/admin/migrate-tenant-schemas` | Patch DDL semua tenant (finance + schema_patch) |

@@ -29,18 +29,18 @@ type ChecklistTemplate struct {
 }
 
 type ChecklistItem struct {
-	ID            string    `json:"id"`
-	TemplateID    string    `json:"templateId"`
-	TemplateTitle string    `json:"templateTitle"`
-	DueDate       string    `json:"dueDate"`
-	Status        string    `json:"status"`
-	TransactionID *string   `json:"transactionId,omitempty"`
-	CompletedBy   *string   `json:"completedBy,omitempty"`
+	ID            string     `json:"id"`
+	TemplateID    string     `json:"templateId"`
+	TemplateTitle string     `json:"templateTitle"`
+	DueDate       string     `json:"dueDate"`
+	Status        string     `json:"status"`
+	TransactionID *string    `json:"transactionId,omitempty"`
+	CompletedBy   *string    `json:"completedBy,omitempty"`
 	CompletedAt   *time.Time `json:"completedAt,omitempty"`
-	Note          *string   `json:"notes,omitempty"`
-	AmountHint    *string   `json:"amountHint,omitempty"`
-	CategoryID    *string   `json:"categoryId,omitempty"`
-	WalletID      *string   `json:"walletId,omitempty"`
+	Note          *string    `json:"notes,omitempty"`
+	AmountHint    *string    `json:"amountHint,omitempty"`
+	CategoryID    *string    `json:"categoryId,omitempty"`
+	WalletID      *string    `json:"walletId,omitempty"`
 }
 
 type ChecklistListResponse struct {
@@ -54,14 +54,14 @@ type TodayChecklistResponse struct {
 }
 
 type CreateChecklistTemplateParams struct {
-	Title       string  `json:"title"`
-	Description *string `json:"description,omitempty"`
+	Title       string   `json:"title"`
+	Description *string  `json:"description,omitempty"`
 	AmountHint  *float64 `json:"amountHint,omitempty"`
-	CategoryID  *string `json:"categoryId,omitempty"`
-	WalletID    *string `json:"walletId,omitempty"`
-	Frequency   string  `json:"frequency"`
-	DayOfMonth  *int    `json:"dayOfMonth,omitempty"`
-	Order       int     `json:"order"`
+	CategoryID  *string  `json:"categoryId,omitempty"`
+	WalletID    *string  `json:"walletId,omitempty"`
+	Frequency   string   `json:"frequency"`
+	DayOfMonth  *int     `json:"dayOfMonth,omitempty"`
+	Order       int      `json:"order"`
 }
 
 type ChecklistActionParams struct {
@@ -201,8 +201,9 @@ func GetTodayChecklist(ctx context.Context) (*TodayChecklistResponse, error) {
 	}
 	defer conn.Close()
 
-	today := time.Now().Format("2006-01-02")
-	dom := time.Now().Day()
+	now := financeNow(ctx, conn)
+	today := now.Format("2006-01-02")
+	dom := now.Day()
 
 	// Ensure checklist items exist for today
 	rows, err := conn.QueryContext(ctx, `
