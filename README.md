@@ -284,6 +284,25 @@ api-go/
     setup-secrets-from-env.sh
 ```
 
+## Docs Hub integration
+
+`web-frontend` punya menu internal **Platform → Dokumentasi** (`/dashboard/docs`) yang menggabungkan README dan file `.md` dari `web-frontend/` + `api-go/`.
+
+Selama masih monorepo, frontend menjalankan generator dengan default:
+
+```bash
+cd ../web-frontend
+API_GO_DOCS_ROOT="../api-go" npm run docs:generate
+```
+
+Jika `api-go` nanti dipisah repo/server, jangan pindahkan semua file `.md` ke frontend. Generate `docs-index.json` dari repo/service `api-go`, expose sebagai static JSON via CDN/service URL, lalu isi URL tersebut di panel **Sumber Dokumentasi** pada `/dashboard/docs`:
+
+```bash
+API_GO_DOCS_INDEX_URL="https://api.example.com/docs-index.json"
+```
+
+Frontend akan mengambil remote index lewat `/api/docs/remote-index` dan menggabungkannya dengan dokumentasi lokal. Dengan pola ini, dokumentasi backend tetap dekat dengan kode backend, tapi tetap searchable dari UI.
+
 ---
 
 ## Multi-tenant & database
