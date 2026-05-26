@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	orderQtyLineRe = regexp.MustCompile(`(?i)\b(\d{1,4})\s*(pcs|pc|biji|buah|item|unit)?\b`)
+	orderQtyLineRe  = regexp.MustCompile(`(?i)\b(\d{1,4})\s*(pcs|pc|biji|buah|item|unit)?\b`)
 	orderSizeLineRe = regexp.MustCompile(`(?i)\b(xs|s|m|l|xl|xxl|xxxl|3xl|4xl|5xl|\d{2})\b`)
 )
 
@@ -434,6 +434,11 @@ func persistDraftOrder(
 	st orderState,
 ) (orderID string, err error) {
 	st = normalizeOrderState(st)
+	if !st.productComplete() || strings.TrimSpace(st.CatalogItemID) == "" || !st.variantComplete() || st.Qty < 1 ||
+		strings.TrimSpace(st.RecipientName) == "" || strings.TrimSpace(st.RecipientPhone) == "" ||
+		!st.shippingComplete() {
+		return "", fmt.Errorf("order data incomplete")
+	}
 	qty := st.Qty
 	if qty < 1 {
 		qty = 1

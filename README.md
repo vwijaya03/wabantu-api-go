@@ -345,6 +345,41 @@ Ringkas:
 | AI top-up | `topup_ai_20000` / `topup_ai_30000` → invoice `pending` → QRIS → `quota_topup` bulan berjalan |
 - Encore tidak punya throttler bawaan seperti Nest `@nestjs/throttler`; pola ini = **Redis + middleware** (best practice untuk multi-instance).
 
+## Katalog produk
+
+Endpoint katalog utama:
+
+- `GET /api/v1/business/catalog?q=&page=&pageSize=` — list produk dengan server-side search dan pagination.
+- `POST /api/v1/business/catalog` — tambah produk manual.
+- `PATCH /api/v1/business/catalog/:id` — edit nama, deskripsi, harga, satuan, barcode, dan status aktif.
+- `DELETE /api/v1/business/catalog/:id` — soft delete produk.
+
+UI `/dashboard/catalog` hanya mengambil satu halaman data (default 25 item) agar tetap stabil untuk katalog besar, misalnya 20.000 SKU. Tenant schema menyertakan index `idx_catalog_name` dan `idx_catalog_barcode`; jalankan migrasi schema tenant untuk tenant lama setelah deploy perubahan ini.
+
+## Contacts dan pesanan
+
+Contacts:
+
+- `GET /api/v1/inbox/contacts?q=&page=&pageSize=` — list kontak WhatsApp dengan search + pagination.
+- `POST /api/v1/inbox/contacts` — tambah kontak manual.
+- `PATCH /api/v1/inbox/contacts/:id` — edit nama, catatan, dan tag.
+- `DELETE /api/v1/inbox/contacts/:id` — soft delete kontak.
+
+Pesanan:
+
+- `GET /api/v1/orders?q=&status=&page=&pageSize=` — list pesanan dengan search + filter status + pagination.
+- `POST /api/v1/orders` — tambah pesanan manual; item dinormalisasi dari `business_catalog_item`, bisa langsung mengisi status, ongkir, kurir, nomor resi, dan catatan. Jika item dikirim tanpa `catalogItemId`, API mencari produk berdasarkan SKU/nama, dan membuat item katalog dasar bila belum ada.
+- `PATCH /api/v1/orders/:id` — edit contact opsional, item katalog, catatan, status, kurir, nomor resi, dan ongkir. Jika `contactId` dikirim string kosong, pesanan kembali menjadi tanpa contact.
+- `DELETE /api/v1/orders/:id` — soft delete pesanan.
+- `PATCH /api/v1/order-status/batch` — update status banyak pesanan sekaligus.
+- `PATCH /api/v1/order-delete/batch` — hapus banyak pesanan sekaligus.
+
+Status operasional pesanan: `draft`, `processing` (sedang diproses), `shipped` (dalam pengiriman), `completed` (selesai), `cancelled`. Jalankan migrasi schema tenant untuk tenant lama agar index contacts/orders terbaru ikut dibuat.
+
+AI order flow dari webhook WhatsApp hanya membuat draft pesanan setelah data wajib sesuai sistem lengkap: produk harus match `business_catalog_item`, varian/ukuran atau warna ada, qty valid, nama + nomor penerima ada, serta alamat punya jalan, kota, provinsi, dan kode pos 5 digit. Jika salah satu kurang, AI menyimpan state percakapan dan menanyakan data yang kurang ke customer, bukan langsung mencatat order.
+
+Contacts mendukung status `active` dan `inactive`, termasuk batch update via `PATCH /api/v1/inbox-contact-status/batch` dan batch delete via `PATCH /api/v1/inbox-contacts/batch-delete`.
+
 ## Import CSV/XLSX (staging)
 
 - **Preview** (`POST /import/preview`): parse file → simpan **semua baris** di **Redis** (`import:staging:<jobId>`, TTL 24 jam) → response `jobId` + sample 5 baris.

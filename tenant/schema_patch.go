@@ -106,6 +106,29 @@ CREATE TABLE IF NOT EXISTS workflow_rule (
 
 ALTER TABLE whatsapp_channel ADD COLUMN IF NOT EXISTS branch_id UUID;
 ALTER TABLE conversation ADD COLUMN IF NOT EXISTS branch_id UUID;
+ALTER TABLE contact ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active';
+
+CREATE INDEX IF NOT EXISTS idx_catalog_name
+    ON business_catalog_item(name, external_code)
+    WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_catalog_barcode
+    ON business_catalog_item(barcode)
+    WHERE deleted_at IS NULL AND barcode IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_contact_updated
+    ON contact(updated_at DESC, created_at DESC)
+    WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_contact_phone
+    ON contact(phone_number)
+    WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_contact_status_updated
+    ON contact(status, updated_at DESC)
+    WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_order_status_created
+    ON "order"(status, created_at DESC)
+    WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_order_contact_created
+    ON "order"(contact_id, created_at DESC)
+    WHERE deleted_at IS NULL;
 
 -- Finance: drop invalid functional index (to_char is not IMMUTABLE in PostgreSQL).
 DROP INDEX IF EXISTS idx_fin_txn_period;

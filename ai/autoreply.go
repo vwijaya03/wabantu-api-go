@@ -24,15 +24,15 @@ import (
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const (
-	reasonAIGenerated      = "ai_generated"
+	reasonAIGenerated       = "ai_generated"
 	reasonProfileIncomplete = "profile_incomplete"
-	reasonNonQuestion      = "non_question"
-	reasonOutOfScope       = "out_of_scope"
-	llmConfidenceThreshold = 0.65
-	maxReplyLen            = 1200
-	faqCacheTTL            = 24 * time.Hour
-	orderStateTTL          = 2 * time.Hour
-	counterTTL             = 6 * time.Hour
+	reasonNonQuestion       = "non_question"
+	reasonOutOfScope        = "out_of_scope"
+	llmConfidenceThreshold  = 0.65
+	maxReplyLen             = 1200
+	faqCacheTTL             = 24 * time.Hour
+	orderStateTTL           = 2 * time.Hour
+	counterTTL              = 6 * time.Hour
 )
 
 // ─── DB & Redis ──────────────────────────────────────────────────────────────
@@ -103,14 +103,14 @@ type dbContact struct {
 }
 
 type dbChannel struct {
-	ID               string
-	Provider         string
-	Status           string
-	AccessToken      *string
+	ID                string
+	Provider          string
+	Status            string
+	AccessToken       *string
 	MetaPhoneNumberID *string
-	MetaWabaID       *string
-	DisplayName      string
-	PhoneNumber      string
+	MetaWabaID        *string
+	DisplayName       string
+	PhoneNumber       string
 }
 
 type dbKBEntry struct {
@@ -840,8 +840,14 @@ func (s *AutoReplyService) handleOrderFlow(
 			s.setOrderState(ctx, tenantID, convo.ID, st)
 			return send(tmpl.ClarifyAddress)
 		}
+		if missing := missingOrderDataPrompt(st, tmpl); missing != "" {
+			s.setOrderState(ctx, tenantID, convo.ID, st)
+			return sendWithConfirm(st, missing)
+		}
 		if _, err := persistDraftOrder(ctx, q, tenantSchema, convo.ID, convo.ContactID, st); err != nil {
 			rlog.Warn("AI order: persist draft failed", "err", err, "convoId", convo.ID)
+			s.setOrderState(ctx, tenantID, convo.ID, st)
+			return sendWithConfirm(st, tmpl.RetryStep)
 		}
 		s.clearOrderState(ctx, tenantID, convo.ID)
 		return send(tmpl.Complete)

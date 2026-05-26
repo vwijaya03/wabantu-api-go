@@ -306,8 +306,10 @@ Query GET: `search`, `category`, `page`, `pageSize` (string kosong = tidak filte
 | POST | `/api/v1/inbox/conversations/:id/ai-resume` | auth |
 | GET | `/api/v1/inbox/conversations/:id/messages` | auth |
 | POST | `/api/v1/inbox/conversations/:id/messages` | auth |
-| GET | `/api/v1/inbox/contacts/:id` | auth |
-| PATCH | `/api/v1/inbox/contacts/:id` | auth |
+| GET | `/api/v1/inbox/contacts?q=&page=&pageSize=` | auth |
+| POST | `/api/v1/inbox/contacts` | auth |
+| GET/PATCH/DELETE | `/api/v1/inbox/contacts/:id` | auth |
+| PATCH | `/api/v1/inbox-contact-status/batch`, `/api/v1/inbox-contacts/batch-delete` | auth |
 
 Query daftar percakapan:
 
@@ -340,8 +342,8 @@ Verify token: secret `WebhookVerifyToken`. Saat daftar app Meta, pilih path yang
 |------|-------------|
 | Billing | `GET /api/v1/billing/overview`, `POST /api/v1/billing/select-plan`, `POST /api/v1/billing/top-up` (invoice `pending`, lihat [LIMITS_AND_QUOTAS.md](./LIMITS_AND_QUOTAS.md)) |
 | Payment | `POST /api/v1/payment/create-qris` (wajib `invoiceId` pending), webhook Midtrans → aktivasi paket |
-| Orders | `GET/POST /api/v1/orders`, … |
-| Catalog | CRUD di `business/catalog.go` |
+| Orders | `GET /api/v1/orders?q=&status=&page=&pageSize=`, `POST/PATCH/DELETE /api/v1/orders/:id`, `PATCH /api/v1/order-status/batch`, `PATCH /api/v1/order-delete/batch`; item order berbasis katalog produk |
+| Catalog | `GET /api/v1/business/catalog?q=&page=&pageSize=` + CRUD di `business/catalog.go`; list memakai server-side search/pagination agar aman untuk katalog besar |
 | Catalog image (AI) | `POST .../import-image/preview`, `GET .../import-image-limits`, `GET/POST .../import-image/draft/:jobId` — [docs/CATALOG_IMAGE_IMPORT.md](./docs/CATALOG_IMAGE_IMPORT.md) |
 | Broadcast | `POST /api/v1/broadcast/...` (Business+ berbayar; **trial** boleh dengan kuota 20 kontak/bulan) |
 | Import CSV | `POST /api/v1/import/preview`, `/import/execute` |

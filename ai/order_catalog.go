@@ -362,3 +362,23 @@ func catalogConfirmLine(st orderState) string {
 	}
 	return fmt.Sprintf("Produk: %s%s", st.ProductName, price)
 }
+
+func missingOrderDataPrompt(st orderState, tmpl orderFlowTemplates) string {
+	st = normalizeOrderState(st)
+	if !st.productComplete() || strings.TrimSpace(st.CatalogItemID) == "" {
+		return tmpl.AskProduct
+	}
+	if !st.variantComplete() {
+		return tmpl.AskVariant
+	}
+	if st.Qty < 1 {
+		return tmpl.AskQty
+	}
+	if strings.TrimSpace(st.RecipientName) == "" || strings.TrimSpace(st.RecipientPhone) == "" {
+		return tmpl.AskRecipient
+	}
+	if !st.shippingComplete() {
+		return tmpl.ClarifyAddress
+	}
+	return ""
+}

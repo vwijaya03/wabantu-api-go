@@ -31,14 +31,14 @@ var db = sqldb.Named("tenant")
 // ---- Conversations ----
 
 type ConversationItem struct {
-	ID                 string     `json:"id"`
-	Status             string     `json:"status"`
-	AIHandled          bool       `json:"aiHandled"`
-	UnreadCount        int        `json:"unreadCount"`
-	LastMessageAt      *time.Time `json:"lastMessageAt"`
-	LastMessagePreview *string    `json:"lastMessagePreview"`
-	AssignedToName     *string    `json:"assignedToName"`
-	HandoffReason      *string    `json:"handoffReason"`
+	ID                 string       `json:"id"`
+	Status             string       `json:"status"`
+	AIHandled          bool         `json:"aiHandled"`
+	UnreadCount        int          `json:"unreadCount"`
+	LastMessageAt      *time.Time   `json:"lastMessageAt"`
+	LastMessagePreview *string      `json:"lastMessagePreview"`
+	AssignedToName     *string      `json:"assignedToName"`
+	HandoffReason      *string      `json:"handoffReason"`
 	Contact            ContactBrief `json:"contact"`
 	Channel            ChannelBrief `json:"channel"`
 }
@@ -76,9 +76,9 @@ type UpdateConversationParams struct {
 }
 
 type UpdateConversationResponse struct {
-	ID        string  `json:"id"`
-	Status    string  `json:"status"`
-	AIHandled bool    `json:"aiHandled"`
+	ID        string `json:"id"`
+	Status    string `json:"status"`
+	AIHandled bool   `json:"aiHandled"`
 }
 
 // ---- Messages ----
@@ -122,6 +122,7 @@ type ContactDetail struct {
 	PhoneNumber string   `json:"phoneNumber"`
 	DisplayName *string  `json:"displayName"`
 	Notes       *string  `json:"notes"`
+	Status      string   `json:"status"`
 	Tags        []string `json:"tags"`
 }
 
@@ -129,13 +130,58 @@ type GetContactResponse struct {
 	Contact ContactDetail `json:"contact"`
 }
 
+type ListContactsParams struct {
+	Q        string `query:"q"`
+	Page     int    `query:"page"`
+	PageSize int    `query:"pageSize"`
+}
+
+type ListContactsResponse struct {
+	Items    []ContactDetail `json:"items"`
+	Total    int             `json:"total"`
+	Page     int             `json:"page"`
+	PageSize int             `json:"pageSize"`
+}
+
+type CreateContactParams struct {
+	PhoneNumber string   `json:"phoneNumber"`
+	DisplayName *string  `json:"displayName,omitempty"`
+	Notes       *string  `json:"notes,omitempty"`
+	Status      string   `json:"status,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
+}
+
 type UpdateContactParams struct {
-	DisplayName *string `json:"displayName"`
-	Notes       *string `json:"notes"`
+	DisplayName *string  `json:"displayName"`
+	Notes       *string  `json:"notes"`
+	Status      *string  `json:"status,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
 }
 
 type UpdateContactResponse struct {
 	Contact ContactDetail `json:"contact"`
+}
+
+type BatchContactStatusParams struct {
+	IDs    []string `json:"ids"`
+	Status string   `json:"status"`
+}
+
+type BatchContactStatusResponse struct {
+	Updated int `json:"updated"`
+}
+
+type BatchContactDeleteParams struct {
+	IDs []string `json:"ids"`
+}
+
+type BatchContactDeleteResponse struct {
+	Deleted int `json:"deleted"`
+}
+
+var validContactStatuses = map[string]bool{
+	"active":   true,
+	"inactive": true,
 }
 
 // ---------------------------------------------------------------------------
@@ -292,11 +338,11 @@ func ListConversations(ctx context.Context, p *ListConversationsParams) (*ListCo
 	defer rows.Close()
 
 	type row struct {
-		id, status, contactID, channelID                        string
-		aiHandled                                               bool
-		unreadCount                                             int
-		lastMsgAt                                               *time.Time
-		lastMsgPreview, assignedToName, handoffReason           *string
+		id, status, contactID, channelID              string
+		aiHandled                                     bool
+		unreadCount                                   int
+		lastMsgAt                                     *time.Time
+		lastMsgPreview, assignedToName, handoffReason *string
 	}
 	var rr []row
 	for rows.Next() {
@@ -326,7 +372,7 @@ func ListConversations(ctx context.Context, p *ListConversationsParams) (*ListCo
 			ID: r.id, Status: r.status, AIHandled: r.aiHandled,
 			UnreadCount: r.unreadCount, LastMessageAt: r.lastMsgAt,
 			LastMessagePreview: r.lastMsgPreview,
-			AssignedToName: r.assignedToName, HandoffReason: r.handoffReason,
+			AssignedToName:     r.assignedToName, HandoffReason: r.handoffReason,
 			Contact: contactMap[r.contactID],
 			Channel: channelMap[r.channelID],
 		}
@@ -602,6 +648,135 @@ func SendMessage(ctx context.Context, id string, p *SendMessageParams) (*SendMes
 // Endpoints — Contacts
 // ---------------------------------------------------------------------------
 
+// ListContacts returns contacts with search and pagination.
+//
+//encore:api auth method=GET path=/api/v1/inbox/contacts
+func ListContacts(ctx context.Context, p *ListContactsParams) (*ListContactsResponse, error) {
+	user, err := currentUser()
+	if err != nil {
+		return nil, err
+	}
+	if p.Page <= 0 {
+		p.Page = 1
+	}
+	if p.PageSize <= 0 {
+		p.PageSize = 25
+	}
+	if p.PageSize > 100 {
+		p.PageSize = 100
+	}
+
+	conn, err := tConn(ctx, user.TenantSchema)
+	if err != nil {
+		return nil, apperr.Internal("database connection failed")
+	}
+	defer conn.Close()
+	if err := ensureContactRuntimeSchema(ctx, conn); err != nil {
+		rlog.Error("ensure contact schema failed", "err", err)
+		return nil, apperr.Internal("prepare contacts failed")
+	}
+	if err := syncContactsFromLeadAndConversation(ctx, conn); err != nil {
+		rlog.Warn("sync contacts from lead/conversation failed", "err", err)
+	}
+
+	where := "deleted_at IS NULL"
+	args := []any{}
+	if q := strings.TrimSpace(p.Q); q != "" {
+		args = append(args, "%"+q+"%")
+		where += fmt.Sprintf(` AND (
+			phone_number ILIKE $%[1]d OR
+			COALESCE(display_name, '') ILIKE $%[1]d OR
+			COALESCE(status, '') ILIKE $%[1]d OR
+			COALESCE(notes, '') ILIKE $%[1]d OR
+			tags::text ILIKE $%[1]d
+		)`, len(args))
+	}
+
+	var total int
+	if err := conn.QueryRowContext(ctx, fmt.Sprintf(
+		`SELECT COUNT(*) FROM contact WHERE %s`, where), args...).Scan(&total); err != nil {
+		return nil, apperr.Internal("count contacts failed")
+	}
+
+	queryArgs := append([]any{}, args...)
+	queryArgs = append(queryArgs, p.PageSize, (p.Page-1)*p.PageSize)
+	limitParam := len(queryArgs) - 1
+	offsetParam := len(queryArgs)
+	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
+		SELECT id, phone_number, display_name, notes, COALESCE(status, 'active'), tags
+		FROM contact
+		WHERE %s
+		ORDER BY updated_at DESC, created_at DESC
+		LIMIT $%d OFFSET $%d`, where, limitParam, offsetParam), queryArgs...)
+	if err != nil {
+		return nil, apperr.Internal("list contacts failed")
+	}
+	defer rows.Close()
+
+	items := []ContactDetail{}
+	for rows.Next() {
+		c, err := scanContact(rows)
+		if err != nil {
+			return nil, apperr.Internal("scan contact failed")
+		}
+		items = append(items, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, apperr.Internal("read contacts failed")
+	}
+	return &ListContactsResponse{Items: items, Total: total, Page: p.Page, PageSize: p.PageSize}, nil
+}
+
+// CreateContact creates or restores a contact by phone number.
+//
+//encore:api auth method=POST path=/api/v1/inbox/contacts
+func CreateContact(ctx context.Context, p *CreateContactParams) (*UpdateContactResponse, error) {
+	user, err := currentUser()
+	if err != nil {
+		return nil, err
+	}
+	phone := strings.TrimSpace(p.PhoneNumber)
+	if phone == "" {
+		return nil, apperr.BadRequest("phoneNumber is required")
+	}
+	conn, err := tConn(ctx, user.TenantSchema)
+	if err != nil {
+		return nil, apperr.Internal("database connection failed")
+	}
+	defer conn.Close()
+	if err := ensureContactRuntimeSchema(ctx, conn); err != nil {
+		return nil, apperr.Internal("prepare contacts failed")
+	}
+
+	displayName := nullableTrimmed(p.DisplayName)
+	notes := nullableTrimmed(p.Notes)
+	status := strings.ToLower(strings.TrimSpace(p.Status))
+	if status == "" {
+		status = "active"
+	}
+	if !validContactStatuses[status] {
+		return nil, apperr.BadRequest("invalid contact status")
+	}
+	tagsJSON, _ := json.Marshal(cleanTags(p.Tags))
+	c, err := scanContact(conn.QueryRowContext(ctx, `
+		INSERT INTO contact (phone_number, display_name, notes, status, tags)
+		VALUES ($1, $2, $3, $4, $5::jsonb)
+		ON CONFLICT (phone_number) DO UPDATE
+		SET display_name = EXCLUDED.display_name,
+		    notes = EXCLUDED.notes,
+		    status = EXCLUDED.status,
+		    tags = EXCLUDED.tags,
+		    deleted_at = NULL,
+		    deleted_by = NULL,
+		    updated_at = NOW()
+		RETURNING id, phone_number, display_name, notes, COALESCE(status, 'active'), tags`,
+		phone, displayName, notes, status, string(tagsJSON)))
+	if err != nil {
+		return nil, apperr.Internal("create contact failed")
+	}
+	return &UpdateContactResponse{Contact: c}, nil
+}
+
 // GetContact returns a single contact's details.
 //
 //encore:api auth method=GET path=/api/v1/inbox/contacts/:id
@@ -615,9 +790,12 @@ func GetContact(ctx context.Context, id string) (*GetContactResponse, error) {
 		return nil, apperr.Internal("database connection failed")
 	}
 	defer conn.Close()
+	if err := ensureContactRuntimeSchema(ctx, conn); err != nil {
+		return nil, apperr.Internal("prepare contacts failed")
+	}
 
 	c, err := scanContact(conn.QueryRowContext(ctx,
-		`SELECT id, phone_number, display_name, notes, tags FROM contact WHERE id = $1`, id))
+		`SELECT id, phone_number, display_name, notes, COALESCE(status, 'active'), tags FROM contact WHERE id = $1 AND deleted_at IS NULL`, id))
 	if err != nil {
 		return nil, apperr.NotFound("Kontak tidak ditemukan")
 	}
@@ -637,6 +815,9 @@ func UpdateContact(ctx context.Context, id string, p *UpdateContactParams) (*Upd
 		return nil, apperr.Internal("database connection failed")
 	}
 	defer conn.Close()
+	if err := ensureContactRuntimeSchema(ctx, conn); err != nil {
+		return nil, apperr.Internal("prepare contacts failed")
+	}
 
 	sets := []string{}
 	args := []interface{}{}
@@ -662,13 +843,29 @@ func UpdateContact(ctx context.Context, id string, p *UpdateContactParams) (*Upd
 		args = append(args, store)
 		idx++
 	}
+	if p.Status != nil {
+		status := strings.ToLower(strings.TrimSpace(*p.Status))
+		if !validContactStatuses[status] {
+			return nil, apperr.BadRequest("invalid contact status")
+		}
+		sets = append(sets, fmt.Sprintf("status = $%d", idx))
+		args = append(args, status)
+		idx++
+	}
+	if p.Tags != nil {
+		tagsJSON, _ := json.Marshal(cleanTags(p.Tags))
+		sets = append(sets, fmt.Sprintf("tags = $%d::jsonb", idx))
+		args = append(args, string(tagsJSON))
+		idx++
+	}
 	if len(sets) == 0 {
 		return nil, apperr.BadRequest("no fields to update")
 	}
 
+	sets = append(sets, "updated_at = NOW()")
 	args = append(args, id)
-	q := fmt.Sprintf(`UPDATE contact SET %s WHERE id = $%d
-		RETURNING id, phone_number, display_name, notes, tags`,
+	q := fmt.Sprintf(`UPDATE contact SET %s WHERE id = $%d AND deleted_at IS NULL
+		RETURNING id, phone_number, display_name, notes, COALESCE(status, 'active'), tags`,
 		strings.Join(sets, ", "), idx)
 
 	c, err := scanContact(conn.QueryRowContext(ctx, q, args...))
@@ -679,6 +876,111 @@ func UpdateContact(ctx context.Context, id string, p *UpdateContactParams) (*Upd
 		return nil, apperr.Internal("update failed")
 	}
 	return &UpdateContactResponse{Contact: c}, nil
+}
+
+// DeleteContact soft-deletes a contact.
+//
+//encore:api auth method=DELETE path=/api/v1/inbox/contacts/:id
+func DeleteContact(ctx context.Context, id string) error {
+	user, err := currentUser()
+	if err != nil {
+		return err
+	}
+	conn, err := tConn(ctx, user.TenantSchema)
+	if err != nil {
+		return apperr.Internal("database connection failed")
+	}
+	defer conn.Close()
+	if err := ensureContactRuntimeSchema(ctx, conn); err != nil {
+		return apperr.Internal("prepare contacts failed")
+	}
+
+	uid, _ := auth.UserID()
+	res, err := conn.ExecContext(ctx, `
+		UPDATE contact
+		SET deleted_at = NOW(), deleted_by = $1, updated_at = NOW()
+		WHERE id = $2 AND deleted_at IS NULL`, string(uid), id)
+	if err != nil {
+		return apperr.Internal("delete contact failed")
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return apperr.NotFound("Kontak tidak ditemukan")
+	}
+	return nil
+}
+
+// BatchUpdateContactStatus updates status for multiple contacts.
+//
+//encore:api auth method=PATCH path=/api/v1/inbox-contact-status/batch
+func BatchUpdateContactStatus(ctx context.Context, p *BatchContactStatusParams) (*BatchContactStatusResponse, error) {
+	user, err := currentUser()
+	if err != nil {
+		return nil, err
+	}
+	status := strings.ToLower(strings.TrimSpace(p.Status))
+	if !validContactStatuses[status] {
+		return nil, apperr.BadRequest("invalid contact status")
+	}
+	placeholders, args := contactBatchIDs(p.IDs, 2)
+	if len(placeholders) == 0 {
+		return nil, apperr.BadRequest("ids are required")
+	}
+	conn, err := tConn(ctx, user.TenantSchema)
+	if err != nil {
+		return nil, apperr.Internal("database connection failed")
+	}
+	defer conn.Close()
+	if err := ensureContactRuntimeSchema(ctx, conn); err != nil {
+		return nil, apperr.Internal("prepare contacts failed")
+	}
+
+	execArgs := []any{status}
+	execArgs = append(execArgs, args...)
+	res, err := conn.ExecContext(ctx, fmt.Sprintf(`
+		UPDATE contact
+		SET status = $1, updated_at = NOW()
+		WHERE id IN (%s) AND deleted_at IS NULL`, strings.Join(placeholders, ", ")), execArgs...)
+	if err != nil {
+		return nil, apperr.Internal("batch update contact status failed")
+	}
+	n, _ := res.RowsAffected()
+	return &BatchContactStatusResponse{Updated: int(n)}, nil
+}
+
+// BatchDeleteContacts soft-deletes multiple contacts.
+//
+//encore:api auth method=PATCH path=/api/v1/inbox-contacts/batch-delete
+func BatchDeleteContacts(ctx context.Context, p *BatchContactDeleteParams) (*BatchContactDeleteResponse, error) {
+	user, err := currentUser()
+	if err != nil {
+		return nil, err
+	}
+	placeholders, args := contactBatchIDs(p.IDs, 2)
+	if len(placeholders) == 0 {
+		return nil, apperr.BadRequest("ids are required")
+	}
+	conn, err := tConn(ctx, user.TenantSchema)
+	if err != nil {
+		return nil, apperr.Internal("database connection failed")
+	}
+	defer conn.Close()
+	if err := ensureContactRuntimeSchema(ctx, conn); err != nil {
+		return nil, apperr.Internal("prepare contacts failed")
+	}
+
+	uid, _ := auth.UserID()
+	execArgs := []any{string(uid)}
+	execArgs = append(execArgs, args...)
+	res, err := conn.ExecContext(ctx, fmt.Sprintf(`
+		UPDATE contact
+		SET deleted_at = NOW(), deleted_by = $1, updated_at = NOW()
+		WHERE id IN (%s) AND deleted_at IS NULL`, strings.Join(placeholders, ", ")), execArgs...)
+	if err != nil {
+		return nil, apperr.Internal("batch delete contacts failed")
+	}
+	n, _ := res.RowsAffected()
+	return &BatchContactDeleteResponse{Deleted: int(n)}, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -739,15 +1041,104 @@ func loadChannels(ctx context.Context, conn *sql.Conn, ids []string) map[string]
 func scanContact(scanner interface{ Scan(...any) error }) (ContactDetail, error) {
 	var c ContactDetail
 	var tagsJSON []byte
-	err := scanner.Scan(&c.ID, &c.PhoneNumber, &c.DisplayName, &c.Notes, &tagsJSON)
+	err := scanner.Scan(&c.ID, &c.PhoneNumber, &c.DisplayName, &c.Notes, &c.Status, &tagsJSON)
 	if err != nil {
 		return c, err
+	}
+	if c.Status == "" {
+		c.Status = "active"
 	}
 	_ = json.Unmarshal(tagsJSON, &c.Tags)
 	if c.Tags == nil {
 		c.Tags = []string{}
 	}
 	return c, nil
+}
+
+func nullableTrimmed(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
+}
+
+func cleanTags(tags []string) []string {
+	out := make([]string, 0, len(tags))
+	seen := map[string]bool{}
+	for _, tag := range tags {
+		tag = strings.TrimSpace(tag)
+		if tag == "" || seen[tag] {
+			continue
+		}
+		seen[tag] = true
+		out = append(out, tag)
+	}
+	return out
+}
+
+func ensureContactRuntimeSchema(ctx context.Context, conn *sql.Conn) error {
+	_, err := conn.ExecContext(ctx, `
+		ALTER TABLE contact ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active';
+		UPDATE contact SET status = 'active' WHERE status IS NULL OR TRIM(status) = '';
+	`)
+	return err
+}
+
+func syncContactsFromLeadAndConversation(ctx context.Context, conn *sql.Conn) error {
+	if _, err := conn.ExecContext(ctx, `
+		INSERT INTO contact (phone_number, display_name, notes, status, tags, created_at, updated_at)
+		SELECT DISTINCT ON (l.phone_number)
+		       l.phone_number,
+		       NULLIF(TRIM(l.name), ''),
+		       NULLIF(TRIM(l.notes), ''),
+		       'active',
+		       '["lead"]'::jsonb,
+		       l.created_at,
+		       l.updated_at
+		FROM lead l
+		WHERE l.deleted_at IS NULL
+		  AND NULLIF(TRIM(l.phone_number), '') IS NOT NULL
+		  AND NOT EXISTS (
+		      SELECT 1 FROM contact c WHERE c.phone_number = l.phone_number
+		  )
+		ORDER BY l.phone_number, l.updated_at DESC
+	`); err != nil {
+		return err
+	}
+
+	_, err := conn.ExecContext(ctx, `
+		UPDATE contact c
+		SET deleted_at = NULL,
+		    deleted_by = NULL,
+		    status = COALESCE(NULLIF(TRIM(c.status), ''), 'active'),
+		    updated_at = NOW()
+		WHERE c.deleted_at IS NOT NULL
+		  AND EXISTS (
+		      SELECT 1
+		      FROM conversation conv
+		      WHERE conv.contact_id = c.id
+		        AND conv.deleted_at IS NULL
+		  )
+	`)
+	return err
+}
+
+func contactBatchIDs(ids []string, start int) ([]string, []any) {
+	placeholders := make([]string, 0, len(ids))
+	args := make([]any, 0, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		placeholders = append(placeholders, fmt.Sprintf("$%d", start+len(args)))
+		args = append(args, id)
+	}
+	return placeholders, args
 }
 
 // ---------------------------------------------------------------------------

@@ -74,7 +74,9 @@ Cookie `wabantu_at` + body `accessToken` — selaras Nest.
 | POST | `/api/v1/inbox/conversations/:id/handoff` | ✅ | ✅ |
 | POST | `/api/v1/inbox/conversations/:id/ai-resume` | ✅ | ✅ |
 | POST | `/api/v1/inbox/conversations/:id/messages` | ✅ | ✅ |
-| GET/PATCH | `/api/v1/inbox/contacts/:id` | ✅ | ✅ |
+| GET/POST | `/api/v1/inbox/contacts?q=&page=&pageSize=` | ✅ | ✅ |
+| GET/PATCH/DELETE | `/api/v1/inbox/contacts/:id` | ✅ | ✅ |
+| PATCH | `/api/v1/inbox-contact-status/batch`, `/api/v1/inbox-contacts/batch-delete` | ✅ | ✅ |
 | PATCH | `/api/v1/inbox/conversations/:id` | — | ➕ |
 
 ---
@@ -115,8 +117,8 @@ Plan codes: `starter`, `business`, `pro` (+ alias `basic` → business, tidak di
 
 | Area | Path contoh | Halaman FE |
 |------|-------------|------------|
-| Orders | `/api/v1/orders` | `/dashboard/orders` |
-| Catalog | `/api/v1/business/catalog` | `/dashboard/catalog` |
+| Orders | `/api/v1/orders?q=&status=&page=&pageSize=` + POST/PATCH/DELETE + `/api/v1/order-status/batch` + `/api/v1/order-delete/batch` | `/dashboard/orders` — CRUD, search, pagination, catalog-backed multi-item orders, batch status/delete |
+| Catalog | `/api/v1/business/catalog?q=&page=&pageSize=` + POST/PATCH/DELETE | `/dashboard/catalog` — CRUD, search, pagination |
 | Catalog image AI | `GET/POST /api/v1/business/catalog/import-image/*` | `/dashboard/catalog/import-image` |
 | Broadcast | `/api/v1/broadcast/...` | `/dashboard/broadcast` |
 | Import CSV | `/api/v1/import/preview`, `/execute` | `/dashboard/import` |
@@ -139,7 +141,7 @@ Plan codes: `starter`, `business`, `pro` (+ alias `basic` → business, tidak di
 | Finance — Checklist | `GET /api/v1/finance/checklist/today`, `/templates`, `/action` | `/dashboard/finance/checklist` |
 | Finance — Laporan | `POST /api/v1/finance/reports/export`, `GET /reports/jobs/:id` | `/dashboard/finance/reports` |
 | Finance — Audit | `GET /api/v1/finance/audit-log` | `/dashboard/finance` (owner) |
-| Leads | `/api/v1/leads` | `/dashboard/contacts` |
+| Leads | `/api/v1/leads` | internal CRM capture; `/dashboard/contacts` now uses `/api/v1/inbox/contacts` |
 
 ---
 

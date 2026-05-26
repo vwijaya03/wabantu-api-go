@@ -362,6 +362,12 @@ CREATE TABLE IF NOT EXISTS business_catalog_item (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_source_code
     ON business_catalog_item(source, external_code);
+CREATE INDEX IF NOT EXISTS idx_catalog_name
+    ON business_catalog_item(name, external_code)
+    WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_catalog_barcode
+    ON business_catalog_item(barcode)
+    WHERE deleted_at IS NULL AND barcode IS NOT NULL;
 
 -- knowledge_base_entry: Q/A pairs for AI
 CREATE TABLE IF NOT EXISTS knowledge_base_entry (
@@ -405,12 +411,22 @@ CREATE TABLE IF NOT EXISTS contact (
     phone_number  VARCHAR(32)  UNIQUE NOT NULL,
     display_name  VARCHAR(200),
     notes         TEXT,
+    status        VARCHAR(20)  NOT NULL DEFAULT 'active',
     tags          JSONB        NOT NULL DEFAULT '[]',
     created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
     deleted_at    TIMESTAMPTZ,
     deleted_by    UUID
 );
+CREATE INDEX IF NOT EXISTS idx_contact_updated
+    ON contact(updated_at DESC, created_at DESC)
+    WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_contact_phone
+    ON contact(phone_number)
+    WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_contact_status_updated
+    ON contact(status, updated_at DESC)
+    WHERE deleted_at IS NULL;
 
 -- conversation
 CREATE TABLE IF NOT EXISTS conversation (
@@ -609,6 +625,12 @@ CREATE TABLE IF NOT EXISTS "order" (
     deleted_at             TIMESTAMPTZ,
     deleted_by             UUID
 );
+CREATE INDEX IF NOT EXISTS idx_order_status_created
+    ON "order"(status, created_at DESC)
+    WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_order_contact_created
+    ON "order"(contact_id, created_at DESC)
+    WHERE deleted_at IS NULL;
 
 -- conversation_summary
 CREATE TABLE IF NOT EXISTS conversation_summary (

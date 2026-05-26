@@ -16,22 +16,31 @@ import (
 
 // CatalogItem is a product/service row in business_catalog_item.
 type CatalogItem struct {
-	ID           string     `json:"id"`
-	ExternalCode string     `json:"externalCode"`
-	Name         string     `json:"name"`
-	Description  *string    `json:"description,omitempty"`
-	SellPrice    *float64   `json:"sellPrice,omitempty"`
-	SellUnit     *string    `json:"sellUnit,omitempty"`
-	IsActive     bool       `json:"isActive"`
-	Barcode      *string    `json:"barcode,omitempty"`
-	Source       string     `json:"source"`
-	CreatedAt    time.Time  `json:"createdAt"`
-	UpdatedAt    time.Time  `json:"updatedAt"`
+	ID           string    `json:"id"`
+	ExternalCode string    `json:"externalCode"`
+	Name         string    `json:"name"`
+	Description  *string   `json:"description,omitempty"`
+	SellPrice    *float64  `json:"sellPrice,omitempty"`
+	SellUnit     *string   `json:"sellUnit,omitempty"`
+	IsActive     bool      `json:"isActive"`
+	Barcode      *string   `json:"barcode,omitempty"`
+	Source       string    `json:"source"`
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
 }
 
 type ListCatalogResponse struct {
-	Items []CatalogItem `json:"items"`
-	Total int           `json:"total"`
+	Items    []CatalogItem `json:"items"`
+	Total    int           `json:"total"`
+	Page     int           `json:"page"`
+	PageSize int           `json:"pageSize"`
+}
+
+type ListCatalogParams struct {
+	Q          string `query:"q"`
+	Page       int    `query:"page"`
+	PageSize   int    `query:"pageSize"`
+	ActiveOnly string `query:"activeOnly"`
 }
 
 type CreateCatalogRequest struct {
@@ -54,23 +63,54 @@ type UpdateCatalogRequest struct {
 }
 
 //encore:api auth method=GET path=/api/v1/business/catalog
-func ListCatalog(ctx context.Context) (*ListCatalogResponse, error) {
+func ListCatalog(ctx context.Context, p *ListCatalogParams) (*ListCatalogResponse, error) {
 	user, err := currentUser()
 	if err != nil {
 		return nil, err
 	}
+	normalizeCatalogListParams(p)
 	conn, err := tenantConn(ctx, user)
 	if err != nil {
 		return nil, err
 	}
 	defer conn.Close()
 
-	rows, err := conn.QueryContext(ctx, `
+	conditions := []string{"deleted_at IS NULL"}
+	args := []any{}
+	if strings.EqualFold(strings.TrimSpace(p.ActiveOnly), "true") {
+		conditions = append(conditions, "is_active = true")
+	}
+	if q := strings.TrimSpace(p.Q); q != "" {
+		args = append(args, "%"+q+"%")
+		conditions = append(conditions, fmt.Sprintf(`(
+			external_code ILIKE $%[1]d OR
+			name ILIKE $%[1]d OR
+			COALESCE(description, '') ILIKE $%[1]d OR
+			COALESCE(barcode, '') ILIKE $%[1]d
+		)`, len(args)))
+	}
+	where := strings.Join(conditions, " AND ")
+
+	var total int
+	if err := conn.QueryRowContext(ctx, fmt.Sprintf(`
+		SELECT COUNT(*)
+		FROM business_catalog_item
+		WHERE %s`, where), args...).Scan(&total); err != nil {
+		return nil, apperr.Internal("count catalog failed")
+	}
+
+	queryArgs := append([]any{}, args...)
+	queryArgs = append(queryArgs, p.PageSize, (p.Page-1)*p.PageSize)
+	limitParam := len(queryArgs) - 1
+	offsetParam := len(queryArgs)
+
+	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
 		SELECT id, external_code, name, description, sell_price, sell_unit,
 		       is_active, barcode, source, created_at, updated_at
 		FROM business_catalog_item
-		WHERE deleted_at IS NULL
-		ORDER BY name ASC`)
+		WHERE %s
+		ORDER BY name ASC, external_code ASC
+		LIMIT $%d OFFSET $%d`, where, limitParam, offsetParam), queryArgs...)
 	if err != nil {
 		return nil, apperr.Internal("list catalog failed")
 	}
@@ -84,7 +124,10 @@ func ListCatalog(ctx context.Context) (*ListCatalogResponse, error) {
 		}
 		items = append(items, item)
 	}
-	return &ListCatalogResponse{Items: items, Total: len(items)}, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, apperr.Internal("read catalog rows failed")
+	}
+	return &ListCatalogResponse{Items: items, Total: total, Page: p.Page, PageSize: p.PageSize}, nil
 }
 
 //encore:api auth method=POST path=/api/v1/business/catalog tag:owner
@@ -243,6 +286,18 @@ func scanCatalog(scan func(dest ...any) error) (CatalogItem, error) {
 		item.SellPrice = &p
 	}
 	return item, err
+}
+
+func normalizeCatalogListParams(p *ListCatalogParams) {
+	if p.Page <= 0 {
+		p.Page = 1
+	}
+	if p.PageSize <= 0 {
+		p.PageSize = 20
+	}
+	if p.PageSize > 100 {
+		p.PageSize = 100
+	}
 }
 
 // ParsePrice converts common Indonesian price strings to float64.

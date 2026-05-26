@@ -718,10 +718,11 @@ Production path: **Pub/Sub** `ai-jobs`, not HTTP.
 
 | Service | Base path | Auth |
 |---------|-----------|------|
-| business | `/api/v1/business/profile`, `/catalog`, `/catalog/import-image/*` (vision preview + commit) | auth owner |
+| business | `/api/v1/business/profile`, `/catalog?q=&page=&pageSize=`, `/catalog/import-image/*` (vision preview + commit) | auth; katalog write owner |
 | kb | `/api/v1/knowledge-base` | auth |
-| leads | `/api/v1/leads` | auth |
-| order | `/api/v1/orders` | auth |
+| inbox contacts | `/api/v1/inbox/contacts?q=&page=&pageSize=` + POST/PATCH/DELETE + batch status/delete | auth |
+| leads | `/api/v1/leads` | auth; internal CRM capture pipeline |
+| order | `/api/v1/orders?q=&status=&page=&pageSize=`, `/api/v1/order-status/batch`, `/api/v1/order-delete/batch` | auth; write owner |
 | payment | `/api/v1/payment/*`, webhook | mixed |
 | shipping | `/api/v1/shipping/*` | auth |
 | billing | `/api/v1/billing/*` (`overview`, `select-plan`, `top-up`) | auth |
@@ -859,6 +860,10 @@ erDiagram
 | `payment_transaction` | Midtrans |
 | `broadcast_campaign`, `broadcast_recipient` | Mass send |
 | `order` | Orders (quoted identifier) |
+
+`business_catalog_item` list API wajib memakai pagination (`page`, `pageSize`) dan search (`q`) dari server. UI tidak boleh mengambil semua SKU sekaligus karena tenant bisa punya puluhan ribu item. Schema tenant punya index `idx_catalog_name` dan `idx_catalog_barcode`; jalankan migrasi schema tenant setelah deploy jika schema lama belum memiliki index ini.
+
+Contacts dan orders memakai pola yang sama: list endpoint wajib menerima search + pagination dari server. Contacts memakai tabel `contact` via `/api/v1/inbox/contacts`, punya status `active`/`inactive`, dan mendukung batch status/delete. Sales lead otomatis tetap di tabel `lead`. Orders mendukung status operasional `draft`, `processing`, `shipped`, `completed`, `cancelled`, termasuk batch update/delete. Item order harus berbasis `business_catalog_item`; item manual dari UI dibuat dulu sebagai produk katalog dasar agar data produk tetap konsisten.
 | `conversation_summary` | AI memory |
 | `webhook_event` | Outbound webhook reliability |
 | `branch`, `workflow_rule` | Added via `schema_patch.go` |
@@ -929,7 +934,7 @@ See sequence in Bagian 5. Key branches:
 - `ai.PublishInboundJob` — async
 - AI pipeline (`ai/autoreply.go` + helpers):
   1. Greeting / injection guards (`greeting.go`, `safety.go`)
-  2. Active **order flow** (Redis, `order_flow.go` + `order_catalog.go`) — match `business_catalog_item` → size/color → qty → recipient → alamat lengkap + kode pos → draft `order` dengan `items` + `shipping_address` JSON
+  2. Active **order flow** (Redis, `order_flow.go` + `order_catalog.go`) — match `business_catalog_item` → size/color → qty → recipient → alamat lengkap + kode pos → draft `order` dengan `items` + `shipping_address` JSON. Draft hanya dipersist setelah produk katalog, varian, qty, penerima/HP, jalan, kota, provinsi, dan kode pos valid; jika kurang, AI bertanya ke customer untuk field yang belum lengkap.
   3. **Katalog DB** (`catalog_reply.go`) — minta list/harga: jawab dari `business_catalog_item` (path `catalog_db`), penanda `[Katalog WABantu: kosong]`; FAQ tidak mengalahkan list katalog
   4. Business scope + keyword classifier (`product_scope.go`, `safety.go`) — off-topic products (e.g. food at apparel shop), purchase intent (`pesen`, `mau` + pcs)
   5. Post-checkout context (`IsActiveCheckoutFromHistory`) — payment/transfer/ongkir after order without re-classifying as out-of-scope
