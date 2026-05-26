@@ -367,6 +367,106 @@ curl -X POST http://localhost:4000/api/v1/internal/platform-admin/bootstrap \
 | `POST /api/v1/admin/stop-impersonation` | Keluar dari mode pantau |
 | `POST /api/v1/admin/migrate-tenant-schemas` | Patch DDL semua tenant (termasuk tabel `fin_*`) — super_admin |
 
+### Curl / Postman examples
+
+Gunakan ini untuk testing lokal atau Postman. Ganti `BASE_URL`, `ACCESS_TOKEN`, `TENANT_ID`, dan `SCHEMA_NAME` sesuai environment.
+
+```bash
+export BASE_URL="http://localhost:4000/api/v1"
+export BOOTSTRAP_SECRET="wabantu-internal-bootstrap-2026-sangat-rahasia"
+export ACCESS_TOKEN="PASTE_ACCESS_TOKEN_DARI_LOGIN"
+export TENANT_ID="PASTE_TENANT_ID"
+export SCHEMA_NAME="t_nama_schema_tenant"
+```
+
+**1. Bootstrap akun platform admin** (sekali per email):
+
+```bash
+curl -s -X POST "$BASE_URL/internal/platform-admin/bootstrap" \
+  -H "Content-Type: application/json" \
+  -H "X-Platform-Bootstrap-Secret: $BOOTSTRAP_SECRET" \
+  -d '{
+    "email": "owner@wabantu.internal",
+    "password": "PasswordMinimal10Karakter",
+    "name": "Viko Owner"
+  }'
+```
+
+**2. Login platform admin** (ambil `data.accessToken` dari response):
+
+```bash
+curl -s -X POST "$BASE_URL/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "owner@wabantu.internal",
+    "password": "PasswordMinimal10Karakter"
+  }'
+```
+
+Jika ada `jq`, token bisa disimpan langsung:
+
+```bash
+export ACCESS_TOKEN="$(curl -s -X POST "$BASE_URL/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"owner@wabantu.internal","password":"PasswordMinimal10Karakter"}' \
+  | jq -r '.data.accessToken // .accessToken')"
+```
+
+**3. List tenant** (search + pagination):
+
+```bash
+curl -s "$BASE_URL/admin/tenants?q=&page=1&pageSize=10" \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+**4. Detail tenant**:
+
+```bash
+curl -s "$BASE_URL/admin/tenant/$TENANT_ID" \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+**5. Ubah paket tenant** (`starter`, `business`, `pro`):
+
+```bash
+curl -s -X PUT "$BASE_URL/admin/tenant/$TENANT_ID/plan" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"planCode":"pro"}'
+```
+
+**6. Hapus tenant permanen** (destructive: `DROP SCHEMA ... CASCADE`):
+
+```bash
+curl -s -X DELETE "$BASE_URL/admin/tenant/$TENANT_ID?confirmSchemaName=$SCHEMA_NAME" \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+`confirmSchemaName` wajib sama persis dengan schema tenant, misalnya `t_agency_properti_jg`.
+
+**7. Pantau / impersonate tenant**:
+
+```bash
+curl -s -X POST "$BASE_URL/admin/impersonate/$TENANT_ID" \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+Setelah impersonate, session Redis berubah ke tenant tersebut. Client cukup panggil ulang `/auth/me`; tidak ada token impersonation terpisah.
+
+**8. Stop impersonation**:
+
+```bash
+curl -s -X POST "$BASE_URL/admin/stop-impersonation" \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+**9. Migrasi schema semua tenant**:
+
+```bash
+curl -s -X POST "$BASE_URL/admin/migrate-tenant-schemas" \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
 **Migrasi schema tenant lama** (setelah deploy modul baru, mis. Finance):
 
 ```bash

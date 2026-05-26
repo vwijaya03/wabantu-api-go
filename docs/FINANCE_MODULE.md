@@ -21,7 +21,7 @@ Target: UMKM, toko kecil, bisnis keluarga.
 | `finance/investment_units.go` | Default satuan & multiplier per tipe aset (lot/lembar, gram, unit, koin) |
 | `finance/recurring.go` | Transaksi berulang CRUD + cron harian 07:00 WIB |
 | `finance/checklist.go` | Checklist harian + template |
-| `finance/report.go` | Export laporan async (CSV placeholder; hookable ke S3/R2) |
+| `finance/report.go` | Export laporan CSV/PDF async, progress job, batching all-time, data URL download |
 | `tenant/finance_seed.go` | Seed kategori + jenis transaksi default + wallet Kas Tunai |
 
 ---
@@ -45,7 +45,7 @@ Target: UMKM, toko kecil, bisnis keluarga.
 | `fin_approval_setting` | Konfigurasi workflow persetujuan |
 | `fin_period_lock` | Kunci periode (YYYY-MM) — blokir edit/hapus |
 | `fin_audit_log` | Riwayat perubahan (append-only, tidak bisa dihapus) |
-| `fin_report_job` | Job export async (status: queued → done/failed) |
+| `fin_report_job` | Job export async (status: processing → done/failed), `params.format` menyimpan `csv`/`pdf`, `error_msg` dipakai untuk progress/error |
 
 ---
 
@@ -90,6 +90,10 @@ Target: UMKM, toko kecil, bisnis keluarga.
 | GET | `/api/v1/finance/budgets/summary` | semua |
 | GET | `/api/v1/finance/reports/category-spending` | semua |
 | GET | `/api/v1/finance/reports/monthly-comparison?months=6` | semua |
+
+**Export CSV/PDF:** `POST /finance/reports/export` menerima `type=monthly|custom|all_time`, `format=csv|pdf`, `period=YYYY-MM` untuk bulanan, atau `startDate`/`endDate` untuk custom. Backend membuat `fin_report_job` dengan status `processing`, lalu worker background memuat transaksi per batch 250 baris, mengisi progress seperti `Memuat transaksi... 250 baris`, membuat CSV/PDF, dan menyimpan `download_url` sebagai `data:` URL.
+
+All-time export tidak memakai satu query besar; loader memakai batch + `statement_timeout` 15 detik supaya query lambat gagal eksplisit, bukan stuck `processing`. Index `idx_fin_txn_export(status, transaction_date DESC, created_at DESC) WHERE deleted_at IS NULL` wajib ada di tenant schema untuk mempercepat report all-time.
 
 ### Jenis transaksi (konfigurasi)
 
