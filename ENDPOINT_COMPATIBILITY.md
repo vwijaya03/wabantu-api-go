@@ -121,7 +121,7 @@ Plan codes: `starter`, `business`, `pro` (+ alias `basic` → business, tidak di
 | Catalog | `/api/v1/business/catalog?q=&page=&pageSize=` + POST/PATCH/DELETE | `/dashboard/catalog` — CRUD, search, pagination |
 | Catalog image AI | `GET/POST /api/v1/business/catalog/import-image/*` | `/dashboard/catalog/import-image` |
 | Broadcast | `/api/v1/broadcast/...` | `/dashboard/broadcast` |
-| Import CSV | `/api/v1/import/preview`, `/execute` | `/dashboard/import` |
+| Import CSV/XLSX produk | `/api/v1/import/preview`, `/execute` (`targetTable=business_catalog_item`) | `/dashboard/import` — download template CSV/XLSX produk, preview mapping, import ke katalog |
 | Branches | `/api/v1/branches` | `/dashboard/branches` |
 | Workflow | `GET/POST/PATCH/DELETE /api/v1/workflows` | `/dashboard/workflow` |
 | Usage AI activity | `GET /api/v1/usage/ai-activity`, `GET /api/v1/usage/ai-activity/summary` | super_admin saat impersonate tenant |

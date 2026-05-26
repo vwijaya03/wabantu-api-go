@@ -247,8 +247,9 @@ encore db shell tenant --write
 ### Import file (staging)
 
 1. `POST /api/v1/import/preview` — parse CSV/XLSX, simpan **semua baris** di Redis `import:staging:<jobId>` (TTL 24 jam).
-2. `POST /api/v1/import/execute` — body: `{ jobId, columnMapping }` → Pub/Sub `file-import`.
-3. **Roadmap prod:** staging pindah ke **S3/R2** (seperti Jubelio); API tetap `jobId`.
+2. Untuk import produk, FE mengirim `targetTable: "business_catalog_item"`; kolom wajib template produk: `external_code`, `name`.
+3. `POST /api/v1/import/execute` — body: `{ jobId, targetTable, columnMapping }` → Pub/Sub `file-import` → insert/update `business_catalog_item` dengan `source='import'`.
+4. **Roadmap prod:** staging pindah ke **S3/R2** (seperti Jubelio); API tetap `jobId`.
 
 ### Super admin
 

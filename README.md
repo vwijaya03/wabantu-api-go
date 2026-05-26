@@ -383,7 +383,9 @@ Contacts mendukung status `active` dan `inactive`, termasuk batch update via `PA
 ## Import CSV/XLSX (staging)
 
 - **Preview** (`POST /import/preview`): parse file → simpan **semua baris** di **Redis** (`import:staging:<jobId>`, TTL 24 jam) → response `jobId` + sample 5 baris.
-- **Execute** (`POST /import/execute`): kirim `jobId` + `columnMapping` → worker Pub/Sub `file-import`.
+- **Target produk/katalog:** UI mengirim `targetTable: "business_catalog_item"` saat execute, sehingga backend tahu file ini adalah import produk. Kolom produk yang didukung: `external_code` dan `name` wajib; `description`, `sell_price`, `sell_unit`, `is_active`, `barcode` opsional.
+- **Execute** (`POST /import/execute`): kirim `jobId`, `targetTable`, dan `columnMapping` → worker Pub/Sub `file-import`; worker menyimpan ke `business_catalog_item` dengan `source='import'`.
+- **Template:** UI `/dashboard/import` menyediakan sample CSV dan XLSX lewat route frontend `/api/import/templates/product?format=csv|xlsx`.
 - **Production berikutnya:** ganti staging Redis dengan **S3/R2** (seperti Jubelio) — interface tetap preview → execute by `jobId`.
 
 ## Platform admin (operator internal WABantu)

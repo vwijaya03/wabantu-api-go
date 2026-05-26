@@ -33,7 +33,7 @@ type ImportRequest struct {
 	JobID         string            `json:"jobId"`
 	TenantSchema  string            `json:"tenantSchema"`
 	TargetTable   string            `json:"targetTable"` // "business_catalog_item" | "knowledge_base_entry"
-	Headers       []string            `json:"headers"`
+	Headers       []string          `json:"headers"`
 	ColumnMapping map[string]string `json:"columnMapping"`
 	Rows          [][]string        `json:"rows"`
 	UploadedBy    string            `json:"uploadedBy"`
@@ -55,11 +55,12 @@ type PreviewRequest struct {
 }
 
 type PreviewResponse struct {
-	JobID       string              `json:"jobId"`
-	Headers     []string            `json:"headers"`
-	SampleRows  [][]string          `json:"sampleRows"`
-	Suggestions map[string]string   `json:"suggestions"`
-	TotalRows   int                 `json:"totalRows"`
+	JobID       string            `json:"jobId"`
+	TargetTable string            `json:"targetTable"`
+	Headers     []string          `json:"headers"`
+	SampleRows  [][]string        `json:"sampleRows"`
+	Suggestions map[string]string `json:"suggestions"`
+	TotalRows   int               `json:"totalRows"`
 }
 
 type importStagingPayload struct {
@@ -83,10 +84,10 @@ type ExecuteResponse struct {
 }
 
 type ImportResult struct {
-	TotalRows    int           `json:"totalRows"`
-	SuccessCount int           `json:"successCount"`
-	FailedCount  int           `json:"failedCount"`
-	Errors       []RowError    `json:"errors,omitempty"`
+	TotalRows    int        `json:"totalRows"`
+	SuccessCount int        `json:"successCount"`
+	FailedCount  int        `json:"failedCount"`
+	Errors       []RowError `json:"errors,omitempty"`
 }
 
 type RowError struct {
@@ -173,6 +174,7 @@ func Preview(ctx context.Context, file *multipart.FileHeader) (*PreviewResponse,
 
 	return &PreviewResponse{
 		JobID:       jobID,
+		TargetTable: target,
 		Headers:     headers,
 		SampleRows:  sample,
 		Suggestions: suggestions,
@@ -205,18 +207,6 @@ func Execute(ctx context.Context, req *ExecuteRequest) (*ExecuteResponse, error)
 	uid, _ := auth.UserID()
 	userData := auth.Data().(*types.AuthUser)
 
-	valid := validColumns(req.TargetTable)
-	if valid == nil {
-		return nil, &errs.Error{Code: errs.InvalidArgument, Message: fmt.Sprintf("unsupported target: %s", req.TargetTable)}
-	}
-	for _, col := range req.ColumnMapping {
-		if col == "" || col == "-" {
-			continue
-		}
-		if !valid[col] {
-			return nil, &errs.Error{Code: errs.InvalidArgument, Message: fmt.Sprintf("invalid column: %s", col)}
-		}
-	}
 	if req.JobID == "" {
 		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "jobId required (from preview)"}
 	}
@@ -228,6 +218,18 @@ func Execute(ctx context.Context, req *ExecuteRequest) (*ExecuteResponse, error)
 	target := req.TargetTable
 	if target == "" {
 		target = staged.TargetTable
+	}
+	valid := validColumns(target)
+	if valid == nil {
+		return nil, &errs.Error{Code: errs.InvalidArgument, Message: fmt.Sprintf("unsupported target: %s", target)}
+	}
+	for _, col := range req.ColumnMapping {
+		if col == "" || col == "-" {
+			continue
+		}
+		if !valid[col] {
+			return nil, &errs.Error{Code: errs.InvalidArgument, Message: fmt.Sprintf("invalid column: %s", col)}
+		}
 	}
 
 	jobID := req.JobID
