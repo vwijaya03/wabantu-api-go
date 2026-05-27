@@ -108,6 +108,11 @@ ALTER TABLE whatsapp_channel ADD COLUMN IF NOT EXISTS branch_id UUID;
 ALTER TABLE conversation ADD COLUMN IF NOT EXISTS branch_id UUID;
 ALTER TABLE contact ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active';
 
+DROP INDEX IF EXISTS idx_catalog_source_code;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_source_code
+    ON business_catalog_item(source, external_code)
+    WHERE deleted_at IS NULL;
+
 CREATE INDEX IF NOT EXISTS idx_catalog_name
     ON business_catalog_item(name, external_code)
     WHERE deleted_at IS NULL;

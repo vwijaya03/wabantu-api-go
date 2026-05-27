@@ -123,6 +123,7 @@ type ContactDetail struct {
 	DisplayName *string  `json:"displayName"`
 	Notes       *string  `json:"notes"`
 	Status      string   `json:"status"`
+	PriceTypeID *string  `json:"priceTypeId,omitempty"`
 	Tags        []string `json:"tags"`
 }
 
@@ -148,6 +149,7 @@ type CreateContactParams struct {
 	DisplayName *string  `json:"displayName,omitempty"`
 	Notes       *string  `json:"notes,omitempty"`
 	Status      string   `json:"status,omitempty"`
+	PriceTypeID *string  `json:"priceTypeId,omitempty"`
 	Tags        []string `json:"tags,omitempty"`
 }
 
@@ -155,6 +157,7 @@ type UpdateContactParams struct {
 	DisplayName *string  `json:"displayName"`
 	Notes       *string  `json:"notes"`
 	Status      *string  `json:"status,omitempty"`
+	PriceTypeID *string  `json:"priceTypeId,omitempty"`
 	Tags        []string `json:"tags,omitempty"`
 }
 
@@ -703,7 +706,7 @@ func ListContacts(ctx context.Context, p *ListContactsParams) (*ListContactsResp
 	limitParam := len(queryArgs) - 1
 	offsetParam := len(queryArgs)
 	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
-		SELECT id, phone_number, display_name, notes, COALESCE(status, 'active'), tags
+		SELECT id, phone_number, display_name, notes, COALESCE(status, 'active'), price_type_id::text, tags
 		FROM contact
 		WHERE %s
 		ORDER BY updated_at DESC, created_at DESC
@@ -759,18 +762,19 @@ func CreateContact(ctx context.Context, p *CreateContactParams) (*UpdateContactR
 	}
 	tagsJSON, _ := json.Marshal(cleanTags(p.Tags))
 	c, err := scanContact(conn.QueryRowContext(ctx, `
-		INSERT INTO contact (phone_number, display_name, notes, status, tags)
-		VALUES ($1, $2, $3, $4, $5::jsonb)
+		INSERT INTO contact (phone_number, display_name, notes, status, price_type_id, tags)
+		VALUES ($1, $2, $3, $4, $5, $6::jsonb)
 		ON CONFLICT (phone_number) DO UPDATE
 		SET display_name = EXCLUDED.display_name,
 		    notes = EXCLUDED.notes,
 		    status = EXCLUDED.status,
+		    price_type_id = EXCLUDED.price_type_id,
 		    tags = EXCLUDED.tags,
 		    deleted_at = NULL,
 		    deleted_by = NULL,
 		    updated_at = NOW()
-		RETURNING id, phone_number, display_name, notes, COALESCE(status, 'active'), tags`,
-		phone, displayName, notes, status, string(tagsJSON)))
+		RETURNING id, phone_number, display_name, notes, COALESCE(status, 'active'), price_type_id::text, tags`,
+		phone, displayName, notes, status, nullableUUID(p.PriceTypeID), string(tagsJSON)))
 	if err != nil {
 		return nil, apperr.Internal("create contact failed")
 	}
@@ -795,7 +799,7 @@ func GetContact(ctx context.Context, id string) (*GetContactResponse, error) {
 	}
 
 	c, err := scanContact(conn.QueryRowContext(ctx,
-		`SELECT id, phone_number, display_name, notes, COALESCE(status, 'active'), tags FROM contact WHERE id = $1 AND deleted_at IS NULL`, id))
+		`SELECT id, phone_number, display_name, notes, COALESCE(status, 'active'), price_type_id::text, tags FROM contact WHERE id = $1 AND deleted_at IS NULL`, id))
 	if err != nil {
 		return nil, apperr.NotFound("Kontak tidak ditemukan")
 	}
@@ -858,6 +862,11 @@ func UpdateContact(ctx context.Context, id string, p *UpdateContactParams) (*Upd
 		args = append(args, string(tagsJSON))
 		idx++
 	}
+	if p.PriceTypeID != nil {
+		sets = append(sets, fmt.Sprintf("price_type_id = $%d", idx))
+		args = append(args, nullableUUID(p.PriceTypeID))
+		idx++
+	}
 	if len(sets) == 0 {
 		return nil, apperr.BadRequest("no fields to update")
 	}
@@ -865,7 +874,7 @@ func UpdateContact(ctx context.Context, id string, p *UpdateContactParams) (*Upd
 	sets = append(sets, "updated_at = NOW()")
 	args = append(args, id)
 	q := fmt.Sprintf(`UPDATE contact SET %s WHERE id = $%d AND deleted_at IS NULL
-		RETURNING id, phone_number, display_name, notes, COALESCE(status, 'active'), tags`,
+		RETURNING id, phone_number, display_name, notes, COALESCE(status, 'active'), price_type_id::text, tags`,
 		strings.Join(sets, ", "), idx)
 
 	c, err := scanContact(conn.QueryRowContext(ctx, q, args...))
@@ -1041,12 +1050,17 @@ func loadChannels(ctx context.Context, conn *sql.Conn, ids []string) map[string]
 func scanContact(scanner interface{ Scan(...any) error }) (ContactDetail, error) {
 	var c ContactDetail
 	var tagsJSON []byte
-	err := scanner.Scan(&c.ID, &c.PhoneNumber, &c.DisplayName, &c.Notes, &c.Status, &tagsJSON)
+	var priceTypeID sql.NullString
+	err := scanner.Scan(&c.ID, &c.PhoneNumber, &c.DisplayName, &c.Notes, &c.Status, &priceTypeID, &tagsJSON)
 	if err != nil {
 		return c, err
 	}
 	if c.Status == "" {
 		c.Status = "active"
+	}
+	if priceTypeID.Valid && strings.TrimSpace(priceTypeID.String) != "" {
+		v := priceTypeID.String
+		c.PriceTypeID = &v
 	}
 	_ = json.Unmarshal(tagsJSON, &c.Tags)
 	if c.Tags == nil {
@@ -1084,8 +1098,20 @@ func ensureContactRuntimeSchema(ctx context.Context, conn *sql.Conn) error {
 	_, err := conn.ExecContext(ctx, `
 		ALTER TABLE contact ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active';
 		UPDATE contact SET status = 'active' WHERE status IS NULL OR TRIM(status) = '';
+		ALTER TABLE contact ADD COLUMN IF NOT EXISTS price_type_id UUID;
 	`)
 	return err
+}
+
+func nullableUUID(value *string) any {
+	if value == nil {
+		return nil
+	}
+	v := strings.TrimSpace(*value)
+	if v == "" {
+		return nil
+	}
+	return v
 }
 
 func syncContactsFromLeadAndConversation(ctx context.Context, conn *sql.Conn) error {

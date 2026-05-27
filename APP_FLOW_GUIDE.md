@@ -344,7 +344,8 @@ Verify token: secret `WebhookVerifyToken`. Saat daftar app Meta, pilih path yang
 | Billing | `GET /api/v1/billing/overview`, `POST /api/v1/billing/select-plan`, `POST /api/v1/billing/top-up` (invoice `pending`, lihat [LIMITS_AND_QUOTAS.md](./LIMITS_AND_QUOTAS.md)) |
 | Payment | `POST /api/v1/payment/create-qris` (wajib `invoiceId` pending), webhook Midtrans → aktivasi paket |
 | Orders | `GET /api/v1/orders?q=&status=&page=&pageSize=`, `POST/PATCH/DELETE /api/v1/orders/:id`, `PATCH /api/v1/order-status/batch`, `PATCH /api/v1/order-delete/batch`; item order berbasis katalog produk |
-| Catalog | `GET /api/v1/business/catalog?q=&page=&pageSize=` + CRUD di `business/catalog.go`; list memakai server-side search/pagination agar aman untuk katalog besar |
+| Catalog | `business/catalog.go` + `business/price_type.go` + `shared/pricing`; multi-harga per tipe; `contactId` untuk `effectiveSellPrice` |
+| Price types | `GET/POST/PATCH/DELETE /api/v1/business/price-types` — lihat `docs/PRICE_TYPES_AND_CATALOG_PRICING.md` |
 | Catalog image (AI) | `POST .../import-image/preview`, `GET .../import-image-limits`, `GET/POST .../import-image/draft/:jobId` — [docs/CATALOG_IMAGE_IMPORT.md](./docs/CATALOG_IMAGE_IMPORT.md) |
 | Broadcast | `POST /api/v1/broadcast/...` (Business+ berbayar; **trial** boleh dengan kuota 20 kontak/bulan) |
 | Import CSV | `POST /api/v1/import/preview`, `/import/execute` |

@@ -75,7 +75,8 @@ Cookie `wabantu_at` + body `accessToken` — selaras Nest.
 | POST | `/api/v1/inbox/conversations/:id/ai-resume` | ✅ | ✅ |
 | POST | `/api/v1/inbox/conversations/:id/messages` | ✅ | ✅ |
 | GET/POST | `/api/v1/inbox/contacts?q=&page=&pageSize=` | ✅ | ✅ |
-| GET/PATCH/DELETE | `/api/v1/inbox/contacts/:id` | ✅ | ✅ |
+| GET/PATCH/DELETE | `/api/v1/inbox/contacts/:id` (+ `priceTypeId`) | ✅ | ✅ |
+| POST | `/api/v1/inbox/conversations-batch/handoff`, `.../ai-resume` | ✅ | ✅ |
 | PATCH | `/api/v1/inbox-contact-status/batch`, `/api/v1/inbox-contacts/batch-delete` | ✅ | ✅ |
 | PATCH | `/api/v1/inbox/conversations/:id` | — | ➕ |
 
@@ -117,8 +118,9 @@ Plan codes: `starter`, `business`, `pro` (+ alias `basic` → business, tidak di
 
 | Area | Path contoh | Halaman FE |
 |------|-------------|------------|
-| Orders | `/api/v1/orders?q=&status=&page=&pageSize=` + POST/PATCH/DELETE + `/api/v1/order-status/batch` + `/api/v1/order-delete/batch` | `/dashboard/orders` — CRUD, search, pagination, catalog-backed multi-item orders, batch status/delete |
-| Catalog | `/api/v1/business/catalog?q=&page=&pageSize=` + POST/PATCH/DELETE | `/dashboard/catalog` — CRUD, search, pagination |
+| Orders | `/api/v1/orders` + batch; harga item dari tipe kontak; `completed` → finance income, `draft`/`cancelled` → hapus income | `/dashboard/orders` — contact, multi-item katalog, `effectiveSellPrice`, batch |
+| Price types | `GET/POST/PATCH/DELETE /api/v1/business/price-types` | `/dashboard/catalog/price-types` |
+| Catalog | `/api/v1/business/catalog` (+ `contactId`, `prices[]`) + POST/PATCH/DELETE | `/dashboard/catalog` — multi-harga per tipe |
 | Catalog image AI | `GET/POST /api/v1/business/catalog/import-image/*` | `/dashboard/catalog/import-image` |
 | Broadcast | `/api/v1/broadcast/...` | `/dashboard/broadcast` |
 | Import CSV/XLSX produk | `/api/v1/import/preview`, `/execute` (`targetTable=business_catalog_item`) | `/dashboard/import` — download template CSV/XLSX produk, preview mapping, import ke katalog |

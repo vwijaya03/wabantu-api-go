@@ -863,7 +863,7 @@ erDiagram
 
 `business_catalog_item` list API wajib memakai pagination (`page`, `pageSize`) dan search (`q`) dari server. UI tidak boleh mengambil semua SKU sekaligus karena tenant bisa punya puluhan ribu item. Schema tenant punya index `idx_catalog_name` dan `idx_catalog_barcode`; jalankan migrasi schema tenant setelah deploy jika schema lama belum memiliki index ini.
 
-Contacts dan orders memakai pola yang sama: list endpoint wajib menerima search + pagination dari server. Contacts memakai tabel `contact` via `/api/v1/inbox/contacts`, punya status `active`/`inactive`, dan mendukung batch status/delete. Sales lead otomatis tetap di tabel `lead`. Orders mendukung status operasional `draft`, `processing`, `shipped`, `completed`, `cancelled`, termasuk batch update/delete. Item order harus berbasis `business_catalog_item`; item manual dari UI dibuat dulu sebagai produk katalog dasar agar data produk tetap konsisten.
+Contacts dan orders memakai pola yang sama: list endpoint wajib menerima search + pagination dari server. Contacts memakai tabel `contact` via `/api/v1/inbox/contacts`, status `active`/`inactive`, field `price_type_id` (opsional), batch status/delete. **Tipe harga:** `business_price_type`, `business_catalog_item_price` — lihat `docs/PRICE_TYPES_AND_CATALOG_PRICING.md`. Orders: harga item di-resolve dari tipe kontak; status `completed` mencatat pemasukan finance (`finance/order_income.go`); `draft`/`cancelled` menghapus transaksi terkait. Index SKU katalog unik hanya untuk baris aktif (`deleted_at IS NULL`).
 | `conversation_summary` | AI memory |
 | `webhook_event` | Outbound webhook reliability |
 | `branch`, `workflow_rule` | Added via `schema_patch.go` |

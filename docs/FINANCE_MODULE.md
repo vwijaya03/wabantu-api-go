@@ -22,6 +22,7 @@ Target: UMKM, toko kecil, bisnis keluarga.
 | `finance/recurring.go` | Transaksi berulang CRUD + cron harian 07:00 WIB |
 | `finance/checklist.go` | Checklist harian + template |
 | `finance/report.go` | Export laporan CSV/PDF async, progress job, batching all-time, data URL download |
+| `finance/order_income.go` | Pemasukan otomatis dari pesanan `completed`; hapus saat `draft`/`cancelled` |
 | `tenant/finance_seed.go` | Seed kategori + jenis transaksi default + wallet Kas Tunai |
 
 ---
@@ -249,10 +250,28 @@ Patch di `tenant/finance_schema.go`; index `to_char(...)` pada periode **tidak**
 
 ---
 
+## Integrasi pesanan (penjualan)
+
+Saat pesanan berstatus **`completed`** (create, update, atau batch status):
+
+- Insert transaksi `income` **approved** ke dompet default (biasanya Kas Tunai).
+- Kategori sistem **Penjualan Produk** bila ada.
+- `reference_no` = UUID pesanan (idempoten — tidak dobel jika di-update ulang ke completed).
+
+Saat status kembali **`draft`** atau **`cancelled`** (atau cancel endpoint):
+
+- Soft-delete transaksi `income` dengan `reference_no` tersebut.
+- Refresh saldo dompet terkait.
+
+Implementasi: `finance/order_income.go`, dipanggil dari `order/order.go`.
+
+---
+
 ## Changelog
 
 | Tanggal | Catatan |
 |---------|---------|
+| 2026-05-27 | Pemasukan otomatis dari pesanan selesai; hapus saat draft/dibatalkan |
 | 2026-05 | Modul finance awal — wallet, transaksi, anggaran, investasi, recurring, checklist, laporan |
 | 2026-05-24 | Production hardening: `fin_transaction_type`, trade investasi, lot×100, biaya %, list transaksi + search, hapus dompet/aset dengan guard, dedupe kategori tenant, fix scan `tags` TEXT[] |
 | 2026-05-25 | Dividen per aset (`POST .../dividends`), satuan per tipe aset + migrasi lot→gram/unit/coin, beli/jual/dividen off quick picker, wallet update type guard |

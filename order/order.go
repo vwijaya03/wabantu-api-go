@@ -11,8 +11,11 @@ import (
 	"encore.dev/beta/auth"
 	"encore.dev/storage/sqldb"
 
+	"encore.app/wabantu/finance"
 	appErrs "encore.app/wabantu/shared/errs"
+	"encore.app/wabantu/shared/pricing"
 	"encore.app/wabantu/shared/types"
+	"encore.app/wabantu/tenant"
 )
 
 var db = sqldb.Named("tenant")
@@ -268,7 +271,7 @@ func Create(ctx context.Context, p *CreateOrderParams) (*Order, error) {
 		return nil, appErrs.BadRequest("items are required")
 	}
 
-	items, err := normalizeOrderItems(ctx, u.TenantSchema, p.Items)
+	items, err := normalizeOrderItems(ctx, u.TenantSchema, strings.TrimSpace(p.ContactID), p.Items)
 	if err != nil {
 		return nil, err
 	}
@@ -308,6 +311,11 @@ func Create(ctx context.Context, p *CreateOrderParams) (*Order, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create order: %w", err)
 	}
+	if status == "completed" {
+		if err := finance.RecordOrderCompletedIncome(ctx, u.TenantSchema, u.AccountID, o.ID, o.Total); err != nil {
+			return nil, err
+		}
+	}
 	return &o, nil
 }
 
@@ -325,6 +333,7 @@ func Update(ctx context.Context, id string, req *UpdateOrderParams) (*Order, err
 	args := []any{}
 	idx := 1
 	var updatedShippingCost *float64
+	newStatus := ""
 
 	if req.ContactID != nil {
 		sets = append(sets, fmt.Sprintf("contact_id=$%d", idx))
@@ -338,7 +347,15 @@ func Update(ctx context.Context, id string, req *UpdateOrderParams) (*Order, err
 	}
 	var updatedSubtotal *float64
 	if len(req.Items) > 0 {
-		items, err := normalizeOrderItems(ctx, u.TenantSchema, req.Items)
+		contactID := ""
+		if req.ContactID != nil {
+			contactID = strings.TrimSpace(*req.ContactID)
+		} else {
+			_ = db.QueryRow(ctx, fmt.Sprintf(
+				`SELECT COALESCE(contact_id::text, '') FROM "%s"."order" WHERE id=$1 AND deleted_at IS NULL`,
+				u.TenantSchema), id).Scan(&contactID)
+		}
+		items, err := normalizeOrderItems(ctx, u.TenantSchema, contactID, req.Items)
 		if err != nil {
 			return nil, err
 		}
@@ -360,6 +377,7 @@ func Update(ctx context.Context, id string, req *UpdateOrderParams) (*Order, err
 		if !validOrderStatuses[status] {
 			return nil, appErrs.BadRequest("invalid order status")
 		}
+		newStatus = status
 		sets = append(sets, fmt.Sprintf("status=$%d", idx))
 		args = append(args, status)
 		idx++
@@ -413,6 +431,16 @@ func Update(ctx context.Context, id string, req *UpdateOrderParams) (*Order, err
 	if err != nil {
 		return nil, fmt.Errorf("update order: %w", err)
 	}
+
+	if newStatus == "completed" {
+		if err := finance.RecordOrderCompletedIncome(ctx, u.TenantSchema, u.AccountID, o.ID, o.Total); err != nil {
+			return nil, err
+		}
+	} else if newStatus == "draft" || newStatus == "cancelled" {
+		if err := finance.RemoveOrderIncomeTransaction(ctx, u.TenantSchema, o.ID); err != nil {
+			return nil, err
+		}
+	}
 	return &o, nil
 }
 
@@ -440,6 +468,9 @@ func Cancel(ctx context.Context, id string) (*Order, error) {
 	o, err := scanOrder(row.Scan)
 	if err != nil {
 		return nil, fmt.Errorf("cancel order: %w", err)
+	}
+	if err := finance.RemoveOrderIncomeTransaction(ctx, u.TenantSchema, o.ID); err != nil {
+		return nil, err
 	}
 	return &o, nil
 }
@@ -475,11 +506,66 @@ func BatchUpdateStatus(ctx context.Context, req *BatchUpdateStatusParams) (*Batc
 		return nil, appErrs.BadRequest("ids are required")
 	}
 
-	res, err := db.Exec(ctx, fmt.Sprintf(
+	q := fmt.Sprintf(
 		`UPDATE "%s"."order"
 		 SET status=$1, updated_at=NOW()
 		 WHERE id IN (%s) AND deleted_at IS NULL`,
-		u.TenantSchema, strings.Join(placeholders, ", ")), args...)
+		u.TenantSchema, strings.Join(placeholders, ", "))
+
+	if status == "completed" {
+		q = fmt.Sprintf(
+			`UPDATE "%s"."order"
+			 SET status=$1, updated_at=NOW()
+			 WHERE id IN (%s) AND deleted_at IS NULL AND status <> 'completed'`,
+			u.TenantSchema, strings.Join(placeholders, ", "))
+
+		rows, err := db.Query(ctx, q+fmt.Sprintf(" RETURNING %s", orderSelectCols("")), args...)
+		if err != nil {
+			return nil, fmt.Errorf("batch update order status: %w", err)
+		}
+		defer rows.Close()
+
+		var updated int
+		for rows.Next() {
+			o, err := scanOrder(rows.Scan)
+			if err != nil {
+				return nil, err
+			}
+			updated++
+			if err := finance.RecordOrderCompletedIncome(ctx, u.TenantSchema, u.AccountID, o.ID, o.Total); err != nil {
+				return nil, err
+			}
+		}
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("batch update order status: %w", err)
+		}
+		return &BatchUpdateStatusResponse{Updated: updated}, nil
+	}
+
+	if status == "draft" || status == "cancelled" {
+		rows, err := db.Query(ctx, q+` RETURNING id::text`, args...)
+		if err != nil {
+			return nil, fmt.Errorf("batch update order status: %w", err)
+		}
+		defer rows.Close()
+		var updated int
+		for rows.Next() {
+			var orderID string
+			if err := rows.Scan(&orderID); err != nil {
+				return nil, err
+			}
+			updated++
+			if err := finance.RemoveOrderIncomeTransaction(ctx, u.TenantSchema, orderID); err != nil {
+				return nil, err
+			}
+		}
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("batch update order status: %w", err)
+		}
+		return &BatchUpdateStatusResponse{Updated: updated}, nil
+	}
+
+	res, err := db.Exec(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("batch update order status: %w", err)
 	}
@@ -548,13 +634,26 @@ func getUser() (*types.AuthUser, error) {
 	return u, nil
 }
 
-func normalizeOrderItems(ctx context.Context, schema string, raw []OrderItem) ([]OrderItem, error) {
+func normalizeOrderItems(ctx context.Context, schema, contactID string, raw []OrderItem) ([]OrderItem, error) {
+	conn, err := tenant.TenantConn(ctx, schema)
+	if err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	defer conn.Close()
+	if err := pricing.EnsureSchema(ctx, conn); err != nil {
+		return nil, appErrs.Internal("prepare pricing failed")
+	}
+	priceTypeID, err := pricing.ResolvePriceTypeIDForContact(ctx, conn, contactID)
+	if err != nil {
+		return nil, err
+	}
+
 	items := make([]OrderItem, 0, len(raw))
 	for i, it := range raw {
 		if it.Qty <= 0 {
 			return nil, appErrs.BadRequest("item qty must be greater than zero")
 		}
-		item, err := resolveCatalogItem(ctx, schema, it, i)
+		item, err := resolveCatalogItem(ctx, schema, priceTypeID, it, i)
 		if err != nil {
 			return nil, err
 		}
@@ -566,9 +665,9 @@ func normalizeOrderItems(ctx context.Context, schema string, raw []OrderItem) ([
 	return items, nil
 }
 
-func resolveCatalogItem(ctx context.Context, schema string, it OrderItem, index int) (OrderItem, error) {
+func resolveCatalogItem(ctx context.Context, schema, priceTypeID string, it OrderItem, index int) (OrderItem, error) {
 	if strings.TrimSpace(it.CatalogItemID) != "" {
-		item, err := loadCatalogOrderItem(ctx, schema, "id = $1", strings.TrimSpace(it.CatalogItemID))
+		item, err := loadCatalogOrderItem(ctx, schema, priceTypeID, "id = $1", strings.TrimSpace(it.CatalogItemID))
 		if err != nil {
 			return OrderItem{}, err
 		}
@@ -579,13 +678,13 @@ func resolveCatalogItem(ctx context.Context, schema string, it OrderItem, index 
 	code := strings.TrimSpace(it.ExternalCode)
 	name := strings.TrimSpace(it.Name)
 	if code != "" {
-		if item, err := loadCatalogOrderItem(ctx, schema, "LOWER(external_code) = LOWER($1)", code); err == nil {
+		if item, err := loadCatalogOrderItem(ctx, schema, priceTypeID, "LOWER(external_code) = LOWER($1)", code); err == nil {
 			item.Qty = it.Qty
 			return item, nil
 		}
 	}
 	if name != "" {
-		if item, err := loadCatalogOrderItem(ctx, schema, "LOWER(name) = LOWER($1)", name); err == nil {
+		if item, err := loadCatalogOrderItem(ctx, schema, priceTypeID, "LOWER(name) = LOWER($1)", name); err == nil {
 			item.Qty = it.Qty
 			return item, nil
 		}
@@ -602,22 +701,28 @@ func resolveCatalogItem(ctx context.Context, schema string, it OrderItem, index 
 	return createCatalogOrderItem(ctx, schema, code, name, it.UnitPrice, strings.TrimSpace(it.SellUnit), it.Qty)
 }
 
-func loadCatalogOrderItem(ctx context.Context, schema, condition string, arg any) (OrderItem, error) {
+func loadCatalogOrderItem(ctx context.Context, schema, priceTypeID, condition string, arg any) (OrderItem, error) {
 	var item OrderItem
-	var price sql.NullFloat64
 	var unit sql.NullString
 	row := db.QueryRow(ctx, fmt.Sprintf(`
-		SELECT id::text, external_code, name, sell_price, sell_unit
+		SELECT id::text, external_code, name, sell_unit
 		FROM "%s".business_catalog_item
 		WHERE deleted_at IS NULL AND %s
 		ORDER BY updated_at DESC
 		LIMIT 1`, schema, condition), arg)
-	if err := row.Scan(&item.CatalogItemID, &item.ExternalCode, &item.Name, &price, &unit); err != nil {
+	if err := row.Scan(&item.CatalogItemID, &item.ExternalCode, &item.Name, &unit); err != nil {
 		return OrderItem{}, appErrs.NotFound("catalog item not found")
 	}
-	if price.Valid {
-		item.UnitPrice = price.Float64
+	conn, err := tenant.TenantConn(ctx, schema)
+	if err != nil {
+		return OrderItem{}, appErrs.Internal(err.Error())
 	}
+	defer conn.Close()
+	unitPrice, err := pricing.ResolveCatalogUnitPrice(ctx, conn, item.CatalogItemID, priceTypeID)
+	if err != nil {
+		return OrderItem{}, err
+	}
+	item.UnitPrice = unitPrice
 	if unit.Valid {
 		item.SellUnit = unit.String
 	}

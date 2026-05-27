@@ -361,7 +361,8 @@ CREATE TABLE IF NOT EXISTS business_catalog_item (
     deleted_by          UUID
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_source_code
-    ON business_catalog_item(source, external_code);
+    ON business_catalog_item(source, external_code)
+    WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_catalog_name
     ON business_catalog_item(name, external_code)
     WHERE deleted_at IS NULL;

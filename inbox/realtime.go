@@ -21,6 +21,11 @@ type HandoffParams struct {
 	Reason *string `json:"reason"`
 }
 
+type BulkIDsParams struct {
+	IDs    []string `json:"ids"`
+	Reason *string  `json:"reason,omitempty"`
+}
+
 // GetUnreadSummary returns the total unread message count across conversations.
 //
 //encore:api auth method=GET path=/api/v1/inbox/unread-summary
@@ -158,6 +163,132 @@ func ResumeAI(ctx context.Context, id string) error {
 		VALUES ($1, 'out', 'system', 'text', 'AI auto-reply diaktifkan kembali.', '{}'::jsonb, 'sent')`,
 		id)
 
+	return nil
+}
+
+// BulkHandoffConversation assigns multiple conversations to a human agent.
+//
+//encore:api auth method=POST path=/api/v1/inbox/conversations-batch/handoff
+func BulkHandoffConversation(ctx context.Context, req *BulkIDsParams) error {
+	user, err := currentUser()
+	if err != nil {
+		return err
+	}
+	if req == nil || len(req.IDs) == 0 {
+		return apperr.BadRequest("ids required")
+	}
+
+	reason := "Diambil alih manual oleh staff"
+	if req.Reason != nil && strings.TrimSpace(*req.Reason) != "" {
+		reason = strings.TrimSpace(*req.Reason)
+	}
+	if len(reason) > 280 {
+		reason = reason[:280]
+	}
+
+	conn, err := tConn(ctx, user.TenantSchema)
+	if err != nil {
+		return apperr.Internal("database connection failed")
+	}
+	defer conn.Close()
+
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return apperr.Internal("failed to begin transaction")
+	}
+	defer tx.Rollback()
+
+	for _, id := range req.IDs {
+		var exists bool
+		if err := tx.QueryRowContext(ctx,
+			`SELECT EXISTS(SELECT 1 FROM conversation WHERE id = $1::uuid)`, id,
+		).Scan(&exists); err != nil || !exists {
+			return apperr.NotFound("Percakapan tidak ditemukan")
+		}
+
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE conversation
+			SET ai_handled = false,
+			    ai_paused_at = NOW(),
+			    assigned_to_user_id = NULL,
+			    assigned_to_name = $1,
+			    handoff_reason = $2
+			WHERE id = $3::uuid`, user.Email, reason, id,
+		); err != nil {
+			return apperr.Internal("failed to handoff conversation")
+		}
+
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO message (conversation_id, direction, author, type, body, metadata, status)
+			VALUES ($1::uuid, 'out', 'system', 'text', 'Staff mengambil alih percakapan ini.', $2::jsonb, 'sent')`,
+			id, fmt.Sprintf(`{"reason":%q}`, reason),
+		); err != nil {
+			return apperr.Internal("failed to create handoff system message")
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return apperr.Internal("failed to commit handoff batch")
+	}
+	return nil
+}
+
+// BulkResumeAI re-enables AI auto-reply for multiple conversations.
+//
+//encore:api auth method=POST path=/api/v1/inbox/conversations-batch/ai-resume
+func BulkResumeAI(ctx context.Context, req *BulkIDsParams) error {
+	user, err := currentUser()
+	if err != nil {
+		return err
+	}
+	if req == nil || len(req.IDs) == 0 {
+		return apperr.BadRequest("ids required")
+	}
+
+	conn, err := tConn(ctx, user.TenantSchema)
+	if err != nil {
+		return apperr.Internal("database connection failed")
+	}
+	defer conn.Close()
+
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return apperr.Internal("failed to begin transaction")
+	}
+	defer tx.Rollback()
+
+	for _, id := range req.IDs {
+		var exists bool
+		if err := tx.QueryRowContext(ctx,
+			`SELECT EXISTS(SELECT 1 FROM conversation WHERE id = $1::uuid)`, id,
+		).Scan(&exists); err != nil || !exists {
+			return apperr.NotFound("Percakapan tidak ditemukan")
+		}
+
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE conversation
+			SET ai_handled = true,
+			    ai_paused_at = NULL,
+			    assigned_to_user_id = NULL,
+			    assigned_to_name = NULL,
+			    handoff_reason = NULL
+			WHERE id = $1::uuid`, id,
+		); err != nil {
+			return apperr.Internal("failed to resume AI")
+		}
+
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO message (conversation_id, direction, author, type, body, metadata, status)
+			VALUES ($1::uuid, 'out', 'system', 'text', 'AI auto-reply diaktifkan kembali.', '{}'::jsonb, 'sent')`,
+			id,
+		); err != nil {
+			return apperr.Internal("failed to create resume system message")
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return apperr.Internal("failed to commit resume batch")
+	}
 	return nil
 }
 
