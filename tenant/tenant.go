@@ -847,6 +847,7 @@ CREATE TABLE IF NOT EXISTS fin_checklist_template (
     wallet_id    UUID,
     frequency    VARCHAR(20)   NOT NULL DEFAULT 'daily',
     day_of_month INT,
+    due_anchor_date DATE,
     is_active    BOOLEAN       NOT NULL DEFAULT true,
     display_order INT          NOT NULL DEFAULT 0,
     created_by   UUID          NOT NULL,

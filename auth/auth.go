@@ -13,9 +13,9 @@ import (
 	"time"
 	"unicode"
 
+	_ "encore.app/wabantu/platform"
 	encoreAuth "encore.dev/beta/auth"
 	"encore.dev/rlog"
-	_ "encore.app/wabantu/platform"
 
 	"encore.app/wabantu/audit"
 	"encore.app/wabantu/branch"
@@ -42,10 +42,10 @@ var secrets struct {
 // ---------- constants ----------
 
 const (
-	bcryptCost      = 12
-	jwtTTL          = 15 * time.Minute
-	cookieName      = "wabantu_at"
-	schemaPrefix    = "t_"
+	bcryptCost   = 12
+	jwtTTL       = 60 * time.Minute
+	cookieName   = "wabantu_at"
+	schemaPrefix = "t_"
 	maxSchemaLen = 63
 )
 
@@ -421,19 +421,33 @@ func signJWT(accountID, sessionID string) (string, int, error) {
 }
 
 func parseJWT(tokenString string) (accountID, sessionID string, err error) {
-	token, err := jwt.Parse(tokenString, func(t *jwt.Token) (interface{}, error) {
+	return parseJWTClaims(tokenString, false)
+}
+
+// parseJWTAllowExpired reads sub/sid from a JWT that may be past exp (Redis session must still exist).
+func parseJWTAllowExpired(tokenString string) (accountID, sessionID string, err error) {
+	return parseJWTClaims(tokenString, true)
+}
+
+func parseJWTClaims(tokenString string, allowExpired bool) (accountID, sessionID string, err error) {
+	keyFn := func(t *jwt.Token) (interface{}, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
 		}
 		return []byte(secrets.JWTSecret), nil
-	})
-	if err != nil {
-		return "", "", err
 	}
 
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok || !token.Valid {
-		return "", "", fmt.Errorf("invalid token claims")
+	claims := jwt.MapClaims{}
+	parser := jwt.NewParser(jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}))
+	token, err := parser.ParseWithClaims(tokenString, claims, keyFn)
+	if err != nil {
+		if allowExpired && errors.Is(err, jwt.ErrTokenExpired) {
+			// Signature already verified; read sub/sid from expired token.
+		} else {
+			return "", "", err
+		}
+	} else if !token.Valid {
+		return "", "", fmt.Errorf("invalid token")
 	}
 
 	sub, _ := claims["sub"].(string)

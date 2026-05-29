@@ -345,6 +345,12 @@ Ringkas:
 | AI top-up | `topup_ai_20000` / `topup_ai_30000` → invoice `pending` → QRIS → `quota_topup` bulan berjalan |
 - Encore tidak punya throttler bawaan seperti Nest `@nestjs/throttler`; pola ini = **Redis + middleware** (best practice untuk multi-instance).
 
+## Sesi login & re-auth
+
+- JWT access token berlaku **60 menit**; sesi Redis tenant **7 hari**.
+- Jika token kedaluwarsa tetapi sesi masih ada, frontend menampilkan **modal konfirmasi password** (bukan redirect login penuh).
+- `POST /api/v1/auth/reauth` — body `{ "password", "accessToken" }` (**tanpa** header `Authorization`, agar JWT kedaluwarsa tidak ditolak Encore sebelum handler); mengeluarkan token baru untuk sesi Redis yang masih ada.
+
 ## Katalog produk & tipe harga
 
 **Tipe harga** (master data tenant):
@@ -615,7 +621,8 @@ Stack compose contoh: `../infra/docker-compose.yml` (service `api-go`).
 | `finance/budget.go` | Anggaran per kategori, spending report, perbandingan bulanan |
 | `finance/investment.go` | Aset investasi, harga manual, portfolio summary (P&L) |
 | `finance/recurring.go` | Transaksi berulang + cron scheduler harian (07:00 WIB) |
-| `finance/checklist.go` | Checklist keuangan harian + template |
+| `finance/checklist.go` | Checklist template & harian |
+| `finance/checklist_billing.go` | Tagihan bulanan per periode + auto-post transaksi |
 | `finance/report.go` | Export laporan async (CSV/PDF job) |
 | `tenant/finance_seed.go` | Seed kategori default + wallet Kas Tunai saat tenant baru daftar |
 | `auth/platform_bootstrap.go` | Buat akun `super_admin` internal |

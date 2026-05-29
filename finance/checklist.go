@@ -21,9 +21,10 @@ type ChecklistTemplate struct {
 	AmountHint  *string   `json:"amountHint,omitempty"`
 	CategoryID  *string   `json:"categoryId,omitempty"`
 	WalletID    *string   `json:"walletId,omitempty"`
-	Frequency   string    `json:"frequency"`
-	DayOfMonth  *int      `json:"dayOfMonth,omitempty"`
-	IsActive    bool      `json:"isActive"`
+	Frequency     string    `json:"frequency"`
+	DayOfMonth    *int      `json:"dayOfMonth,omitempty"`
+	DueAnchorDate *string   `json:"dueAnchorDate,omitempty"`
+	IsActive      bool      `json:"isActive"`
 	Order       int       `json:"order"`
 	CreatedAt   time.Time `json:"createdAt"`
 }
@@ -61,6 +62,7 @@ type CreateChecklistTemplateParams struct {
 	WalletID    *string  `json:"walletId,omitempty"`
 	Frequency   string   `json:"frequency"`
 	DayOfMonth  *int     `json:"dayOfMonth,omitempty"`
+	DueDate     string   `json:"dueDate,omitempty"`
 	Order       int      `json:"order"`
 }
 
@@ -85,7 +87,7 @@ func ListChecklistTemplates(ctx context.Context) (*ChecklistListResponse, error)
 
 	rows, err := conn.QueryContext(ctx, `
 		SELECT id, title, description, amount_hint, category_id, wallet_id,
-		       frequency, day_of_month, is_active, display_order, created_at
+		       frequency, day_of_month, due_anchor_date, is_active, display_order, created_at
 		FROM fin_checklist_template WHERE is_active=true ORDER BY display_order, title`)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
@@ -98,8 +100,10 @@ func ListChecklistTemplates(ctx context.Context) (*ChecklistListResponse, error)
 		var desc, catID, walletID sql.NullString
 		var amtHint sql.NullFloat64
 		var domN sql.NullInt64
+		var anchor sql.NullTime
 		rows.Scan(&t.ID, &t.Title, &desc, &amtHint, &catID, &walletID,
-			&t.Frequency, &domN, &t.IsActive, &t.Order, &t.CreatedAt)
+			&t.Frequency, &domN, &anchor, &t.IsActive, &t.Order, &t.CreatedAt)
+		attachDueAnchorDate(&t, anchor, domN, financeNow(ctx, conn))
 		if desc.Valid {
 			t.Description = &desc.String
 		}
@@ -112,10 +116,6 @@ func ListChecklistTemplates(ctx context.Context) (*ChecklistListResponse, error)
 		}
 		if walletID.Valid {
 			t.WalletID = &walletID.String
-		}
-		if domN.Valid {
-			v := int(domN.Int64)
-			t.DayOfMonth = &v
 		}
 		tpls = append(tpls, t)
 	}
@@ -138,7 +138,20 @@ func CreateChecklistTemplate(ctx context.Context, p *CreateChecklistTemplatePara
 		return nil, appErrs.BadRequest("judul checklist tidak boleh kosong")
 	}
 	if p.Frequency == "" {
-		p.Frequency = "daily"
+		p.Frequency = "monthly"
+	}
+	var dueAnchor *string
+	var dayOfMonth *int
+	if p.Frequency == "monthly" {
+		if p.AmountHint == nil || *p.AmountHint <= 0 {
+			return nil, appErrs.BadRequest("tagihan bulanan membutuhkan nominal estimasi")
+		}
+		anchor, dom, err := resolveMonthlyDueFields(p.DueDate, p.DayOfMonth)
+		if err != nil {
+			return nil, err
+		}
+		dueAnchor = &anchor
+		dayOfMonth = &dom
 	}
 	conn, err := tenantConn(ctx, u.TenantSchema)
 	if err != nil {
@@ -149,10 +162,10 @@ func CreateChecklistTemplate(ctx context.Context, p *CreateChecklistTemplatePara
 	var id string
 	err = conn.QueryRowContext(ctx,
 		`INSERT INTO fin_checklist_template
-		 (title, description, amount_hint, category_id, wallet_id, frequency, day_of_month, display_order, created_by)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+		 (title, description, amount_hint, category_id, wallet_id, frequency, day_of_month, due_anchor_date, display_order, created_by)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
 		strings.TrimSpace(p.Title), p.Description, p.AmountHint, p.CategoryID, p.WalletID,
-		p.Frequency, p.DayOfMonth, p.Order, u.AccountID,
+		p.Frequency, dayOfMonth, dueAnchor, p.Order, u.AccountID,
 	).Scan(&id)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
@@ -160,7 +173,7 @@ func CreateChecklistTemplate(ctx context.Context, p *CreateChecklistTemplatePara
 	t := &ChecklistTemplate{
 		ID: id, Title: p.Title, CategoryID: p.CategoryID,
 		WalletID: p.WalletID, Frequency: p.Frequency,
-		DayOfMonth: p.DayOfMonth, IsActive: true, Order: p.Order, CreatedAt: time.Now(),
+		DayOfMonth: dayOfMonth, DueAnchorDate: dueAnchor, IsActive: true, Order: p.Order, CreatedAt: time.Now(),
 	}
 	if p.AmountHint != nil {
 		s := fmt.Sprintf("%.2f", *p.AmountHint)
@@ -205,37 +218,21 @@ func GetTodayChecklist(ctx context.Context) (*TodayChecklistResponse, error) {
 	today := now.Format("2006-01-02")
 	dom := now.Day()
 
-	// Ensure checklist items exist for today
-	rows, err := conn.QueryContext(ctx, `
-		SELECT id, frequency, day_of_month, amount_hint, category_id, wallet_id
-		FROM fin_checklist_template WHERE is_active=true`)
-	if err != nil {
+	// Ensure checklist items exist for today (bulk INSERT — never Exec inside open Rows on same Conn)
+	if _, err := conn.ExecContext(ctx, `
+		INSERT INTO fin_checklist_item (template_id, due_date)
+		SELECT id, $1::date FROM fin_checklist_template
+		WHERE is_active = true AND frequency = 'daily'
+		ON CONFLICT (template_id, due_date) DO NOTHING`, today); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var id, freq string
-		var dayM sql.NullInt64
-		var amtHint sql.NullFloat64
-		var catID, walletID sql.NullString
-		rows.Scan(&id, &freq, &dayM, &amtHint, &catID, &walletID)
-
-		include := false
-		switch freq {
-		case "daily":
-			include = true
-		case "monthly":
-			include = dayM.Valid && int(dayM.Int64) == dom
-		}
-		if !include {
-			continue
-		}
-		// Upsert — only insert if not yet existing for today
-		conn.ExecContext(ctx,
-			`INSERT INTO fin_checklist_item (template_id, due_date) VALUES ($1,$2)
-			 ON CONFLICT (template_id, due_date) DO NOTHING`,
-			id, today)
+	if _, err := conn.ExecContext(ctx, `
+		INSERT INTO fin_checklist_item (template_id, due_date)
+		SELECT id, $1::date FROM fin_checklist_template
+		WHERE is_active = true AND frequency = 'monthly'
+		  AND day_of_month = $2
+		ON CONFLICT (template_id, due_date) DO NOTHING`, today, dom); err != nil {
+		return nil, appErrs.Internal(err.Error())
 	}
 
 	// Fetch items

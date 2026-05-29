@@ -75,6 +75,7 @@ Cookie `wabantu_at` + body `accessToken` — selaras Nest.
 | POST | `/api/v1/inbox/conversations/:id/ai-resume` | ✅ | ✅ |
 | POST | `/api/v1/inbox/conversations/:id/messages` | ✅ | ✅ |
 | GET/POST | `/api/v1/inbox/contacts?q=&page=&pageSize=` | ✅ | ✅ |
+| POST | `/api/v1/auth/reauth` (password + Bearer kedaluwarsa) | ✅ | ✅ |
 | GET/PATCH/DELETE | `/api/v1/inbox/contacts/:id` (+ `priceTypeId`) | ✅ | ✅ |
 | POST | `/api/v1/inbox/conversations-batch/handoff`, `.../ai-resume` | ✅ | ✅ |
 | PATCH | `/api/v1/inbox-contact-status/batch`, `/api/v1/inbox-contacts/batch-delete` | ✅ | ✅ |
@@ -140,7 +141,7 @@ Plan codes: `starter`, `business`, `pro` (+ alias `basic` → business, tidak di
 | Finance — Budget | `GET/POST/DELETE /api/v1/finance/budgets` | `/dashboard/finance/budget` |
 | Finance — Investasi | `GET /api/v1/finance/investments/portfolio`, `/assets`, `/prices` | `/dashboard/finance/investment` |
 | Finance — Recurring | `GET/POST/DELETE /api/v1/finance/recurring` | `/dashboard/finance/recurring` |
-| Finance — Checklist | `GET /api/v1/finance/checklist/today`, `/templates`, `/action` | `/dashboard/finance/checklist` |
+| Finance — Checklist / tagihan bulanan | `GET /checklist/monthly`, `POST /checklist/monthly/toggle`, `GET /checklist/templates/manage`, `PATCH /checklist/templates/:id`, plus `/today`, `/templates`, `/action` | `/dashboard/finance/checklist` |
 | Finance — Laporan | `POST /api/v1/finance/reports/export`, `GET /reports/jobs/:id` | `/dashboard/finance/reports` |
 | Finance — Audit | `GET /api/v1/finance/audit-log` | `/dashboard/finance` (owner) |
 | Leads | `/api/v1/leads` | internal CRM capture; `/dashboard/contacts` now uses `/api/v1/inbox/contacts` |

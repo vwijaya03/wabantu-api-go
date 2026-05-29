@@ -140,6 +140,21 @@ DROP INDEX IF EXISTS idx_fin_txn_period;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_fin_checklist_tpl_date ON fin_checklist_item(template_id, due_date);
 
+ALTER TABLE fin_checklist_template ADD COLUMN IF NOT EXISTS due_anchor_date DATE;
+UPDATE fin_checklist_template
+SET due_anchor_date = (
+  date_trunc('month', CURRENT_DATE)::date
+  + (
+      LEAST(
+        GREATEST(COALESCE(day_of_month, 1), 1),
+        EXTRACT(DAY FROM (date_trunc('month', CURRENT_DATE) + interval '1 month - 1 day'))::int
+      ) - 1
+    ) * interval '1 day'
+)::date
+WHERE frequency = 'monthly'
+  AND due_anchor_date IS NULL
+  AND day_of_month IS NOT NULL;
+
 DELETE FROM fin_approval_setting a
 USING fin_approval_setting b
 WHERE a.id > b.id;
