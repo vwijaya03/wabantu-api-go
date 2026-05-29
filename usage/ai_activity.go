@@ -20,6 +20,7 @@ const (
 	PurposeInboundAutoreply    = "inbound_autoreply"
 	PurposeConversationSummary = "conversation_summary"
 	PurposeCatalogImport       = "catalog_import"
+	PurposeTransactionImport   = "transaction_import"
 )
 
 // AIActivityParams is one auditable AI decision or model call for a tenant.

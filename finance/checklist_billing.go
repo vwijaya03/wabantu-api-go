@@ -276,6 +276,8 @@ func ListChecklistTemplatesPaginated(ctx context.Context, p *ListChecklistTempla
 		return nil, appErrs.Internal(err.Error())
 	}
 
+	ref := financeNow(ctx, conn)
+
 	offset := (p.Page - 1) * p.PageSize
 	listArgs := append(append([]any{}, args...), p.PageSize, offset)
 	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
@@ -289,15 +291,14 @@ func ListChecklistTemplatesPaginated(ctx context.Context, p *ListChecklistTempla
 	}
 	defer rows.Close()
 
-	items, err := scanChecklistTemplates(ctx, conn, rows)
+	items, err := scanChecklistTemplates(rows, ref)
 	if err != nil {
 		return nil, err
 	}
 	return &ListChecklistTemplatesPaginatedResponse{Items: items, Total: total}, nil
 }
 
-func scanChecklistTemplates(ctx context.Context, conn *sql.Conn, rows *sql.Rows) ([]ChecklistTemplate, error) {
-	ref := financeNow(ctx, conn)
+func scanChecklistTemplates(rows *sql.Rows, ref time.Time) ([]ChecklistTemplate, error) {
 	var tpls []ChecklistTemplate
 	for rows.Next() {
 		var t ChecklistTemplate
@@ -582,20 +583,18 @@ func tryPostMonthlyBillingTransactions(ctx context.Context, conn *sql.Conn, tena
 	startStr := periodStart.Format("2006-01-02")
 	endStr := periodEnd.Format("2006-01-02")
 
-	var total, doneCount, unpostedDone int
+	var unpostedDone int
 	err := conn.QueryRowContext(ctx, `
-		SELECT
-		  COUNT(*)::int,
-		  COUNT(*) FILTER (WHERE i.status='done')::int,
-		  COUNT(*) FILTER (WHERE i.status='done' AND i.transaction_id IS NULL)::int
+		SELECT COUNT(*)::int
 		FROM fin_checklist_item i
 		JOIN fin_checklist_template t ON t.id=i.template_id
 		WHERE t.is_active=true AND t.frequency='monthly'
-		  AND i.due_date >= $1 AND i.due_date < $2`, startStr, endStr).Scan(&total, &doneCount, &unpostedDone)
+		  AND i.due_date >= $1 AND i.due_date < $2
+		  AND i.status='done' AND i.transaction_id IS NULL`, startStr, endStr).Scan(&unpostedDone)
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	if total == 0 || doneCount < total || unpostedDone == 0 {
+	if unpostedDone == 0 {
 		return nil
 	}
 
@@ -634,6 +633,7 @@ func tryPostMonthlyBillingTransactions(ctx context.Context, conn *sql.Conn, tena
 	if err := rows.Err(); err != nil {
 		return appErrs.Internal(err.Error())
 	}
+	rows.Close()
 
 	defaultWallet, err := resolveDefaultExpenseWallet(ctx, conn)
 	if err != nil {
@@ -652,11 +652,6 @@ func tryPostMonthlyBillingTransactions(ctx context.Context, conn *sql.Conn, tena
 		walletsToRefresh[wallet] = struct{}{}
 	}
 
-	period := walletPeriod(startStr)
-	if err := ensurePeriodUnlocked(ctx, conn, period); err != nil {
-		return err
-	}
-
 	dbTx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
 		return appErrs.Internal(err.Error())
@@ -664,6 +659,10 @@ func tryPostMonthlyBillingTransactions(ctx context.Context, conn *sql.Conn, tena
 	defer dbTx.Rollback()
 
 	for _, r := range pending {
+		if err := ensurePeriodUnlocked(ctx, conn, walletPeriod(r.due)); err != nil {
+			return err
+		}
+
 		wallet := defaultWallet
 		if r.walletID.Valid && r.walletID.String != "" {
 			wallet = r.walletID.String
@@ -764,6 +763,7 @@ func removeChecklistBillingTransaction(ctx context.Context, conn *sql.Conn, u *t
 	if err := rows.Err(); err != nil {
 		return appErrs.Internal(err.Error())
 	}
+	rows.Close()
 
 	res, err := conn.ExecContext(ctx, `
 		UPDATE fin_transaction

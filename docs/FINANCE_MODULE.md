@@ -21,7 +21,11 @@ Target: UMKM, toko kecil, bisnis keluarga.
 | `finance/investment_units.go` | Default satuan & multiplier per tipe aset (lot/lembar, gram, unit, koin) |
 | `finance/recurring.go` | Transaksi berulang CRUD + cron harian 07:00 WIB |
 | `finance/checklist.go` | Checklist harian + template CRUD dasar |
-| `finance/checklist_billing.go` | Tagihan bulanan per periode, toggle checkbox, auto-post transaksi expense |
+| `finance/checklist_billing.go` | Tagihan bulanan per periode, toggle checkbox, auto-post transaksi expense per item |
+| `finance/checklist_clone.go` | Clone `fin_recurring` (bulanan + expense) → template tagihan bulanan |
+| `finance/transaction_image.go` | Import transaksi dari screenshot (AI vision + staging Redis + commit) |
+| `finance/transaction_image_http.go` | Raw multipart handler preview import transaksi |
+| `aivision/vision.go` | Vision Haiku tanpa import cycle `ai` → `order` → `finance` |
 | `finance/report.go` | Export laporan CSV/PDF async, progress job, batching all-time, data URL download |
 | `finance/order_income.go` | Pemasukan otomatis dari pesanan `completed`; hapus saat `draft`/`cancelled` |
 | `tenant/finance_seed.go` | Seed kategori + jenis transaksi default + wallet Kas Tunai |
@@ -81,6 +85,7 @@ Target: UMKM, toko kecil, bisnis keluarga.
 | DELETE | `/api/v1/finance/transactions/:id` | owner (jika periode tidak terkunci) |
 | POST | `/api/v1/finance/transactions/duplicate` | semua |
 | POST | `/api/v1/finance/transactions/approve` | owner |
+| GET/POST | `/api/v1/finance/transactions/import-image/*` | owner — screenshot → AI → konfirmasi → bulk insert; lihat [TRANSACTION_IMAGE_IMPORT.md](./TRANSACTION_IMAGE_IMPORT.md) |
 
 ### Budget & Laporan
 
@@ -154,21 +159,24 @@ All-time export tidak memakai satu query besar; loader memakai batch + `statemen
 | POST | `/api/v1/finance/checklist/action` | semua — `done` / `skip` (tanpa auto-transaksi) |
 | GET | `/api/v1/finance/checklist/templates` | semua — daftar template aktif (legacy, tanpa pagination) |
 | GET | `/api/v1/finance/checklist/templates/manage` | owner — CRUD list: `q`, `page`, `pageSize`, `frequency`, `activeOnly` |
-| POST | `/api/v1/finance/checklist/templates` | owner — default `frequency=monthly`; bulanan wajib `amountHint` + `dayOfMonth` |
+| POST | `/api/v1/finance/checklist/templates` | owner — default `frequency=monthly`; bulanan wajib `amountHint` + `dueDate` (YYYY-MM-DD) |
 | PATCH | `/api/v1/finance/checklist/templates/:id` | owner |
 | DELETE | `/api/v1/finance/checklist/templates/:id` | owner — soft (`is_active=false`) |
 | GET | `/api/v1/finance/checklist/monthly?period=YYYY-MM` | semua — checklist tagihan bulanan (auto-upsert item per template) |
-| POST | `/api/v1/finance/checklist/monthly/toggle` | semua — body `{ itemId, checked }`; jika **semua** item periode `done` → buat transaksi `expense` |
+| POST | `/api/v1/finance/checklist/monthly/toggle` | semua — body `{ itemId, checked }`; centang → auto-post `expense` per item (uncheck → hapus transaksi terkait) |
+| POST | `/api/v1/finance/checklist/clone-from-recurring` | owner — body `{ recurringIds[] }` → template tagihan bulanan dari `fin_recurring` (bulanan + expense) |
 
 **Pola data (best practice):**
 
 - **Template** (`fin_checklist_template`, `frequency=monthly`) = master tagihan tetap (judul, nominal, dompet/kategori opsional, `due_anchor_date` + `day_of_month` 1–31).
 - **Instance** (`fin_checklist_item`, `due_date` = tanggal jatuh tempo di bulan tersebut) = checklist per bulan; unik `(template_id, due_date)`.
-- **Checkbox** = `status` `pending` ↔ `done` (bukan langsung insert transaksi per centang).
-- **Auto-catat transaksi** hanya ketika **seluruh** item periode sudah `done` dan belum punya transaksi aktif — satu transaksi `expense` per item, `reference_no=checklist:<itemId>` (idempoten), `transaction_date=due_date`, tag `checklist-billing`. Sinkron ulang juga dijalankan saat `GET /checklist/monthly` (repair + post).
+- **Checkbox** = `status` `pending` ↔ `done`; setiap centang langsung memicu auto-post (jika nominal valid).
+- **Auto-catat transaksi** setiap item yang `done` dan belum punya transaksi (langsung saat dicentang, tidak perlu menunggu semua tagihan selesai) — satu transaksi `expense` per item, `reference_no=checklist:<itemId>` (idempoten), `transaction_date=due_date`, tag `checklist-billing`. Sinkron ulang juga dijalankan saat `GET /checklist/monthly` (repair + post sisa yang belum tercatat).
 - **Uncheck** menghapus (soft-delete) transaksi terkait dan mengosongkan `transaction_id`.
 - Badge **Tercatat** hanya jika transaksi masih ada (bukan terhapus).
 - Periode terkunci (`fin_period_lock`) memblokir batch post sama seperti transaksi manual.
+
+**Koneksi DB:** Satu `*sql.Conn` tenant hanya satu query aktif. Jangan memanggil query lain (termasuk `financeNow` untuk timezone) selama cursor `Rows` masih terbuka — selesaikan iterasi lalu `Rows.Close()` sebelum query berikutnya.
 
 ### Lainnya
 
@@ -286,7 +294,8 @@ Implementasi: `finance/order_income.go`, dipanggil dari `order/order.go`.
 
 | Tanggal | Catatan |
 |---------|---------|
-| 2026-05-27 | Tagihan bulanan: checklist per `YYYY-MM`, toggle checkbox, auto-post expense saat semua selesai; template CRUD + search/pagination |
+| 2026-05-29 | Fix deadlock `*sql.Conn`: jangan panggil query (mis. `financeNow`) saat `Rows` masih terbuka — `templates/manage` timeout ~30s / `context canceled` |
+| 2026-05-27 | Tagihan bulanan: checklist per `YYYY-MM`, toggle checkbox, auto-post expense saat semua selesai; template CRUD + search/pagination; `due_anchor_date` + input tanggal |
 | 2026-05-27 | Pemasukan otomatis dari pesanan selesai; hapus saat draft/dibatalkan |
 | 2026-05 | Modul finance awal — wallet, transaksi, anggaran, investasi, recurring, checklist, laporan |
 | 2026-05-24 | Production hardening: `fin_transaction_type`, trade investasi, lot×100, biaya %, list transaksi + search, hapus dompet/aset dengan guard, dedupe kategori tenant, fix scan `tags` TEXT[] |

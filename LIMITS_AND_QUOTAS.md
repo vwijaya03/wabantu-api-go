@@ -140,6 +140,7 @@ Top-up tidak mengubah paket, tidak recurring, dan tidak menambah broadcast/stora
 | Multi cabang | `FeatureMultiBranch` | — |
 | AI auto-reply | — | `ai_conversation`, `ai_token` via `CheckAICostLimit` |
 | Import katalog dari gambar (vision) | — | `ai_token` saat **preview** saja (`PurposeCatalogImport`); commit tanpa AI |
+| Import transaksi dari gambar (vision) | — | `ai_token` saat **preview** saja (`PurposeTransactionImport`); commit tanpa AI |
 | Undang staff | — | `admin_seat` |
 
 Pesan kuota habis: HTTP 403 / fallback pesan AI ramah (lihat `ai/autoreply.go`).

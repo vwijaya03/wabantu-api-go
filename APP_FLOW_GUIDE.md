@@ -347,12 +347,13 @@ Verify token: secret `WebhookVerifyToken`. Saat daftar app Meta, pilih path yang
 | Catalog | `business/catalog.go` + `business/price_type.go` + `shared/pricing`; multi-harga per tipe; `contactId` untuk `effectiveSellPrice` |
 | Price types | `GET/POST/PATCH/DELETE /api/v1/business/price-types` — lihat `docs/PRICE_TYPES_AND_CATALOG_PRICING.md` |
 | Catalog image (AI) | `POST .../import-image/preview`, `GET .../import-image-limits`, `GET/POST .../import-image/draft/:jobId` — [docs/CATALOG_IMAGE_IMPORT.md](./docs/CATALOG_IMAGE_IMPORT.md) |
+| Transaction image (AI) | `POST .../finance/transactions/import-image/preview`, `GET .../import-image-limits`, `GET/POST .../draft/:jobId` — [docs/TRANSACTION_IMAGE_IMPORT.md](./docs/TRANSACTION_IMAGE_IMPORT.md) |
 | Broadcast | `POST /api/v1/broadcast/...` (Business+ berbayar; **trial** boleh dengan kuota 20 kontak/bulan) |
 | Import CSV | `POST /api/v1/import/preview`, `/import/execute` |
 | Branches | `GET/POST /api/v1/branches` (Pro) |
 | Workflow | `GET/POST/PATCH/DELETE /api/v1/workflows` |
 | Admin | `GET /api/v1/admin/tenants?q=&page=&pageSize=`, impersonation, override paket, `DELETE /api/v1/admin/tenant/:id?confirmSchemaName=...` (`super_admin`) |
-| Finance | `GET /api/v1/finance/dashboard`, `/finance/wallets`, `/finance/transactions`, `/finance/budgets`, `/finance/investments/portfolio`, `/finance/recurring`, `/finance/checklist/monthly`, `/finance/checklist/templates/manage`, `/finance/reports/export` |
+| Finance | `GET /api/v1/finance/dashboard`, `/finance/wallets`, `/finance/transactions`, `/finance/transactions/import-image/*`, `/finance/budgets`, `/finance/investments/portfolio`, `/finance/recurring`, `/finance/checklist/monthly`, `/finance/checklist/clone-from-recurring`, `/finance/checklist/templates/manage`, `/finance/reports/export` |
 | Usage | `GET /api/v1/usage/summary` |
 | Health | `GET /api/v1/health`, `/api/v1/health/ready` |
 

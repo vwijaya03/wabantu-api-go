@@ -94,6 +94,7 @@ func ListChecklistTemplates(ctx context.Context) (*ChecklistListResponse, error)
 	}
 	defer rows.Close()
 
+	ref := financeNow(ctx, conn)
 	var tpls []ChecklistTemplate
 	for rows.Next() {
 		var t ChecklistTemplate
@@ -103,7 +104,7 @@ func ListChecklistTemplates(ctx context.Context) (*ChecklistListResponse, error)
 		var anchor sql.NullTime
 		rows.Scan(&t.ID, &t.Title, &desc, &amtHint, &catID, &walletID,
 			&t.Frequency, &domN, &anchor, &t.IsActive, &t.Order, &t.CreatedAt)
-		attachDueAnchorDate(&t, anchor, domN, financeNow(ctx, conn))
+		attachDueAnchorDate(&t, anchor, domN, ref)
 		if desc.Valid {
 			t.Description = &desc.String
 		}

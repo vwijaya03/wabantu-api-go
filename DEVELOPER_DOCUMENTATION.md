@@ -943,6 +943,8 @@ See sequence in Bagian 5. Key branches:
   8. Activity logging per tenant (`usage.RecordAIActivity`, paths in `reply_meta.go` incl. `catalog_db`)
 
 **Import katalog dari gambar (dashboard, bukan WA):** `business/catalog_image.go` + `ai/vision.go` — lihat [docs/CATALOG_IMAGE_IMPORT.md](./docs/CATALOG_IMAGE_IMPORT.md).
+
+**Import transaksi dari gambar:** `finance/transaction_image.go` + `aivision/vision.go` (hindari import cycle ke package `ai`) — lihat [docs/TRANSACTION_IMAGE_IMPORT.md](./docs/TRANSACTION_IMAGE_IMPORT.md).
 - Failures: retry Pub/Sub → `FallbackAutoReply`
 
 AI activity log (super_admin): `GET /api/v1/admin/tenant/:id/ai-activity` (+ `/summary`). Saat impersonate: juga `GET /api/v1/usage/ai-activity` (tenant efektif). Owner tenant **tidak** punya akses.

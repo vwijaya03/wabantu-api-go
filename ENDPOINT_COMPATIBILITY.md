@@ -123,6 +123,7 @@ Plan codes: `starter`, `business`, `pro` (+ alias `basic` → business, tidak di
 | Price types | `GET/POST/PATCH/DELETE /api/v1/business/price-types` | `/dashboard/catalog/price-types` |
 | Catalog | `/api/v1/business/catalog` (+ `contactId`, `prices[]`) + POST/PATCH/DELETE | `/dashboard/catalog` — multi-harga per tipe |
 | Catalog image AI | `GET/POST /api/v1/business/catalog/import-image/*` | `/dashboard/catalog/import-image` |
+| Transaction image AI | `GET/POST /api/v1/finance/transactions/import-image/*` | `/dashboard/finance/transactions/import-image` |
 | Broadcast | `/api/v1/broadcast/...` | `/dashboard/broadcast` |
 | Import CSV/XLSX produk | `/api/v1/import/preview`, `/execute` (`targetTable=business_catalog_item`) | `/dashboard/import` — download template CSV/XLSX produk, preview mapping, import ke katalog |
 | Branches | `/api/v1/branches` | `/dashboard/branches` |
@@ -136,12 +137,13 @@ Plan codes: `starter`, `business`, `pro` (+ alias `basic` → business, tidak di
 | Finance — Wallet | `GET/POST/PUT/DELETE /api/v1/finance/wallets` | `/dashboard/finance/wallets` |
 | Finance — Category | `GET/POST/DELETE /api/v1/finance/categories` | `/dashboard/finance/transactions` |
 | Finance — Transaction | `GET/POST/PUT/DELETE /api/v1/finance/transactions` | `/dashboard/finance/transactions` |
+| Finance — Transaction image AI | `GET/POST /api/v1/finance/transactions/import-image/*` | `/dashboard/finance/transactions/import-image` |
 | Finance — Duplikat | `POST /api/v1/finance/transactions/duplicate` | `/dashboard/finance/transactions` |
 | Finance — Approval | `POST /api/v1/finance/transactions/approve` | `/dashboard/finance/transactions` |
 | Finance — Budget | `GET/POST/DELETE /api/v1/finance/budgets` | `/dashboard/finance/budget` |
 | Finance — Investasi | `GET /api/v1/finance/investments/portfolio`, `/assets`, `/prices` | `/dashboard/finance/investment` |
 | Finance — Recurring | `GET/POST/DELETE /api/v1/finance/recurring` | `/dashboard/finance/recurring` |
-| Finance — Checklist / tagihan bulanan | `GET /checklist/monthly`, `POST /checklist/monthly/toggle`, `GET /checklist/templates/manage`, `PATCH /checklist/templates/:id`, plus `/today`, `/templates`, `/action` | `/dashboard/finance/checklist` |
+| Finance — Checklist / tagihan bulanan | `GET /checklist/monthly`, `POST /checklist/monthly/toggle`, `POST /checklist/clone-from-recurring`, `GET /checklist/templates/manage`, `PATCH /checklist/templates/:id`, plus `/today`, `/templates`, `/action` | `/dashboard/finance/checklist` |
 | Finance — Laporan | `POST /api/v1/finance/reports/export`, `GET /reports/jobs/:id` | `/dashboard/finance/reports` |
 | Finance — Audit | `GET /api/v1/finance/audit-log` | `/dashboard/finance` (owner) |
 | Leads | `/api/v1/leads` | internal CRM capture; `/dashboard/contacts` now uses `/api/v1/inbox/contacts` |
