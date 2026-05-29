@@ -85,7 +85,7 @@ Target: UMKM, toko kecil, bisnis keluarga.
 | DELETE | `/api/v1/finance/transactions/:id` | owner (jika periode tidak terkunci) |
 | POST | `/api/v1/finance/transactions/duplicate` | semua |
 | POST | `/api/v1/finance/transactions/approve` | owner |
-| GET/POST | `/api/v1/finance/transactions/import-image/*` | owner — screenshot → AI → konfirmasi → bulk insert; lihat [TRANSACTION_IMAGE_IMPORT.md](./TRANSACTION_IMAGE_IMPORT.md) |
+| GET/POST | `/api/v1/finance/transactions/import-image/*` | owner — screenshot → AI → konfirmasi → bulk insert; lihat [TRANSACTION_IMAGE_IMPORT.md](./TRANSACTION_IMAGE_IMPORT.md). Secret: `AnthropicAPIKey` via `var secrets struct` di package `finance` (bukan nama struct lain — Encore tidak mengisi) |
 
 ### Budget & Laporan
 

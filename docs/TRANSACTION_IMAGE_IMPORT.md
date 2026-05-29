@@ -11,6 +11,7 @@ Fitur untuk mencatat banyak transaksi sekaligus dari screenshot halaman **Transa
 
 - Purpose aktivitas: `transaction_import` (`usage.PurposeTransactionImport`).
 - Vision code: `aivision` package (hindari import cycle `finance` → `ai` → `order` → `finance`).
+- Secret: `AnthropicAPIKey` di struct `secrets` pada package `finance` (nama struct harus `secrets`, sama seperti `business`). Set via `encore secret set --type local AnthropicAPIKey` — nilai global, dipakai juga import katalog.
 
 ## Deteksi pemasukan vs pengeluaran
 
@@ -41,6 +42,13 @@ Sama dengan import katalog: 5 MB/file, 20 MB/batch, 5 file, 50 baris/job. Konsta
 Redis key: `finance:txn:image:staging:{jobId}`, TTL 24 jam.
 
 Commit: `reference_no=imgimport:{jobId}:{draftKey}` (idempoten), tag `image-import`, status `approved`.
+
+## Troubleshooting
+
+| Gejala | Penyebab | Solusi |
+|--------|----------|--------|
+| `kunci Anthropic belum dikonfigurasi` / `anthropic API key not configured` | Struct secret bukan nama `secrets`, atau secret belum di-set | Pastikan `finance` memakai `var secrets struct { AnthropicAPIKey string }`; `encore secret set --type local AnthropicAPIKey` lalu **restart** `encore run` |
+| Import katalog jalan, transaksi tidak | Bug lama `txnImageSecrets` | Deploy perbaikan terbaru; keduanya memakai `AnthropicAPIKey` yang sama |
 
 ## Frontend
 

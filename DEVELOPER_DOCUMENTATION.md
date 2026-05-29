@@ -394,7 +394,7 @@ Ringkasan cepat:
 | `RedisURL` | `auth` | Ya |
 | `DataEncryptionKey` | `auth` | Ya |
 | `PlatformAdminBootstrapSecret` | `auth` | Hanya untuk bootstrap platform admin ([Bagian 8.1](#81-platform-admin-internal-operator-wabantu-owner)) |
-| `AnthropicApiKey` / `AnthropicAPIKey` | `ai`, `business` | Untuk AI & import website |
+| `AnthropicApiKey` / `AnthropicAPIKey` | `ai`, `business`, `finance` | Untuk AI, import katalog/transaksi gambar (`AnthropicAPIKey`; struct wajib bernama `secrets`) |
 | `AiInternalToken` | `ai` | Untuk internal AI HTTP |
 | `WebhookVerifyToken` | `webhook` | Meta webhook GET challenge (`hub.verify_token`) |
 | `Midtrans*` | `payment` | Payment |
@@ -594,7 +594,7 @@ Secret tidak hot-reload. Lupa restart = perilaku aneh (nilai lama/kosong).
 | `RedisURL` | `auth/auth.go`, `ai/api.go` | Session, rate limit, SSE, AI retry counter | Ya |
 | `PlatformAdminBootstrapSecret` | `auth/auth.go` | Header bootstrap akun `super_admin` internal | Hanya jika pakai bootstrap |
 | `AnthropicApiKey` | `ai/api.go` | Model AI auto-reply | Untuk fitur AI |
-| `AnthropicAPIKey` | `business/business.go` | Import website → profil | Untuk import website |
+| `AnthropicAPIKey` | `business/business.go`, `finance/transaction_image.go` | Import website, import katalog/transaksi gambar | Struct wajib `secrets` per service |
 | `AiInternalToken` | `ai/api.go` | `X-Ai-Internal-Token` pada internal AI HTTP | Jika panggil internal AI |
 | `WebhookVerifyToken` | `webhook/webhook.go` | Verifikasi GET challenge Meta | Untuk webhook WA |
 | *(per channel)* `meta_app_secret` | `whatsapp_channel` (tenant DB) | `X-Hub-Signature-256` setelah OAuth connect | Disarankan prod |

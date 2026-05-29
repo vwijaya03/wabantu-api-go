@@ -71,7 +71,7 @@ func SanitizeVisionJSON(text string) string {
 func visionExtract(ctx context.Context, apiKey string, imageBytes []byte, mediaType, system, user string) (string, Usage, error) {
 	var usage Usage
 	if strings.TrimSpace(apiKey) == "" {
-		return "", usage, fmt.Errorf("anthropic API key not configured")
+		return "", usage, fmt.Errorf("kunci Anthropic belum dikonfigurasi — set secret AnthropicAPIKey (encore secret set --type local AnthropicAPIKey)")
 	}
 	if len(imageBytes) == 0 {
 		return "", usage, fmt.Errorf("empty image")

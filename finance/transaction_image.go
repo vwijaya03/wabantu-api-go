@@ -25,7 +25,8 @@ import (
 	"encore.app/wabantu/usage"
 )
 
-var txnImageSecrets struct {
+// secrets — nama struct wajib "secrets" agar Encore menyuntikkan nilai (sama dengan service business/ai).
+var secrets struct {
 	AnthropicAPIKey string
 }
 
@@ -462,7 +463,7 @@ func processTransactionImageFile(ctx context.Context, user *types.AuthUser, fh *
 	if err != nil {
 		return out, err
 	}
-	rawJSON, compUsage, err := aivision.ExtractTransactionsFromScreenshot(ctx, txnImageSecrets.AnthropicAPIKey, imageBytes, mediaType)
+	rawJSON, compUsage, err := aivision.ExtractTransactionsFromScreenshot(ctx, secrets.AnthropicAPIKey, imageBytes, mediaType)
 	if err != nil {
 		rlog.Warn("transaction image vision failed", "err", err, "file", fh.Filename, "tenant", user.TenantSchema)
 		return out, fmt.Errorf("AI gagal membaca %s", fh.Filename)

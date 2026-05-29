@@ -138,7 +138,7 @@ Mapping nama secret (field di kode Go → nilai dari Nest `.env`):
 | `DataEncryptionKey` | `DATA_ENCRYPTION_KEY` | Ya |
 | `RedisURL` | `redis://localhost:6379` | Ya |
 | `AnthropicApiKey` | `ANTHROPIC_API_KEY` | Untuk AI |
-| `AnthropicAPIKey` | sama (nama lain di service `business`) | Untuk import website |
+| `AnthropicAPIKey` | sama (juga dipakai `business`, `finance`) | Import katalog/transaksi dari gambar, import website |
 | `AiInternalToken` | `AI_INTERNAL_TOKEN` | Untuk worker AI |
 | `WebhookVerifyToken` | `META_WEBHOOK_VERIFY_TOKEN` | Untuk webhook Meta |
 | *(per channel)* `meta_app_secret` di DB | disimpan saat OAuth WhatsApp connect | Verifikasi webhook signature |
