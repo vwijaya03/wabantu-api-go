@@ -351,5 +351,8 @@ func runFinanceSchemaAndSeed(ctx context.Context, conn *sql.Conn) error {
 	if err := seedFinanceApprovalSetting(ctx, conn); err != nil {
 		return fmt.Errorf("finance seed approval: %w", err)
 	}
+	if err := runEventsSchemaAndSeed(ctx, conn); err != nil {
+		return fmt.Errorf("events schema: %w", err)
+	}
 	return nil
 }

@@ -1,0 +1,566 @@
+package events
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"strings"
+	"time"
+
+	appErrs "encore.app/wabantu/shared/errs"
+)
+
+type Event struct {
+	ID                  string  `json:"id"`
+	EventName           string  `json:"eventName"`
+	EventSlug           string  `json:"eventSlug"`
+	EventDescription    string  `json:"eventDescription,omitempty"`
+	Location            string  `json:"location,omitempty"`
+	StartDate           string  `json:"startDate"`
+	EndDate             string  `json:"endDate"`
+	StartTime           string  `json:"startTime"`
+	EndTime             string  `json:"endTime"`
+	RegistrationOpenAt  *string `json:"registrationOpenAt,omitempty"`
+	RegistrationCloseAt *string `json:"registrationCloseAt,omitempty"`
+	Status              string  `json:"status"`
+}
+
+type TherapySlotTemplate struct {
+	ID        string `json:"id,omitempty"`
+	StartTime string `json:"startTime"`
+	EndTime   string `json:"endTime"`
+	Capacity  int    `json:"capacity,omitempty"`
+	SortOrder int    `json:"sortOrder"`
+}
+
+type EventTherapySetting struct {
+	ID                  string                `json:"id"`
+	EventID             string                `json:"eventId"`
+	TherapyID           string                `json:"therapyId"`
+	TherapyName         string                `json:"therapyName,omitempty"`
+	SlotDurationMinutes int                   `json:"slotDurationMinutes"`
+	MaxCapacity         *int                  `json:"maxCapacity,omitempty"`
+	CapacityMode        string                `json:"capacityMode"`
+	ScheduleMode        string                `json:"scheduleMode"`
+	ScheduleStartTime   *string               `json:"scheduleStartTime,omitempty"`
+	ScheduleEndTime     *string               `json:"scheduleEndTime,omitempty"`
+	SlotTemplates       []TherapySlotTemplate `json:"slotTemplates,omitempty"`
+}
+
+type ListEventsParams struct {
+	Q        string `query:"q"`
+	Status   string `query:"status"`
+	Page     int    `query:"page"`
+	PageSize int    `query:"pageSize"`
+}
+
+type ListEventsResponse struct {
+	Items []Event `json:"items"`
+	Total int     `json:"total"`
+}
+
+type UpsertEventParams struct {
+	EventName             string  `json:"eventName"`
+	EventSlug             string  `json:"eventSlug,omitempty"`
+	EventDescription      string  `json:"eventDescription,omitempty"`
+	Location              string  `json:"location,omitempty"`
+	StartDate             string  `json:"startDate"`
+	EndDate               string  `json:"endDate"`
+	StartTime             string  `json:"startTime"`
+	EndTime               string  `json:"endTime"`
+	RegistrationOpenAt    *string `json:"registrationOpenAt,omitempty"`
+	RegistrationCloseAt   *string `json:"registrationCloseAt,omitempty"`
+	Status                string  `json:"status"`
+	ImportStaffFromRoster *bool   `json:"importStaffFromRoster,omitempty"`
+}
+
+func scanEvent(row interface{ Scan(...any) error }) (Event, error) {
+	var e Event
+	var desc, loc sql.NullString
+	var openAt, closeAt sql.NullTime
+	err := row.Scan(
+		&e.ID, &e.EventName, &e.EventSlug, &desc, &loc,
+		&e.StartDate, &e.EndDate, &e.StartTime, &e.EndTime,
+		&openAt, &closeAt, &e.Status,
+	)
+	if err != nil {
+		return e, err
+	}
+	if desc.Valid {
+		e.EventDescription = desc.String
+	}
+	if loc.Valid {
+		e.Location = loc.String
+	}
+	if openAt.Valid {
+		s := openAt.Time.Format(time.RFC3339)
+		e.RegistrationOpenAt = &s
+	}
+	if closeAt.Valid {
+		s := closeAt.Time.Format(time.RFC3339)
+		e.RegistrationCloseAt = &s
+	}
+	return e, nil
+}
+
+//encore:api auth method=GET path=/api/v1/events
+func ListEvents(ctx context.Context, p *ListEventsParams) (*ListEventsResponse, error) {
+	u, err := mustUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	conn, err := tenantConn(ctx, u.TenantSchema)
+	if err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	defer conn.Close()
+	page, pageSize := paginate(p.Page, p.PageSize)
+	off, lim := offsetLimit(page, pageSize)
+	conds := []string{"deleted_at IS NULL"}
+	args := []any{}
+	i := 1
+	if q := strings.TrimSpace(p.Q); q != "" {
+		conds = append(conds, fmt.Sprintf("(event_name ILIKE $%d OR event_slug ILIKE $%d)", i, i))
+		args = append(args, "%"+q+"%")
+		i++
+	}
+	if st := strings.TrimSpace(p.Status); st != "" {
+		conds = append(conds, fmt.Sprintf("status = $%d", i))
+		args = append(args, st)
+		i++
+	}
+	where := strings.Join(conds, " AND ")
+	var total int
+	if err := conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM evt_event WHERE `+where, args...).Scan(&total); err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	args = append(args, lim, off)
+	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
+		SELECT id::text, event_name, event_slug, event_description, location,
+		       start_date::text, end_date::text, start_time::text, end_time::text,
+		       registration_open_at, registration_close_at, status
+		FROM evt_event WHERE %s ORDER BY start_date DESC, created_at DESC LIMIT $%d OFFSET $%d`,
+		where, i, i+1), args...)
+	if err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	defer rows.Close()
+	var items []Event
+	for rows.Next() {
+		e, err := scanEvent(rows)
+		if err != nil {
+			return nil, appErrs.Internal(err.Error())
+		}
+		items = append(items, e)
+	}
+	if items == nil {
+		items = []Event{}
+	}
+	return &ListEventsResponse{Items: items, Total: total}, nil
+}
+
+//encore:api auth method=GET path=/api/v1/events/detail/:eventId
+func GetEvent(ctx context.Context, eventId string) (*Event, error) {
+	u, err := mustUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	conn, err := tenantConn(ctx, u.TenantSchema)
+	if err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	defer conn.Close()
+	row := conn.QueryRowContext(ctx, `
+		SELECT id::text, event_name, event_slug, event_description, location,
+		       start_date::text, end_date::text, start_time::text, end_time::text,
+		       registration_open_at, registration_close_at, status
+		FROM evt_event WHERE id=$1::uuid AND deleted_at IS NULL`, eventId)
+	e, err := scanEvent(row)
+	if err == sql.ErrNoRows {
+		return nil, appErrs.NotFound("acara tidak ditemukan")
+	}
+	if err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	return &e, nil
+}
+
+//encore:api auth method=POST path=/api/v1/events tag:owner
+func CreateEvent(ctx context.Context, p *UpsertEventParams) (*Event, error) {
+	u, err := mustUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := assertOwner(u); err != nil {
+		return nil, err
+	}
+	if err := validateEventParams(p); err != nil {
+		return nil, err
+	}
+	conn, err := tenantConn(ctx, u.TenantSchema)
+	if err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	defer conn.Close()
+	slug := strings.TrimSpace(p.EventSlug)
+	if slug == "" {
+		slug = slugify(p.EventName)
+	}
+	slug, err = uniqueSlug(ctx, conn, slug, "")
+	if err != nil {
+		return nil, err
+	}
+	st := strings.ToUpper(strings.TrimSpace(p.Status))
+	if st == "" {
+		st = "DRAFT"
+	}
+	var id string
+	err = conn.QueryRowContext(ctx, `
+		INSERT INTO evt_event (
+		  event_name, event_slug, event_description, location,
+		  start_date, end_date, start_time, end_time,
+		  registration_open_at, registration_close_at, status, created_by
+		) VALUES ($1,$2,$3,$4,$5::date,$6::date,$7::time,$8::time,$9,$10,$11,$12::uuid)
+		RETURNING id::text`,
+		p.EventName, slug, nullStr(p.EventDescription), nullStr(p.Location),
+		p.StartDate, p.EndDate, p.StartTime, p.EndTime,
+		parseTimePtr(p.RegistrationOpenAt), parseTimePtr(p.RegistrationCloseAt),
+		st, u.AccountID,
+	).Scan(&id)
+	if err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	_, _ = conn.ExecContext(ctx, `
+		INSERT INTO evt_event_therapy (event_id, therapy_id, slot_duration_minutes, capacity_mode)
+		SELECT $1::uuid, t.id, 30, CASE
+		  WHEN t.therapy_name ILIKE '%shijie%' THEN 'SHIJIE_COUNT'
+		  ELSE 'THERAPIST_COUNT'
+		END
+		FROM evt_therapy t
+		WHERE t.deleted_at IS NULL AND t.is_active = true
+		ON CONFLICT (event_id, therapy_id) DO NOTHING`, id)
+
+	importRoster := true
+	if p.ImportStaffFromRoster != nil {
+		importRoster = *p.ImportStaffFromRoster
+	}
+	if importRoster {
+		_, _, _ = importAllRosterToEvent(ctx, conn, id)
+	}
+
+	auditEvent(ctx, conn, u, "event", id, "create", nil, p)
+	return GetEvent(ctx, id)
+}
+
+//encore:api auth method=PUT path=/api/v1/events/detail/:eventId tag:owner
+func UpdateEvent(ctx context.Context, eventId string, p *UpsertEventParams) (*Event, error) {
+	u, err := mustUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := assertOwner(u); err != nil {
+		return nil, err
+	}
+	if err := validateEventParams(p); err != nil {
+		return nil, err
+	}
+	conn, err := tenantConn(ctx, u.TenantSchema)
+	if err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	defer conn.Close()
+	if err := assertEventMutable(ctx, conn, eventId); err != nil {
+		return nil, err
+	}
+	slug := strings.TrimSpace(p.EventSlug)
+	if slug == "" {
+		slug = slugify(p.EventName)
+	}
+	slug, err = uniqueSlug(ctx, conn, slug, eventId)
+	if err != nil {
+		return nil, err
+	}
+	st := strings.ToUpper(strings.TrimSpace(p.Status))
+	_, err = conn.ExecContext(ctx, `
+		UPDATE evt_event SET
+		  event_name=$1, event_slug=$2, event_description=$3, location=$4,
+		  start_date=$5::date, end_date=$6::date, start_time=$7::time, end_time=$8::time,
+		  registration_open_at=$9, registration_close_at=$10, status=$11, updated_at=now()
+		WHERE id=$12::uuid AND deleted_at IS NULL`,
+		p.EventName, slug, nullStr(p.EventDescription), nullStr(p.Location),
+		p.StartDate, p.EndDate, p.StartTime, p.EndTime,
+		parseTimePtr(p.RegistrationOpenAt), parseTimePtr(p.RegistrationCloseAt), st, eventId,
+	)
+	if err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	auditEvent(ctx, conn, u, "event", eventId, "update", nil, p)
+	return GetEvent(ctx, eventId)
+}
+
+//encore:api auth method=DELETE path=/api/v1/events/detail/:eventId tag:owner
+func DeleteEvent(ctx context.Context, eventId string) error {
+	u, err := mustUser(ctx)
+	if err != nil {
+		return err
+	}
+	if err := assertOwner(u); err != nil {
+		return err
+	}
+	conn, err := tenantConn(ctx, u.TenantSchema)
+	if err != nil {
+		return appErrs.Internal(err.Error())
+	}
+	defer conn.Close()
+	if err := assertEventExists(ctx, conn, eventId); err != nil {
+		return err
+	}
+	_, err = conn.ExecContext(ctx, `UPDATE evt_event SET deleted_at=now() WHERE id=$1::uuid AND deleted_at IS NULL`, eventId)
+	if err != nil {
+		return appErrs.Internal(err.Error())
+	}
+	auditEvent(ctx, conn, u, "event", eventId, "delete", nil, nil)
+	return nil
+}
+
+func validateEventParams(p *UpsertEventParams) error {
+	if strings.TrimSpace(p.EventName) == "" {
+		return appErrs.BadRequest("nama acara wajib diisi")
+	}
+	if p.StartDate == "" || p.EndDate == "" {
+		return appErrs.BadRequest("tanggal acara wajib diisi")
+	}
+	sd, err := time.Parse("2006-01-02", p.StartDate)
+	if err != nil {
+		return appErrs.BadRequest("tanggal mulai tidak valid")
+	}
+	ed, err := time.Parse("2006-01-02", p.EndDate)
+	if err != nil {
+		return appErrs.BadRequest("tanggal selesai tidak valid")
+	}
+	if ed.Before(sd) {
+		return appErrs.BadRequest("tanggal selesai tidak boleh sebelum tanggal mulai")
+	}
+	if strings.TrimSpace(p.StartTime) == "" {
+		p.StartTime = "09:00"
+	}
+	if strings.TrimSpace(p.EndTime) == "" {
+		p.EndTime = "17:00"
+	}
+	if _, err := time.Parse("15:04", p.StartTime); err != nil {
+		if _, err2 := time.Parse("15:04:05", p.StartTime); err2 != nil {
+			return appErrs.BadRequest("jam mulai tidak valid")
+		}
+	}
+	if _, err := time.Parse("15:04", p.EndTime); err != nil {
+		if _, err2 := time.Parse("15:04:05", p.EndTime); err2 != nil {
+			return appErrs.BadRequest("jam selesai tidak valid")
+		}
+	}
+	p.EventName = clampLen(p.EventName, 200)
+	p.EventDescription = clampLen(p.EventDescription, 2000)
+	p.Location = clampLen(p.Location, 300)
+	st := strings.ToUpper(strings.TrimSpace(p.Status))
+	valid := map[string]bool{"DRAFT": true, "PUBLISHED": true, "CLOSED": true, "CANCELLED": true, "ARCHIVED": true}
+	if st != "" && !valid[st] {
+		return appErrs.BadRequest("status acara tidak valid")
+	}
+	return nil
+}
+
+func nullStr(s string) interface{} {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
+func parseTimePtr(s *string) interface{} {
+	if s == nil || strings.TrimSpace(*s) == "" {
+		return nil
+	}
+	t, err := time.Parse(time.RFC3339, strings.TrimSpace(*s))
+	if err != nil {
+		t, err = time.Parse("2006-01-02T15:04:05", strings.TrimSpace(*s))
+		if err != nil {
+			return nil
+		}
+	}
+	return t
+}
+
+type UpsertEventTherapyParams struct {
+	TherapyID           string                `json:"therapyId"`
+	SlotDurationMinutes int                   `json:"slotDurationMinutes"`
+	MaxCapacity         *int                  `json:"maxCapacity,omitempty"`
+	CapacityMode        string                `json:"capacityMode"`
+	ScheduleMode        string                `json:"scheduleMode,omitempty"`
+	ScheduleStartTime   string                `json:"scheduleStartTime,omitempty"`
+	ScheduleEndTime     string                `json:"scheduleEndTime,omitempty"`
+	SlotTemplates       []TherapySlotTemplate `json:"slotTemplates,omitempty"`
+}
+
+//encore:api auth method=GET path=/api/v1/events/detail/:eventId/therapy-settings
+func ListEventTherapySettings(ctx context.Context, eventId string) (*ListEventTherapySettingsResponse, error) {
+	u, err := mustUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	conn, err := tenantConn(ctx, u.TenantSchema)
+	if err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	defer conn.Close()
+	rows, err := conn.QueryContext(ctx, `
+		SELECT ets.id::text, ets.event_id::text, ets.therapy_id::text, t.therapy_name,
+		       ets.slot_duration_minutes, ets.max_capacity, ets.capacity_mode,
+		       ets.schedule_mode,
+		       ets.schedule_start_time::text, ets.schedule_end_time::text
+		FROM evt_event_therapy ets
+		JOIN evt_therapy t ON t.id = ets.therapy_id
+		WHERE ets.event_id = $1::uuid
+		ORDER BY t.display_order`, eventId)
+	if err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	defer rows.Close()
+	var items []EventTherapySetting
+	for rows.Next() {
+		var s EventTherapySetting
+		var maxCap sql.NullInt64
+		var st, en sql.NullString
+		if err := rows.Scan(&s.ID, &s.EventID, &s.TherapyID, &s.TherapyName,
+			&s.SlotDurationMinutes, &maxCap, &s.CapacityMode, &s.ScheduleMode, &st, &en); err != nil {
+			return nil, appErrs.Internal(err.Error())
+		}
+		if s.ScheduleMode == "" {
+			s.ScheduleMode = "AUTO"
+		}
+		if maxCap.Valid {
+			v := int(maxCap.Int64)
+			s.MaxCapacity = &v
+		}
+		if st.Valid {
+			s.ScheduleStartTime = &st.String
+		}
+		if en.Valid {
+			s.ScheduleEndTime = &en.String
+		}
+		items = append(items, s)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	tplMap, err := loadTherapySlotTemplates(ctx, conn, eventId)
+	if err != nil {
+		return nil, err
+	}
+	for i := range items {
+		if tpls, ok := tplMap[items[i].ID]; ok {
+			items[i].SlotTemplates = tpls
+		} else {
+			items[i].SlotTemplates = []TherapySlotTemplate{}
+		}
+	}
+	if items == nil {
+		items = []EventTherapySetting{}
+	}
+	return &ListEventTherapySettingsResponse{Items: items}, nil
+}
+
+//encore:api auth method=PUT path=/api/v1/events/detail/:eventId/therapy-settings tag:owner
+func UpsertEventTherapySetting(ctx context.Context, eventId string, p *UpsertEventTherapyParams) (*EventTherapySetting, error) {
+	u, err := mustUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := assertOwner(u); err != nil {
+		return nil, err
+	}
+	mode := strings.ToUpper(strings.TrimSpace(p.CapacityMode))
+	if mode == "" {
+		mode = "THERAPIST_COUNT"
+	}
+	validMode := map[string]bool{"THERAPIST_COUNT": true, "SHIJIE_COUNT": true, "FIXED": true}
+	if !validMode[mode] {
+		return nil, appErrs.BadRequest("mode kapasitas tidak valid")
+	}
+	if dur := p.SlotDurationMinutes; dur > 0 && (dur < 5 || dur > 480) {
+		return nil, appErrs.BadRequest("durasi slot harus antara 5–480 menit")
+	}
+	conn, err := tenantConn(ctx, u.TenantSchema)
+	if err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	defer conn.Close()
+	if err := assertEventMutable(ctx, conn, eventId); err != nil {
+		return nil, err
+	}
+	schedMode := strings.ToUpper(strings.TrimSpace(p.ScheduleMode))
+	if schedMode == "" {
+		schedMode = "AUTO"
+	}
+	if schedMode != "AUTO" && schedMode != "MANUAL" {
+		return nil, appErrs.BadRequest("mode jadwal harus AUTO atau MANUAL")
+	}
+	dur := p.SlotDurationMinutes
+	if dur <= 0 {
+		dur = 30
+	}
+	templates, err := normalizeSlotTemplates(p.SlotTemplates, schedMode)
+	if err != nil {
+		return nil, err
+	}
+
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	defer tx.Rollback()
+
+	var id string
+	err = tx.QueryRowContext(ctx, `
+		INSERT INTO evt_event_therapy (
+		  event_id, therapy_id, slot_duration_minutes, max_capacity, capacity_mode,
+		  schedule_mode, schedule_start_time, schedule_end_time
+		) VALUES ($1::uuid,$2::uuid,$3,$4,$5,$6,$7::time,$8::time)
+		ON CONFLICT (event_id, therapy_id) DO UPDATE SET
+		  slot_duration_minutes=EXCLUDED.slot_duration_minutes,
+		  max_capacity=EXCLUDED.max_capacity,
+		  capacity_mode=EXCLUDED.capacity_mode,
+		  schedule_mode=EXCLUDED.schedule_mode,
+		  schedule_start_time=EXCLUDED.schedule_start_time,
+		  schedule_end_time=EXCLUDED.schedule_end_time,
+		  updated_at=now()
+		RETURNING id::text`,
+		eventId, p.TherapyID, dur, p.MaxCapacity, mode, schedMode,
+		nullTimeStr(p.ScheduleStartTime), nullTimeStr(p.ScheduleEndTime),
+	).Scan(&id)
+	if err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	if err := replaceTherapySlotTemplates(ctx, tx, id, schedMode, templates); err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	auditEvent(ctx, conn, u, "event_therapy", id, "upsert", nil, p)
+	resp, _ := ListEventTherapySettings(ctx, eventId)
+	for _, it := range resp.Items {
+		if it.ID == id {
+			return &it, nil
+		}
+	}
+	return &EventTherapySetting{ID: id, EventID: eventId, TherapyID: p.TherapyID, SlotDurationMinutes: dur, CapacityMode: mode}, nil
+}
+
+func nullTimeStr(s string) interface{} {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	return s
+}

@@ -261,6 +261,8 @@ api-go/
   docs/UNIT_ECONOMICS_AND_PRICING.md  # biaya Meta + Anthropic, margin paket, rekomendasi harga
   docs/META_WHATSAPP_MESSAGING_AND_BILLING.md  # CSW 24 jam, template, skenario inbox, beda tagihan Meta vs kuota WABantu
   docs/FINANCE_MODULE.md        # modul keuangan — endpoint, schema, arsitektur saldo, approval, cron
+  docs/EVENTS_MODULE.md         # modul acara & terapi — roster staf, pasien dari kontak, slot AUTO/MANUAL
+  events/                       # event reservation & therapy (Encore package)
   kb/                        # knowledge base FAQ
   whatsapp/                  # library Meta Cloud API (kirim pesan, Graph)
   whatsappapi/               # REST OAuth + channels (/api/v1/whatsapp/*)

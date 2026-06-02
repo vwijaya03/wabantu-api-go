@@ -63,6 +63,50 @@ func ExtractTransactionsFromScreenshot(ctx context.Context, apiKey string, image
 	return visionExtract(ctx, apiKey, imageBytes, mediaType, transactionVisionSystem, transactionVisionUserTpl)
 }
 
+const eventStaffVisionSystem = `Kamu mengekstrak daftar staf/volunteer/terapis dari foto atau screenshot tabel (Google Sheet, Excel, formulir).
+Jawab HANYA JSON valid, tanpa markdown.
+
+Kolom umum (Indonesia):
+- "Nama Terapis" / nama → fullName
+- "Apakah Bisa Datang?" / kehadiran → attendanceLabel (contoh "Bisa", "Pagi sampai after lunch")
+- "Terapi Yang Anda Pilih" / terapi → therapyNames (ARRAY string; jika beberapa terpisah koma, pecah jadi array)
+
+role: terapis|relawan|shijie|daoshi|fashi — default terapis jika ada therapyNames.
+Nama diawali "Daoshi"/"Fashi"/"Shijie" → role sesuai.
+Untuk relawan: volunteerRoleName, isPencatat true jika disebut pencatat.
+Setiap baris data (bukan header) = satu item. Jangan lewatkan baris.`
+
+const eventStaffVisionUser = `Ekstrak SEMUA baris staf dari gambar. Format:
+{"items":[{"fullName":"Bryan","role":"terapis","therapyNames":["Terapi 5 Elemen"],"attendanceLabel":"Bisa","volunteerRoleName":"","isPencatat":false,"include":true}]}
+
+Contoh multi-terapi: "Terapi 5 Elemen, Terapi Energi Dewa" → therapyNames:["Terapi 5 Elemen","Terapi Energi Dewa"]
+Maks 80 baris.`
+
+const eventPatientVisionSystem = `Kamu mengekstrak daftar pasien dari foto pendaftaran/daftar hadir acara terapi.
+Jawab HANYA JSON valid. birthDate YYYY-MM-DD jika ada.`
+
+const eventPatientVisionUser = `Ekstrak pasien. Format:
+{"items":[{"fullName":"Nama","birthDate":"1990-01-15","therapyName":"Terapi Shijie","complaint":"","preferredTime":"","include":true}]}
+Maks 80 baris.`
+
+const eventTherapyVisionSystem = `Kamu mengekstrak daftar jenis terapi dari gambar daftar master.`
+
+const eventTherapyVisionUser = `Ekstrak terapi. Format:
+{"items":[{"therapyName":"Terapi 5 Elemen","description":"","include":true}]}
+Maks 30 baris.`
+
+func ExtractEventStaffFromScreenshot(ctx context.Context, apiKey string, imageBytes []byte, mediaType string) (string, Usage, error) {
+	return visionExtract(ctx, apiKey, imageBytes, mediaType, eventStaffVisionSystem, eventStaffVisionUser)
+}
+
+func ExtractEventPatientsFromScreenshot(ctx context.Context, apiKey string, imageBytes []byte, mediaType string) (string, Usage, error) {
+	return visionExtract(ctx, apiKey, imageBytes, mediaType, eventPatientVisionSystem, eventPatientVisionUser)
+}
+
+func ExtractEventTherapiesFromScreenshot(ctx context.Context, apiKey string, imageBytes []byte, mediaType string) (string, Usage, error) {
+	return visionExtract(ctx, apiKey, imageBytes, mediaType, eventTherapyVisionSystem, eventTherapyVisionUser)
+}
+
 // SanitizeVisionJSON strips markdown fences from model output.
 func SanitizeVisionJSON(text string) string {
 	return unwrapJSONFromMarkdown(text)
