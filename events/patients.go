@@ -250,9 +250,7 @@ func UpdateEventPatient(ctx context.Context, eventId, patientId string, p *Updat
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	if err := tryAssignPatientSlot(ctx, tx, eventId, patientId, p.TherapyID, p.PreferredTime, false); err != nil {
-		return nil, err
-	}
+	_ = tryAssignPatientSlot(ctx, tx, eventId, patientId, p.TherapyID, p.PreferredTime, false)
 	if err := tx.Commit(); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
@@ -262,16 +260,20 @@ func UpdateEventPatient(ctx context.Context, eventId, patientId string, p *Updat
 
 	var slotLabel string
 	var slotID *string
-	var slotIDNull, sd, stime sql.NullString
+	var slotIDNull, sd, stime, etime sql.NullString
 	_ = conn.QueryRowContext(ctx, `
-		SELECT pat.slot_id::text, s.slot_date::text, s.start_time::text
+		SELECT pat.slot_id::text, s.slot_date::text, s.start_time::text, s.end_time::text
 		FROM evt_patient pat
 		LEFT JOIN evt_time_slot s ON s.id = pat.slot_id
-		WHERE pat.id=$1::uuid`, patientId).Scan(&slotIDNull, &sd, &stime)
+		WHERE pat.id=$1::uuid`, patientId).Scan(&slotIDNull, &sd, &stime, &etime)
 	if slotIDNull.Valid && slotIDNull.String != "" && sd.Valid && stime.Valid {
 		sid := slotIDNull.String
 		slotID = &sid
-		slotLabel = sd.String + " " + formatSlotTime(stime.String)
+		end := ""
+		if etime.Valid {
+			end = etime.String
+		}
+		slotLabel = formatPatientSlotLabel(sd.String, stime.String, end)
 	}
 
 	return &Patient{
@@ -280,6 +282,42 @@ func UpdateEventPatient(ctx context.Context, eventId, patientId string, p *Updat
 		Complaint: p.Complaint, PreferredTime: p.PreferredTime,
 		ReservationStatus: st, SlotID: slotID, SlotLabel: slotLabel,
 	}, nil
+}
+
+type DeletePatientsParams struct {
+	PatientIDs []string `json:"patientIds"`
+}
+
+type DeletePatientsResponse struct {
+	Deleted int      `json:"deleted"`
+	Failed  int      `json:"failed"`
+	Errors  []string `json:"errors,omitempty"`
+}
+
+func deleteEventPatientInTx(ctx context.Context, tx *sql.Tx, eventId, patientId string) error {
+	var slotID sql.NullString
+	var status string
+	err := tx.QueryRowContext(ctx, `
+		SELECT reservation_status, slot_id::text FROM evt_patient
+		WHERE id=$1::uuid AND event_id=$2::uuid AND deleted_at IS NULL`, patientId, eventId).Scan(&status, &slotID)
+	if err == sql.ErrNoRows {
+		return appErrs.NotFound("pasien tidak ditemukan")
+	}
+	if err != nil {
+		return appErrs.Internal(err.Error())
+	}
+	if status == "CONFIRMED" && slotID.Valid {
+		_, _ = tx.ExecContext(ctx, `
+			UPDATE evt_time_slot SET booked_count = GREATEST(0, booked_count - 1)
+			WHERE id=$1::uuid`, slotID.String)
+	}
+	_, err = tx.ExecContext(ctx, `
+		UPDATE evt_patient SET deleted_at=now(), updated_at=now()
+		WHERE id=$1::uuid AND event_id=$2::uuid`, patientId, eventId)
+	if err != nil {
+		return appErrs.Internal(err.Error())
+	}
+	return nil
 }
 
 //encore:api auth method=DELETE path=/api/v1/events/detail/:eventId/patients/:patientId tag:owner
@@ -304,33 +342,72 @@ func DeleteEventPatient(ctx context.Context, eventId, patientId string) error {
 		return appErrs.Internal(err.Error())
 	}
 	defer tx.Rollback()
-	var slotID sql.NullString
-	var status string
-	err = tx.QueryRowContext(ctx, `
-		SELECT reservation_status, slot_id::text FROM evt_patient
-		WHERE id=$1::uuid AND event_id=$2::uuid AND deleted_at IS NULL`, patientId, eventId).Scan(&status, &slotID)
-	if err == sql.ErrNoRows {
-		return appErrs.NotFound("pasien tidak ditemukan")
-	}
-	if err != nil {
-		return appErrs.Internal(err.Error())
-	}
-	if status == "CONFIRMED" && slotID.Valid {
-		_, _ = tx.ExecContext(ctx, `
-			UPDATE evt_time_slot SET booked_count = GREATEST(0, booked_count - 1)
-			WHERE id=$1::uuid`, slotID.String)
-	}
-	_, err = tx.ExecContext(ctx, `
-		UPDATE evt_patient SET deleted_at=now(), updated_at=now()
-		WHERE id=$1::uuid AND event_id=$2::uuid`, patientId, eventId)
-	if err != nil {
-		return appErrs.Internal(err.Error())
+	if err := deleteEventPatientInTx(ctx, tx, eventId, patientId); err != nil {
+		return err
 	}
 	if err := tx.Commit(); err != nil {
 		return appErrs.Internal(err.Error())
 	}
 	auditEvent(ctx, conn, u, "patient", patientId, "delete", nil, nil)
 	return nil
+}
+
+//encore:api auth method=POST path=/api/v1/events/detail/:eventId/patients/delete-bulk tag:owner
+func DeletePatientsBulk(ctx context.Context, eventId string, p *DeletePatientsParams) (*DeletePatientsResponse, error) {
+	u, err := mustUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := assertOwner(u); err != nil {
+		return nil, err
+	}
+	if p == nil || len(p.PatientIDs) == 0 {
+		return nil, appErrs.BadRequest("pilih minimal satu pasien")
+	}
+	conn, err := tenantConn(ctx, u.TenantSchema)
+	if err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	defer conn.Close()
+	if err := assertEventMutable(ctx, conn, eventId); err != nil {
+		return nil, err
+	}
+
+	resp := &DeletePatientsResponse{Errors: []string{}}
+	seen := map[string]bool{}
+	for _, rawID := range p.PatientIDs {
+		patientID := strings.TrimSpace(rawID)
+		if patientID == "" || seen[patientID] {
+			continue
+		}
+		seen[patientID] = true
+
+		tx, err := conn.BeginTx(ctx, nil)
+		if err != nil {
+			return nil, appErrs.Internal(err.Error())
+		}
+		if err := deleteEventPatientInTx(ctx, tx, eventId, patientID); err != nil {
+			_ = tx.Rollback()
+			resp.Failed++
+			if encErr, ok := err.(*encoreerrs.Error); ok && encErr.Code == encoreerrs.NotFound {
+				resp.Errors = append(resp.Errors, patientID+": pasien tidak ditemukan")
+			} else {
+				resp.Errors = append(resp.Errors, patientID+": "+err.Error())
+			}
+			continue
+		}
+		if err := tx.Commit(); err != nil {
+			resp.Failed++
+			resp.Errors = append(resp.Errors, patientID+": gagal menghapus")
+			continue
+		}
+		resp.Deleted++
+		auditEvent(ctx, conn, u, "patient", patientID, "delete_bulk_item", map[string]any{"eventId": eventId}, nil)
+	}
+	if len(resp.Errors) == 0 {
+		resp.Errors = nil
+	}
+	return resp, nil
 }
 
 func registerPatient(ctx context.Context, tenantSchema string, eventID string, therapyID, fullName, birthDate, complaint, preferred string) (string, error) {

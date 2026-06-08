@@ -192,21 +192,62 @@ func loadPersonPartialTimes(ctx context.Context, conn *sql.Conn, personID string
 	return from, until, nil
 }
 
-func resolveTherapyIDsByNames(ctx context.Context, conn *sql.Conn, names []string) ([]string, error) {
-	var ids []string
-	for _, name := range names {
-		name = strings.TrimSpace(name)
-		if name == "" {
-			continue
+func therapyLookupCandidates(name string) []string {
+	name = strings.TrimSpace(name)
+	var out []string
+	seen := map[string]bool{}
+	add := func(s string) {
+		s = strings.TrimSpace(s)
+		if s == "" || seen[s] {
+			return
 		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	add(name)
+	if i := strings.Index(name, "("); i > 0 {
+		add(name[:i])
+	}
+	return out
+}
+
+// resolveTherapyIDByName maps OCR/vision labels (often with extra capacity text) to evt_therapy.id.
+func resolveTherapyIDByName(ctx context.Context, conn *sql.Conn, raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", appErrs.BadRequest("terapi wajib")
+	}
+	for _, cand := range therapyLookupCandidates(raw) {
 		var id string
 		err := conn.QueryRowContext(ctx, `
 			SELECT id::text FROM evt_therapy
 			WHERE deleted_at IS NULL AND therapy_name ILIKE $1
-			ORDER BY display_order LIMIT 1`, name).Scan(&id)
-		if err == sql.ErrNoRows {
-			return nil, appErrs.BadRequest("terapi tidak dikenali: " + name)
+			ORDER BY display_order LIMIT 1`, cand).Scan(&id)
+		if err == nil {
+			return id, nil
 		}
+		if err != sql.ErrNoRows {
+			return "", appErrs.Internal(err.Error())
+		}
+		// e.g. "Terapi 5 Elemen (maksimal 9 orang…)" → DB "Terapi 5 Elemen"
+		err = conn.QueryRowContext(ctx, `
+			SELECT id::text FROM evt_therapy
+			WHERE deleted_at IS NULL AND $1 ILIKE therapy_name || '%'
+			ORDER BY length(therapy_name) DESC, display_order LIMIT 1`, cand).Scan(&id)
+		if err == nil {
+			return id, nil
+		}
+		if err != sql.ErrNoRows {
+			return "", appErrs.Internal(err.Error())
+		}
+	}
+	return "", appErrs.NotFound("terapi tidak dikenali: " + raw)
+}
+
+func resolveTherapyIDsByNames(ctx context.Context, conn *sql.Conn, names []string) ([]string, error) {
+	var ids []string
+	for _, name := range names {
+		id, err := resolveTherapyIDByName(ctx, conn, name)
 		if err != nil {
 			return nil, err
 		}

@@ -241,3 +241,202 @@ func PostPublicRegistration(ctx context.Context, tenantSlug, eventSlug string, p
 		Message: "Pendaftaran berhasil. Terima kasih.",
 	}, nil
 }
+
+type PublicStaffEventInfo struct {
+	EventName        string          `json:"eventName"`
+	EventDescription string          `json:"eventDescription,omitempty"`
+	Location         string          `json:"location,omitempty"`
+	StartDate        string          `json:"startDate"`
+	EndDate          string          `json:"endDate"`
+	Status           string          `json:"status"`
+	RegistrationOpen bool            `json:"registrationOpen"`
+	Message          string          `json:"message,omitempty"`
+	Therapies        []Therapy       `json:"therapies"`
+	VolunteerRoles   []VolunteerRole `json:"volunteerRoles"`
+	Closed           bool            `json:"closed"`
+	Cancelled        bool            `json:"cancelled"`
+}
+
+type PublicStaffRegisterBody struct {
+	FullName        string   `json:"fullName"`
+	Role            string   `json:"role"`
+	TherapyIDs      []string `json:"therapyIds,omitempty"`
+	VolunteerRoleID string   `json:"volunteerRoleId,omitempty"`
+	Phone           string   `json:"phone,omitempty"`
+	Notes           string   `json:"notes,omitempty"`
+}
+
+//encore:api public method=GET path=/api/v1/public/events/:tenantSlug/register/:eventSlug/staff
+func GetPublicStaffRegistration(ctx context.Context, tenantSlug, eventSlug string) (*PublicStaffEventInfo, error) {
+	schema, err := tenantSchemaBySlug(ctx, tenantSlug)
+	if err != nil {
+		return nil, err
+	}
+	conn, err := tenantConn(ctx, schema)
+	if err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	defer conn.Close()
+
+	var e PublicStaffEventInfo
+	var desc, loc sql.NullString
+	var openAt, closeAt sql.NullTime
+	err = conn.QueryRowContext(ctx, `
+		SELECT event_name, event_description, location,
+		       start_date::text, end_date::text, status,
+		       registration_open_at, registration_close_at
+		FROM evt_event
+		WHERE event_slug=$1 AND deleted_at IS NULL`, eventSlug,
+	).Scan(&e.EventName, &desc, &loc, &e.StartDate, &e.EndDate, &e.Status, &openAt, &closeAt)
+	if err == sql.ErrNoRows {
+		return nil, appErrs.NotFound("acara tidak ditemukan")
+	}
+	if err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	if desc.Valid {
+		e.EventDescription = desc.String
+	}
+	if loc.Valid {
+		e.Location = loc.String
+	}
+
+	switch e.Status {
+	case "CANCELLED":
+		e.Cancelled = true
+		e.Message = "Acara dibatalkan."
+		return &e, nil
+	case "DRAFT", "ARCHIVED":
+		return nil, appErrs.NotFound("acara tidak tersedia")
+	case "CLOSED":
+		e.Closed = true
+		e.Message = "Pendaftaran telah ditutup."
+	case "PUBLISHED":
+		e.RegistrationOpen = registrationOpen(time.Now(), openAt, closeAt)
+		if !e.RegistrationOpen {
+			e.Closed = true
+			e.Message = "Pendaftaran telah ditutup."
+		}
+	default:
+		e.Closed = true
+	}
+
+	rows, err := conn.QueryContext(ctx, `
+		SELECT t.id::text, t.therapy_name, COALESCE(t.description,''), t.is_active, t.display_order
+		FROM evt_therapy t
+		JOIN evt_event_therapy et ON et.therapy_id = t.id
+		JOIN evt_event e ON e.id = et.event_id
+		WHERE e.event_slug=$1 AND t.deleted_at IS NULL AND t.is_active = true
+		ORDER BY t.display_order`, eventSlug)
+	if err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var t Therapy
+		if err := rows.Scan(&t.ID, &t.TherapyName, &t.Description, &t.Active, &t.DisplayOrder); err != nil {
+			return nil, appErrs.Internal(err.Error())
+		}
+		e.Therapies = append(e.Therapies, t)
+	}
+	if e.Therapies == nil {
+		e.Therapies = []Therapy{}
+	}
+
+	vrows, err := conn.QueryContext(ctx, `
+		SELECT id::text, role_name, is_active, display_order
+		FROM evt_volunteer_role
+		WHERE deleted_at IS NULL AND is_active = true
+		ORDER BY display_order`)
+	if err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	defer vrows.Close()
+	for vrows.Next() {
+		var r VolunteerRole
+		if err := vrows.Scan(&r.ID, &r.RoleName, &r.Active, &r.DisplayOrder); err != nil {
+			return nil, appErrs.Internal(err.Error())
+		}
+		e.VolunteerRoles = append(e.VolunteerRoles, r)
+	}
+	if e.VolunteerRoles == nil {
+		e.VolunteerRoles = []VolunteerRole{}
+	}
+	return &e, nil
+}
+
+//encore:api public method=POST path=/api/v1/public/events/:tenantSlug/register/:eventSlug/staff
+func PostPublicStaffRegistration(ctx context.Context, tenantSlug, eventSlug string, p *PublicStaffRegisterBody) (*PublicRegisterResponse, error) {
+	if p == nil {
+		return nil, appErrs.BadRequest("data tidak valid")
+	}
+	schema, err := tenantSchemaBySlug(ctx, tenantSlug)
+	if err != nil {
+		return nil, err
+	}
+	conn, err := tenantConn(ctx, schema)
+	if err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	defer conn.Close()
+
+	var eventID, status string
+	var openAt, closeAt sql.NullTime
+	err = conn.QueryRowContext(ctx, `
+		SELECT id::text, status, registration_open_at, registration_close_at
+		FROM evt_event WHERE event_slug=$1 AND deleted_at IS NULL`, eventSlug,
+	).Scan(&eventID, &status, &openAt, &closeAt)
+	if err == sql.ErrNoRows {
+		return nil, appErrs.NotFound("acara tidak ditemukan")
+	}
+	if err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	if status == "CANCELLED" {
+		return nil, appErrs.BadRequest("Acara dibatalkan.")
+	}
+	if status != "PUBLISHED" {
+		return nil, appErrs.BadRequest("Pendaftaran telah ditutup.")
+	}
+	if !registrationOpen(time.Now(), openAt, closeAt) {
+		return nil, appErrs.BadRequest("Pendaftaran telah ditutup.")
+	}
+
+	notes := strings.TrimSpace(p.Notes)
+	if phone := strings.TrimSpace(p.Phone); phone != "" {
+		if notes != "" {
+			notes += " · "
+		}
+		notes += "Telp: " + phone
+	}
+	if notes == "" {
+		notes = "Pendaftaran online (staf/relawan)"
+	} else {
+		notes = "Pendaftaran online — " + notes
+	}
+
+	var volID *string
+	if v := strings.TrimSpace(p.VolunteerRoleID); v != "" {
+		volID = &v
+	}
+	saveFalse := false
+	params := &UpsertPersonParams{
+		FullName:         p.FullName,
+		Role:             p.Role,
+		TherapyIDs:       p.TherapyIDs,
+		VolunteerRoleID:  volID,
+		AttendanceStatus: "PRESENT",
+		Notes:            notes,
+		SaveToRoster:     &saveFalse,
+	}
+	if err := validatePerson(params); err != nil {
+		return nil, err
+	}
+	if err := createPersonInEvent(ctx, conn, eventID, params); err != nil {
+		return nil, err
+	}
+	return &PublicRegisterResponse{
+		Success: true,
+		Message: "Pendaftaran staf/relawan berhasil. Terima kasih.",
+	}, nil
+}

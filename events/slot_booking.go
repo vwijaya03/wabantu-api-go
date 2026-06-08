@@ -93,7 +93,7 @@ func listPublicSlotOptions(ctx context.Context, conn *sql.Conn, eventID, therapy
 		o.StartTime = formatSlotTime(o.StartTime)
 		o.EndTime = formatSlotTime(o.EndTime)
 		o.Available = cap - booked
-		o.Label = fmt.Sprintf("%s %s–%s (%d tersisa)", o.SlotDate, o.StartTime, o.EndTime, o.Available)
+		o.Label = fmt.Sprintf("%s (%d tersisa)", formatPatientSlotLabel(o.SlotDate, o.StartTime, o.EndTime), o.Available)
 		out = append(out, o)
 	}
 	if out == nil {
@@ -160,6 +160,24 @@ func pickSlotForRegistration(ctx context.Context, tx *sql.Tx, eventID, therapyID
 		return fallback, nil
 	}
 	return "", appErrs.BadRequest("tidak ada slot tersedia untuk terapi ini")
+}
+
+// assignPatientSlotBestEffort links a patient to a slot when possible; import must not fail if slots are full/missing.
+func assignPatientSlotBestEffort(ctx context.Context, tenantSchema, eventID, patientID, therapyID, preferred string) error {
+	conn, err := tenantConn(ctx, tenantSchema)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := tryAssignPatientSlot(ctx, tx, eventID, patientID, therapyID, preferred, false); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func tryAssignPatientSlot(ctx context.Context, tx *sql.Tx, eventID, patientID, therapyID, preferred string, strict bool) error {

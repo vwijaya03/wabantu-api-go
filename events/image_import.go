@@ -515,20 +515,22 @@ func CommitPatientImageImport(ctx context.Context, eventId, jobId string, p *Com
 			skipped++
 			continue
 		}
-		var therapyID string
-		if err := conn.QueryRowContext(ctx, `
-			SELECT id::text FROM evt_therapy WHERE deleted_at IS NULL AND therapy_name ILIKE $1 LIMIT 1`,
-			strings.TrimSpace(it.TherapyName)).Scan(&therapyID); err != nil {
+		therapyID, err := resolveTherapyIDByName(ctx, conn, it.TherapyName)
+		if err != nil {
 			skipped++
 			continue
 		}
-		_, err := createPatientForEvent(ctx, u.TenantSchema, eventId, &CreatePatientParams{
+		preferred := normalizePreferredTime(it.PreferredTime)
+		patientID, err := createPatientForEvent(ctx, u.TenantSchema, eventId, &CreatePatientParams{
 			FullName: it.FullName, BirthDate: it.BirthDate, TherapyID: therapyID,
-			Complaint: it.Complaint, PreferredTime: it.PreferredTime,
+			Complaint: it.Complaint, PreferredTime: preferred,
 		}, false, false)
 		if err != nil {
 			skipped++
 			continue
+		}
+		if preferred != "" {
+			_ = assignPatientSlotBestEffort(ctx, u.TenantSchema, eventId, patientID, therapyID, preferred)
 		}
 		saved++
 	}

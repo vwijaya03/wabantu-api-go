@@ -1308,11 +1308,13 @@ Run `encore check` for API/resource graph validation and `encore test ./...` for
 ## Build
 
 - `Dockerfile` — multi-stage Go build → single binary
-- Encore Cloud — `encore deploy` (if using hosted Encore)
+- Encore Cloud — deploy via **git push** (`encore` remote or GitHub integration), not a standalone `encore deploy` command
+
+**Step-by-step (Indonesian):** [docs/DEPLOY_ENCORE_CLOUD.md](./docs/DEPLOY_ENCORE_CLOUD.md) · Redis cloud: [docs/DEPLOY_REDIS.md](./docs/DEPLOY_REDIS.md)
 
 ## Environments
 
-Secrets per Encore environment: `local`, `dev`, `prod` via `encore secret set --type <env>`.
+Secrets per Encore environment name (`staging`, etc.) via `encore secret set --env=<name>`, or by type (`local`, `dev`, `prod`) via `encore secret set --type <env>`.
 
 ## Scaling
 

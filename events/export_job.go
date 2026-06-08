@@ -15,8 +15,10 @@ import (
 
 // Export job kinds
 const (
-	exportKindPatientsPDF = "patients_pdf"
-	exportKindStaffSheet  = "staff_sheet"
+	exportKindPatientsPDF  = "patients_pdf"
+	exportKindPatientsXLSX = "patients_xlsx"
+	exportKindStaffSheet   = "staff_sheet"
+	exportKindStaffList    = "staff_list"
 )
 
 type ExportJob struct {
@@ -62,8 +64,10 @@ func CreateExportJob(ctx context.Context, eventId string, p *CreateExportJobPara
 		return nil, appErrs.BadRequest("parameter export wajib diisi")
 	}
 	kind := strings.ToLower(strings.TrimSpace(p.Kind))
-	if kind != exportKindPatientsPDF && kind != exportKindStaffSheet {
-		return nil, appErrs.BadRequest("jenis export tidak valid (patients_pdf atau staff_sheet)")
+	switch kind {
+	case exportKindPatientsPDF, exportKindPatientsXLSX, exportKindStaffSheet, exportKindStaffList:
+	default:
+		return nil, appErrs.BadRequest("jenis export tidak valid")
 	}
 
 	conn, err := tenantConn(ctx, u.TenantSchema)
@@ -77,14 +81,17 @@ func CreateExportJob(ctx context.Context, eventId string, p *CreateExportJobPara
 	}
 
 	format := strings.ToLower(strings.TrimSpace(p.Format))
-	if kind == exportKindStaffSheet {
+	switch kind {
+	case exportKindStaffSheet, exportKindStaffList, exportKindPatientsXLSX:
 		format = "xlsx"
-	} else if format != "pdf" {
-		format = "pdf"
+	default:
+		if format != "pdf" {
+			format = "pdf"
+		}
 	}
 
 	filters := patientFilterInput{}
-	if kind == exportKindPatientsPDF {
+	if kind == exportKindPatientsPDF || kind == exportKindPatientsXLSX {
 		filters = patientFilterFromExport(p.Filters)
 		if err := validatePatientFilters(filters); err != nil {
 			return nil, err
@@ -113,7 +120,7 @@ func CreateExportJob(ctx context.Context, eventId string, p *CreateExportJobPara
 	var id string
 	err = conn.QueryRowContext(ctx, `
 		INSERT INTO evt_export_job (event_id, kind, params, status, error_msg, created_by)
-		VALUES ($1::uuid,$2,$3,'processing','Menyiapkan export...',$4)
+		VALUES ($1::uuid,$2,$3,'queued','Menunggu antrian export...',$4)
 		RETURNING id::text`,
 		eventId, kind, string(paramsBytes), u.AccountID,
 	).Scan(&id)
@@ -131,7 +138,7 @@ func CreateExportJob(ctx context.Context, eventId string, p *CreateExportJobPara
 		EventID:   eventId,
 		Kind:      kind,
 		Format:    format,
-		Status:    "processing",
+		Status:    "queued",
 		CreatedAt: now,
 		UpdatedAt: now,
 	}, nil
@@ -222,15 +229,114 @@ func processExportJob(ctx context.Context, conn *sql.Conn, jobID, eventID, kind,
 		}
 	}()
 
+	_, _ = conn.ExecContext(ctx, `
+		UPDATE evt_export_job SET status='processing', error_msg='Memproses export...', updated_at=now()
+		WHERE id=$1::uuid`, jobID)
+
 	switch kind {
 	case exportKindPatientsPDF:
 		processPatientsExportJob(ctx, conn, jobID, eventID, filters, tenantID, tenantName)
+	case exportKindPatientsXLSX:
+		processPatientsXLSXExportJob(ctx, conn, jobID, eventID, filters, tenantID, tenantName)
 	case exportKindStaffSheet:
 		processStaffSheetExportJob(ctx, conn, jobID, eventID)
+	case exportKindStaffList:
+		processStaffListExportJob(ctx, conn, jobID, eventID)
 	default:
 		failExportJob(ctx, conn, jobID, "jenis export tidak dikenali")
 	}
 	_ = format
+}
+
+func processPatientsXLSXExportJob(ctx context.Context, conn *sql.Conn, jobID, eventID string, filters patientFilterInput, tenantID, tenantName string) {
+	updateExportJobProgress(ctx, conn, jobID, "Memuat data pasien...")
+
+	var eventName, startDate, endDate, location string
+	var loc sql.NullString
+	if err := conn.QueryRowContext(ctx, `
+		SELECT event_name, start_date::text, end_date::text, location
+		FROM evt_event WHERE id=$1::uuid AND deleted_at IS NULL`, eventID,
+	).Scan(&eventName, &startDate, &endDate, &loc); err != nil {
+		failExportJob(ctx, conn, jobID, "acara tidak ditemukan")
+		return
+	}
+	if loc.Valid {
+		location = loc.String
+	}
+
+	items, _, err := queryPatients(ctx, conn, eventID, filters, maxPatientExportRows, 0)
+	if err != nil {
+		failExportJob(ctx, conn, jobID, exportErrMessage(err, "gagal memuat pasien"))
+		return
+	}
+
+	therapyLabel := "Semua terapi"
+	if tid := strings.TrimSpace(filters.TherapyID); tid != "" {
+		for _, it := range items {
+			if it.TherapyID == tid {
+				therapyLabel = it.TherapyName
+				break
+			}
+		}
+	}
+	_, total, _ := queryPatients(ctx, conn, eventID, filters, 1, 0)
+	filterSummary := buildPatientFilterSummary(filters, therapyLabel, total)
+
+	tenantName = strings.TrimSpace(tenantName)
+	if tenantName == "" && tenantID != "" {
+		_ = system.DB.QueryRow(ctx, `
+			SELECT name FROM tenant WHERE id=$1::uuid AND deleted_at IS NULL`, tenantID,
+		).Scan(&tenantName)
+	}
+	if tenantName == "" {
+		tenantName = "WABantu"
+	}
+
+	updateExportJobProgress(ctx, conn, jobID, fmt.Sprintf("Membuat Excel (%d pasien)...", len(items)))
+	xlsxBytes, err := buildPatientsXLSX(patientPDFData{
+		TenantName:    tenantName,
+		EventName:     eventName,
+		DateRange:     startDate + " — " + endDate,
+		Location:      location,
+		FilterSummary: filterSummary,
+		GeneratedAt:   time.Now().Format("02/01/2006 15:04"),
+		Rows:          items,
+	})
+	if err != nil {
+		failExportJob(ctx, conn, jobID, "gagal membuat Excel")
+		return
+	}
+
+	dataURL := xlsxDataURL(xlsxBytes)
+	slug := slugify(eventName)
+	fileName := fmt.Sprintf("pasien-%s-%s.xlsx", slug, time.Now().Format("20060102"))
+	completeExportJob(ctx, conn, jobID, dataURL, fileName, len(items))
+}
+
+func processStaffListExportJob(ctx context.Context, conn *sql.Conn, jobID, eventID string) {
+	updateExportJobProgress(ctx, conn, jobID, "Memuat daftar staf...")
+	var eventName string
+	if err := conn.QueryRowContext(ctx, `
+		SELECT event_name FROM evt_event WHERE id=$1::uuid AND deleted_at IS NULL`, eventID,
+	).Scan(&eventName); err != nil {
+		failExportJob(ctx, conn, jobID, "acara tidak ditemukan")
+		return
+	}
+	rows, err := loadStaffListRows(ctx, conn, eventID)
+	if err != nil {
+		failExportJob(ctx, conn, jobID, exportErrMessage(err, "gagal memuat staf"))
+		return
+	}
+	updateExportJobProgress(ctx, conn, jobID, "Membuat Excel...")
+	xlsxBytes, err := buildStaffListXLSX(eventName, rows)
+	if err != nil {
+		failExportJob(ctx, conn, jobID, "gagal membuat Excel")
+		return
+	}
+	dataURL := xlsxDataURL(xlsxBytes)
+	slug := slugify(eventName)
+	fileName := fmt.Sprintf("daftar-staf-%s-%s.xlsx", slug, time.Now().Format("20060102"))
+	completeExportJob(ctx, conn, jobID, dataURL, fileName, len(rows))
 }
 
 func processPatientsExportJob(ctx context.Context, conn *sql.Conn, jobID, eventID string, filters patientFilterInput, tenantID, tenantName string) {

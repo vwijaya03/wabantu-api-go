@@ -83,11 +83,13 @@ Contoh multi-terapi: "Terapi 5 Elemen, Terapi Energi Dewa" → therapyNames:["Te
 Maks 80 baris.`
 
 const eventPatientVisionSystem = `Kamu mengekstrak daftar pasien dari foto pendaftaran/daftar hadir acara terapi.
-Jawab HANYA JSON valid. birthDate YYYY-MM-DD jika ada.`
+Jawab HANYA JSON valid.
+- birthDate: YYYY-MM-DD jika ada (konversi dari format Indonesia jika perlu).
+- preferredTime: jam dari kolom "Jam" / waktu terapi, format HH:MM (24 jam), contoh "09:00", "10:30". Kosongkan jika tidak ada.`
 
-const eventPatientVisionUser = `Ekstrak pasien. Format:
-{"items":[{"fullName":"Nama","birthDate":"1990-01-15","therapyName":"Terapi Shijie","complaint":"","preferredTime":"","include":true}]}
-Maks 80 baris.`
+const eventPatientVisionUser = `Ekstrak SEMUA baris pasien dari gambar. Format:
+{"items":[{"fullName":"Nama","birthDate":"1990-01-15","therapyName":"Terapi Shijie","complaint":"keluhan","preferredTime":"09:00","include":true}]}
+Kolom Jam/waktu → preferredTime. Maks 80 baris.`
 
 const eventTherapyVisionSystem = `Kamu mengekstrak daftar jenis terapi dari gambar daftar master.`
 

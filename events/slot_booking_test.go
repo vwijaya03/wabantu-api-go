@@ -16,6 +16,17 @@ func TestNormalizePreferredTime(t *testing.T) {
 	}
 }
 
+func TestTherapyLookupCandidates(t *testing.T) {
+	raw := "Terapi 5 Elemen (maksimal 9 orang, 5 sesi pagi, 4 sesi siang)"
+	cands := therapyLookupCandidates(raw)
+	if len(cands) != 2 {
+		t.Fatalf("got %d candidates, want 2: %v", len(cands), cands)
+	}
+	if cands[1] != "Terapi 5 Elemen" {
+		t.Fatalf("base name %q, want Terapi 5 Elemen", cands[1])
+	}
+}
+
 func TestSlotStartMatches(t *testing.T) {
 	if !slotStartMatches("09:00:00", "09.00") {
 		t.Fatal("expected match")

@@ -64,10 +64,10 @@ func scanPatientRows(rows *sql.Rows) ([]Patient, error) {
 		var pat Patient
 		var encName, encBirth string
 		var slotID sql.NullString
-		var slotDate, slotStart sql.NullString
+		var slotDate, slotStart, slotEnd sql.NullString
 		if err := rows.Scan(&pat.ID, &pat.EventID, &pat.TherapyID, &pat.TherapyName,
 			&encName, &encBirth, &pat.Complaint, &pat.PreferredTime, &pat.ReservationStatus,
-			&slotID, &slotDate, &slotStart); err != nil {
+			&slotID, &slotDate, &slotStart, &slotEnd); err != nil {
 			return nil, err
 		}
 		name, err := decryptPatientField(encName)
@@ -83,7 +83,11 @@ func scanPatientRows(rows *sql.Rows) ([]Patient, error) {
 		if slotID.Valid {
 			pat.SlotID = &slotID.String
 			if slotDate.Valid && slotStart.Valid {
-				pat.SlotLabel = slotDate.String + " " + slotStart.String
+				end := ""
+				if slotEnd.Valid {
+					end = slotEnd.String
+				}
+				pat.SlotLabel = formatPatientSlotLabel(slotDate.String, slotStart.String, end)
 			}
 		}
 		items = append(items, pat)
@@ -121,7 +125,7 @@ func queryPatients(ctx context.Context, conn *sql.Conn, eventID string, f patien
 		SELECT pat.id::text, pat.event_id::text, pat.therapy_id::text, t.therapy_name,
 		       pat.full_name_enc, pat.birth_date_enc, COALESCE(pat.complaint,''),
 		       COALESCE(pat.preferred_time,''), pat.reservation_status, pat.slot_id::text,
-		       s.slot_date::text, s.start_time::text
+		       s.slot_date::text, s.start_time::text, s.end_time::text
 		%s WHERE %s %s LIMIT $%d OFFSET $%d`,
 		patientFromJoin, where, patientOrderBy, limIdx, offIdx), qArgs...)
 	if err != nil {

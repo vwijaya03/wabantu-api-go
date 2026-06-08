@@ -590,6 +590,8 @@ encore build docker wabantu
 
 Deploy via Encore Cloud atau image Docker + Postgres/Redis managed sendiri.
 
+**Tutorial deploy Encore Cloud:** [docs/DEPLOY_ENCORE_CLOUD.md](./docs/DEPLOY_ENCORE_CLOUD.md) · Redis cloud (Upstash): [docs/DEPLOY_REDIS.md](./docs/DEPLOY_REDIS.md)
+
 Stack compose contoh: `../infra/docker-compose.yml` (service `api-go`).
 
 ---
@@ -610,6 +612,8 @@ Stack compose contoh: `../infra/docker-compose.yml` (service `api-go`).
 | DB kosong setelah register | Normal di DB Encore baru | Register tenant baru; jangan expect data Nest lama |
 | `invalid bootstrap secret` | Header curl ≠ `PlatformAdminBootstrapSecret` | `encore secret set` ulang; samakan string di curl |
 | Login super admin OK, inbox 403 | Belum impersonate tenant | Admin → **Pantau** tenant (atau dropdown topbar) |
+| Deploy cloud OK, login gagal | `RedisURL` masih `localhost` | [docs/DEPLOY_REDIS.md](./docs/DEPLOY_REDIS.md) — set Upstash ke `--env=staging` |
+| Push ke Encore tidak trigger deploy | Remote `encore` belum ada | `git remote add encore encore://<app-id>` — lihat [DEPLOY_ENCORE_CLOUD.md](./docs/DEPLOY_ENCORE_CLOUD.md) |
 
 ---
 
@@ -617,6 +621,8 @@ Stack compose contoh: `../infra/docker-compose.yml` (service `api-go`).
 
 | File | Isi |
 |------|-----|
+| [docs/DEPLOY_ENCORE_CLOUD.md](./docs/DEPLOY_ENCORE_CLOUD.md) | Tutorial deploy ke Encore Cloud (secrets, git push, migrasi DB, frontend) |
+| [docs/DEPLOY_REDIS.md](./docs/DEPLOY_REDIS.md) | Setup Redis eksternal (Upstash) untuk session di cloud |
 | [DEVELOPER_DOCUMENTATION.md](./DEVELOPER_DOCUMENTATION.md) | Dokumentasi teknis lengkap + [Bagian 8.1 Platform Admin](./DEVELOPER_DOCUMENTATION.md#81-platform-admin-internal-operator-wabantu-owner) |
 | [APP_FLOW_GUIDE.md](./APP_FLOW_GUIDE.md) | Alur end-to-end, peta endpoint, perintah step-by-step |
 | `finance/finance.go` | Wallet, kategori, transaksi, approval, period lock, audit, dashboard finance |

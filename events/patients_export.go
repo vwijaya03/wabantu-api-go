@@ -114,7 +114,7 @@ func drawPatientTableRow(pdf *gofpdf.Fpdf, tr func(string) string, row Patient, 
 	values := []string{
 		fmt.Sprintf("%d", no),
 		row.FullName,
-		row.BirthDate,
+		formatEventDateID(row.BirthDate),
 		row.TherapyName,
 		truncateText(row.Complaint, 120),
 		row.PreferredTime,
