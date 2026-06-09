@@ -54,6 +54,21 @@ func loadStaffListRows(ctx context.Context, conn *sql.Conn, eventID string) ([]s
 	return out, rows.Err()
 }
 
+func attendanceStatusExportLabel(status string) string {
+	switch strings.ToUpper(strings.TrimSpace(status)) {
+	case "PRESENT":
+		return "Bisa"
+	case "PARTIAL":
+		return "Sebagian"
+	case "ABSENT":
+		return "Tidak bisa"
+	case "UNKNOWN", "":
+		return "Belum diisi"
+	default:
+		return status
+	}
+}
+
 func personTypeExportLabel(pt string) string {
 	switch strings.ToUpper(pt) {
 	case "THERAPIST":
@@ -76,22 +91,21 @@ func buildStaffListXLSX(eventName string, rows []staffListRow) ([]byte, error) {
 	sheet := "Staf"
 	_ = f.SetSheetName("Sheet1", sheet)
 
-	headerStyle, _ := f.NewStyle(&excelize.Style{
-		Font:      &excelize.Font{Bold: true, Color: "#FFFFFF"},
-		Fill:      excelize.Fill{Type: "pattern", Color: []string{"#6D28D9"}, Pattern: 1},
-		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center", WrapText: true},
-	})
-
-	_ = f.SetCellValue(sheet, "A1", "Acara: "+eventName)
-	headers := []string{"No", "Nama", "Peran", "Kehadiran", "Terapi", "Peran relawan", "Pencatat", "Catatan"}
-	for i, h := range headers {
-		cell, _ := excelize.CoordinatesToCellName(i+1, 3)
-		_ = f.SetCellValue(sheet, cell, h)
-		_ = f.SetCellStyle(sheet, cell, cell, headerStyle)
+	styles, err := newExportXLSXStyles(f, staffExportTheme)
+	if err != nil {
+		return nil, err
 	}
 
+	const colCount = 8
+	headerRow := 4
+	_ = writeExportTitleBlock(f, sheet, "Daftar Staf", exportSubtitleLines(eventName, "", ""), colCount, styles)
+
+	headers := []string{"No", "Nama", "Peran", "Kehadiran", "Terapi", "Peran relawan", "Pencatat", "Catatan"}
+	_ = writeExportTableHeader(f, sheet, headerRow, headers, styles.header)
+	applyStaffListColumnWidths(f, sheet)
+
 	for i, row := range rows {
-		r := i + 4
+		r := headerRow + 1 + i
 		pencatat := "Tidak"
 		if row.IsPencatat {
 			pencatat = "Ya"
@@ -100,21 +114,16 @@ func buildStaffListXLSX(eventName string, rows []staffListRow) ([]byte, error) {
 			i + 1,
 			row.FullName,
 			personTypeExportLabel(row.PersonType),
-			row.AttendanceStatus,
+			attendanceStatusExportLabel(row.AttendanceStatus),
 			row.TherapyNames,
 			row.VolunteerRole,
 			pencatat,
 			row.Notes,
 		}
-		for c, v := range vals {
-			cell, _ := excelize.CoordinatesToCellName(c+1, r)
-			_ = f.SetCellValue(sheet, cell, v)
-		}
+		_ = writeExportDataRow(f, sheet, r, vals, styles.body, styles.bodyAlt, i%2 == 1)
 	}
 
-	_ = f.SetColWidth(sheet, "A", "A", 6)
-	_ = f.SetColWidth(sheet, "B", "B", 28)
-	_ = f.SetColWidth(sheet, "C", "H", 20)
+	freezeExportHeader(f, sheet, headerRow)
 
 	var buf bytes.Buffer
 	if err := f.Write(&buf); err != nil {

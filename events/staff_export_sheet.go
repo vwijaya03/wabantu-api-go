@@ -272,81 +272,74 @@ func taskExportLabel(taskName string) string {
 func buildStaffSheetXLSX(data staffSheetExportData) ([]byte, error) {
 	f := excelize.NewFile()
 	defer f.Close()
-	sheet := "Sheet1"
+	sheet := "Operasional"
+	_ = f.SetSheetName("Sheet1", sheet)
 
-	headerStyle, err := f.NewStyle(&excelize.Style{
-		Font:      &excelize.Font{Bold: true, Color: "#FFFFFF"},
-		Fill:      excelize.Fill{Type: "pattern", Color: []string{"#6D28D9"}, Pattern: 1},
-		Alignment: &excelize.Alignment{Horizontal: "center", Vertical: "center", WrapText: true},
-	})
+	styles, err := newExportXLSXStyles(f, staffExportTheme)
 	if err != nil {
 		return nil, err
 	}
-	altStyle, _ := f.NewStyle(&excelize.Style{
-		Fill: excelize.Fill{Type: "pattern", Color: []string{"#F3F4F6"}, Pattern: 1},
-	})
 
-	row := 1
+	const colCount = 4
+	applyStaffSheetColumnWidths(f, sheet)
+
+	_ = writeExportTitleBlock(f, sheet, "Lembar Operasional Staf",
+		exportSubtitleLines(data.EventName, "", ""), colCount, styles)
+
+	row := 4
 	headers := []string{"Timestamp", "Nama Terapis", "Apakah Bisa Datang?", "Terapi Yang Anda Pilih"}
-	for i, h := range headers {
-		cell, _ := excelize.CoordinatesToCellName(i+1, row)
-		_ = f.SetCellValue(sheet, cell, h)
-		_ = f.SetCellStyle(sheet, cell, cell, headerStyle)
-	}
-	_ = f.SetColWidth(sheet, "A", "A", 22)
-	_ = f.SetColWidth(sheet, "B", "B", 28)
-	_ = f.SetColWidth(sheet, "C", "C", 32)
-	_ = f.SetColWidth(sheet, "D", "D", 48)
+	_ = writeExportTableHeader(f, sheet, row, headers, styles.header)
 	row++
 
 	for i, s := range data.TherapyStaff {
 		vals := []any{
-			s.Timestamp.Format("1/2/2006 15:04:05"),
+			s.Timestamp.Format("2/1/2006 15:04"),
 			s.FullName,
 			s.AttendanceLabel,
 			s.TherapyNames,
 		}
-		for c, v := range vals {
-			cell, _ := excelize.CoordinatesToCellName(c+1, row)
-			_ = f.SetCellValue(sheet, cell, v)
-			if i%2 == 1 {
-				endCell, _ := excelize.CoordinatesToCellName(4, row)
-				_ = f.SetCellStyle(sheet, cell, endCell, altStyle)
-			}
+		_ = writeExportDataRow(f, sheet, row, vals, styles.body, styles.bodyAlt, i%2 == 1)
+		row++
+	}
+
+	row++
+	writeExportSectionTitle(f, sheet, "Para Fashi dan Daoshi saling bergantian menjadi sukarelawan", row, colCount, styles.section)
+	row++
+	_ = writeExportTableHeader(f, sheet, row, []string{"Peran relawan", "Nama", "", ""}, styles.header)
+	row++
+	for i, v := range data.Volunteers {
+		vals := []any{v.RoleLabel, v.Name, "", ""}
+		_ = writeExportDataRow(f, sheet, row, vals, styles.body, styles.bodyAlt, i%2 == 1)
+		row++
+	}
+
+	row++
+	writeExportSectionTitle(f, sheet, "Per 1 Jam Fashi Gonta Ganti Medang", row, colCount, styles.section)
+	row++
+	_ = writeExportTableHeader(f, sheet, row, []string{"Jam", "Petugas pedang", "", ""}, styles.header)
+	row++
+	for i, h := range data.HourlyMedang {
+		vals := []any{h.Label, h.Name, "", ""}
+		_ = writeExportDataRow(f, sheet, row, vals, styles.body, styles.bodyAlt, i%2 == 1)
+		row++
+	}
+
+	row++
+	writeExportSectionTitle(f, sheet, "Penugasan sesi", row, colCount, styles.section)
+	row++
+	_ = writeExportTableHeader(f, sheet, row, []string{"Tugas", "Penugasan", "", ""}, styles.header)
+	row++
+	for i, t := range data.SessionTasks {
+		assignee := t.FixedName
+		if assignee == "" {
+			assignee = sessionAssignmentParts(t.Sessions)
 		}
+		vals := []any{t.TaskLabel, assignee, "", ""}
+		_ = writeExportDataRow(f, sheet, row, vals, styles.body, styles.bodyAlt, i%2 == 1)
 		row++
 	}
 
-	row += 2
-	_ = f.SetCellValue(sheet, fmt.Sprintf("A%d", row), "Para Fashi dan Daoshi saling bergantian menjadi sukarelawan")
-	row++
-	for _, v := range data.Volunteers {
-		_ = f.SetCellValue(sheet, fmt.Sprintf("A%d", row), v.RoleLabel)
-		_ = f.SetCellValue(sheet, fmt.Sprintf("B%d", row), v.Name)
-		row++
-	}
-
-	row++
-	_ = f.SetCellValue(sheet, fmt.Sprintf("A%d", row), "Per 1 Jam Fashi Gonta Ganti Medang.")
-	row++
-	for _, h := range data.HourlyMedang {
-		_ = f.SetCellValue(sheet, fmt.Sprintf("A%d", row), h.Label)
-		_ = f.SetCellValue(sheet, fmt.Sprintf("B%d", row), h.Name)
-		row++
-	}
-
-	row++
-	for _, t := range data.SessionTasks {
-		_ = f.SetCellValue(sheet, fmt.Sprintf("A%d", row), t.TaskLabel)
-		if t.FixedName != "" {
-			_ = f.SetCellValue(sheet, fmt.Sprintf("B%d", row), t.FixedName)
-			row++
-			continue
-		}
-		parts := sessionAssignmentParts(t.Sessions)
-		_ = f.SetCellValue(sheet, fmt.Sprintf("B%d", row), parts)
-		row++
-	}
+	freezeExportHeader(f, sheet, 4)
 
 	var buf bytes.Buffer
 	if err := f.Write(&buf); err != nil {

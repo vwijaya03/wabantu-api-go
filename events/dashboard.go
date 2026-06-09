@@ -31,7 +31,24 @@ func GetEventDashboard(ctx context.Context, eventId string) (*EventDashboard, er
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	run := func() (*EventDashboard, error) {
+		return loadEventDashboard(ctx, u.TenantSchema, eventId)
+	}
+	resp, err := run()
+	if isBadConnectionErr(err) {
+		resp, err = run()
+	}
+	return resp, err
+}
+
+type therapyCapScratch struct {
+	row     TherapyCapacityRow
+	capMode string
+	maxCap  sql.NullInt64
+}
+
+func loadEventDashboard(ctx context.Context, tenantSchema, eventId string) (*EventDashboard, error) {
+	conn, err := tenantConn(ctx, tenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
@@ -51,44 +68,40 @@ func GetEventDashboard(ctx context.Context, eventId string) (*EventDashboard, er
 	).Scan(&d.PatientsRegistered, &d.PatientsCompleted, &d.PatientsCancelled)
 
 	rows, err := conn.QueryContext(ctx, `
-		SELECT et.therapy_id::text, t.therapy_name,
+		SELECT et.therapy_id::text, t.therapy_name, et.capacity_mode, et.max_capacity,
 		  (SELECT COUNT(*) FROM evt_patient p WHERE p.event_id=$1::uuid AND p.therapy_id=et.therapy_id
-		     AND p.deleted_at IS NULL AND p.reservation_status IN ('CONFIRMED','COMPLETED')),
-		  COALESCE(MAX(s.capacity), et.max_capacity, 0)
+		     AND p.deleted_at IS NULL AND p.reservation_status IN ('CONFIRMED','COMPLETED'))
 		FROM evt_event_therapy et
 		JOIN evt_therapy t ON t.id = et.therapy_id
-		LEFT JOIN evt_time_slot s ON s.event_id=et.event_id AND s.therapy_id=et.therapy_id
 		WHERE et.event_id=$1::uuid
-		GROUP BY et.therapy_id, t.therapy_name, et.max_capacity, t.display_order
 		ORDER BY t.display_order`, eventId)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	type capScratch struct {
-		row    TherapyCapacityRow
-		maxCap int
-	}
-	var scratch []capScratch
+	var scratch []therapyCapScratch
 	for rows.Next() {
-		var s capScratch
-		if err := rows.Scan(&s.row.TherapyID, &s.row.TherapyName, &s.row.Current, &s.maxCap); err != nil {
+		var s therapyCapScratch
+		if err := rows.Scan(&s.row.TherapyID, &s.row.TherapyName, &s.capMode, &s.maxCap, &s.row.Current); err != nil {
+			_ = rows.Close()
 			return nil, appErrs.Internal(err.Error())
 		}
 		scratch = append(scratch, s)
 	}
 	if err := rows.Err(); err != nil {
+		_ = rows.Close()
 		return nil, appErrs.Internal(err.Error())
 	}
 	if err := rows.Close(); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
+	// therapyMaxCapacity runs additional queries — must not run while rows cursor is open.
 	for _, s := range scratch {
-		row := s.row
-		row.Max = s.maxCap
-		if row.Max == 0 {
-			row.Max, _ = computeTherapyCapacity(ctx, conn, eventId, row.TherapyID, "THERAPIST_COUNT", sql.NullInt64{Int64: int64(s.maxCap), Valid: s.maxCap > 0})
+		max, err := therapyMaxCapacity(ctx, conn, eventId, s.row.TherapyID, s.capMode, s.maxCap)
+		if err != nil {
+			return nil, appErrs.Internal(err.Error())
 		}
-		d.TherapyCapacity = append(d.TherapyCapacity, row)
+		s.row.Max = max
+		d.TherapyCapacity = append(d.TherapyCapacity, s.row)
 	}
 
 	typeRows, err := conn.QueryContext(ctx, `

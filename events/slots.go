@@ -160,6 +160,22 @@ func padTime(t string) string {
 	return t
 }
 
+// therapyMaxCapacity is total bookable seats for a therapy: sum of generated slot capacities,
+// or configured capacity when slots are not generated yet.
+func therapyMaxCapacity(ctx context.Context, conn *sql.Conn, eventID, therapyID, capMode string, maxCap sql.NullInt64) (int, error) {
+	var slotSum int
+	err := conn.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(capacity), 0) FROM evt_time_slot
+		WHERE event_id=$1::uuid AND therapy_id=$2::uuid`, eventID, therapyID).Scan(&slotSum)
+	if err != nil {
+		return 0, err
+	}
+	if slotSum > 0 {
+		return slotSum, nil
+	}
+	return computeTherapyCapacity(ctx, conn, eventID, therapyID, capMode, maxCap)
+}
+
 func computeTherapyCapacity(ctx context.Context, conn *sql.Conn, eventID, therapyID, mode string, maxCap sql.NullInt64) (int, error) {
 	switch strings.ToUpper(mode) {
 	case "SHIJIE_COUNT":

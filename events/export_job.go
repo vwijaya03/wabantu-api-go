@@ -37,11 +37,12 @@ type ExportJob struct {
 
 // PatientExportFilters — filter pasien untuk kind=patients_pdf (Encore API schema).
 type PatientExportFilters struct {
-	Q         string `json:"q,omitempty"`
-	TherapyID string `json:"therapyId,omitempty"`
-	Status    string `json:"status,omitempty"`
-	SlotDate  string `json:"slotDate,omitempty"`
-	HasSlot   string `json:"hasSlot,omitempty"`
+	Q             string   `json:"q,omitempty"`
+	TherapyID     string   `json:"therapyId,omitempty"`
+	Status        string   `json:"status,omitempty"`
+	SlotDate      string   `json:"slotDate,omitempty"`
+	HasSlot       string   `json:"hasSlot,omitempty"`
+	HiddenColumns []string `json:"hiddenColumns,omitempty"`
 }
 
 type CreateExportJobParams struct {
@@ -108,10 +109,16 @@ func CreateExportJob(ctx context.Context, eventId string, p *CreateExportJobPara
 		}
 	}
 
+	hiddenCols := parsePatientHiddenColumns(nil)
+	if p.Filters != nil {
+		hiddenCols = parsePatientHiddenColumns(p.Filters.HiddenColumns)
+	}
+
 	paramsBytes, err := json.Marshal(map[string]any{
-		"kind":    kind,
-		"format":  format,
-		"filters": patientFiltersToMap(filters),
+		"kind":          kind,
+		"format":        format,
+		"filters":       patientFiltersToMap(filters),
+		"hiddenColumns": hiddenColumnList(hiddenCols),
 	})
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
@@ -128,7 +135,7 @@ func CreateExportJob(ctx context.Context, eventId string, p *CreateExportJobPara
 		return nil, appErrs.Internal(err.Error())
 	}
 
-	go processExportJobAsync(u.TenantSchema, id, eventId, kind, format, filters, u.AccountID, u.TenantID, u.ImpersonationTenantName)
+	go processExportJobAsync(u.TenantSchema, id, eventId, kind, format, filters, hiddenCols, u.AccountID, u.TenantID, u.ImpersonationTenantName)
 
 	now := time.Now()
 	auditEvent(ctx, conn, u, "event", eventId, "export_job_created", nil, map[string]any{"kind": kind, "jobId": id})
@@ -209,7 +216,7 @@ func ListExportJobs(ctx context.Context, eventId string) (*ExportJobListResponse
 	return &ExportJobListResponse{Items: items}, nil
 }
 
-func processExportJobAsync(schema, jobID, eventID, kind, format string, filters patientFilterInput, accountID, tenantID, tenantName string) {
+func processExportJobAsync(schema, jobID, eventID, kind, format string, filters patientFilterInput, hiddenCols map[string]bool, accountID, tenantID, tenantName string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
@@ -219,10 +226,10 @@ func processExportJobAsync(schema, jobID, eventID, kind, format string, filters 
 	}
 	defer conn.Close()
 
-	processExportJob(ctx, conn, jobID, eventID, kind, format, filters, accountID, tenantID, tenantName)
+	processExportJob(ctx, conn, jobID, eventID, kind, format, filters, hiddenCols, accountID, tenantID, tenantName)
 }
 
-func processExportJob(ctx context.Context, conn *sql.Conn, jobID, eventID, kind, format string, filters patientFilterInput, accountID, tenantID, tenantName string) {
+func processExportJob(ctx context.Context, conn *sql.Conn, jobID, eventID, kind, format string, filters patientFilterInput, hiddenCols map[string]bool, accountID, tenantID, tenantName string) {
 	defer func() {
 		if r := recover(); r != nil {
 			failExportJob(ctx, conn, jobID, fmt.Sprintf("export gagal: %v", r))
@@ -235,9 +242,9 @@ func processExportJob(ctx context.Context, conn *sql.Conn, jobID, eventID, kind,
 
 	switch kind {
 	case exportKindPatientsPDF:
-		processPatientsExportJob(ctx, conn, jobID, eventID, filters, tenantID, tenantName)
+		processPatientsExportJob(ctx, conn, jobID, eventID, filters, hiddenCols, tenantID, tenantName)
 	case exportKindPatientsXLSX:
-		processPatientsXLSXExportJob(ctx, conn, jobID, eventID, filters, tenantID, tenantName)
+		processPatientsXLSXExportJob(ctx, conn, jobID, eventID, filters, hiddenCols, tenantID, tenantName)
 	case exportKindStaffSheet:
 		processStaffSheetExportJob(ctx, conn, jobID, eventID)
 	case exportKindStaffList:
@@ -248,7 +255,7 @@ func processExportJob(ctx context.Context, conn *sql.Conn, jobID, eventID, kind,
 	_ = format
 }
 
-func processPatientsXLSXExportJob(ctx context.Context, conn *sql.Conn, jobID, eventID string, filters patientFilterInput, tenantID, tenantName string) {
+func processPatientsXLSXExportJob(ctx context.Context, conn *sql.Conn, jobID, eventID string, filters patientFilterInput, hiddenCols map[string]bool, tenantID, tenantName string) {
 	updateExportJobProgress(ctx, conn, jobID, "Memuat data pasien...")
 
 	var eventName, startDate, endDate, location string
@@ -296,11 +303,12 @@ func processPatientsXLSXExportJob(ctx context.Context, conn *sql.Conn, jobID, ev
 	xlsxBytes, err := buildPatientsXLSX(patientPDFData{
 		TenantName:    tenantName,
 		EventName:     eventName,
-		DateRange:     startDate + " — " + endDate,
+		DateRange:     startDate + " - " + endDate,
 		Location:      location,
 		FilterSummary: filterSummary,
 		GeneratedAt:   time.Now().Format("02/01/2006 15:04"),
 		Rows:          items,
+		HiddenColumns: hiddenCols,
 	})
 	if err != nil {
 		failExportJob(ctx, conn, jobID, "gagal membuat Excel")
@@ -339,7 +347,7 @@ func processStaffListExportJob(ctx context.Context, conn *sql.Conn, jobID, event
 	completeExportJob(ctx, conn, jobID, dataURL, fileName, len(rows))
 }
 
-func processPatientsExportJob(ctx context.Context, conn *sql.Conn, jobID, eventID string, filters patientFilterInput, tenantID, tenantName string) {
+func processPatientsExportJob(ctx context.Context, conn *sql.Conn, jobID, eventID string, filters patientFilterInput, hiddenCols map[string]bool, tenantID, tenantName string) {
 	updateExportJobProgress(ctx, conn, jobID, "Memuat data pasien...")
 
 	var eventName, startDate, endDate, location string
@@ -390,14 +398,15 @@ func processPatientsExportJob(ctx context.Context, conn *sql.Conn, jobID, eventI
 	pdfBytes, err := buildPatientsPDF(patientPDFData{
 		TenantName:    tenantName,
 		EventName:     eventName,
-		DateRange:     startDate + " — " + endDate,
+		DateRange:     startDate + " - " + endDate,
 		Location:      location,
 		FilterSummary: filterSummary,
 		GeneratedAt:   time.Now().Format("02/01/2006 15:04"),
 		Rows:          items,
+		HiddenColumns: hiddenCols,
 	})
 	if err != nil {
-		failExportJob(ctx, conn, jobID, "gagal membuat PDF")
+		failExportJob(ctx, conn, jobID, fmt.Sprintf("gagal membuat PDF: %v", err))
 		return
 	}
 
