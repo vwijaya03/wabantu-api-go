@@ -39,8 +39,14 @@ env_get() {
 set_cloud_secret() {
   local name="$1"
   local value="$2"
+  local allow_empty="${3:-false}"
   if [[ -z "${value// }" ]]; then
-    echo "skip $name (empty)"
+    if [[ "$allow_empty" != "true" ]]; then
+      echo "skip $name (empty)"
+      return
+    fi
+    printf '' | encore secret set --env="$ENV_NAME" "$name"
+    echo "ok $name → env=$ENV_NAME (empty — Encore requires key; set real value when needed)"
     return
   fi
   printf '%s' "$value" | encore secret set --env="$ENV_NAME" "$name"
@@ -94,12 +100,12 @@ set_cloud_secret AnthropicApiKey "$ANTHROPIC_API_KEY"
 set_cloud_secret AnthropicAPIKey "$ANTHROPIC_API_KEY"
 set_cloud_secret AiInternalToken "$AI_INTERNAL_TOKEN"
 set_cloud_secret WebhookVerifyToken "$META_WEBHOOK_VERIFY_TOKEN"
-set_cloud_secret MidtransServerKey "$MIDTRANS_SERVER_KEY"
-set_cloud_secret MidtransClientKey "$MIDTRANS_CLIENT_KEY"
-set_cloud_secret MidtransIsProduction "${MIDTRANS_IS_PRODUCTION:-false}"
-set_cloud_secret RajaOngkirApiKey "$RAJAONGKIR_API_KEY"
-set_cloud_secret RajaOngkirAccountType "${RAJAONGKIR_ACCOUNT_TYPE:-starter}"
-set_cloud_secret SentryDSN "$SENTRY_DSN"
+set_cloud_secret MidtransServerKey "$MIDTRANS_SERVER_KEY" true
+set_cloud_secret MidtransClientKey "$MIDTRANS_CLIENT_KEY" true
+set_cloud_secret MidtransIsProduction "${MIDTRANS_IS_PRODUCTION:-false}" true
+set_cloud_secret RajaOngkirAPIKey "$RAJAONGKIR_API_KEY" true
+set_cloud_secret RajaOngkirAccountType "${RAJAONGKIR_ACCOUNT_TYPE:-starter}" true
+set_cloud_secret SentryDSN "$SENTRY_DSN" true
 set_cloud_secret PlatformAdminBootstrapSecret "$PLATFORM_ADMIN_BOOTSTRAP"
 
 echo "Done. Verify: encore secret list --env=$ENV_NAME"
