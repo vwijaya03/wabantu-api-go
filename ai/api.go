@@ -7,6 +7,8 @@ import (
 	"encore.dev/beta/errs"
 	"encore.dev/rlog"
 	"github.com/redis/go-redis/v9"
+
+	"encore.app/wabantu/shared/redisurl"
 )
 
 // ─── Encore secrets ──────────────────────────────────────────────────────────
@@ -47,11 +49,11 @@ func newRedisClient() *redis.Client {
 	if raw == "" {
 		raw = "redis://localhost:6379"
 	}
-	opt, err := redis.ParseURL(raw)
+	client, err := redisurl.NewClient(raw)
 	if err != nil {
-		opt = &redis.Options{Addr: raw}
+		panic("ai: invalid RedisURL: " + err.Error())
 	}
-	return redis.NewClient(opt)
+	return client
 }
 
 // ─── Request / Response types ────────────────────────────────────────────────

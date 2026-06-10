@@ -9,6 +9,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
+
+	"encore.app/wabantu/shared/redisurl"
 )
 
 const defaultSessionTTL = 7 * 24 * time.Hour // 7 days
@@ -40,11 +42,11 @@ var (
 
 func getRedis() *redis.Client {
 	redisOnce.Do(func() {
-		opt, err := redis.ParseURL(secrets.RedisURL)
+		client, err := redisurl.NewClient(secrets.RedisURL)
 		if err != nil {
-			panic("auth: invalid REDIS_URL: " + err.Error())
+			panic("auth: invalid RedisURL: " + err.Error())
 		}
-		rdb = redis.NewClient(opt)
+		rdb = client
 	})
 	return rdb
 }

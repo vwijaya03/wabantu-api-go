@@ -64,13 +64,25 @@ printf '%s' 'redis://localhost:6379' | encore secret set --type local RedisURL
 1. Daftar di https://upstash.com
 2. **Create Database**
 3. Pilih region dekat pengguna (mis. **Singapore** / `ap-southeast-1`)
-4. Di halaman database, copy **Redis URL** (format TLS):
+4. Di halaman database, buka tab **Redis** (bukan REST / `.connect` REST saja)
+
+Upstash memberi **dua jenis** kredensial — jangan tertukar:
+
+| Variabel Upstash | Dipakai `api-go`? | Keterangan |
+|------------------|-------------------|------------|
+| `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` | ❌ **Tidak** | HTTP REST API (SDK Node `@upstash/redis`) |
+| `UPSTASH_REDIS_URL` / **Redis URL** | ✅ **Ya** | TCP + TLS — dipakai `go-redis` lewat secret `RedisURL` |
+
+Yang dibutuhkan WABantu (format TLS):
 
 ```
 rediss://default:PASSWORD@xxxx.upstash.io:6379
 ```
 
-> `rediss` = Redis + SSL. Jangan pakai `redis://localhost` di cloud.
+> `rediss` = Redis + SSL. Jangan pakai `redis://localhost` di cloud.  
+> **Jangan** set `RedisURL` ke `https://....upstash.io` (itu REST, login akan gagal).
+
+`api-go` **tidak perlu diubah** untuk REST — cukup set secret `RedisURL` ke TCP URL di atas.
 
 ### Set ke Encore Cloud
 

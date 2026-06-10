@@ -3,10 +3,17 @@
 #
 # Usage:
 #   ./scripts/setup-secrets-for-cloud.sh staging
-#   REDIS_URL='rediss://...' ./scripts/setup-secrets-for-cloud.sh staging
 #
-# Redis on cloud cannot be localhost — set REDIS_URL to Upstash/Railway/etc. before running,
-# or pass it inline as shown above.
+# Redis cloud (pilih salah satu):
+#   A) Tambahkan ke ../api/.env lalu jalankan script:
+#        REDIS_URL=rediss://default:TOKEN@key-bug-xxx.upstash.io:6379
+#      atau UPSTASH_REDIS_URL=rediss://default:TOKEN@key-bug-xxx.upstash.io:6379
+#   B) Inline saat menjalankan:
+#        REDIS_URL='rediss://default:TOKEN@key-bug-xxx.upstash.io:6379' \
+#          ./scripts/setup-secrets-for-cloud.sh staging
+#
+# Jangan pakai UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN (HTTP REST).
+# api-go butuh Redis TCP URL (rediss://...) → disimpan sebagai Encore secret RedisURL.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -42,10 +49,28 @@ set_cloud_secret() {
 
 cd "$ROOT"
 
+# Priority: shell REDIS_URL → api/.env REDIS_URL → api/.env UPSTASH_REDIS_URL
 REDIS_URL="${REDIS_URL:-$(env_get REDIS_URL 2>/dev/null || true)}"
+REDIS_URL="${REDIS_URL:-$(env_get UPSTASH_REDIS_URL 2>/dev/null || true)}"
+
+if [[ -n "$REDIS_URL" ]]; then
+  echo "using Redis TCP URL for RedisURL (from REDIS_URL / UPSTASH_REDIS_URL in .env or shell)"
+fi
+
 if [[ -z "$REDIS_URL" || "$REDIS_URL" == redis://localhost:* || "$REDIS_URL" == redis://127.0.0.1:* ]]; then
-  echo "ERROR: Set REDIS_URL to a cloud Redis before deploy (e.g. Upstash free tier)." >&2
+  if [[ -n "${UPSTASH_REDIS_REST_URL:-}" || -n "$(env_get UPSTASH_REDIS_REST_URL 2>/dev/null || true)" ]]; then
+    echo "ERROR: UPSTASH_REDIS_REST_URL is HTTP REST API — api-go cannot use it." >&2
+    echo "  In Upstash Console → database → copy Redis TCP URL (UPSTASH_REDIS_URL), e.g.:" >&2
+    echo "  rediss://default:TOKEN@xxxx.upstash.io:6379" >&2
+    exit 1
+  fi
+  echo "ERROR: Set REDIS_URL (or UPSTASH_REDIS_URL) to cloud Redis TCP URL before deploy." >&2
   echo "  REDIS_URL='rediss://default:...@....upstash.io:6379' $0 $ENV_NAME" >&2
+  exit 1
+fi
+
+if [[ "$REDIS_URL" == https://* || "$REDIS_URL" == http://* ]]; then
+  echo "ERROR: RedisURL must be rediss://... (TCP), not Upstash REST https://..." >&2
   exit 1
 fi
 
