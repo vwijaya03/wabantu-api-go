@@ -210,6 +210,8 @@ encore logs --env=staging
 
 ## Langkah 6 — Verifikasi setelah deploy sukses
 
+Panduan lengkap **Postman**, **TablePlus**, dan perbandingan lokal vs staging: **[STAGING_ACCESS.md](./STAGING_ACCESS.md)**.
+
 ### URL API
 
 Di dashboard → environment **staging** → salin URL publik, mis.:
@@ -218,28 +220,51 @@ Di dashboard → environment **staging** → salin URL publik, mis.:
 https://staging-wabantu-viko-8vni.encr.app
 ```
 
-### Health / API
+Base path API selalu:
 
-```bash
-BASE=https://staging-wabantu-viko-8vni.encr.app
-
-# Contoh endpoint publik (sesuaikan dengan route yang ada)
-curl -s "$BASE/api/v1/..." 
+```
+https://staging-wabantu-viko-8vni.encr.app/api/v1
 ```
 
-### Database cloud
+> URL `*.encr.app` = HTTP API saja. Database Postgres diakses lewat `encore db shell` / `encore db proxy`, bukan lewat browser atau TablePlus langsung ke domain Encore.
+
+### Health / API (curl / Postman)
+
+```bash
+BASE=https://staging-wabantu-viko-8vni.encr.app/api/v1
+
+curl -s -X POST "$BASE/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"...","password":"..."}'
+```
+
+Postman: set variable `base_url` = URL di atas; login `POST {{base_url}}/auth/login`; request lain pakai `Authorization: Bearer {{access_token}}`. Detail: [STAGING_ACCESS.md](./STAGING_ACCESS.md).
+
+### Database cloud (terminal)
 
 ```bash
 encore db shell system --env=staging --write
-# SELECT count(*) FROM tenant_company;
+# SELECT count(*) FROM tenant;
 
 encore db shell tenant --env=staging --write
 # \dn   -- list schema tenant t_*
 ```
 
+### Database cloud (TablePlus)
+
+```bash
+# Terminal 1 — biarkan jalan
+encore db proxy tenant --env=staging --write -p 5433
+
+# Terminal 2 — ambil user/password
+encore db conn-uri tenant --env=staging --write
+```
+
+TablePlus: Host `127.0.0.1`, Port `5433`, Database `tenant`, SSL off. Langkah lengkap: [STAGING_ACCESS.md](./STAGING_ACCESS.md).
+
 ### Login
 
-Buka frontend (atau API login) — pastikan tidak error Redis. Kalau gagal, cek [DEPLOY_REDIS.md](./DEPLOY_REDIS.md).
+Buka frontend (atau API login) — pastikan tidak error Redis. Kalau gagal, cek [DEPLOY_REDIS.md](./DEPLOY_REDIS.md). Setelah migrasi DB, user harus login ulang (session Redis tidak ikut).
 
 ---
 
@@ -280,11 +305,25 @@ Migrasi penuh:
 
 Script akan:
 
-1. `pg_dump` data lokal (`system` + `tenant`)
-2. Konfirmasi `y/N`
-3. `pg_restore` ke cloud env `staging`
+1. `pg_dump` schema + data lokal `system`
+2. `pg_dump` schema `t_*` (DDL) + data tenant dari lokal
+3. Konfirmasi `y/N`
+4. `pg_restore` **schema** system ke cloud (wajib jika cloud DB masih kosong)
+5. `pg_restore` data system (`encore db conn-uri --admin`)
+6. `pg_restore` schema tenant → data tenant
+7. **GRANT** otomatis di DB `system` + schema `t_*` (wajib — tanpa ini login mengembalikan `{"message":"db error"}`)
 
 Backup dump disimpan di `api-go/.db-migrate/<timestamp>/`.
+
+### Setelah migrasi
+
+1. **Login ulang** di staging (Redis tidak ikut migrasi) — [DEPLOY_REDIS.md](./DEPLOY_REDIS.md)
+2. Test: `POST .../api/v1/auth/login` — harus `Email atau password salah` (bukan `db error`)
+3. Jika masih `db error`, jalankan ulang GRANT:
+
+```bash
+./scripts/fix-cloud-db-grants.sh staging
+```
 
 ### Manual (tanpa script)
 
@@ -292,11 +331,11 @@ Backup dump disimpan di `api-go/.db-migrate/<timestamp>/`.
 pg_dump "$(encore db conn-uri system)" -Fc --data-only --disable-triggers -f system.dump
 pg_dump "$(encore db conn-uri tenant)"  -Fc --data-only --disable-triggers -f tenant.dump
 
-pg_restore -d "$(encore db conn-uri system --env=staging)" \
-  --data-only --disable-triggers --no-owner system.dump
+pg_restore -d "$(encore db conn-uri system --env=staging --admin)" \
+  --data-only --disable-triggers --no-owner --no-privileges system.dump
 
-pg_restore -d "$(encore db conn-uri tenant --env=staging)" \
-  --data-only --disable-triggers --no-owner tenant.dump
+pg_restore -d "$(encore db conn-uri tenant --env=staging --admin)" \
+  --data-only --disable-triggers --no-owner --no-privileges tenant.dump
 ```
 
 ---
@@ -372,6 +411,12 @@ Custom domain & production AWS/GCP: plan Pro — https://encore.dev/docs/platfor
 | SSE inbox tidak update | SSE lewat Vercel rewrite | Set `NEXT_PUBLIC_SSE_API_URL` langsung ke Encore |
 | Data kosong setelah deploy | Normal tanpa migrasi | Register ulang atau jalankan `migrate-local-db-to-encore.sh` |
 | `pg_restore` error constraint | Schema belum ada / urutan salah | Deploy sukses dulu; pakai `--disable-triggers` seperti script |
+| `pg_restore` `must be owner` / `permission denied` | Conn-uri cloud default = **read-only** | Script pakai `--admin`; manual: `encore db conn-uri system --env=staging --admin` |
+| `schema "t_..." does not exist` | Schema tenant belum dibuat di cloud | Jalankan script terbaru (langkah schema-only); atau `pg_dump --schema-only` dulu |
+| `pg_restore` exit 1, `RI_ConstraintTrigger` | Managed PG tidak bisa `DISABLE TRIGGER` pada FK system | Abaikan jika script cetak `ok system tenant rows: N` |
+| `schema "public" already exists` | Schema system sudah ada di cloud | Normal saat re-run; script terbaru skip DDL jika tabel sudah ada |
+| Login `db error` setelah migrasi | `pg_restore --no-privileges` — role `encore_writer` tidak punya `SELECT` | `./scripts/fix-cloud-db-grants.sh staging` (script migrasi terbaru sudah GRANT otomatis) |
+| `relation "public.tenant" does not exist` | DB cloud **kosong** (belum ada tabel) | Script terbaru restore **schema system** dulu; atau `git push encore` sampai deploy sukses |
 | Webhook Meta gagal verifikasi | Token tidak sama | Samakan `WebhookVerifyToken` dengan Meta console |
 
 ---
@@ -396,10 +441,12 @@ Connect cloud account di dashboard → Encore provision RDS, dll. Lihat https://
 
 | File | Fungsi |
 |------|--------|
+| [STAGING_ACCESS.md](./STAGING_ACCESS.md) | Postman, TablePlus, `db shell` / `db proxy` staging |
 | [DEPLOY_REDIS.md](./DEPLOY_REDIS.md) | Setup Upstash & `RedisURL` |
 | `scripts/setup-secrets-for-cloud.sh` | Copy secrets `api/.env` → env cloud |
 | `scripts/setup-secrets-from-env.sh` | Copy secrets → `type:local` |
-| `scripts/migrate-local-db-to-encore.sh` | Migrasi Postgres lokal → cloud |
+| `scripts/migrate-local-db-to-encore.sh` | Migrasi Postgres lokal → cloud (+ GRANT otomatis) |
+| `scripts/fix-cloud-db-grants.sh` | Perbaiki hak akses DB cloud setelah migrasi (login `db error`) |
 | `encore.app` | App ID Encore |
 | `../infra/docker-compose.yml` | Redis & Postgres lokal (dev) |
 
@@ -424,4 +471,7 @@ git add -A && git commit -m "Deploy staging" && git push encore master
 
 # 6. (Opsional) Migrasi data
 ./scripts/migrate-local-db-to-encore.sh staging
+
+# 7. (Jika login "db error" setelah migrasi)
+./scripts/fix-cloud-db-grants.sh staging
 ```

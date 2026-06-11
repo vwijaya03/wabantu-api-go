@@ -214,17 +214,19 @@ encore test ./...
 # Atau paket tertentu:
 encore test ./ai ./usage
 
-# Shell ke database system / tenant
+# Shell ke database system / tenant (lokal)
 encore db shell system
 encore db shell tenant
 encore db shell tenant --write    # INSERT/UPDATE
 
-# Connection string Postgres lokal
+# Staging cloud — tambah --env=staging (lihat docs/STAGING_ACCESS.md)
+encore db shell tenant --env=staging --write
+encore db proxy tenant --env=staging --write -p 5433   # TablePlus: 127.0.0.1:5433
+
+# Connection string Postgres
 encore db conn-uri system
 encore db conn-uri tenant
-
-# Proxy DB ke mesin lain (staging)
-encore db proxy tenant --env=staging
+encore db conn-uri tenant --env=staging --write        # user/password untuk TablePlus
 
 # Secret
 encore secret set --type local NamaSecret
@@ -442,8 +444,16 @@ curl -X POST http://localhost:4000/api/v1/internal/platform-admin/bootstrap \
 
 Gunakan ini untuk testing lokal atau Postman. Ganti `BASE_URL`, `ACCESS_TOKEN`, `TENANT_ID`, dan `SCHEMA_NAME` sesuai environment.
 
+| Environment | `BASE_URL` |
+|-------------|------------|
+| Lokal | `http://localhost:4000/api/v1` |
+| Encore Cloud staging | `https://staging-wabantu-viko-8vni.encr.app/api/v1` |
+
+Panduan staging (Postman + TablePlus): **[docs/STAGING_ACCESS.md](./docs/STAGING_ACCESS.md)**.
+
 ```bash
 export BASE_URL="http://localhost:4000/api/v1"
+# staging: export BASE_URL="https://staging-wabantu-viko-8vni.encr.app/api/v1"
 export BOOTSTRAP_SECRET="wabantu-internal-bootstrap-2026-sangat-rahasia"
 export ACCESS_TOKEN="PASTE_ACCESS_TOKEN_DARI_LOGIN"
 export TENANT_ID="PASTE_TENANT_ID"
@@ -590,7 +600,7 @@ encore build docker wabantu
 
 Deploy via Encore Cloud atau image Docker + Postgres/Redis managed sendiri.
 
-**Tutorial deploy Encore Cloud:** [docs/DEPLOY_ENCORE_CLOUD.md](./docs/DEPLOY_ENCORE_CLOUD.md) · Redis cloud (Upstash): [docs/DEPLOY_REDIS.md](./docs/DEPLOY_REDIS.md)
+**Tutorial deploy Encore Cloud:** [docs/DEPLOY_ENCORE_CLOUD.md](./docs/DEPLOY_ENCORE_CLOUD.md) · Redis cloud (Upstash): [docs/DEPLOY_REDIS.md](./docs/DEPLOY_REDIS.md) · Postman & TablePlus staging: [docs/STAGING_ACCESS.md](./docs/STAGING_ACCESS.md)
 
 Stack compose contoh: `../infra/docker-compose.yml` (service `api-go`).
 
@@ -613,6 +623,7 @@ Stack compose contoh: `../infra/docker-compose.yml` (service `api-go`).
 | `invalid bootstrap secret` | Header curl ≠ `PlatformAdminBootstrapSecret` | `encore secret set` ulang; samakan string di curl |
 | Login super admin OK, inbox 403 | Belum impersonate tenant | Admin → **Pantau** tenant (atau dropdown topbar) |
 | Deploy cloud OK, login gagal | `RedisURL` masih `localhost` | [docs/DEPLOY_REDIS.md](./docs/DEPLOY_REDIS.md) — set Upstash ke `--env=staging` |
+| Login staging `db error` setelah migrasi DB | GRANT Postgres hilang (`pg_restore --no-privileges`) | `./scripts/fix-cloud-db-grants.sh staging` — [DEPLOY_ENCORE_CLOUD.md](./docs/DEPLOY_ENCORE_CLOUD.md) |
 | Push ke Encore tidak trigger deploy | Remote `encore` belum ada | `git remote add encore encore://<app-id>` — lihat [DEPLOY_ENCORE_CLOUD.md](./docs/DEPLOY_ENCORE_CLOUD.md) |
 
 ---
@@ -623,6 +634,8 @@ Stack compose contoh: `../infra/docker-compose.yml` (service `api-go`).
 |------|-----|
 | [docs/DEPLOY_ENCORE_CLOUD.md](./docs/DEPLOY_ENCORE_CLOUD.md) | Tutorial deploy ke Encore Cloud (secrets, git push, migrasi DB, frontend) |
 | [docs/DEPLOY_REDIS.md](./docs/DEPLOY_REDIS.md) | Setup Redis eksternal (Upstash) untuk session di cloud |
+| [docs/STAGING_ACCESS.md](./docs/STAGING_ACCESS.md) | Test API (Postman/curl) & koneksi DB staging (TablePlus, `db proxy`) |
+| `scripts/fix-cloud-db-grants.sh` | Perbaiki login `db error` setelah migrasi DB ke cloud |
 | [DEVELOPER_DOCUMENTATION.md](./DEVELOPER_DOCUMENTATION.md) | Dokumentasi teknis lengkap + [Bagian 8.1 Platform Admin](./DEVELOPER_DOCUMENTATION.md#81-platform-admin-internal-operator-wabantu-owner) |
 | [APP_FLOW_GUIDE.md](./APP_FLOW_GUIDE.md) | Alur end-to-end, peta endpoint, perintah step-by-step |
 | `finance/finance.go` | Wallet, kategori, transaksi, approval, period lock, audit, dashboard finance |

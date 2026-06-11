@@ -163,3 +163,11 @@ Kode mem-parse URL lewat `redis.ParseURL` (`auth/session.go`, `ai/api.go`).
 Redis **tidak** ikut saat migrasi Postgres (`migrate-local-db-to-encore.sh`). Semua user harus **login ulang** di environment cloud.
 
 Cache lama (rate limit counter, staging import) juga tidak dipindah — itu aman; data penting ada di Postgres.
+
+Jika login mengembalikan `{"message":"db error"}` (bukan salah password), itu masalah **GRANT Postgres** di cloud, bukan Redis. Jalankan:
+
+```bash
+./scripts/fix-cloud-db-grants.sh staging
+```
+
+Detail: [DEPLOY_ENCORE_CLOUD.md](./DEPLOY_ENCORE_CLOUD.md) Langkah 7.
