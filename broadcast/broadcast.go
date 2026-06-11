@@ -118,14 +118,28 @@ func CreateCampaign(ctx context.Context, req *CreateCampaignRequest) (*CreateCam
 		return nil, appErrs.Internal("create campaign failed")
 	}
 
+	piiActive := broadcastPIIActive(ctx, u.TenantSchema)
 	for _, phone := range req.Recipients {
 		phone = normalizePhone(phone)
 		if phone == "" {
 			continue
 		}
-		_, _ = db.Exec(ctx, fmt.Sprintf(`
-			INSERT INTO "%s".broadcast_recipient (campaign_id, phone_number)
-			VALUES ($1,$2)`, u.TenantSchema), camp.ID, phone)
+		if piiActive {
+			phoneEnc, phoneIdx, store, encErr := encryptBroadcastPhone(phone)
+			if encErr != nil {
+				return nil, appErrs.Internal("encrypt recipient failed")
+			}
+			if store == "" && phoneEnc == "" {
+				continue
+			}
+			_, _ = db.Exec(ctx, fmt.Sprintf(`
+				INSERT INTO "%s".broadcast_recipient (campaign_id, phone_number, phone_number_enc, phone_number_idx)
+				VALUES ($1,$2,$3,$4)`, u.TenantSchema), camp.ID, store, phoneEnc, phoneIdx)
+		} else {
+			_, _ = db.Exec(ctx, fmt.Sprintf(`
+				INSERT INTO "%s".broadcast_recipient (campaign_id, phone_number)
+				VALUES ($1,$2)`, u.TenantSchema), camp.ID, phone)
+		}
 	}
 
 	_ = usage.RecordEvent(ctx, u.TenantSchema, "broadcast_contact", len(req.Recipients), nil)
@@ -205,10 +219,20 @@ func handleBroadcastSend(ctx context.Context, req BroadcastSendRequest) error {
 		UPDATE "%s".broadcast_campaign SET status='sending', updated_at=NOW() WHERE id=$1`,
 		req.TenantSchema), req.CampaignID)
 
-	rows, err := db.Query(ctx, fmt.Sprintf(`
-		SELECT id, phone_number FROM "%s".broadcast_recipient
+	piiActive := broadcastPIIActive(ctx, req.TenantSchema)
+	recipientSQL := fmt.Sprintf(`
+		SELECT id, COALESCE(phone_number_enc,''), COALESCE(phone_number,'')
+		FROM "%s".broadcast_recipient
 		WHERE campaign_id=$1 AND status='pending'
-		ORDER BY created_at ASC LIMIT $2`, req.TenantSchema), req.CampaignID, sendBatchSize)
+		ORDER BY created_at ASC LIMIT $2`, req.TenantSchema)
+	if !piiActive {
+		recipientSQL = fmt.Sprintf(`
+		SELECT id, '', COALESCE(phone_number,'')
+		FROM "%s".broadcast_recipient
+		WHERE campaign_id=$1 AND status='pending'
+		ORDER BY created_at ASC LIMIT $2`, req.TenantSchema)
+	}
+	rows, err := db.Query(ctx, recipientSQL, req.CampaignID, sendBatchSize)
 	if err != nil {
 		return err
 	}
@@ -216,8 +240,12 @@ func handleBroadcastSend(ctx context.Context, req BroadcastSendRequest) error {
 
 	var pendingLeft bool
 	for rows.Next() {
-		var recID, phone string
-		if err := rows.Scan(&recID, &phone); err != nil {
+		var recID, phoneEnc, phoneLegacy string
+		if err := rows.Scan(&recID, &phoneEnc, &phoneLegacy); err != nil {
+			continue
+		}
+		phone, err := decryptBroadcastPhone(phoneEnc, phoneLegacy)
+		if err != nil || phone == "" {
 			continue
 		}
 		sendErr := sendToPhone(ctx, req.TenantSchema, phone, body)

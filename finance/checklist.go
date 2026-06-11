@@ -86,9 +86,9 @@ func ListChecklistTemplates(ctx context.Context) (*ChecklistListResponse, error)
 	defer conn.Close()
 
 	rows, err := conn.QueryContext(ctx, `
-		SELECT id, title, description, amount_hint, category_id, wallet_id,
+		SELECT id, COALESCE(title_enc,''), title, description, amount_hint, category_id, wallet_id,
 		       frequency, day_of_month, due_anchor_date, is_active, display_order, created_at
-		FROM fin_checklist_template WHERE is_active=true ORDER BY display_order, title`)
+		FROM fin_checklist_template WHERE is_active=true ORDER BY display_order, created_at`)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
@@ -102,8 +102,15 @@ func ListChecklistTemplates(ctx context.Context) (*ChecklistListResponse, error)
 		var amtHint sql.NullFloat64
 		var domN sql.NullInt64
 		var anchor sql.NullTime
-		rows.Scan(&t.ID, &t.Title, &desc, &amtHint, &catID, &walletID,
-			&t.Frequency, &domN, &anchor, &t.IsActive, &t.Order, &t.CreatedAt)
+		var titleEnc, titleLegacy string
+		if err := rows.Scan(&t.ID, &titleEnc, &titleLegacy, &desc, &amtHint, &catID, &walletID,
+			&t.Frequency, &domN, &anchor, &t.IsActive, &t.Order, &t.CreatedAt); err != nil {
+			return nil, appErrs.Internal(err.Error())
+		}
+		t.Title, err = decryptFinanceTitle(titleEnc, titleLegacy)
+		if err != nil {
+			return nil, appErrs.Internal(err.Error())
+		}
 		attachDueAnchorDate(&t, anchor, domN, ref)
 		if desc.Valid {
 			t.Description = &desc.String
@@ -160,12 +167,16 @@ func CreateChecklistTemplate(ctx context.Context, p *CreateChecklistTemplatePara
 	}
 	defer conn.Close()
 
+	titleEnc, storeTitle, encErr := encryptFinanceTitle(p.Title)
+	if encErr != nil {
+		return nil, appErrs.Internal(encErr.Error())
+	}
 	var id string
 	err = conn.QueryRowContext(ctx,
 		`INSERT INTO fin_checklist_template
-		 (title, description, amount_hint, category_id, wallet_id, frequency, day_of_month, due_anchor_date, display_order, created_by)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
-		strings.TrimSpace(p.Title), p.Description, p.AmountHint, p.CategoryID, p.WalletID,
+		 (title, title_enc, description, amount_hint, category_id, wallet_id, frequency, day_of_month, due_anchor_date, display_order, created_by)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
+		storeTitle, titleEnc, p.Description, p.AmountHint, p.CategoryID, p.WalletID,
 		p.Frequency, dayOfMonth, dueAnchor, p.Order, u.AccountID,
 	).Scan(&id)
 	if err != nil {

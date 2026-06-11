@@ -17,6 +17,8 @@ import (
 
 	appdb "encore.app/wabantu/shared/db"
 	apperr "encore.app/wabantu/shared/errs"
+	"encore.app/wabantu/shared/pii"
+	"encore.app/wabantu/shared/tenantschema"
 	"encore.app/wabantu/shared/tenantctx"
 	"encore.app/wabantu/shared/types"
 	"encore.app/wabantu/whatsapp"
@@ -302,14 +304,26 @@ func ListConversations(ctx context.Context, p *ListConversationsParams) (*ListCo
 	idx := 1
 
 	if hasSearch {
+		piiActive, _ := tenantschema.ContactPIIActiveConn(ctx, conn, user.TenantSchema)
 		like := "%" + strings.ToLower(strings.TrimSpace(p.Search)) + "%"
-		conds = append(conds, fmt.Sprintf(`(
-			LOWER(ct.phone_number) LIKE $%d OR
-			LOWER(COALESCE(ct.display_name,'')) LIKE $%d OR
-			LOWER(COALESCE(c.last_message_preview,'')) LIKE $%d
-		)`, idx, idx, idx))
+		searchParts := []string{fmt.Sprintf(`LOWER(COALESCE(c.last_message_preview,'')) LIKE $%d`, idx)}
 		args = append(args, like)
 		idx++
+		if tenantschema.UseBlindIndexSearch(encKey(), piiActive) {
+			key := encKey()
+			args = append(args, pii.BlindIndex(pii.NormalizePhone(p.Search), key))
+			searchParts = append(searchParts, fmt.Sprintf(`ct.phone_number_idx = $%d`, idx))
+			idx++
+			args = append(args, pii.BlindIndex(pii.NormalizeName(p.Search), key))
+			searchParts = append(searchParts, fmt.Sprintf(`ct.display_name_idx = $%d`, idx))
+			idx++
+		} else {
+			searchParts = append(searchParts,
+				fmt.Sprintf(`LOWER(ct.phone_number) LIKE $%d`, idx-1),
+				fmt.Sprintf(`LOWER(COALESCE(ct.display_name,'')) LIKE $%d`, idx-1),
+			)
+		}
+		conds = append(conds, "("+strings.Join(searchParts, " OR ")+")")
 	}
 	if queryBool(p.UnreadOnly) {
 		conds = append(conds, "c.unread_count > 0")
@@ -597,10 +611,8 @@ func SendMessage(ctx context.Context, id string, p *SendMessageParams) (*SendMes
 		return nil, apperr.NotFound("Percakapan tidak ditemukan")
 	}
 
-	var contactPhone string
-	if err := conn.QueryRowContext(ctx,
-		`SELECT phone_number FROM contact WHERE id = $1`, convoContactID,
-	).Scan(&contactPhone); err != nil {
+	contactPhone, err := contactPhoneByID(ctx, conn, convoContactID)
+	if err != nil {
 		return nil, apperr.NotFound("Kontak tidak ditemukan")
 	}
 
@@ -685,18 +697,9 @@ func ListContacts(ctx context.Context, p *ListContactsParams) (*ListContactsResp
 		rlog.Warn("sync contacts from lead/conversation failed", "err", err)
 	}
 
-	where := "deleted_at IS NULL"
+	piiActive, _ := tenantschema.ContactPIIActiveConn(ctx, conn, user.TenantSchema)
 	args := []any{}
-	if q := strings.TrimSpace(p.Q); q != "" {
-		args = append(args, "%"+q+"%")
-		where += fmt.Sprintf(` AND (
-			phone_number ILIKE $%[1]d OR
-			COALESCE(display_name, '') ILIKE $%[1]d OR
-			COALESCE(status, '') ILIKE $%[1]d OR
-			COALESCE(notes, '') ILIKE $%[1]d OR
-			tags::text ILIKE $%[1]d
-		)`, len(args))
-	}
+	where := buildContactSearchWhere(strings.TrimSpace(p.Q), piiActive, &args)
 
 	var total int
 	if err := conn.QueryRowContext(ctx, fmt.Sprintf(
@@ -709,8 +712,7 @@ func ListContacts(ctx context.Context, p *ListContactsParams) (*ListContactsResp
 	limitParam := len(queryArgs) - 1
 	offsetParam := len(queryArgs)
 	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
-		SELECT id, phone_number, display_name, birth_date::text, notes, COALESCE(status, 'active'), price_type_id::text, tags
-		FROM contact
+		`+contactSelectFor(ctx, conn)+`
 		WHERE %s
 		ORDER BY updated_at DESC, created_at DESC
 		LIMIT $%d OFFSET $%d`, where, limitParam, offsetParam), queryArgs...)
@@ -721,7 +723,7 @@ func ListContacts(ctx context.Context, p *ListContactsParams) (*ListContactsResp
 
 	items := []ContactDetail{}
 	for rows.Next() {
-		c, err := scanContact(rows)
+		c, err := scanContactPII(rows)
 		if err != nil {
 			return nil, apperr.Internal("scan contact failed")
 		}
@@ -764,21 +766,15 @@ func CreateContact(ctx context.Context, p *CreateContactParams) (*UpdateContactR
 		return nil, apperr.BadRequest("invalid contact status")
 	}
 	tagsJSON, _ := json.Marshal(cleanTags(p.Tags))
-	c, err := scanContact(conn.QueryRowContext(ctx, `
-		INSERT INTO contact (phone_number, display_name, birth_date, notes, status, price_type_id, tags)
-		VALUES ($1, $2, $3::date, $4, $5, $6, $7::jsonb)
-		ON CONFLICT (phone_number) DO UPDATE
-		SET display_name = EXCLUDED.display_name,
-		    birth_date = COALESCE(EXCLUDED.birth_date, contact.birth_date),
-		    notes = EXCLUDED.notes,
-		    status = EXCLUDED.status,
-		    price_type_id = EXCLUDED.price_type_id,
-		    tags = EXCLUDED.tags,
-		    deleted_at = NULL,
-		    deleted_by = NULL,
-		    updated_at = NOW()
-		RETURNING id, phone_number, display_name, birth_date::text, notes, COALESCE(status, 'active'), price_type_id::text, tags`,
-		phone, displayName, nullableDate(p.BirthDate), notes, status, nullableUUID(p.PriceTypeID), string(tagsJSON)))
+	var birthPtr *string
+	if p.BirthDate != nil {
+		birthPtr = p.BirthDate
+	}
+	displayStr := ""
+	if displayName != nil {
+		displayStr = *displayName
+	}
+	c, err := upsertContactPII(ctx, conn, phone, displayStr, birthPtr, notes, status, p.PriceTypeID, string(tagsJSON))
 	if err != nil {
 		return nil, apperr.Internal("create contact failed")
 	}
@@ -802,8 +798,7 @@ func GetContact(ctx context.Context, id string) (*GetContactResponse, error) {
 		return nil, apperr.Internal("prepare contacts failed")
 	}
 
-	c, err := scanContact(conn.QueryRowContext(ctx,
-		`SELECT id, phone_number, display_name, birth_date::text, notes, COALESCE(status, 'active'), price_type_id::text, tags FROM contact WHERE id = $1 AND deleted_at IS NULL`, id))
+	c, err := scanContactPII(conn.QueryRowContext(ctx, contactSelectFor(ctx, conn)+` WHERE id = $1 AND deleted_at IS NULL`, id))
 	if err != nil {
 		return nil, apperr.NotFound("Kontak tidak ditemukan")
 	}
@@ -831,15 +826,9 @@ func UpdateContact(ctx context.Context, id string, p *UpdateContactParams) (*Upd
 	args := []interface{}{}
 	idx := 1
 
+	var piiDisplay, piiBirth *string
 	if p.DisplayName != nil {
-		v := strings.TrimSpace(*p.DisplayName)
-		var store *string
-		if v != "" {
-			store = &v
-		}
-		sets = append(sets, fmt.Sprintf("display_name = $%d", idx))
-		args = append(args, store)
-		idx++
+		piiDisplay = p.DisplayName
 	}
 	if p.Notes != nil {
 		v := strings.TrimSpace(*p.Notes)
@@ -872,26 +861,59 @@ func UpdateContact(ctx context.Context, id string, p *UpdateContactParams) (*Upd
 		idx++
 	}
 	if p.BirthDate != nil {
-		sets = append(sets, fmt.Sprintf("birth_date = $%d::date", idx))
-		args = append(args, nullableDate(p.BirthDate))
-		idx++
+		piiBirth = p.BirthDate
 	}
-	if len(sets) == 0 {
+	if len(sets) == 0 && piiDisplay == nil && piiBirth == nil {
 		return nil, apperr.BadRequest("no fields to update")
 	}
-
-	sets = append(sets, "updated_at = NOW()")
-	args = append(args, id)
-	q := fmt.Sprintf(`UPDATE contact SET %s WHERE id = $%d AND deleted_at IS NULL
-		RETURNING id, phone_number, display_name, birth_date::text, notes, COALESCE(status, 'active'), price_type_id::text, tags`,
-		strings.Join(sets, ", "), idx)
-
-	c, err := scanContact(conn.QueryRowContext(ctx, q, args...))
-	if err != nil {
-		if err == sql.ErrNoRows {
+	if len(sets) > 0 {
+		sets = append(sets, "updated_at = NOW()")
+		args = append(args, id)
+		q := fmt.Sprintf(`UPDATE contact SET %s WHERE id = $%d AND deleted_at IS NULL`,
+			strings.Join(sets, ", "), idx)
+		res, err := conn.ExecContext(ctx, q, args...)
+		if err != nil {
+			return nil, apperr.Internal("update failed")
+		}
+		n, _ := res.RowsAffected()
+		if n == 0 {
 			return nil, apperr.NotFound("Kontak tidak ditemukan")
 		}
-		return nil, apperr.Internal("update failed")
+	}
+	if piiDisplay != nil || piiBirth != nil {
+		piiActive, _ := tenantschema.ContactPIIActiveConn(ctx, conn, user.TenantSchema)
+		if piiActive && pii.ValidateKey(encKey()) == nil {
+			if err := applyContactFieldPII(ctx, conn, id, piiDisplay, piiBirth); err != nil {
+				return nil, apperr.Internal("update contact fields failed")
+			}
+		} else {
+			legSets := []string{}
+			legArgs := []any{}
+			li := 1
+			if piiDisplay != nil {
+				legSets = append(legSets, fmt.Sprintf("display_name = $%d", li))
+				legArgs = append(legArgs, nullableTrimmed(piiDisplay))
+				li++
+			}
+			if piiBirth != nil {
+				legSets = append(legSets, fmt.Sprintf("birth_date = $%d", li))
+				legArgs = append(legArgs, nullableTrimmed(piiBirth))
+				li++
+			}
+			if len(legSets) > 0 {
+				legSets = append(legSets, "updated_at = NOW()")
+				legArgs = append(legArgs, id)
+				q := fmt.Sprintf(`UPDATE contact SET %s WHERE id = $%d AND deleted_at IS NULL`,
+					strings.Join(legSets, ", "), li)
+				if _, err := conn.ExecContext(ctx, q, legArgs...); err != nil {
+					return nil, apperr.Internal("update contact fields failed")
+				}
+			}
+		}
+	}
+	c, err := scanContactPII(conn.QueryRowContext(ctx, contactSelectFor(ctx, conn)+` WHERE id = $1 AND deleted_at IS NULL`, id))
+	if err != nil {
+		return nil, apperr.NotFound("Kontak tidak ditemukan")
 	}
 	return &UpdateContactResponse{Contact: c}, nil
 }
@@ -1012,17 +1034,28 @@ func loadContacts(ctx context.Context, conn *sql.Conn, ids []string) map[string]
 	}
 	placeholders, args := inClause(ids)
 	rows, err := conn.QueryContext(ctx,
-		`SELECT id, phone_number, display_name, tags FROM contact WHERE id IN (`+placeholders+`)`, args...)
+		`SELECT id,
+		        COALESCE(phone_number_enc,''), COALESCE(phone_number,''),
+		        COALESCE(display_name_enc,''), COALESCE(display_name,''),
+		        tags
+		 FROM contact WHERE id IN (`+placeholders+`)`, args...)
 	if err != nil {
 		return m
 	}
 	defer rows.Close()
+	key := encKey()
 	for rows.Next() {
-		var id, phone string
-		var name *string
+		var id string
+		var phoneEnc, phoneLegacy, displayEnc, displayLegacy sql.NullString
 		var tagsJSON []byte
-		if err := rows.Scan(&id, &phone, &name, &tagsJSON); err != nil {
+		if err := rows.Scan(&id, &phoneEnc, &phoneLegacy, &displayEnc, &displayLegacy, &tagsJSON); err != nil {
 			continue
+		}
+		phone, _ := pii.DecryptOrLegacy(phoneEnc.String, phoneLegacy.String, key)
+		display, _ := pii.DecryptOrLegacy(displayEnc.String, displayLegacy.String, key)
+		var name *string
+		if display != "" && display != pii.Placeholder {
+			name = &display
 		}
 		var tags []string
 		_ = json.Unmarshal(tagsJSON, &tags)
@@ -1056,36 +1089,6 @@ func loadChannels(ctx context.Context, conn *sql.Conn, ids []string) map[string]
 	return m
 }
 
-func scanContact(scanner interface{ Scan(...any) error }) (ContactDetail, error) {
-	var c ContactDetail
-	var tagsJSON []byte
-	var priceTypeID sql.NullString
-	var birthDate sql.NullString
-	err := scanner.Scan(&c.ID, &c.PhoneNumber, &c.DisplayName, &birthDate, &c.Notes, &c.Status, &priceTypeID, &tagsJSON)
-	if err != nil {
-		return c, err
-	}
-	if c.Status == "" {
-		c.Status = "active"
-	}
-	if birthDate.Valid && strings.TrimSpace(birthDate.String) != "" {
-		bd := birthDate.String
-		if len(bd) > 10 {
-			bd = bd[:10]
-		}
-		c.BirthDate = &bd
-	}
-	if priceTypeID.Valid && strings.TrimSpace(priceTypeID.String) != "" {
-		v := priceTypeID.String
-		c.PriceTypeID = &v
-	}
-	_ = json.Unmarshal(tagsJSON, &c.Tags)
-	if c.Tags == nil {
-		c.Tags = []string{}
-	}
-	return c, nil
-}
-
 func nullableTrimmed(value *string) *string {
 	if value == nil {
 		return nil
@@ -1112,13 +1115,28 @@ func cleanTags(tags []string) []string {
 }
 
 func ensureContactRuntimeSchema(ctx context.Context, conn *sql.Conn) error {
-	_, err := conn.ExecContext(ctx, `
-		ALTER TABLE contact ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active';
-		UPDATE contact SET status = 'active' WHERE status IS NULL OR TRIM(status) = '';
-		ALTER TABLE contact ADD COLUMN IF NOT EXISTS price_type_id UUID;
-		ALTER TABLE contact ADD COLUMN IF NOT EXISTS birth_date DATE;
-	`)
-	return err
+	ready, err := tenantschema.ContactRuntimeReady(ctx, conn)
+	if err != nil {
+		return err
+	}
+	if !ready {
+		cloudReady, cErr := tenantschema.CloudTenantReady(ctx, conn)
+		if cErr != nil {
+			return cErr
+		}
+		if !cloudReady {
+			_, err = conn.ExecContext(ctx, `
+				ALTER TABLE contact ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active';
+				UPDATE contact SET status = 'active' WHERE status IS NULL OR TRIM(status) = '';
+				ALTER TABLE contact ADD COLUMN IF NOT EXISTS price_type_id UUID;
+				ALTER TABLE contact ADD COLUMN IF NOT EXISTS birth_date DATE;
+			`)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return ensurePIISchema(ctx, conn)
 }
 
 func nullableUUID(value *string) any {
@@ -1144,6 +1162,9 @@ func nullableDate(value *string) any {
 }
 
 func syncContactsFromLeadAndConversation(ctx context.Context, conn *sql.Conn) error {
+	if err := pii.ValidateKey(encKey()); err == nil {
+		return nil
+	}
 	if _, err := conn.ExecContext(ctx, `
 		INSERT INTO contact (phone_number, display_name, notes, status, tags, created_at, updated_at)
 		SELECT DISTINCT ON (l.phone_number)

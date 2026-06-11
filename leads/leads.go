@@ -12,7 +12,9 @@ import (
 	"encore.dev/storage/sqldb"
 
 	e "encore.app/wabantu/shared/errs"
+	"encore.app/wabantu/shared/pii"
 	"encore.app/wabantu/shared/entitlement"
+	"encore.app/wabantu/shared/tenantschema"
 	"encore.app/wabantu/shared/types"
 	"encore.app/wabantu/usage"
 )
@@ -110,15 +112,29 @@ func List(ctx context.Context, req *ListRequest) (*ListLeadsResponse, error) {
 		args = append(args, status)
 	}
 
-	querySQL := fmt.Sprintf(`
-		SELECT l.id, l.phone_number,
-		       COALESCE(NULLIF(TRIM(l.name), ''), NULLIF(TRIM(c.display_name), '')) AS name,
+	piiActive, _ := tenantschema.LeadPIIActiveDB(ctx, conn, u.TenantSchema)
+	var querySQL string
+	if piiActive {
+		querySQL = fmt.Sprintf(`
+		SELECT l.id,
+		       COALESCE(l.phone_number_enc,''), COALESCE(l.phone_number,''),
+		       COALESCE(l.name_enc,''), COALESCE(l.name,''),
 		       l.product_interest, l.budget, l.location,
 		       l.status, l.notes, l.created_at
 		FROM lead l
-		LEFT JOIN contact c ON c.id = l.contact_id
 		%s
 		ORDER BY l.created_at DESC`, where)
+	} else {
+		querySQL = fmt.Sprintf(`
+		SELECT l.id,
+		       '', COALESCE(l.phone_number,''),
+		       '', COALESCE(l.name,''),
+		       l.product_interest, l.budget, l.location,
+		       l.status, l.notes, l.created_at
+		FROM lead l
+		%s
+		ORDER BY l.created_at DESC`, where)
+	}
 
 	rows, err := conn.QueryContext(ctx, querySQL, args...)
 	if err != nil {
@@ -128,12 +144,8 @@ func List(ctx context.Context, req *ListRequest) (*ListLeadsResponse, error) {
 
 	var items []Lead
 	for rows.Next() {
-		var l Lead
-		if err := rows.Scan(
-			&l.ID, &l.PhoneNumber, &l.Name,
-			&l.ProductInterest, &l.Budget, &l.Location,
-			&l.Status, &l.Notes, &l.CreatedAt,
-		); err != nil {
+		l, err := scanLeadPII(rows)
+		if err != nil {
 			return nil, err
 		}
 		items = append(items, l)
@@ -186,17 +198,19 @@ func Update(ctx context.Context, id string, req *UpdateRequest) (*Lead, error) {
 
 	query := fmt.Sprintf(`
 		UPDATE lead SET %s
-		WHERE id = $%d AND deleted_at IS NULL
-		RETURNING id, phone_number, name, product_interest, budget, location,
-		          status, notes, created_at`,
+		WHERE id = $%d AND deleted_at IS NULL`,
 		strings.Join(sets, ", "), n)
 
+	if _, err = conn.ExecContext(ctx, query, args...); err != nil {
+		return nil, fmt.Errorf("update lead: %w", err)
+	}
 	var l Lead
-	err = conn.QueryRowContext(ctx, query, args...).Scan(
-		&l.ID, &l.PhoneNumber, &l.Name,
-		&l.ProductInterest, &l.Budget, &l.Location,
-		&l.Status, &l.Notes, &l.CreatedAt,
-	)
+	l, err = scanLeadPII(conn.QueryRowContext(ctx, `
+		SELECT id,
+		       COALESCE(phone_number_enc,''), COALESCE(phone_number,''),
+		       COALESCE(name_enc,''), COALESCE(name,''),
+		       product_interest, budget, location, status, notes, created_at
+		FROM lead WHERE id = $1 AND deleted_at IS NULL`, id))
 	if err == sql.ErrNoRows {
 		return nil, e.NotFound("Lead tidak ditemukan")
 	}
@@ -246,9 +260,19 @@ func CaptureFromMessage(ctx context.Context, req *CaptureRequest) (*CaptureRespo
 	).Scan(&existingID)
 	if err == nil {
 		if req.ContactName != "" {
-			_, _ = conn.ExecContext(ctx, `
-				UPDATE lead SET name = COALESCE(NULLIF(TRIM(name), ''), $1), updated_at = NOW()
-				WHERE id = $2`, req.ContactName, existingID)
+			usePII, _ := tenantschema.LeadPIIActiveDB(ctx, conn, req.TenantSchema)
+			if usePII {
+				nameEnc, nameIdx, encErr := encryptLeadName(req.ContactName)
+				if encErr == nil {
+					_, _ = conn.ExecContext(ctx, `
+						UPDATE lead SET name_enc = $1, name_idx = $2, name = $3, updated_at = NOW()
+						WHERE id = $4`, nameEnc, nameIdx, pii.Placeholder, existingID)
+				}
+			} else {
+				_, _ = conn.ExecContext(ctx, `
+					UPDATE lead SET name = $1, updated_at = NOW()
+					WHERE id = $2 AND (name IS NULL OR TRIM(name) = '')`, req.ContactName, existingID)
+			}
 		}
 		return &CaptureResponse{Created: false, LeadID: existingID}, nil
 	}
@@ -258,24 +282,42 @@ func CaptureFromMessage(ctx context.Context, req *CaptureRequest) (*CaptureRespo
 
 	phone := req.PhoneNumber
 	if phone == "" {
-		_ = conn.QueryRowContext(ctx,
-			`SELECT phone_number FROM contact WHERE id = $1`, req.ContactID,
-		).Scan(&phone)
+		phone, _ = leadPhoneFromContact(ctx, conn, req.ContactID)
 	}
-
-	var name *string
-	if n := strings.TrimSpace(req.ContactName); n != "" {
-		name = &n
-	}
-
+	usePII, _ := tenantschema.LeadPIIActiveDB(ctx, conn, req.TenantSchema)
 	var newID string
-	err = conn.QueryRowContext(ctx, `
-		INSERT INTO lead (contact_id, conversation_id, phone_number, name, status, metadata)
-		VALUES ($1, $2, $3, $4, 'new', $5::jsonb)
-		RETURNING id`,
-		req.ContactID, req.ConversationID, phone, name,
-		fmt.Sprintf(`{"source":"webhook","triggerMessage":%q}`, text),
-	).Scan(&newID)
+	if usePII && pii.ValidateKey(leadEncKey()) == nil {
+		phoneEnc, phoneIdx, encErr := encryptLeadPhone(phone)
+		if encErr != nil {
+			return nil, fmt.Errorf("encrypt lead phone: %w", encErr)
+		}
+		var nameEnc, nameIdx string
+		if n := strings.TrimSpace(req.ContactName); n != "" {
+			nameEnc, nameIdx, encErr = encryptLeadName(n)
+			if encErr != nil {
+				return nil, fmt.Errorf("encrypt lead name: %w", encErr)
+			}
+		}
+		err = conn.QueryRowContext(ctx, `
+			INSERT INTO lead (contact_id, conversation_id, phone_number, phone_number_enc, phone_number_idx, name, name_enc, name_idx, status, metadata)
+			VALUES ($1, $2, $3, $4, $5, $3, $6, $7, 'new', $8::jsonb)
+			RETURNING id`,
+			req.ContactID, req.ConversationID, pii.Placeholder, phoneEnc, phoneIdx, nameEnc, nameIdx,
+			fmt.Sprintf(`{"source":"webhook","triggerMessage":%q}`, text),
+		).Scan(&newID)
+	} else {
+		var name *string
+		if n := strings.TrimSpace(req.ContactName); n != "" {
+			name = &n
+		}
+		err = conn.QueryRowContext(ctx, `
+			INSERT INTO lead (contact_id, conversation_id, phone_number, name, status, metadata)
+			VALUES ($1, $2, $3, $4, 'new', $5::jsonb)
+			RETURNING id`,
+			req.ContactID, req.ConversationID, phone, name,
+			fmt.Sprintf(`{"source":"webhook","triggerMessage":%q}`, text),
+		).Scan(&newID)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("insert lead: %w", err)
 	}

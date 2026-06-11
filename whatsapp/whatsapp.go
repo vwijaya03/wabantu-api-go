@@ -119,6 +119,22 @@ func VerifyWebhookSignature(payload []byte, signature, appSecret string) bool {
 // Webhook parsing
 // ---------------------------------------------------------------------------
 
+// WebhookPhoneNumberID returns metadata.phone_number_id from any Meta WABA webhook payload.
+func WebhookPhoneNumberID(payload []byte) string {
+	var p webhookPayload
+	if err := json.Unmarshal(payload, &p); err != nil || p.Object != "whatsapp_business_account" {
+		return ""
+	}
+	for _, entry := range p.Entry {
+		for _, change := range entry.Changes {
+			if id := strings.TrimSpace(change.Value.Metadata.PhoneNumberID); id != "" {
+				return id
+			}
+		}
+	}
+	return ""
+}
+
 // ParseWebhook extracts inbound messages from a Meta webhook payload.
 func ParseWebhook(payload []byte) []InboundMessage {
 	var p webhookPayload

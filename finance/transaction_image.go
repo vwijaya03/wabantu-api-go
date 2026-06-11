@@ -27,7 +27,8 @@ import (
 
 // secrets — nama struct wajib "secrets" agar Encore menyuntikkan nilai (sama dengan service business/ai).
 var secrets struct {
-	AnthropicAPIKey string
+	AnthropicAPIKey   string
+	DataEncryptionKey string
 }
 
 const (

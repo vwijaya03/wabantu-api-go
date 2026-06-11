@@ -221,6 +221,14 @@ func mergeShippingText(st *orderState, userText string) {
 			if val != "" {
 				st.Street = val
 			}
+		case strings.HasPrefix(low, "rt/rw"), strings.Contains(low, "rt/rw"):
+			parts := strings.SplitN(val, "/", 2)
+			if len(parts) == 2 {
+				st.RT = strings.TrimSpace(parts[0])
+				st.RW = strings.TrimSpace(parts[1])
+			} else {
+				st.RT = val
+			}
 		case strings.HasPrefix(low, "rt"):
 			st.RT = val
 		case strings.HasPrefix(low, "rw"):

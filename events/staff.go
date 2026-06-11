@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	appErrs "encore.app/wabantu/shared/errs"
+	"encore.app/wabantu/shared/pii"
 )
 
 type EventPerson struct {
@@ -74,8 +75,8 @@ func ListEventPeople(ctx context.Context, eventId string, p *ListPeopleParams) (
 	args := []any{eventId}
 	i := 2
 	if q := strings.TrimSpace(p.Q); q != "" {
-		conds = append(conds, fmt.Sprintf("p.full_name ILIKE $%d", i))
-		args = append(args, "%"+q+"%")
+		conds = append(conds, fmt.Sprintf("p.normalized_name = $%d", i))
+		args = append(args, pii.BlindIndex(pii.NormalizeName(q), strings.TrimSpace(secrets.DataEncryptionKey)))
 		i++
 	}
 	if pt := strings.TrimSpace(p.PersonType); pt != "" {
@@ -90,10 +91,12 @@ func ListEventPeople(ctx context.Context, eventId string, p *ListPeopleParams) (
 	}
 	args = append(args, lim, off)
 	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
-		SELECT p.id::text, p.event_id::text, p.full_name, p.person_type, p.attendance_status,
+		SELECT p.id::text, p.event_id::text,
+		       COALESCE(p.full_name_enc,''), COALESCE(p.full_name,''),
+		       p.person_type, p.attendance_status,
 		       p.arrival_time::text, p.departure_time::text, COALESCE(p.notes,'')
 		FROM evt_event_person p
-		WHERE %s ORDER BY p.person_type, p.full_name LIMIT $%d OFFSET $%d`, where, i, i+1), args...)
+		WHERE %s ORDER BY p.person_type, p.created_at LIMIT $%d OFFSET $%d`, where, i, i+1), args...)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
@@ -101,8 +104,13 @@ func ListEventPeople(ctx context.Context, eventId string, p *ListPeopleParams) (
 	for rows.Next() {
 		var person EventPerson
 		var arr, dep, notes sql.NullString
-		if err := rows.Scan(&person.ID, &person.EventID, &person.FullName, &person.PersonType,
+		var nameEnc, nameLegacy sql.NullString
+		if err := rows.Scan(&person.ID, &person.EventID, &nameEnc, &nameLegacy, &person.PersonType,
 			&person.AttendanceStatus, &arr, &dep, &notes); err != nil {
+			return nil, appErrs.Internal(err.Error())
+		}
+		person.FullName, err = decryptPersonName(nameEnc.String, nameLegacy.String)
+		if err != nil {
 			return nil, appErrs.Internal(err.Error())
 		}
 		if arr.Valid {
@@ -189,10 +197,14 @@ func CreateEventPerson(ctx context.Context, eventId string, p *UpsertPersonParam
 	var personID string
 	pt := resolvePersonType(p)
 	att := attendanceForDB(p.AttendanceStatus)
+	nameEnc, nameIdx, encErr := encryptPersonName(p.FullName)
+	if encErr != nil {
+		return nil, appErrs.Internal(encErr.Error())
+	}
 	err = tx.QueryRowContext(ctx, `
-		INSERT INTO evt_event_person (event_id, full_name, person_type, attendance_status, arrival_time, departure_time, notes)
-		VALUES ($1::uuid,$2,$3,$4,$5::time,$6::time,$7) RETURNING id::text`,
-		eventId, strings.TrimSpace(p.FullName), pt, att,
+		INSERT INTO evt_event_person (event_id, full_name, full_name_enc, normalized_name, person_type, attendance_status, arrival_time, departure_time, notes)
+		VALUES ($1::uuid,$2,$3,$4,$5,$6,$7::time,$8::time,$9) RETURNING id::text`,
+		eventId, piiPlaceholder(nameEnc), nameEnc, nameIdx, pt, att,
 		nullTimeStrPtr(p.ArrivalTime), nullTimeStrPtr(p.DepartureTime), nullStr(p.Notes),
 	).Scan(&personID)
 	if err != nil {
@@ -263,11 +275,16 @@ func UpdateEventPerson(ctx context.Context, eventId, personId string, p *UpsertP
 	}
 	pt := resolvePersonType(p)
 	att := attendanceForDB(p.AttendanceStatus)
+	nameEnc, nameIdx, encErr := encryptPersonName(p.FullName)
+	if encErr != nil {
+		return nil, appErrs.Internal(encErr.Error())
+	}
 	_, err = conn.ExecContext(ctx, `
-		UPDATE evt_event_person SET full_name=$1, person_type=$2, attendance_status=$3,
-		  arrival_time=$4::time, departure_time=$5::time, notes=$6, updated_at=now()
-		WHERE id=$7::uuid AND event_id=$8::uuid AND deleted_at IS NULL`,
-		strings.TrimSpace(p.FullName), pt, att,
+		UPDATE evt_event_person SET full_name=$1, full_name_enc=$2, normalized_name=$3,
+		  person_type=$4, attendance_status=$5,
+		  arrival_time=$6::time, departure_time=$7::time, notes=$8, updated_at=now()
+		WHERE id=$9::uuid AND event_id=$10::uuid AND deleted_at IS NULL`,
+		piiPlaceholder(nameEnc), nameEnc, nameIdx, pt, att,
 		nullTimeStrPtr(p.ArrivalTime), nullTimeStrPtr(p.DepartureTime), nullStr(p.Notes), personId, eventId)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
@@ -408,9 +425,15 @@ func ListAssignments(ctx context.Context, eventId string, p *ListAssignmentsPara
 	args := []any{eventId}
 	i := 2
 	if q := strings.TrimSpace(p.Q); q != "" {
-		conds = append(conds, fmt.Sprintf("(p.full_name ILIKE $%d OR tk.task_name ILIKE $%d)", i, i))
-		args = append(args, "%"+q+"%")
-		i++
+		if nameCond, nameArg := personNameSearchCondition("p", i, q); nameArg != nil {
+			conds = append(conds, fmt.Sprintf("(%s OR tk.task_name ILIKE $%d)", nameCond, i+1))
+			args = append(args, nameArg, "%"+q+"%")
+			i += 2
+		} else {
+			conds = append(conds, fmt.Sprintf("tk.task_name ILIKE $%d", i))
+			args = append(args, "%"+q+"%")
+			i++
+		}
 	}
 	where := strings.Join(conds, " AND ")
 	var total int
@@ -425,13 +448,13 @@ func ListAssignments(ctx context.Context, eventId string, p *ListAssignmentsPara
 	args = append(args, lim, off)
 	listQ := fmt.Sprintf(`
 		SELECT a.id::text, a.event_id::text, a.task_id::text, tk.task_name,
-		       a.person_id::text, p.full_name,
+		       a.person_id::text, `+personNameEncLegacyColsP+`,
 		       a.start_time::text, a.end_time::text, a.session_name
 		FROM evt_event_assignment a
 		JOIN evt_task tk ON tk.id = a.task_id
 		JOIN evt_event_person p ON p.id = a.person_id
 		WHERE %s
-		ORDER BY tk.display_order, a.start_time NULLS LAST, p.full_name
+		ORDER BY tk.display_order, a.start_time NULLS LAST, p.created_at
 		LIMIT $%d OFFSET $%d`, where, i, i+1)
 	rows, err := conn.QueryContext(ctx, listQ, args...)
 	if err != nil {
@@ -441,7 +464,8 @@ func ListAssignments(ctx context.Context, eventId string, p *ListAssignmentsPara
 	for rows.Next() {
 		var a Assignment
 		var st, en, sn sql.NullString
-		if err := rows.Scan(&a.ID, &a.EventID, &a.TaskID, &a.TaskName, &a.PersonID, &a.PersonName, &st, &en, &sn); err != nil {
+		var nameEnc, nameLegacy string
+		if err := rows.Scan(&a.ID, &a.EventID, &a.TaskID, &a.TaskName, &a.PersonID, &nameEnc, &nameLegacy, &st, &en, &sn); err != nil {
 			_ = rows.Close()
 			return nil, appErrs.Internal(err.Error())
 		}
@@ -453,6 +477,10 @@ func ListAssignments(ctx context.Context, eventId string, p *ListAssignmentsPara
 		}
 		if sn.Valid {
 			a.SessionName = &sn.String
+		}
+		a.PersonName, err = scanPersonNameFromRow(nameEnc, nameLegacy)
+		if err != nil {
+			return nil, appErrs.Internal(err.Error())
 		}
 		items = append(items, a)
 	}
@@ -550,14 +578,18 @@ func UpdateAssignment(ctx context.Context, eventId, assignmentId string, p *Upse
 	auditEvent(ctx, conn, u, "assignment", assignmentId, "update", nil, p)
 	var a Assignment
 	var st, en, sn sql.NullString
+	var nameEnc, nameLegacy string
 	err = conn.QueryRowContext(ctx, `
 		SELECT a.id::text, a.event_id::text, a.task_id::text, tk.task_name,
-		       a.person_id::text, p.full_name, a.start_time::text, a.end_time::text, a.session_name
+		       a.person_id::text, `+personNameEncLegacyColsP+`, a.start_time::text, a.end_time::text, a.session_name
 		FROM evt_event_assignment a
 		JOIN evt_task tk ON tk.id = a.task_id
 		JOIN evt_event_person p ON p.id = a.person_id
 		WHERE a.id=$1::uuid AND a.event_id=$2::uuid`, assignmentId, eventId,
-	).Scan(&a.ID, &a.EventID, &a.TaskID, &a.TaskName, &a.PersonID, &a.PersonName, &st, &en, &sn)
+	).Scan(&a.ID, &a.EventID, &a.TaskID, &a.TaskName, &a.PersonID, &nameEnc, &nameLegacy, &st, &en, &sn)
+	if err == nil {
+		a.PersonName, _ = scanPersonNameFromRow(nameEnc, nameLegacy)
+	}
 	if err != nil {
 		return &Assignment{ID: assignmentId, EventID: eventId}, nil
 	}

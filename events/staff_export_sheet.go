@@ -53,7 +53,7 @@ func loadStaffSheetExportData(ctx context.Context, conn *sql.Conn, eventID strin
 	}
 
 	rows, err := conn.QueryContext(ctx, `
-		SELECT p.created_at, p.full_name, p.attendance_status,
+		SELECT p.created_at, `+personNameEncLegacyColsP+`, p.attendance_status,
 		       COALESCE(p.notes,''), p.arrival_time::text, p.departure_time::text,
 		       COALESCE(string_agg(th.therapy_name, ', ' ORDER BY th.display_order, th.therapy_name), '')
 		FROM evt_event_person p
@@ -61,8 +61,8 @@ func loadStaffSheetExportData(ctx context.Context, conn *sql.Conn, eventID strin
 		LEFT JOIN evt_therapy th ON th.id = pt.therapy_id
 		WHERE p.event_id=$1::uuid AND p.deleted_at IS NULL
 		  AND p.person_type IN ('THERAPIST','SHIJIE','DAOSHI','FASHI')
-		GROUP BY p.id, p.created_at, p.full_name, p.attendance_status, p.notes, p.arrival_time, p.departure_time
-		ORDER BY p.created_at, p.full_name`, eventID)
+		GROUP BY p.id, p.created_at, p.full_name_enc, p.full_name, p.attendance_status, p.notes, p.arrival_time, p.departure_time
+		ORDER BY p.created_at, p.created_at`, eventID)
 	if err != nil {
 		return staffSheetExportData{}, err
 	}
@@ -71,7 +71,12 @@ func loadStaffSheetExportData(ctx context.Context, conn *sql.Conn, eventID strin
 		var r staffSheetRow
 		var att, notes string
 		var arr, dep sql.NullString
-		if err := rows.Scan(&r.Timestamp, &r.FullName, &att, &notes, &arr, &dep, &r.TherapyNames); err != nil {
+		var nameEnc, nameLegacy string
+		if err := rows.Scan(&r.Timestamp, &nameEnc, &nameLegacy, &att, &notes, &arr, &dep, &r.TherapyNames); err != nil {
+			return staffSheetExportData{}, err
+		}
+		r.FullName, err = scanPersonNameFromRow(nameEnc, nameLegacy)
+		if err != nil {
 			return staffSheetExportData{}, err
 		}
 		r.AttendanceLabel = attendanceExportLabel(att, notes, arr, dep)
@@ -82,12 +87,12 @@ func loadStaffSheetExportData(ctx context.Context, conn *sql.Conn, eventID strin
 	}
 
 	volRows, err := conn.QueryContext(ctx, `
-		SELECT LOWER(vr.role_name), p.full_name
+		SELECT LOWER(vr.role_name), `+personNameEncLegacyColsP+`
 		FROM evt_event_person p
 		JOIN evt_event_volunteer ev ON ev.person_id = p.id
 		JOIN evt_volunteer_role vr ON vr.id = ev.volunteer_role_id
 		WHERE p.event_id=$1::uuid AND p.deleted_at IS NULL AND p.person_type='VOLUNTEER'
-		ORDER BY vr.display_order, p.full_name`, eventID)
+		ORDER BY vr.display_order, p.created_at`, eventID)
 	if err != nil {
 		return staffSheetExportData{}, err
 	}
@@ -99,8 +104,12 @@ func loadStaffSheetExportData(ctx context.Context, conn *sql.Conn, eventID strin
 	}
 	byRole := map[string][]string{}
 	for volRows.Next() {
-		var roleKey, name string
-		if err := volRows.Scan(&roleKey, &name); err != nil {
+		var roleKey, nameEnc, nameLegacy string
+		if err := volRows.Scan(&roleKey, &nameEnc, &nameLegacy); err != nil {
+			return staffSheetExportData{}, err
+		}
+		name, err := scanPersonNameFromRow(nameEnc, nameLegacy)
+		if err != nil {
 			return staffSheetExportData{}, err
 		}
 		byRole[normalizeVolunteerRoleKey(roleKey)] = append(byRole[normalizeVolunteerRoleKey(roleKey)], name)
@@ -116,13 +125,13 @@ func loadStaffSheetExportData(ctx context.Context, conn *sql.Conn, eventID strin
 	}
 
 	assignRows, err := conn.QueryContext(ctx, `
-		SELECT tk.task_name, tk.assignment_type, p.person_type, p.full_name,
+		SELECT tk.task_name, tk.assignment_type, p.person_type, `+personNameEncLegacyColsP+`,
 		       a.start_time::text, a.end_time::text, COALESCE(a.session_name,'')
 		FROM evt_event_assignment a
 		JOIN evt_task tk ON tk.id = a.task_id
 		JOIN evt_event_person p ON p.id = a.person_id
 		WHERE a.event_id=$1::uuid AND a.deleted_at IS NULL
-		ORDER BY tk.display_order, a.start_time NULLS LAST, a.session_name, p.full_name`, eventID)
+		ORDER BY tk.display_order, a.start_time NULLS LAST, a.session_name, p.created_at`, eventID)
 	if err != nil {
 		return staffSheetExportData{}, err
 	}
@@ -132,9 +141,14 @@ func loadStaffSheetExportData(ctx context.Context, conn *sql.Conn, eventID strin
 	var fixedTasks []sessionAssignment
 
 	for assignRows.Next() {
-		var taskName, assignType, personType, personName, sessionName string
+		var taskName, assignType, personType, sessionName string
+		var nameEnc, nameLegacy string
 		var startT, endT sql.NullString
-		if err := assignRows.Scan(&taskName, &assignType, &personType, &personName, &startT, &endT, &sessionName); err != nil {
+		if err := assignRows.Scan(&taskName, &assignType, &personType, &nameEnc, &nameLegacy, &startT, &endT, &sessionName); err != nil {
+			return staffSheetExportData{}, err
+		}
+		personName, err := scanPersonNameFromRow(nameEnc, nameLegacy)
+		if err != nil {
 			return staffSheetExportData{}, err
 		}
 		displayName := assignmentDisplayName(personType, personName)

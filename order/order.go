@@ -14,6 +14,7 @@ import (
 	"encore.app/wabantu/finance"
 	appErrs "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/pricing"
+	"encore.app/wabantu/shared/tenantschema"
 	"encore.app/wabantu/shared/types"
 	"encore.app/wabantu/tenant"
 )
@@ -192,17 +193,11 @@ func List(ctx context.Context, p *ListOrdersParams) (*ListOrdersResponse, error)
 		idx++
 	}
 	if q := strings.TrimSpace(p.Q); q != "" {
-		args = append(args, "%"+q+"%")
-		where += fmt.Sprintf(` AND (
-			o.id::text ILIKE $%[1]d OR
-			COALESCE(o.notes, '') ILIKE $%[1]d OR
-			COALESCE(o.tracking_number, '') ILIKE $%[1]d OR
-			COALESCE(o.courier, '') ILIKE $%[1]d OR
-			o.items::text ILIKE $%[1]d OR
-			COALESCE(c.display_name, '') ILIKE $%[1]d OR
-			COALESCE(c.phone_number, '') ILIKE $%[1]d
-		)`, idx)
-		idx++
+		piiActive, _ := tenantschema.TableColumnExists(ctx, db.Stdlib(), u.TenantSchema, "contact", "phone_number_idx")
+		frag, extra := orderContactSearchSQL(idx, q, piiActive)
+		where += " AND " + frag
+		args = append(args, extra...)
+		idx += len(extra)
 	}
 
 	var total int

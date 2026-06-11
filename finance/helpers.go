@@ -9,8 +9,25 @@ import (
 	"encore.dev/rlog"
 
 	appErrs "encore.app/wabantu/shared/errs"
+	"encore.app/wabantu/shared/pii"
 	"encore.app/wabantu/shared/types"
 )
+
+func encryptFinanceTitle(title string) (enc string, storeTitle string, err error) {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return "", "", nil
+	}
+	enc, err = pii.Encrypt(title, strings.TrimSpace(secrets.DataEncryptionKey))
+	if err != nil {
+		return "", "", err
+	}
+	return enc, pii.Placeholder, nil
+}
+
+func decryptFinanceTitle(enc, legacy string) (string, error) {
+	return pii.DecryptOrLegacy(enc, legacy, strings.TrimSpace(secrets.DataEncryptionKey))
+}
 
 // Singleton row for tenant approval settings.
 const approvalSettingID = "00000000-0000-0000-0000-000000000001"

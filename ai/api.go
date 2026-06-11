@@ -14,9 +14,10 @@ import (
 // ─── Encore secrets ──────────────────────────────────────────────────────────
 
 var secrets struct {
-	AnthropicApiKey string
-	RedisURL        string
-	AiInternalToken string
+	AnthropicApiKey   string
+	RedisURL          string
+	AiInternalToken   string
+	DataEncryptionKey string
 }
 
 // Fallback client defaults (per-request routing uses Haiku/Sonnet in routing.go).

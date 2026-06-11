@@ -69,10 +69,10 @@ func listStaffRosterWithConn(ctx context.Context, schema string) ([]StaffRosterE
 	}
 	defer conn.Close()
 	rows, err := conn.QueryContext(ctx, `
-		SELECT id::text, full_name, person_type, COALESCE(notes,'')
+		SELECT id::text, COALESCE(full_name_enc,''), COALESCE(full_name,''), person_type, COALESCE(notes,'')
 		FROM evt_staff_roster
 		WHERE deleted_at IS NULL
-		ORDER BY person_type, full_name`)
+		ORDER BY person_type, created_at`)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
@@ -80,7 +80,12 @@ func listStaffRosterWithConn(ctx context.Context, schema string) ([]StaffRosterE
 	var items []StaffRosterEntry
 	for rows.Next() {
 		var e StaffRosterEntry
-		if err := rows.Scan(&e.ID, &e.FullName, &e.PersonType, &e.Notes); err != nil {
+		var nameEnc, nameLegacy string
+		if err := rows.Scan(&e.ID, &nameEnc, &nameLegacy, &e.PersonType, &e.Notes); err != nil {
+			return nil, appErrs.Internal(err.Error())
+		}
+		e.FullName, err = decryptPersonName(nameEnc, nameLegacy)
+		if err != nil {
 			return nil, appErrs.Internal(err.Error())
 		}
 		e.Role = personTypeToRole(e.PersonType)
@@ -274,10 +279,10 @@ type eventPersonRosterSync struct {
 
 func loadEventPeopleForRosterSync(ctx context.Context, conn *sql.Conn, eventID string) ([]eventPersonRosterSync, error) {
 	rows, err := conn.QueryContext(ctx, `
-		SELECT id::text, full_name, person_type, attendance_status, COALESCE(notes,'')
+		SELECT id::text, `+personNameEncLegacyCols+`, person_type, attendance_status, COALESCE(notes,'')
 		FROM evt_event_person
 		WHERE event_id=$1::uuid AND deleted_at IS NULL
-		ORDER BY person_type, full_name`, eventID)
+		ORDER BY person_type, created_at`, eventID)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
@@ -285,9 +290,16 @@ func loadEventPeopleForRosterSync(ctx context.Context, conn *sql.Conn, eventID s
 	byID := make(map[string]*eventPersonRosterSync)
 	for rows.Next() {
 		var p eventPersonRosterSync
-		if err := rows.Scan(&p.id, &p.fullName, &p.personType, &p.attendanceStatus, &p.notes); err != nil {
+		var nameEnc, nameLegacy string
+		if err := rows.Scan(&p.id, &nameEnc, &nameLegacy, &p.personType, &p.attendanceStatus, &p.notes); err != nil {
 			_ = rows.Close()
 			return nil, appErrs.Internal(err.Error())
+		}
+		var decErr error
+		p.fullName, decErr = scanPersonNameFromRow(nameEnc, nameLegacy)
+		if decErr != nil {
+			_ = rows.Close()
+			return nil, appErrs.Internal(decErr.Error())
 		}
 		people = append(people, p)
 		byID[p.id] = &people[len(people)-1]
@@ -423,23 +435,31 @@ func importAllRosterToEvent(ctx context.Context, conn *sql.Conn, eventID string)
 
 func addRosterMemberToEvent(ctx context.Context, conn *sql.Conn, eventID, rosterID string) (bool, error) {
 	var fullName, pt string
-	if err := conn.QueryRowContext(ctx, `
-		SELECT full_name, person_type FROM evt_staff_roster
+	var nameEnc, nameLegacy string
+	err := conn.QueryRowContext(ctx, `
+		SELECT `+personNameEncLegacyCols+`, person_type FROM evt_staff_roster
 		WHERE id=$1::uuid AND deleted_at IS NULL`, rosterID,
-	).Scan(&fullName, &pt); err == sql.ErrNoRows {
+	).Scan(&nameEnc, &nameLegacy, &pt)
+	if err == sql.ErrNoRows {
 		return false, appErrs.NotFound("anggota roster tidak ditemukan")
 	} else if err != nil {
 		return false, appErrs.Internal(err.Error())
 	}
-	norm := normalizeRosterName(fullName)
+	fullName, err = scanPersonNameFromRow(nameEnc, nameLegacy)
+	if err != nil {
+		return false, appErrs.Internal(err.Error())
+	}
+	_, nameIdx, encErr := encryptPersonName(fullName)
+	if encErr != nil {
+		return false, appErrs.Internal(encErr.Error())
+	}
 	var exists bool
 	if err := conn.QueryRowContext(ctx, `
 		SELECT EXISTS(
 		  SELECT 1 FROM evt_event_person
 		  WHERE event_id=$1::uuid AND deleted_at IS NULL
-		    AND person_type=$2
-		    AND lower(regexp_replace(trim(full_name), '\s+', ' ', 'g')) = $3
-		)`, eventID, pt, norm).Scan(&exists); err != nil {
+		    AND person_type=$2 AND normalized_name=$3
+		)`, eventID, pt, nameIdx).Scan(&exists); err != nil {
 		return false, appErrs.Internal(err.Error())
 	}
 	if exists {
@@ -477,10 +497,14 @@ func createPersonInEvent(ctx context.Context, conn *sql.Conn, eventID string, p 
 	var personID string
 	pt := resolvePersonType(p)
 	att := attendanceForDB(p.AttendanceStatus)
+	nameEnc, nameIdx, encErr := encryptPersonName(p.FullName)
+	if encErr != nil {
+		return appErrs.Internal(encErr.Error())
+	}
 	err = tx.QueryRowContext(ctx, `
-		INSERT INTO evt_event_person (event_id, full_name, person_type, attendance_status, arrival_time, departure_time, notes)
-		VALUES ($1::uuid,$2,$3,$4,$5::time,$6::time,$7) RETURNING id::text`,
-		eventID, strings.TrimSpace(p.FullName), pt, att,
+		INSERT INTO evt_event_person (event_id, full_name, full_name_enc, normalized_name, person_type, attendance_status, arrival_time, departure_time, notes)
+		VALUES ($1::uuid,$2,$3,$4,$5,$6,$7::time,$8::time,$9) RETURNING id::text`,
+		eventID, piiPlaceholder(nameEnc), nameEnc, nameIdx, pt, att,
 		nullTimeStrPtr(p.ArrivalTime), nullTimeStrPtr(p.DepartureTime), nullStr(p.Notes),
 	).Scan(&personID)
 	if err != nil {
@@ -505,22 +529,27 @@ func upsertStaffRoster(ctx context.Context, conn *sql.Conn, p *UpsertPersonParam
 		return "", nil
 	}
 	pt := resolvePersonType(p)
-	norm := normalizeRosterName(p.FullName)
+	nameEnc, nameIdx, encErr := encryptPersonName(p.FullName)
+	if encErr != nil {
+		return "", appErrs.Internal(encErr.Error())
+	}
 	var rosterID string
 	err := conn.QueryRowContext(ctx, `
 		SELECT id::text FROM evt_staff_roster
-		WHERE normalized_name=$1 AND person_type=$2 AND deleted_at IS NULL`, norm, pt,
+		WHERE normalized_name_idx=$1 AND person_type=$2 AND deleted_at IS NULL`, nameIdx, pt,
 	).Scan(&rosterID)
 	if err == sql.ErrNoRows {
 		err = conn.QueryRowContext(ctx, `
-			INSERT INTO evt_staff_roster (full_name, normalized_name, person_type, notes)
-			VALUES ($1,$2,$3,$4) RETURNING id::text`,
-			strings.TrimSpace(p.FullName), norm, pt, nullStr(p.Notes),
+			INSERT INTO evt_staff_roster (full_name, full_name_enc, normalized_name, normalized_name_idx, person_type, notes)
+			VALUES ($1,$2,$3,$4,$5,$6) RETURNING id::text`,
+			piiPlaceholder(nameEnc), nameEnc, nameIdx, nameIdx, pt, nullStr(p.Notes),
 		).Scan(&rosterID)
 	} else if err == nil {
 		_, err = conn.ExecContext(ctx, `
-			UPDATE evt_staff_roster SET full_name=$1, notes=$2, updated_at=now()
-			WHERE id=$3::uuid`, strings.TrimSpace(p.FullName), nullStr(p.Notes), rosterID)
+			UPDATE evt_staff_roster SET full_name=$1, full_name_enc=$2,
+			  normalized_name=$3, normalized_name_idx=$4, notes=$5, updated_at=now()
+			WHERE id=$6::uuid`,
+			piiPlaceholder(nameEnc), nameEnc, nameIdx, nameIdx, nullStr(p.Notes), rosterID)
 	}
 	if err != nil {
 		return "", appErrs.Internal(err.Error())
@@ -552,12 +581,18 @@ func upsertStaffRoster(ctx context.Context, conn *sql.Conn, p *UpsertPersonParam
 
 func rosterEntryToPersonParams(ctx context.Context, conn *sql.Conn, rosterID string) (*UpsertPersonParams, error) {
 	var e StaffRosterEntry
-	if err := conn.QueryRowContext(ctx, `
-		SELECT id::text, full_name, person_type, COALESCE(notes,'')
+	var nameEnc, nameLegacy string
+	err := conn.QueryRowContext(ctx, `
+		SELECT id::text, `+personNameEncLegacyCols+`, person_type, COALESCE(notes,'')
 		FROM evt_staff_roster WHERE id=$1::uuid AND deleted_at IS NULL`, rosterID,
-	).Scan(&e.ID, &e.FullName, &e.PersonType, &e.Notes); err == sql.ErrNoRows {
+	).Scan(&e.ID, &nameEnc, &nameLegacy, &e.PersonType, &e.Notes)
+	if err == sql.ErrNoRows {
 		return nil, appErrs.NotFound("roster tidak ditemukan")
 	} else if err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	e.FullName, err = scanPersonNameFromRow(nameEnc, nameLegacy)
+	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	if err := loadRosterExtras(ctx, conn, &e); err != nil {

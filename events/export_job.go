@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"encore.app/wabantu/shared/async"
 	appErrs "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/system"
 )
@@ -135,7 +136,9 @@ func CreateExportJob(ctx context.Context, eventId string, p *CreateExportJobPara
 		return nil, appErrs.Internal(err.Error())
 	}
 
-	go processExportJobAsync(u.TenantSchema, id, eventId, kind, format, filters, hiddenCols, u.AccountID, u.TenantID, u.ImpersonationTenantName)
+	async.RunBounded(async.ExportSem, func() {
+		processExportJobAsync(u.TenantSchema, id, eventId, kind, format, filters, hiddenCols, u.AccountID, u.TenantID, u.ImpersonationTenantName)
+	})
 
 	now := time.Now()
 	auditEvent(ctx, conn, u, "event", eventId, "export_job_created", nil, map[string]any{"kind": kind, "jobId": id})

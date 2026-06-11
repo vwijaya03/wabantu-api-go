@@ -12,6 +12,7 @@ import (
 	"encore.dev/rlog"
 
 	apperr "encore.app/wabantu/shared/errs"
+	"encore.app/wabantu/shared/reqctx"
 )
 
 // CatalogItem is a product/service row in business_catalog_item.
@@ -69,6 +70,8 @@ type UpdateCatalogRequest struct {
 
 //encore:api auth method=GET path=/api/v1/business/catalog
 func ListCatalog(ctx context.Context, p *ListCatalogParams) (*ListCatalogResponse, error) {
+	ctx, cancel := reqctx.WithTimeout(ctx, reqctx.DefaultHandlerTimeout)
+	defer cancel()
 	user, err := currentUser()
 	if err != nil {
 		return nil, err
@@ -197,7 +200,11 @@ func CreateCatalog(ctx context.Context, req *CreateCatalogRequest) (*CatalogItem
 		if err := upsertCatalogItemPrices(ctx, conn, item.ID, prices); err != nil {
 			return nil, err
 		}
-		item.Prices, _ = loadCatalogItemPrices(ctx, conn, item.ID)
+		prices, pErr := loadCatalogItemPrices(ctx, conn, item.ID)
+		if pErr != nil {
+			return nil, pErr
+		}
+		item.Prices = prices
 	}
 	return &item, nil
 }
@@ -293,7 +300,11 @@ func UpdateCatalog(ctx context.Context, id string, req *UpdateCatalogRequest) (*
 			_ = upsertCatalogItemPrices(ctx, conn, item.ID, []CatalogItemPrice{{PriceTypeID: ptID, Price: *req.SellPrice}})
 		}
 	}
-	item.Prices, _ = loadCatalogItemPrices(ctx, conn, item.ID)
+	prices, pErr := loadCatalogItemPrices(ctx, conn, item.ID)
+	if pErr != nil {
+		return nil, pErr
+	}
+	item.Prices = prices
 	return &item, nil
 }
 

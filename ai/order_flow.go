@@ -13,8 +13,12 @@ import (
 )
 
 var (
-	orderQtyLineRe  = regexp.MustCompile(`(?i)\b(\d{1,4})\s*(pcs|pc|biji|buah|item|unit)?\b`)
-	orderSizeLineRe = regexp.MustCompile(`(?i)\b(xs|s|m|l|xl|xxl|xxxl|3xl|4xl|5xl|\d{2})\b`)
+	// Explicit qty with whitespace before unit (avoids matching "1PCS" in catalog product titles).
+	orderQtyWithUnitRe = regexp.MustCompile(`(?i)(?:^|\s)(\d{1,4})\s+(pcs|pc|biji|buah|item|unit|piece|pieces)\b`)
+	orderQtyLabelRe    = regexp.MustCompile(`(?i)\b(?:qty|jumlah)\s*[:\-]?\s*(\d{1,4})\b`)
+	orderQtyBareLineRe = regexp.MustCompile(`(?i)^\s*(\d{1,4})\s*(?:biji|pcs|pc|buah|piece|pieces)?\s*[!.?]*\s*$`)
+	gluedCatalogQtyRe  = regexp.MustCompile(`(?i)\d+pcs`)
+	orderSizeLineRe    = regexp.MustCompile(`(?i)\b(xs|s|m|l|xl|xxl|xxxl|3xl|4xl|5xl|\d{2})\b`)
 )
 
 // orderFlowTemplates — default WA copy; overridden by knowledge_base_entry when matched.
@@ -100,6 +104,78 @@ type parsedOrderHints struct {
 	HasSize bool
 }
 
+func parseQtyFromLine(line string) (int, bool) {
+	if m := orderQtyLabelRe.FindStringSubmatch(line); len(m) > 1 {
+		var q int
+		fmt.Sscanf(m[1], "%d", &q)
+		return q, q > 0
+	}
+	if m := orderQtyWithUnitRe.FindStringSubmatch(line); len(m) > 1 {
+		var q int
+		fmt.Sscanf(m[1], "%d", &q)
+		return q, q > 0
+	}
+	if orderQtyBareLineRe.MatchString(line) {
+		if m := orderQtyBareLineRe.FindStringSubmatch(line); len(m) > 1 {
+			var q int
+			fmt.Sscanf(m[1], "%d", &q)
+			return q, q > 0
+		}
+	}
+	return 0, false
+}
+
+// parseOrderQty extracts customer-requested quantity, ignoring catalog prefixes like "1PCS" in product names.
+func parseOrderQty(text string) (int, bool) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return 0, false
+	}
+	best := 0
+	found := false
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if gluedCatalogQtyRe.MatchString(line) && !orderQtyWithUnitRe.MatchString(line) && !orderQtyLabelRe.MatchString(line) {
+			if len(line) > 25 {
+				continue
+			}
+		}
+		if q, ok := parseQtyFromLine(line); ok {
+			best = q
+			found = true
+		}
+	}
+	if found {
+		return best, true
+	}
+	if q, ok := parseQtyFromLine(text); ok {
+		return q, true
+	}
+	if m := orderQtyLabelRe.FindStringSubmatch(text); len(m) > 1 {
+		var q int
+		fmt.Sscanf(m[1], "%d", &q)
+		if q > 0 {
+			return q, true
+		}
+	}
+	if m := orderQtyWithUnitRe.FindStringSubmatch(text); len(m) > 1 {
+		var q int
+		fmt.Sscanf(m[1], "%d", &q)
+		if q > 0 {
+			return q, true
+		}
+	}
+	return 0, false
+}
+
+func mentionsOrderQty(text string) bool {
+	_, ok := parseOrderQty(text)
+	return ok
+}
+
 func parseOrderHints(userText string) parsedOrderHints {
 	text := strings.TrimSpace(userText)
 	lower := strings.ToLower(text)
@@ -109,11 +185,9 @@ func parseOrderHints(userText string) parsedOrderHints {
 		out.Variant = m
 		out.HasSize = true
 	}
-	if m := orderQtyLineRe.FindStringSubmatch(text); len(m) > 1 {
-		fmt.Sscanf(m[1], "%d", &out.Qty)
-		if out.Qty > 0 {
-			out.HasQty = true
-		}
+	if qty, ok := parseOrderQty(text); ok {
+		out.Qty = qty
+		out.HasQty = true
 	}
 	out.Product = strings.TrimSpace(text)
 	if len(out.Product) > 200 {
@@ -129,14 +203,14 @@ func IsOrderContinuationMessage(userText string) bool {
 	if text == "" {
 		return false
 	}
-	if orderQtyLineRe.MatchString(text) {
+	if mentionsOrderQty(text) {
 		return true
 	}
 	if orderSizeLineRe.MatchString(text) {
 		return true
 	}
 	for _, kw := range []string{
-		"pcs", "pc", "biji", "buah", "qty", "jumlah", "unit",
+		"pcs", "pc", "biji", "buah", "piece", "pieces", "qty", "jumlah", "unit",
 		"alamat", "jalan", "jl.", "rt", "rw", "kel.", "kec.", "kota", "kab.", "kode pos",
 		"kodepos", "penerima", "provinsi", "kelurahan", "kecamatan",
 	} {
@@ -175,7 +249,7 @@ func HasPurchaseIntent(userText string) bool {
 	hasWant := strings.Contains(text, "mau") || strings.Contains(text, "pengen") ||
 		strings.Contains(text, "pengin") || strings.Contains(text, "ingin")
 	if hasWant {
-		if orderQtyLineRe.MatchString(text) || orderSizeLineRe.MatchString(text) {
+		if mentionsOrderQty(text) || orderSizeLineRe.MatchString(text) {
 			return true
 		}
 		for _, kw := range apparelProductKeywords {
@@ -184,7 +258,7 @@ func HasPurchaseIntent(userText string) bool {
 			}
 		}
 	}
-	if orderQtyLineRe.MatchString(text) {
+	if mentionsOrderQty(text) {
 		for _, kw := range apparelProductKeywords {
 			if strings.Contains(text, kw) {
 				return true
@@ -279,7 +353,7 @@ func IsOrderFollowUpFromHistory(history []dbMessage, userText string) bool {
 			return true
 		}
 		if inOrderFlow {
-			return IsOrderContinuationMessage(userText) || orderQtyLineRe.MatchString(strings.ToLower(userText))
+			return IsOrderContinuationMessage(userText) || mentionsOrderQty(userText)
 		}
 	}
 	return false
@@ -367,7 +441,7 @@ func ShouldBreakOrderFlow(userText, step string) bool {
 		strings.Contains(text, "stok") || strings.Contains(text, "ongkir") ||
 		strings.Contains(text, "ready")) &&
 		(IsQuestionLike(userText) || strings.Contains(text, "?") || strings.Contains(text, "tanya")) {
-		if !orderQtyLineRe.MatchString(text) || strings.Contains(text, "berapa") || strings.Contains(text, "harga") {
+		if !mentionsOrderQty(text) || strings.Contains(text, "berapa") || strings.Contains(text, "harga") {
 			return true
 		}
 	}

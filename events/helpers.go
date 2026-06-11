@@ -15,6 +15,8 @@ import (
 
 	appcrypto "encore.app/wabantu/shared/crypto"
 	appErrs "encore.app/wabantu/shared/errs"
+	"encore.app/wabantu/shared/pii"
+	"encore.app/wabantu/shared/tenantschema"
 	"encore.app/wabantu/shared/types"
 	"encore.app/wabantu/tenant"
 )
@@ -94,8 +96,14 @@ func ensureEventsSchema(ctx context.Context, schema string) error {
 		)`).Scan(&exists); err != nil {
 		return appErrs.Internal(err.Error())
 	}
+	cloudReady, err := tenantschema.CloudTenantReady(ctx, conn)
+	if err != nil {
+		return appErrs.Internal(err.Error())
+	}
 	var patchErr error
-	if !exists {
+	if cloudReady {
+		patchErr = tenant.SeedEventsMasterDataOnly(ctx, schema)
+	} else if !exists {
 		patchErr = tenant.RunSchemaPatches(ctx, schema)
 	} else {
 		patchErr = tenant.RunEventsSchemaPatches(ctx, schema)
@@ -225,6 +233,39 @@ func decryptPatientField(enc string) (string, error) {
 		return "", appErrs.Internal("encryption key not configured")
 	}
 	return appcrypto.Decrypt(enc, key)
+}
+
+func patientBlindName(fullName string) string {
+	return pii.BlindIndex(normalizePatientName(fullName), strings.TrimSpace(secrets.DataEncryptionKey))
+}
+
+func patientBlindBirth(birth string) string {
+	return pii.BlindIndex(strings.TrimSpace(birth), strings.TrimSpace(secrets.DataEncryptionKey))
+}
+
+func encryptPersonName(plain string) (enc string, blindIdx string, err error) {
+	key := strings.TrimSpace(secrets.DataEncryptionKey)
+	plain = strings.TrimSpace(plain)
+	if plain == "" {
+		return "", "", nil
+	}
+	enc, err = pii.Encrypt(plain, key)
+	if err != nil {
+		return "", "", err
+	}
+	blindIdx = pii.BlindIndex(pii.NormalizeName(plain), key)
+	return enc, blindIdx, nil
+}
+
+func decryptPersonName(enc, legacy string) (string, error) {
+	return pii.DecryptOrLegacy(enc, legacy, strings.TrimSpace(secrets.DataEncryptionKey))
+}
+
+func piiPlaceholder(enc string) string {
+	if strings.TrimSpace(enc) == "" {
+		return ""
+	}
+	return pii.Placeholder
 }
 
 func slugify(name string) string {

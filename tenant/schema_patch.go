@@ -2,7 +2,10 @@ package tenant
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
+
+	"encore.app/wabantu/shared/tenantschema"
 )
 
 // tenantSchemaPatchSQL brings older tenant schemas in line with application code.
@@ -135,6 +138,11 @@ CREATE INDEX IF NOT EXISTS idx_order_contact_created
     ON "order"(contact_id, created_at DESC)
     WHERE deleted_at IS NULL;
 
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX IF NOT EXISTS idx_catalog_name_trgm
+    ON business_catalog_item USING gin (name gin_trgm_ops)
+    WHERE deleted_at IS NULL;
+
 -- Finance: drop invalid functional index (to_char is not IMMUTABLE in PostgreSQL).
 DROP INDEX IF EXISTS idx_fin_txn_period;
 
@@ -170,8 +178,26 @@ func RunSchemaPatches(ctx context.Context, schemaName string) error {
 		return err
 	}
 	defer conn.Close()
-	if _, err = conn.ExecContext(ctx, tenantSchemaPatchSQL); err != nil {
+	ready, err := tenantschema.TenantPatchReady(ctx, conn)
+	if err != nil {
+		return err
+	}
+	if !ready {
+		if _, err = conn.ExecContext(ctx, tenantSchemaPatchSQL); err != nil {
+			return err
+		}
+	}
+	if err := runPIISchemaOnConn(ctx, conn); err != nil {
 		return err
 	}
 	return runFinanceSchemaAndSeed(ctx, conn)
+}
+
+func runPIISchemaOnConn(ctx context.Context, conn *sql.Conn) error {
+	ready, err := tenantschema.PIIReady(ctx, conn)
+	if err != nil || ready {
+		return err
+	}
+	_, err = conn.ExecContext(ctx, tenantschema.PIISchemaPatchSQL)
+	return err
 }

@@ -128,9 +128,15 @@ func scanChecklistItemRow(
 	var completedAt sql.NullTime
 	var amtHint sql.NullFloat64
 	var catID, walletID sql.NullString
-	if err := rows.Scan(&it.ID, &it.TemplateID, &it.TemplateTitle, &it.DueDate, &it.Status,
+	var titleEnc, titleLegacy string
+	if err := rows.Scan(&it.ID, &it.TemplateID, &titleEnc, &titleLegacy, &it.DueDate, &it.Status,
 		&txnID, &completedBy, &completedAt, &note, &amtHint, &catID, &walletID); err != nil {
 		return it, err
+	}
+	var decErr error
+	it.TemplateTitle, decErr = decryptFinanceTitle(titleEnc, titleLegacy)
+	if decErr != nil {
+		return it, decErr
 	}
 	if txnID.Valid {
 		it.TransactionID = &txnID.String
@@ -187,7 +193,7 @@ func loadMonthlyBilling(ctx context.Context, conn *sql.Conn, periodStart, period
 	endStr := periodEnd.Format("2006-01-02")
 
 	itemRows, err := conn.QueryContext(ctx, `
-		SELECT i.id, i.template_id, t.title, i.due_date::text, i.status,
+		SELECT i.id, i.template_id, COALESCE(t.title_enc,''), t.title, i.due_date::text, i.status,
 		       CASE WHEN ft.id IS NOT NULL THEN ft.id::text ELSE NULL END,
 		       i.completed_by, i.completed_at, i.note,
 		       t.amount_hint, t.category_id, t.wallet_id
@@ -599,7 +605,7 @@ func tryPostMonthlyBillingTransactions(ctx context.Context, conn *sql.Conn, tena
 	}
 
 	rows, err := conn.QueryContext(ctx, `
-		SELECT i.id, i.due_date::text, t.title, t.amount_hint, t.category_id, t.wallet_id
+		SELECT i.id, i.due_date::text, COALESCE(t.title_enc,''), t.title, t.amount_hint, t.category_id, t.wallet_id
 		FROM fin_checklist_item i
 		JOIN fin_checklist_template t ON t.id=i.template_id
 		WHERE t.is_active=true AND t.frequency='monthly'
@@ -621,7 +627,12 @@ func tryPostMonthlyBillingTransactions(ctx context.Context, conn *sql.Conn, tena
 	for rows.Next() {
 		var r row
 		var amt sql.NullFloat64
-		if err := rows.Scan(&r.id, &r.due, &r.title, &amt, &r.categoryID, &r.walletID); err != nil {
+		var titleEnc, titleLegacy string
+		if err := rows.Scan(&r.id, &r.due, &titleEnc, &titleLegacy, &amt, &r.categoryID, &r.walletID); err != nil {
+			return appErrs.Internal(err.Error())
+		}
+		r.title, err = decryptFinanceTitle(titleEnc, titleLegacy)
+		if err != nil {
 			return appErrs.Internal(err.Error())
 		}
 		if !amt.Valid || amt.Float64 <= 0 {

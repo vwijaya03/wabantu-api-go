@@ -416,6 +416,7 @@ Custom domain & production AWS/GCP: plan Pro — https://encore.dev/docs/platfor
 | `pg_restore` exit 1, `RI_ConstraintTrigger` | Managed PG tidak bisa `DISABLE TRIGGER` pada FK system | Abaikan jika script cetak `ok system tenant rows: N` |
 | `schema "public" already exists` | Schema system sudah ada di cloud | Normal saat re-run; script terbaru skip DDL jika tabel sudah ada |
 | Login `db error` setelah migrasi | `pg_restore --no-privileges` — role `encore_writer` tidak punya `SELECT` | `./scripts/fix-cloud-db-grants.sh staging` (script migrasi terbaru sudah GRANT otomatis) |
+| API `prepare catalog pricing failed` / DDL error | App role cloud tidak bisa `CREATE`/`ALTER`/`DROP` | Deploy kode terbaru (`shared/tenantschema` skip DDL jika schema sudah ada); `./scripts/verify-cloud-tenant-schemas.sh staging` |
 | `relation "public.tenant" does not exist` | DB cloud **kosong** (belum ada tabel) | Script terbaru restore **schema system** dulu; atau `git push encore` sampai deploy sukses |
 | Webhook Meta gagal verifikasi | Token tidak sama | Samakan `WebhookVerifyToken` dengan Meta console |
 
@@ -447,6 +448,8 @@ Connect cloud account di dashboard → Encore provision RDS, dll. Lihat https://
 | `scripts/setup-secrets-from-env.sh` | Copy secrets → `type:local` |
 | `scripts/migrate-local-db-to-encore.sh` | Migrasi Postgres lokal → cloud (+ GRANT otomatis) |
 | `scripts/fix-cloud-db-grants.sh` | Perbaiki hak akses DB cloud setelah migrasi (login `db error`) |
+| `scripts/verify-cloud-tenant-schemas.sh` | Cek tabel tenant + GRANT SELECT di cloud |
+| `shared/tenantschema/` | Skip runtime DDL di Encore Cloud bila schema sudah lengkap |
 | `encore.app` | App ID Encore |
 | `../infra/docker-compose.yml` | Redis & Postgres lokal (dev) |
 

@@ -16,6 +16,7 @@ import (
 
 	appdb "encore.app/wabantu/shared/db"
 	"encore.app/wabantu/shared/inboxrealtime"
+	"encore.app/wabantu/shared/pii"
 	"encore.app/wabantu/usage"
 	"encore.app/wabantu/whatsapp"
 	"github.com/redis/go-redis/v9"
@@ -601,7 +602,6 @@ func (s *AutoReplyService) FallbackAutoReply(ctx context.Context, payload AiRepl
 
 var (
 	sizeRe = regexp.MustCompile(`(?i)\b(xs|s|m|l|xl|xxl|xxxl|3xl|4xl|5xl|\d{2})\b`)
-	qtyRe  = regexp.MustCompile(`(?i)\b(\d{1,3})\s?(pcs|biji|buah|item)?\b`)
 )
 
 func (s *AutoReplyService) handleOrderFlow(
@@ -806,8 +806,8 @@ func (s *AutoReplyService) handleOrderFlow(
 		qty := 0
 		if hints.HasQty {
 			qty = hints.Qty
-		} else if m := qtyRe.FindStringSubmatch(userText); len(m) > 1 {
-			fmt.Sscanf(m[1], "%d", &qty)
+		} else if q, ok := parseOrderQty(userText); ok {
+			qty = q
 		}
 		if qty < 1 {
 			return send(tmpl.ClarifyQty)
@@ -819,6 +819,7 @@ func (s *AutoReplyService) handleOrderFlow(
 
 	case "ask_recipient":
 		st := copyBase(stateNorm)
+		mergeShippingText(&st, userText)
 		name, phone := parseRecipientLine(userText)
 		if name != "" {
 			st.RecipientName = name
@@ -827,7 +828,21 @@ func (s *AutoReplyService) handleOrderFlow(
 			st.RecipientPhone = phone
 		}
 		if st.RecipientName == "" || st.RecipientPhone == "" {
+			s.setOrderState(ctx, tenantID, convo.ID, st)
 			return send(tmpl.AskRecipient)
+		}
+		if st.shippingComplete() {
+			if missing := missingOrderDataPrompt(st, tmpl); missing != "" {
+				s.setOrderState(ctx, tenantID, convo.ID, st)
+				return sendWithConfirm(st, missing)
+			}
+			if _, err := persistDraftOrder(ctx, q, tenantSchema, convo.ID, convo.ContactID, st); err != nil {
+				rlog.Warn("AI order: persist draft failed", "err", err, "convoId", convo.ID)
+				s.setOrderState(ctx, tenantID, convo.ID, st)
+				return sendWithConfirm(st, tmpl.RetryStep)
+			}
+			s.clearOrderState(ctx, tenantID, convo.ID)
+			return send(tmpl.Complete)
 		}
 		st.Step = "ask_address_full"
 		s.setOrderState(ctx, tenantID, convo.ID, st)
@@ -880,7 +895,7 @@ func classifyMessage(userText string, inScope bool, profile *dbBusinessProfile) 
 		}
 		// "mau pesen jeans bisa?" = tanya dulu, bukan form order.
 		capabilityAsk := IsQuestionLike(userText) &&
-			!orderQtyLineRe.MatchString(text) && !orderSizeLineRe.MatchString(text)
+			!mentionsOrderQty(text) && !orderSizeLineRe.MatchString(text)
 		if !capabilityAsk {
 			return classifyResult{Label: "order_intent", Confidence: 0.88}
 		}
@@ -1209,6 +1224,43 @@ func loadBusinessProfile(ctx context.Context, q tenantQuerier) (*dbBusinessProfi
 }
 
 func loadContact(ctx context.Context, q tenantQuerier, id string) (*dbContact, error) {
+	c, err := loadContactPII(ctx, q, id)
+	if err != nil && isMissingPIIColumn(err) {
+		return loadContactLegacy(ctx, q, id)
+	}
+	return c, err
+}
+
+func loadContactPII(ctx context.Context, q tenantQuerier, id string) (*dbContact, error) {
+	row := q.QueryRowContext(ctx, `
+		SELECT id,
+		       COALESCE(phone_number_enc, ''), COALESCE(phone_number, ''),
+		       COALESCE(display_name_enc, ''), COALESCE(display_name, '')
+		FROM contact WHERE id = $1`, id)
+	var c dbContact
+	var phoneEnc, phoneLegacy, displayEnc, displayLegacy string
+	err := row.Scan(&c.ID, &phoneEnc, &phoneLegacy, &displayEnc, &displayLegacy)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	key := strings.TrimSpace(secrets.DataEncryptionKey)
+	phone, err := pii.DecryptOrLegacy(phoneEnc, phoneLegacy, key)
+	if err != nil {
+		return nil, err
+	}
+	c.PhoneNumber = phone
+	if name, err := pii.DecryptOrLegacy(displayEnc, displayLegacy, key); err != nil {
+		return nil, err
+	} else if name != "" && name != pii.Placeholder {
+		c.DisplayName = &name
+	}
+	return &c, nil
+}
+
+func loadContactLegacy(ctx context.Context, q tenantQuerier, id string) (*dbContact, error) {
 	row := q.QueryRowContext(ctx, `
 		SELECT id, phone_number, display_name
 		FROM contact WHERE id = $1`, id)
@@ -1218,6 +1270,14 @@ func loadContact(ctx context.Context, q tenantQuerier, id string) (*dbContact, e
 		return nil, nil
 	}
 	return c, err
+}
+
+func isMissingPIIColumn(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "does not exist") && strings.Contains(msg, "column")
 }
 
 func loadChannel(ctx context.Context, q tenantQuerier, id string) (*dbChannel, error) {

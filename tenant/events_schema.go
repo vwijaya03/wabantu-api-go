@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+
+	"encore.app/wabantu/shared/tenantschema"
 )
 
 const eventsSchemaPatchSQL = `
@@ -265,9 +267,28 @@ CREATE INDEX IF NOT EXISTS idx_evt_export_job_event ON evt_export_job(event_id, 
 `
 
 func runEventsSchemaAndSeed(ctx context.Context, conn *sql.Conn) error {
-	if _, err := conn.ExecContext(ctx, eventsSchemaPatchSQL); err != nil {
+	ready, err := tenantschema.EventsModuleReady(ctx, conn)
+	if err != nil {
 		return err
 	}
+	if !ready {
+		if _, err := conn.ExecContext(ctx, eventsSchemaPatchSQL); err != nil {
+			return err
+		}
+	}
+	return seedEventsMasterData(ctx, conn)
+}
+
+// SeedEventsMasterDataOnly inserts default evt_* master rows when tables exist (no DDL).
+func SeedEventsMasterDataOnly(ctx context.Context, schemaName string) error {
+	if !schemaNameRe.MatchString(schemaName) {
+		return fmt.Errorf("invalid schema name: %q", schemaName)
+	}
+	conn, err := TenantConn(ctx, schemaName)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
 	return seedEventsMasterData(ctx, conn)
 }
 

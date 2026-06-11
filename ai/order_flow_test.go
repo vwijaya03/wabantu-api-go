@@ -18,6 +18,32 @@ func TestParseOrderHintsFullLine(t *testing.T) {
 	}
 }
 
+func TestParseOrderQtyIgnoresCatalogPrefix(t *testing.T) {
+	msg := "1PCS CELANA DALAM BOXER ANAK PEREMPUAN MOTIF HELLO KITTY BUNGA LEMBUT - L\n\n2 biji"
+	qty, ok := parseOrderQty(msg)
+	if !ok || qty != 2 {
+		t.Fatalf("expected qty 2, got %d ok=%v", qty, ok)
+	}
+}
+
+func TestParseOrderQtyPieceUnit(t *testing.T) {
+	for _, msg := range []string{
+		"mau order\n1PCS CELANA DALAM - L\n\n2 piece bisa?",
+		"mau beli 2 piece ya bukan 1",
+	} {
+		qty, ok := parseOrderQty(msg)
+		if !ok || qty != 2 {
+			t.Fatalf("expected qty 2 for %q, got %d ok=%v", msg, qty, ok)
+		}
+	}
+}
+
+func TestParseOrderQtyDoesNotMatchGluedPCS(t *testing.T) {
+	if mentionsOrderQty("1PCS CELANA DALAM BOXER") {
+		t.Fatal("glued 1PCS product title should not count as order qty")
+	}
+}
+
 func TestIsWithinBusinessScopePcsOnly(t *testing.T) {
 	scope := ExtractScopeKeywords("Omah Apparel jeans skinny")
 	if !IsWithinBusinessScope("1 pcs saja", scope, nil) {

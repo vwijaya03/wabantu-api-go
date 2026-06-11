@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"encore.app/wabantu/shared/async"
 	appErrs "encore.app/wabantu/shared/errs"
 
 	"github.com/lvillar/gofpdf"
@@ -120,7 +121,9 @@ func CreateReportJob(ctx context.Context, p *CreateReportJobParams) (*ReportJob,
 		return nil, appErrs.Internal(err.Error())
 	}
 
-	go processReportJobAsync(u.TenantSchema, id, p)
+	async.RunBounded(async.ExportSem, func() {
+		processReportJobAsync(u.TenantSchema, id, p)
+	})
 
 	now := financeNow(ctx, conn)
 	return &ReportJob{

@@ -39,6 +39,26 @@ Kode pos: 12910`)
 	}
 }
 
+func TestMergeShippingTextRecipientAndAddressTogether(t *testing.T) {
+	st := orderState{}
+	mergeShippingText(&st, `Nama: Antoni Budianto
+HP: 081000222000
+
+Jalan: Jl. Panglima Sudirman 30
+RT/RW: 002/001
+Kelurahan: Magelang
+Kecamatan: Magelang
+Kota/Kab: Magelang
+Provinsi: Jawa Timur
+Kode pos: 60600`)
+	if !st.shippingComplete() {
+		t.Fatalf("expected complete shipping from single message, got %+v", st)
+	}
+	if st.RecipientName != "Antoni Budianto" {
+		t.Fatalf("recipient name=%q", st.RecipientName)
+	}
+}
+
 func TestBuildVariantLabel(t *testing.T) {
 	got := buildVariantLabel("XL", "biru")
 	if got != "Ukuran: XL | Warna: biru" {

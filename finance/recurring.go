@@ -81,7 +81,7 @@ func ListRecurring(ctx context.Context) (*RecurringListResponse, error) {
 	defer conn.Close()
 
 	rows, err := conn.QueryContext(ctx, `
-		SELECT id, title, type, amount, wallet_id, to_wallet_id, category_id, description,
+		SELECT id, COALESCE(title_enc,''), title, type, amount, wallet_id, to_wallet_id, category_id, description,
 		       frequency, frequency_value, day_of_month, day_of_week, mode,
 		       start_date::text, end_date::text, max_occurrences, occurrences_done,
 		       next_run_date::text, is_active, created_at
@@ -98,11 +98,16 @@ func ListRecurring(ctx context.Context) (*RecurringListResponse, error) {
 		var endDate sql.NullString
 		var dayOfMonth, dayOfWeek, maxOcc sql.NullInt64
 		var amount float64
-		err := rows.Scan(&r.ID, &r.Title, &r.Type, &amount, &r.WalletID,
+		var titleEnc, titleLegacy string
+		err := rows.Scan(&r.ID, &titleEnc, &titleLegacy, &r.Type, &amount, &r.WalletID,
 			&toWalletID, &categoryID, &description,
 			&r.Frequency, &r.FrequencyValue, &dayOfMonth, &dayOfWeek, &r.Mode,
 			&r.StartDate, &endDate, &maxOcc, &r.OccurrencesDone,
 			&r.NextRunDate, &r.IsActive, &r.CreatedAt)
+		if err != nil {
+			continue
+		}
+		r.Title, err = decryptFinanceTitle(titleEnc, titleLegacy)
 		if err != nil {
 			continue
 		}
@@ -177,15 +182,19 @@ func CreateRecurring(ctx context.Context, p *CreateRecurringParams) (*Recurring,
 		return nil, err
 	}
 
+	titleEnc, storeTitle, encErr := encryptFinanceTitle(p.Title)
+	if encErr != nil {
+		return nil, appErrs.Internal(encErr.Error())
+	}
 	var id string
 	err = conn.QueryRowContext(ctx,
 		`INSERT INTO fin_recurring
-		 (title,type,amount,wallet_id,to_wallet_id,category_id,description,
-		  frequency,frequency_value,day_of_month,day_of_week,mode,
-		  start_date,end_date,max_occurrences,next_run_date,created_by)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+		 (title, title_enc, type, amount, wallet_id, to_wallet_id, category_id, description,
+		  frequency, frequency_value, day_of_month, day_of_week, mode,
+		  start_date, end_date, max_occurrences, next_run_date, created_by)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
 		 RETURNING id`,
-		strings.TrimSpace(p.Title), p.Type, p.Amount, p.WalletID,
+		storeTitle, titleEnc, p.Type, p.Amount, p.WalletID,
 		p.ToWalletID, p.CategoryID, p.Description,
 		p.Frequency, p.FrequencyValue, p.DayOfMonth, p.DayOfWeek, p.Mode,
 		p.StartDate, p.EndDate, p.MaxOccurrences, p.StartDate, u.AccountID,

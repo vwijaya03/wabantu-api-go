@@ -6,11 +6,20 @@ import (
 	"strings"
 
 	apperr "encore.app/wabantu/shared/errs"
+	"encore.app/wabantu/shared/tenantschema"
 )
 
 // EnsureSchema applies idempotent DDL for price types and catalog prices.
+// On Encore Cloud the app DB role cannot run DDL; skip when schema is already present.
 func EnsureSchema(ctx context.Context, conn *sql.Conn) error {
-	_, err := conn.ExecContext(ctx, `
+	ready, err := tenantschema.PricingReady(ctx, conn)
+	if err != nil {
+		return err
+	}
+	if ready {
+		return nil
+	}
+	_, err = conn.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS business_price_type (
 			id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 			code           VARCHAR(40)  NOT NULL,

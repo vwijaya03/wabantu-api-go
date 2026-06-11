@@ -22,7 +22,7 @@ type staffListRow struct {
 
 func loadStaffListRows(ctx context.Context, conn *sql.Conn, eventID string) ([]staffListRow, error) {
 	rows, err := conn.QueryContext(ctx, `
-		SELECT p.full_name, p.person_type, p.attendance_status, COALESCE(p.notes,''),
+		SELECT `+personNameEncLegacyColsP+`, p.person_type, p.attendance_status, COALESCE(p.notes,''),
 		       COALESCE(string_agg(t.therapy_name, ', ' ORDER BY t.therapy_name), ''),
 		       vr.role_name, COALESCE(ev.is_pencatat, false)
 		FROM evt_event_person p
@@ -31,8 +31,8 @@ func loadStaffListRows(ctx context.Context, conn *sql.Conn, eventID string) ([]s
 		LEFT JOIN evt_event_volunteer ev ON ev.person_id = p.id
 		LEFT JOIN evt_volunteer_role vr ON vr.id = ev.volunteer_role_id
 		WHERE p.event_id=$1::uuid AND p.deleted_at IS NULL
-		GROUP BY p.id, p.full_name, p.person_type, p.attendance_status, p.notes, vr.role_name, ev.is_pencatat
-		ORDER BY p.person_type, p.full_name`, eventID)
+		GROUP BY p.id, p.full_name_enc, p.full_name, p.person_type, p.attendance_status, p.notes, vr.role_name, ev.is_pencatat
+		ORDER BY p.person_type, p.created_at`, eventID)
 	if err != nil {
 		return nil, err
 	}
@@ -41,8 +41,13 @@ func loadStaffListRows(ctx context.Context, conn *sql.Conn, eventID string) ([]s
 	for rows.Next() {
 		var r staffListRow
 		var volRole sql.NullString
-		if err := rows.Scan(&r.FullName, &r.PersonType, &r.AttendanceStatus, &r.Notes,
+		var nameEnc, nameLegacy string
+		if err := rows.Scan(&nameEnc, &nameLegacy, &r.PersonType, &r.AttendanceStatus, &r.Notes,
 			&r.TherapyNames, &volRole, &r.IsPencatat); err != nil {
+			return nil, err
+		}
+		r.FullName, err = scanPersonNameFromRow(nameEnc, nameLegacy)
+		if err != nil {
 			return nil, err
 		}
 		r.RoleLabel = personTypeToRole(r.PersonType)

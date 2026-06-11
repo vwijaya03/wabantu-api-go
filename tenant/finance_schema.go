@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+
+	"encore.app/wabantu/shared/tenantschema"
 )
 
 // financeSchemaPatchSQL creates finance tables on existing tenant schemas (idempotent).
@@ -333,11 +335,17 @@ UPDATE fin_asset SET unit_name = 'coin', unit_multiplier = 1, price_unit_name = 
 `
 
 func runFinanceSchemaAndSeed(ctx context.Context, conn *sql.Conn) error {
-	if _, err := conn.ExecContext(ctx, financeSchemaPatchSQL); err != nil {
-		return fmt.Errorf("finance DDL: %w", err)
+	ready, err := tenantschema.FinanceModuleReady(ctx, conn)
+	if err != nil {
+		return fmt.Errorf("finance schema check: %w", err)
 	}
-	if _, err := conn.ExecContext(ctx, financeCategoryDedupeSQL); err != nil {
-		return fmt.Errorf("finance category dedupe: %w", err)
+	if !ready {
+		if _, err := conn.ExecContext(ctx, financeSchemaPatchSQL); err != nil {
+			return fmt.Errorf("finance DDL: %w", err)
+		}
+		if _, err := conn.ExecContext(ctx, financeCategoryDedupeSQL); err != nil {
+			return fmt.Errorf("finance category dedupe: %w", err)
+		}
 	}
 	if err := seedFinanceTransactionTypes(ctx, conn); err != nil {
 		return fmt.Errorf("finance seed transaction types: %w", err)

@@ -21,6 +21,8 @@ import (
 	"encore.app/wabantu/leads"
 	appdb "encore.app/wabantu/shared/db"
 	"encore.app/wabantu/shared/inboxrealtime"
+	"encore.app/wabantu/shared/pii"
+	"encore.app/wabantu/shared/tenantschema"
 	"encore.app/wabantu/tenant"
 	"encore.app/wabantu/whatsapp"
 )
@@ -29,6 +31,7 @@ var db = sqldb.Named("tenant")
 
 var secrets struct {
 	WebhookVerifyToken string
+	DataEncryptionKey  string
 }
 
 // ---------------------------------------------------------------------------
@@ -93,16 +96,26 @@ func receiveWebhook(w http.ResponseWriter, r *http.Request) {
 	messages := whatsapp.ParseWebhook(body)
 	ctx := r.Context()
 
-	if sig := r.Header.Get("X-Hub-Signature-256"); sig != "" && len(messages) > 0 {
-		appSecret, err := lookupChannelMetaAppSecret(ctx, messages[0].ToPhoneNumberID)
-		if err != nil {
-			rlog.Warn("webhook signature skipped: channel not found", "phoneNumberId", messages[0].ToPhoneNumberID, "err", err)
-		} else if appSecret != "" {
-			if !whatsapp.VerifyWebhookSignature(body, sig, appSecret) {
-				rlog.Warn("webhook signature verification failed", "phoneNumberId", messages[0].ToPhoneNumberID)
-				w.WriteHeader(http.StatusUnauthorized)
-				return
-			}
+	if sig := r.Header.Get("X-Hub-Signature-256"); sig != "" {
+		phoneNumberID := whatsapp.WebhookPhoneNumberID(body)
+		if phoneNumberID == "" && len(messages) > 0 {
+			phoneNumberID = messages[0].ToPhoneNumberID
+		}
+		if phoneNumberID == "" {
+			rlog.Warn("webhook signature present but phone_number_id missing in payload")
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		appSecret, err := lookupChannelMetaAppSecret(ctx, phoneNumberID)
+		if err != nil || appSecret == "" {
+			rlog.Warn("webhook signature rejected: channel not found", "phoneNumberId", phoneNumberID, "err", err)
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if !whatsapp.VerifyWebhookSignature(body, sig, appSecret) {
+			rlog.Warn("webhook signature verification failed", "phoneNumberId", phoneNumberID)
+			w.WriteHeader(http.StatusUnauthorized)
+			return
 		}
 	}
 	for _, msg := range messages {
@@ -145,7 +158,7 @@ func ingestMessage(ctx context.Context, msg whatsapp.InboundMessage) error {
 		return nil
 	}
 
-	contactID, err := upsertContact(ctx, conn, msg)
+	contactID, err := upsertContact(ctx, conn, schema, msg)
 	if err != nil {
 		return fmt.Errorf("upsert contact: %w", err)
 	}
@@ -206,10 +219,7 @@ func ingestMessage(ctx context.Context, msg whatsapp.InboundMessage) error {
 		inboxrealtime.Publish(ctx, appauth.RedisClient(), tenantID)
 	}
 
-	var contactPhone string
-	_ = conn.QueryRowContext(ctx,
-		`SELECT phone_number FROM contact WHERE id = $1`, contactID,
-	).Scan(&contactPhone)
+	contactPhone, _ := contactPhoneFromConn(ctx, conn, contactID)
 
 	_, _ = leads.CaptureFromMessage(ctx, &leads.CaptureRequest{
 		TenantSchema:   schema,
@@ -227,34 +237,97 @@ func ingestMessage(ctx context.Context, msg whatsapp.InboundMessage) error {
 // DB helpers
 // ---------------------------------------------------------------------------
 
-func upsertContact(ctx context.Context, conn *sql.Conn, msg whatsapp.InboundMessage) (string, error) {
+func upsertContact(ctx context.Context, conn *sql.Conn, schema string, msg whatsapp.InboundMessage) (string, error) {
 	phone := normalizePhone(msg.FromPhone)
+	displayName := truncStr(strings.TrimSpace(msg.FromDisplayName), 200)
+	key := strings.TrimSpace(secrets.DataEncryptionKey)
+	usePII := pii.ValidateKey(key) == nil && tenantschema.EnsureContactPII(ctx, conn, schema, tenant.RunPIISchemaPatchesOnConn)
+	if !usePII {
+		if pii.ValidateKey(key) == nil {
+			if active, _ := tenantschema.ContactPIIActiveConn(ctx, conn, schema); !active {
+				rlog.Warn("contact PII columns missing — using legacy upsert; run scripts/apply-pii-schema-cloud.sh",
+					"schema", schema)
+			}
+		}
+		return upsertContactLegacy(ctx, conn, phone, displayName)
+	}
+	phoneIdx := pii.BlindIndex(pii.NormalizePhone(phone), key)
 	var id string
 	err := conn.QueryRowContext(ctx,
-		`SELECT id FROM contact WHERE phone_number = $1`, phone).Scan(&id)
-
+		`SELECT id FROM contact WHERE phone_number_idx = $1 AND deleted_at IS NULL LIMIT 1`, phoneIdx).Scan(&id)
 	if err == sql.ErrNoRows {
-		var displayName *string
-		if n := strings.TrimSpace(msg.FromDisplayName); n != "" {
-			displayName = &n
+		phoneEnc, encErr := pii.Encrypt(phone, key)
+		if encErr != nil {
+			return "", encErr
 		}
-		return id, conn.QueryRowContext(ctx,
-			`INSERT INTO contact (phone_number, display_name, tags)
-			 VALUES ($1, $2, '["new"]'::jsonb)
-			 RETURNING id`,
-			phone, displayName).Scan(&id)
+		var displayEnc *string
+		if displayName != "" {
+			enc, encErr := pii.Encrypt(displayName, key)
+			if encErr != nil {
+				return "", encErr
+			}
+			displayEnc = &enc
+		}
+		return id, conn.QueryRowContext(ctx, `
+			INSERT INTO contact (phone_number, phone_number_enc, phone_number_idx, display_name, display_name_enc, tags)
+			VALUES ($1,$2,$3,$1,$4,'["new"]'::jsonb) RETURNING id`,
+			pii.Placeholder, phoneEnc, phoneIdx, displayEnc).Scan(&id)
 	}
 	if err != nil {
 		return "", err
 	}
-
-	if n := strings.TrimSpace(msg.FromDisplayName); n != "" {
-		_, _ = conn.ExecContext(ctx,
-			`UPDATE contact SET display_name = $1
-			 WHERE id = $2 AND (display_name IS NULL OR TRIM(display_name) = '')`,
-			truncStr(n, 200), id)
+	if displayName != "" {
+		enc, _ := pii.Encrypt(displayName, key)
+		_, _ = conn.ExecContext(ctx, `
+			UPDATE contact SET display_name_enc = $1, display_name = $2, updated_at = NOW()
+			WHERE id = $3 AND (display_name_enc IS NULL OR TRIM(display_name_enc) = '')`,
+			enc, pii.Placeholder, id)
 	}
 	return id, nil
+}
+
+func upsertContactLegacy(ctx context.Context, conn *sql.Conn, phone, displayName string) (string, error) {
+	var id string
+	err := conn.QueryRowContext(ctx,
+		`SELECT id FROM contact WHERE phone_number = $1 AND deleted_at IS NULL`, phone).Scan(&id)
+	if err == sql.ErrNoRows {
+		var dn *string
+		if displayName != "" {
+			dn = &displayName
+		}
+		return id, conn.QueryRowContext(ctx,
+			`INSERT INTO contact (phone_number, display_name, tags)
+			 VALUES ($1, $2, '["new"]'::jsonb) RETURNING id`, phone, dn).Scan(&id)
+	}
+	if err != nil {
+		return "", err
+	}
+	if displayName != "" {
+		_, _ = conn.ExecContext(ctx, `
+			UPDATE contact SET display_name = $1, updated_at = NOW()
+			WHERE id = $2 AND (display_name IS NULL OR TRIM(display_name) = '')`,
+			displayName, id)
+	}
+	return id, nil
+}
+
+func contactPhoneFromConn(ctx context.Context, conn *sql.Conn, contactID string) (string, error) {
+	active, err := tenantschema.ContactPIIActiveConn(ctx, conn, "")
+	if err != nil || !active {
+		var phone string
+		err := conn.QueryRowContext(ctx,
+			`SELECT COALESCE(phone_number,'') FROM contact WHERE id = $1`, contactID).Scan(&phone)
+		return phone, err
+	}
+	var phoneEnc, phoneLegacy sql.NullString
+	err = conn.QueryRowContext(ctx, `
+		SELECT COALESCE(phone_number_enc,''), COALESCE(phone_number,'')
+		FROM contact WHERE id = $1`, contactID).Scan(&phoneEnc, &phoneLegacy)
+	if err != nil {
+		return "", err
+	}
+	key := strings.TrimSpace(secrets.DataEncryptionKey)
+	return pii.DecryptOrLegacy(phoneEnc.String, phoneLegacy.String, key)
 }
 
 func upsertConversation(ctx context.Context, conn *sql.Conn, channelID, contactID string) (string, error) {

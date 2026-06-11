@@ -32,8 +32,8 @@ func buildPatientWhere(eventID string, f patientFilterInput) (string, []any) {
 		i++
 	}
 	if q := strings.TrimSpace(f.Q); q != "" {
-		conds = append(conds, fmt.Sprintf("pat.normalized_name LIKE $%d", i))
-		args = append(args, "%"+normalizePatientName(q)+"%")
+		conds = append(conds, fmt.Sprintf("pat.normalized_name = $%d", i))
+		args = append(args, patientBlindName(q))
 		i++
 	}
 	if sd := strings.TrimSpace(f.SlotDate); sd != "" {
