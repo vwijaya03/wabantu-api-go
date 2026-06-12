@@ -49,7 +49,12 @@ else
 fi
 
 # Orphans: t_* in tenant DB but not registered in system.tenant
-mapfile -t registered < <(psql "$SYSTEM_URI" -tAc "SELECT schema_name FROM tenant WHERE deleted_at IS NULL")
+mapfile -t registered < <(psql "$SYSTEM_URI" -tAc "
+  SELECT tc.schema_name
+  FROM tenant_company tc
+  JOIN tenant t ON t.id = tc.tenant_id
+  WHERE t.deleted_at IS NULL
+    AND tc.schema_name IS NOT NULL AND tc.schema_name <> ''")
 mapfile -t all_schemas < <(psql "$TENANT_URI" -tAc "SELECT nspname FROM pg_namespace WHERE nspname ~ '^t_'")
 orphan_list=()
 for s in "${all_schemas[@]}"; do
@@ -61,7 +66,7 @@ for s in "${all_schemas[@]}"; do
   [[ "$found" -eq 0 ]] && orphan_list+=("$s")
 done
 if [[ ${#orphan_list[@]} -gt 0 ]]; then
-  echo "WARN: orphan schemas (not in system.tenant): ${orphan_list[*]}"
+  echo "WARN: orphan schemas (not in tenant_company): ${orphan_list[*]}"
   echo "      Consider: ./scripts/prune-orphan-tenant-schemas-cloud.sh $ENV_NAME --apply"
 fi
 

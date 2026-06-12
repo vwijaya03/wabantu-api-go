@@ -17,7 +17,13 @@ TENANT_URI="$(encore db conn-uri tenant --env="$ENV_NAME" --admin)"
 
 echo "=== Orphan tenant schemas ($ENV_NAME) ==="
 
-mapfile -t registered < <(psql "$SYSTEM_URI" -tAc "SELECT schema_name FROM tenant WHERE deleted_at IS NULL ORDER BY 1")
+mapfile -t registered < <(psql "$SYSTEM_URI" -tAc "
+  SELECT tc.schema_name
+  FROM tenant_company tc
+  JOIN tenant t ON t.id = tc.tenant_id
+  WHERE t.deleted_at IS NULL
+    AND tc.schema_name IS NOT NULL AND tc.schema_name <> ''
+  ORDER BY 1")
 mapfile -t all_schemas < <(psql "$TENANT_URI" -tAc "SELECT nspname FROM pg_namespace WHERE nspname ~ '^t_' ORDER BY 1")
 
 orphans=()
@@ -35,7 +41,7 @@ if [[ ${#orphans[@]} -eq 0 ]]; then
   exit 0
 fi
 
-echo "Orphan schemas (in tenant DB but not system.tenant):"
+echo "Orphan schemas (in tenant DB but not tenant_company):"
 printf '  %s\n' "${orphans[@]}"
 
 if [[ "$APPLY" != "--apply" ]]; then

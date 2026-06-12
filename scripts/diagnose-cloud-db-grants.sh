@@ -21,10 +21,12 @@ psql "$TENANT_URI" -c "
   WHERE rolname ~ '^encore'
   ORDER BY 1;"
 
-echo "--- system.tenant (registered schemas) ---"
+echo "--- system.tenant + tenant_company (registered schemas) ---"
 psql "$SYSTEM_URI" -c "
-  SELECT slug, schema_name, deleted_at IS NULL AS active
-  FROM tenant ORDER BY created_at;"
+  SELECT t.name, tc.schema_name, t.deleted_at IS NULL AS active
+  FROM tenant t
+  LEFT JOIN tenant_company tc ON tc.tenant_id = t.id
+  ORDER BY t.created_at;"
 
 echo "--- tenant DB schema owners ---"
 psql "$TENANT_URI" -c "
