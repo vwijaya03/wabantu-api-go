@@ -428,22 +428,6 @@ func IsActiveCheckoutFromHistory(history []dbMessage, userText string) bool {
 	return false
 }
 
-var orderCancelPhrases = []string{
-	"tidak jadi", "gak jadi", "ga jadi", "nggak jadi", "tidak order", "gak order",
-	"batal order", "batal pesan", "cancel order", "batalkan order", "dibatalkan",
-}
-
-// IsOrderFlowCancelled — customer exits the order state machine.
-func IsOrderFlowCancelled(userText string) bool {
-	text := strings.ToLower(strings.TrimSpace(userText))
-	for _, p := range orderCancelPhrases {
-		if strings.Contains(text, p) {
-			return true
-		}
-	}
-	return false
-}
-
 var orderAddrHintRe = regexp.MustCompile(`(?i)(jalan|\bjl\.?\b|rt|rw|kel\.|kec\.|kota|kab\.|kode pos|taman|setiabudi)`)
 
 // ShouldBreakOrderFlow — new intent (greeting, harga, tanya produk) while Redis order state is active.

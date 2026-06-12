@@ -308,17 +308,27 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return false, err
 	}
 
-	// Active order flow — only when message is really continuing checkout (not greeting/harga/batal).
-	if orderSt, _ := s.getOrderState(ctx, payload.TenantID, convo.ID); orderSt != nil {
-		tone := strOrEmpty(profile.Tone)
-		if IsOrderFlowCancelled(userText) {
-			s.clearOrderState(ctx, payload.TenantID, convo.ID)
-			out := metaNoLLM(reasonNonQuestion, PathOrderFlow)
+	if IsOrderCancelRequest(userText) {
+		orderSt, _ := s.getOrderState(ctx, payload.TenantID, convo.ID)
+		s.clearOrderState(ctx, payload.TenantID, convo.ID)
+		if orderSt != nil {
+			tone := strOrEmpty(profile.Tone)
+			out := metaNoLLM(reasonNonQuestion, PathOrderCancel)
+			out.OrderAction = "cancel_draft"
 			out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 			err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact,
 				orderFlowCancelReply(tone), "system", out)
 			return err == nil, err
 		}
+		return s.handleCustomerOrderCancel(ctx, conn, payload.TenantSchema, payload, convo, channel, contact, profile)
+	}
+	if IsOrderStatusInquiry(userText) {
+		return s.handleCustomerOrderStatus(ctx, conn, payload.TenantSchema, payload, convo, channel, contact)
+	}
+
+	// Active order flow — only when message is really continuing checkout (not greeting/harga/batal).
+	if orderSt, _ := s.getOrderState(ctx, payload.TenantID, convo.ID); orderSt != nil {
+		tone := strOrEmpty(profile.Tone)
 		if ShouldBreakOrderFlow(userText, orderSt.Step) {
 			s.clearOrderState(ctx, payload.TenantID, convo.ID)
 			rlog.Info("AI job: order flow cleared for new intent", "prevStep", orderSt.Step)
@@ -875,13 +885,14 @@ func (s *AutoReplyService) handleOrderFlow(
 				s.setOrderState(ctx, tenantID, convo.ID, st)
 				return sendWithConfirm(st, missing)
 			}
-			if _, err := persistDraftOrder(ctx, q, tenantSchema, convo.ID, convo.ContactID, st); err != nil {
+			orderID, err := persistDraftOrder(ctx, q, tenantSchema, convo.ID, convo.ContactID, st)
+			if err != nil {
 				rlog.Warn("AI order: persist draft failed", "err", err, "convoId", convo.ID)
 				s.setOrderState(ctx, tenantID, convo.ID, st)
 				return sendWithConfirm(st, tmpl.RetryStep)
 			}
 			s.clearOrderState(ctx, tenantID, convo.ID)
-			return send(orderCompleteMessage(st, tmpl))
+			return send(orderCompleteMessageWithRef(orderID, st, tmpl))
 		}
 		st.Step = "ask_address_full"
 		s.setOrderState(ctx, tenantID, convo.ID, st)
@@ -898,16 +909,108 @@ func (s *AutoReplyService) handleOrderFlow(
 			s.setOrderState(ctx, tenantID, convo.ID, st)
 			return sendWithConfirm(st, missing)
 		}
-		if _, err := persistDraftOrder(ctx, q, tenantSchema, convo.ID, convo.ContactID, st); err != nil {
+		orderID, err := persistDraftOrder(ctx, q, tenantSchema, convo.ID, convo.ContactID, st)
+		if err != nil {
 			rlog.Warn("AI order: persist draft failed", "err", err, "convoId", convo.ID)
 			s.setOrderState(ctx, tenantID, convo.ID, st)
 			return sendWithConfirm(st, tmpl.RetryStep)
 		}
 		s.clearOrderState(ctx, tenantID, convo.ID)
-		return send(orderCompleteMessage(st, tmpl))
+		return send(orderCompleteMessageWithRef(orderID, st, tmpl))
 	}
 
 	return send(tmpl.RetryStep)
+}
+
+func (s *AutoReplyService) handleCustomerOrderCancel(
+	ctx context.Context,
+	conn tenantQuerier,
+	tenantSchema string,
+	payload AiReplyJobPayload,
+	convo *dbConversation,
+	channel *dbChannel,
+	contact *dbContact,
+	profile *dbBusinessProfile,
+) (bool, error) {
+	o, err := loadLatestOrderForConversation(ctx, conn, tenantSchema, convo.ID)
+	if err != nil {
+		rlog.Warn("order cancel: load failed", "err", err, "convoId", convo.ID)
+		return false, err
+	}
+	tone := strOrEmpty(profile.Tone)
+	send := func(text string, meta AiReplyMeta) (bool, error) {
+		meta.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
+		err := s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, text, "system", meta)
+		return err == nil, err
+	}
+	if o == nil {
+		meta := metaNoLLM(reasonNonQuestion, PathOrderCancel)
+		meta.OrderAction = "cancel"
+		return send(orderNoneToCancelReply(), meta)
+	}
+	ref := FormatOrderNumber(o.ID)
+	if strings.EqualFold(o.Status, "cancelled") {
+		meta := metaNoLLM(reasonNonQuestion, PathOrderCancel)
+		meta.OrderID = o.ID
+		meta.OrderAction = "cancel"
+		return send(orderAlreadyCancelledReply(ref), meta)
+	}
+	if !cancellableOrderStatuses[o.Status] {
+		meta := metaNoLLM(reasonNonQuestion, PathOrderCancel)
+		meta.OrderID = o.ID
+		meta.OrderAction = "cancel"
+		msg := fmt.Sprintf("Maaf kak, pesanan %s sudah %s dan tidak bisa dibatalkan lewat chat. Tim CS bisa bantu ya.",
+			ref, orderStatusLabelID(o.Status))
+		return send(msg, meta)
+	}
+	if err := cancelPersistedOrder(ctx, conn, tenantSchema, o.ID); err != nil {
+		if err == sql.ErrNoRows {
+			meta := metaNoLLM(reasonNonQuestion, PathOrderCancel)
+			meta.OrderID = o.ID
+			meta.OrderAction = "cancel"
+			return send(orderAlreadyCancelledReply(ref), meta)
+		}
+		rlog.Warn("order cancel: update failed", "err", err, "orderId", o.ID)
+		return false, err
+	}
+	rlog.Info("order cancelled by customer via chat", "orderId", o.ID, "convoId", convo.ID, "ref", ref)
+	meta := metaNoLLM(reasonNonQuestion, PathOrderCancel)
+	meta.OrderID = o.ID
+	meta.OrderAction = "cancel"
+	return send(orderCancelCustomerReply(tone, ref), meta)
+}
+
+func (s *AutoReplyService) handleCustomerOrderStatus(
+	ctx context.Context,
+	conn tenantQuerier,
+	tenantSchema string,
+	payload AiReplyJobPayload,
+	convo *dbConversation,
+	channel *dbChannel,
+	contact *dbContact,
+) (bool, error) {
+	o, err := loadLatestOrderForConversation(ctx, conn, tenantSchema, convo.ID)
+	if err != nil {
+		return false, err
+	}
+	meta := metaNoLLM(reasonAIGenerated, PathOrderStatus)
+	meta.OrderAction = "status"
+	send := func(text string) (bool, error) {
+		meta.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
+		err := s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, text, "system", meta)
+		return err == nil, err
+	}
+	if o == nil {
+		return send(orderNoneFoundReply())
+	}
+	meta.OrderID = o.ID
+	body := formatPersistedOrderSummary(o)
+	if strings.EqualFold(o.Status, "cancelled") {
+		body += "\n\nPesanan ini sudah dibatalkan."
+	} else if cancellableOrderStatuses[o.Status] {
+		body += "\n\nUntuk membatalkan, ketik saja: batalkan pesanan."
+	}
+	return send(body)
 }
 
 // ─── Message classifier ──────────────────────────────────────────────────────

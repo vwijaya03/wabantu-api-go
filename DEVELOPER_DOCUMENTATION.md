@@ -2,7 +2,7 @@
 
 > **Audience:** Senior full-stack developers from Node.js/TypeScript (Express, NestJS, Prisma/TypeORM) learning **Go** and **Encore**.  
 > **Codebase:** `api-go/` — Encore rewrite of NestJS `api/`.  
-> **Companion docs:** [README.md](./README.md) · [APP_FLOW_GUIDE.md](./APP_FLOW_GUIDE.md) · [ENDPOINT_COMPATIBILITY.md](./ENDPOINT_COMPATIBILITY.md) · **[LIMITS_AND_QUOTAS.md](./LIMITS_AND_QUOTAS.md)** (rate limit, trial/paid kuota, billing checkout) · **[docs/FINANCE_MODULE.md](./docs/FINANCE_MODULE.md)** (modul keuangan — endpoint, schema, arsitektur)
+> **Companion docs:** [README.md](./README.md) · [APP_FLOW_GUIDE.md](./APP_FLOW_GUIDE.md) · [ENDPOINT_COMPATIBILITY.md](./ENDPOINT_COMPATIBILITY.md) · **[LIMITS_AND_QUOTAS.md](./LIMITS_AND_QUOTAS.md)** (rate limit, trial/paid kuota, billing checkout) · **[docs/FINANCE_MODULE.md](./docs/FINANCE_MODULE.md)** (modul keuangan) · **[docs/ORDER_CUSTOMER_CHAT.md](./docs/ORDER_CUSTOMER_CHAT.md)** (nomor pesanan, cancel & status via chat)
 
 **Baru belajar Go?** Langsung ke **[Bagian 18 Go untuk developer Node.js](#18-go-language-guide-for-nodejs-developers-with-wabantu-examples)** — penjelasan pointer, error, context, interface, dll. dengan contoh nyata dari repo ini.
 

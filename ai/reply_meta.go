@@ -27,6 +27,8 @@ const (
 	PathNonQuestion       = "in_scope_non_question"
 	PathLowConfidence     = "low_confidence"
 	PathOrderFlow         = "order_flow"
+	PathOrderCancel       = "order_cancel"
+	PathOrderStatus       = "order_status"
 	PathCatalogDB         = "catalog_db"
 	PathFAQCache          = "faq_cache"
 	PathFAQDirect         = "faq_direct"
@@ -37,11 +39,13 @@ const (
 
 // AiReplyMeta is stored on message.metadata and echoed in structured logs.
 type AiReplyMeta struct {
-	Reason  string `json:"reason"`
-	Path    string `json:"path"`
-	Model   string `json:"model,omitempty"`
-	Tier    string `json:"tier,omitempty"`
-	LLMUsed bool   `json:"llmUsed"`
+	Reason      string `json:"reason"`
+	Path        string `json:"path"`
+	Model       string `json:"model,omitempty"`
+	Tier        string `json:"tier,omitempty"`
+	LLMUsed     bool   `json:"llmUsed"`
+	OrderID     string `json:"orderId,omitempty"`
+	OrderAction string `json:"orderAction,omitempty"`
 }
 
 func metaFromRoute(reason, path string, route RoutingDecision) AiReplyMeta {
@@ -69,6 +73,9 @@ func (m AiReplyMeta) LogOutcome(convoID, inboundID string) {
 	}
 	if m.Model != "" {
 		args = append(args, "model", m.Model, "tier", m.Tier)
+	}
+	if m.OrderID != "" {
+		args = append(args, "orderId", m.OrderID, "orderAction", m.OrderAction)
 	}
 	rlog.Info("AI job: outcome", args...)
 }
