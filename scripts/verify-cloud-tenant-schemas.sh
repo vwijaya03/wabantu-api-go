@@ -14,10 +14,32 @@ WRITE_URI="$(encore db conn-uri tenant --env="$ENV_NAME" --write)"
 
 echo "=== Verify cloud tenant schemas ($ENV_NAME) ==="
 
-schemas="$(psql "$TENANT_URI" -tAc "SELECT nspname FROM pg_namespace WHERE nspname ~ '^t_' ORDER BY 1")"
+schemas="$(psql "$SYSTEM_URI" -tAc "
+  SELECT tc.schema_name
+  FROM tenant_company tc
+  JOIN tenant t ON t.id = tc.tenant_id
+  WHERE t.deleted_at IS NULL
+    AND tc.schema_name IS NOT NULL AND tc.schema_name <> ''
+  ORDER BY 1")"
 if [[ -z "$schemas" ]]; then
-  echo "ERROR: no t_* schemas found" >&2
+  echo "ERROR: no registered tenant schemas in tenant_company" >&2
   exit 1
+fi
+
+orphans=""
+all_schemas="$(psql "$TENANT_URI" -tAc "SELECT nspname FROM pg_namespace WHERE nspname ~ '^t_' ORDER BY 1")"
+while IFS= read -r s; do
+  [[ -z "$s" ]] && continue
+  found=0
+  while IFS= read -r r; do
+    [[ -z "$r" ]] && continue
+    [[ "$s" == "$(echo "$r" | tr -d '[:space:]')" ]] && found=1 && break
+  done <<< "$schemas"
+  [[ "$found" -eq 0 ]] && orphans="${orphans:+$orphans, }$s"
+done <<< "$all_schemas"
+if [[ -n "$orphans" ]]; then
+  echo "NOTE: orphan schemas (skipped): $orphans"
+  echo
 fi
 
 fail=0
