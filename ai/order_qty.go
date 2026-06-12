@@ -7,31 +7,32 @@ import (
 
 var orderQtyPackRe = regexp.MustCompile(`(?i)(?:^|\s)(\d{1,4})\s*paket`)
 
-// IsOrderRevisionMessage — koreksi/revisi jumlah pesanan (bukan tanya harga).
-func IsOrderRevisionMessage(userText string) bool {
-	text := strings.ToLower(strings.TrimSpace(userText))
+// orderRevisionSignals — inti deteksi revisi qty (tanpa memanggil IsPricingUnitClarification).
+func orderRevisionSignals(text, userText string) bool {
 	if text == "" {
 		return false
-	}
-	revisionVerbs := []string{
-		"order", "pesan", "beli", "paket", "bukan", "ganti", "ubah", "revisi", "gantiin",
-	}
-	if q, ok := parseOrderQty(userText); ok && q > 0 {
-		for _, v := range revisionVerbs {
-			if strings.Contains(text, v) {
-				return true
-			}
-		}
 	}
 	if strings.Contains(text, "bukan") &&
 		(strings.Contains(text, "paket") || strings.Contains(text, "pcs") || strings.Contains(text, "biji")) {
 		return true
 	}
-	if (strings.Contains(text, "ubah") || strings.Contains(text, "revisi")) &&
-		(strings.Contains(text, "paket") || strings.Contains(text, "jadi")) {
-		return true
+	hasRevisionVerb := strings.Contains(text, "ubah") || strings.Contains(text, "revisi") ||
+		strings.Contains(text, "ganti") || strings.Contains(text, "gantiin")
+	if hasRevisionVerb {
+		if _, ok := parseOrderQty(userText); ok {
+			return true
+		}
+		if strings.Contains(text, "paket") || strings.Contains(text, "jadi") {
+			return true
+		}
 	}
 	return false
+}
+
+// IsOrderRevisionMessage — koreksi/revisi jumlah pesanan (bukan pesanan baru / tanya harga).
+func IsOrderRevisionMessage(userText string) bool {
+	text := strings.ToLower(strings.TrimSpace(userText))
+	return orderRevisionSignals(text, userText)
 }
 
 // tryApplyQtyRevision updates qty when customer revises count mid-checkout.

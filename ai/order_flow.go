@@ -504,6 +504,13 @@ func ShouldBreakOrderFlow(userText, step string) bool {
 		if phoneIDRe.MatchString(text) {
 			return false
 		}
+		if name, _ := parseRecipientLine(userText); name != "" {
+			return false
+		}
+		if strings.Contains(text, "nama:") || strings.Contains(text, "nama :") ||
+			strings.Contains(text, "hp:") || strings.Contains(text, "hp :") {
+			return false
+		}
 		if IsOrderContinuationMessage(userText) && !strings.Contains(text, "berapa") {
 			return false
 		}

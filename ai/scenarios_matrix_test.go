@@ -225,7 +225,7 @@ func TestMatrix_ResolveSalesIntent(t *testing.T) {
 		topic string
 	}{
 		{"jualan apa aja lu", SalesStateBrowsing, SalesTopicList},
-		{"boxer cowok ada ga", SalesStateConsulting, SalesTopicProduct},
+		{"boxer cowok ada ga", SalesStateProductSelected, SalesTopicProduct},
 		{"boxer pria mono spot bisa beli per biji ga ?", SalesStateConsulting, SalesTopicRetailPolicy},
 		{"nah pinter lu udah", SalesStateConsulting, SalesTopicGeneral},
 		{"mau beli boxer monospot tadi dong", SalesStateCartReady, SalesTopicProduct},

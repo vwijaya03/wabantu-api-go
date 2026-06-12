@@ -139,7 +139,7 @@ func IsPricingUnitClarification(userText string) bool {
 		"paket isi", "isi berapa", "isi nya berapa", "isinya berapa",
 		"satu paket isi",
 	}
-	if IsOrderRevisionMessage(userText) {
+	if orderRevisionSignals(strings.ToLower(strings.TrimSpace(userText)), userText) {
 		return false
 	}
 	for _, s := range signals {
