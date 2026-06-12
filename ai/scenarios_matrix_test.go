@@ -150,6 +150,7 @@ func TestMatrix_PricingVsRevision(t *testing.T) {
 		{"harga per paket atau per biji", true, false},
 		{"paket isi berapa", true, false},
 		{"loh, ubah jadi 10 paket", false, true},
+		{"ga jadi mau dirubah menjadi 10 biji ya", false, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.msg, func(t *testing.T) {
@@ -180,6 +181,7 @@ func TestMatrix_TryApplyQtyRevision(t *testing.T) {
 		{"Nama: Budi\nHP: 081234567890", 1, 1, false},
 		{"boxer mono spot ada ga", 1, 1, false},
 		{"ganti jadi 5 paket", 10, 5, true},
+		{"ga jadi mau dirubah menjadi 10 biji ya", 1, 10, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.msg, func(t *testing.T) {

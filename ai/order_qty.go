@@ -16,8 +16,9 @@ func orderRevisionSignals(text, userText string) bool {
 		(strings.Contains(text, "paket") || strings.Contains(text, "pcs") || strings.Contains(text, "biji")) {
 		return true
 	}
-	hasRevisionVerb := strings.Contains(text, "ubah") || strings.Contains(text, "revisi") ||
-		strings.Contains(text, "ganti") || strings.Contains(text, "gantiin")
+	hasRevisionVerb := strings.Contains(text, "ubah") || strings.Contains(text, "rubah") ||
+		strings.Contains(text, "revisi") || strings.Contains(text, "ganti") ||
+		strings.Contains(text, "gantiin")
 	if hasRevisionVerb {
 		if _, ok := parseOrderQty(userText); ok {
 			return true

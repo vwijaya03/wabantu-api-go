@@ -43,6 +43,10 @@ func IsOrderCancelRequest(userText string) bool {
 	if text == "" {
 		return false
 	}
+	// "ga jadi mau dirubah jadi 10 biji" = revisi qty, bukan batal pesanan.
+	if orderRevisionSignals(text, userText) {
+		return false
+	}
 	for _, p := range orderCancelPhrases {
 		if strings.Contains(text, p) {
 			return true

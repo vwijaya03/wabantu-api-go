@@ -24,6 +24,9 @@ func TestIsOrderCancelRequest(t *testing.T) {
 		{"mau saya batalkan ya", true},
 		{"batalkan pesanan", true},
 		{"tidak jadi order", true},
+		{"ga jadi deh", true},
+		{"ga jadi mau dirubah menjadi 10 biji ya", false},
+		{"loh ubah jadi 10 paket", false},
 		{"pesanan yang atas nama saya ada kah ?", false},
 		{"harga berapa", false},
 	}

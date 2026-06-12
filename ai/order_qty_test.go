@@ -16,6 +16,20 @@ func TestParseOrderQtyPaket(t *testing.T) {
 	}
 }
 
+func TestIsOrderRevisionMessage_dirubah(t *testing.T) {
+	msg := "ga jadi mau dirubah menjadi 10 biji ya"
+	if !IsOrderRevisionMessage(msg) {
+		t.Fatal("expected revision for dirubah + qty")
+	}
+	if IsOrderCancelRequest(msg) {
+		t.Fatal("revision with ga jadi should not cancel order")
+	}
+	q, ok := parseOrderQty(msg)
+	if !ok || q != 10 {
+		t.Fatalf("expected qty 10, got %d ok=%v", q, ok)
+	}
+}
+
 func TestIsOrderRevisionMessage(t *testing.T) {
 	if !IsOrderRevisionMessage("bukan revisi, saya order 3 paket bukan 1 paket") {
 		t.Fatal("expected order revision")
