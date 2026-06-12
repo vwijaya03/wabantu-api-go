@@ -12,6 +12,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_NAME="${1:?Usage: $0 <encore-env> (e.g. staging)}"
 cd "$ROOT"
 
+SYSTEM_URI="$(encore db conn-uri system --env="$ENV_NAME" --admin)"
 ADMIN_URI="$(encore db conn-uri tenant --env="$ENV_NAME" --admin)"
 WRITE_URI="$(encore db conn-uri tenant --env="$ENV_NAME" --write)"
 
@@ -32,9 +33,15 @@ table_exists() {
 
 echo "=== Verify tenant migrations ($ENV_NAME) ==="
 
-schemas="$(psql "$ADMIN_URI" -tAc "SELECT nspname FROM pg_namespace WHERE nspname ~ '^t_' ORDER BY 1")"
+schemas="$(psql "$SYSTEM_URI" -tAc "
+  SELECT tc.schema_name
+  FROM tenant_company tc
+  JOIN tenant t ON t.id = tc.tenant_id
+  WHERE t.deleted_at IS NULL
+    AND tc.schema_name IS NOT NULL AND tc.schema_name <> ''
+  ORDER BY 1")"
 if [[ -z "$schemas" ]]; then
-  echo "ERROR: no t_* schemas found" >&2
+  echo "ERROR: no registered tenant schemas in tenant_company" >&2
   exit 1
 fi
 
