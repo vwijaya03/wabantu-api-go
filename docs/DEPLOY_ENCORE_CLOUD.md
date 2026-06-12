@@ -443,7 +443,7 @@ Custom domain & production AWS/GCP: plan Pro — https://encore.dev/docs/platfor
 | `pg_restore` exit 1, `RI_ConstraintTrigger` | Managed PG tidak bisa `DISABLE TRIGGER` pada FK system | Abaikan jika script cetak `ok system tenant rows: N` |
 | `schema "public" already exists` | Schema system sudah ada di cloud | Normal saat re-run; script terbaru skip DDL jika tabel sudah ada |
 | Login `db error` setelah migrasi | `pg_restore --no-privileges` — role `encore_writer` tidak punya `SELECT` | `./scripts/fix-cloud-db-grants.sh staging` (script migrasi terbaru sudah GRANT otomatis) |
-| Deploy gagal: `permission denied for schema t_*` (dynamic grants) | Schema/tabel bukan milik `encore-migrator` setelah `pg_restore` | `./scripts/fix-cloud-db-grants.sh staging` → `./scripts/verify-cloud-deploy-ready.sh staging` → redeploy |
+| Deploy gagal: `permission denied for schema t_*` (dynamic grants) | Schema `t_*` bukan milik **admin** Encore setelah `pg_restore` | `./scripts/diagnose-cloud-db-grants.sh staging` → `./scripts/fix-cloud-db-grants.sh staging` → verify → redeploy |
 | Deploy gagal: `permission denied for table schema_migrations` | Tabel migrasi system DB owner salah | Sama — `fix-cloud-db-grants.sh` (reassign ke `encore-migrator`) |
 | API `prepare catalog pricing failed` / DDL error | App role cloud tidak bisa `CREATE`/`ALTER`/`DROP` | Deploy kode terbaru (`shared/tenantschema` skip DDL jika schema sudah ada); `./scripts/verify-cloud-tenant-schemas.sh staging` |
 | `relation "public.tenant" does not exist` | DB cloud **kosong** (belum ada tabel) | Script terbaru restore **schema system** dulu; atau `git push encore` sampai deploy sukses |
@@ -478,6 +478,8 @@ Connect cloud account di dashboard → Encore provision RDS, dll. Lihat https://
 | `scripts/migrate-local-db-to-encore.sh` | Migrasi Postgres lokal → cloud (+ GRANT otomatis) |
 | `scripts/fix-cloud-db-grants.sh` | Reassign owner ke `encore-migrator` + GRANT (wajib setelah migrasi DB) |
 | `scripts/verify-cloud-deploy-ready.sh` | Cek owner `schema_migrations` + `t_*` sebelum push deploy |
+| `scripts/diagnose-cloud-db-grants.sh` | Debug role & owner schema (saat deploy gagal) |
+| `scripts/prune-orphan-tenant-schemas-cloud.sh` | Hapus `t_*` yatim (tidak ada di `system.tenant`) |
 | `scripts/apply-tenant-schema-cloud.sh` | DDL pricing, `contact.status`, branch, workflow per `t_*` |
 | `scripts/apply-pii-schema-cloud.sh` | DDL kolom PII (`*_enc`, `*_idx`) semua schema `t_*` |
 | `scripts/backfill-pii-cloud.sh` | Backfill plaintext → terenkripsi semua tenant di cloud |
