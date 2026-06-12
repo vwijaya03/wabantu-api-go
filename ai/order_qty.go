@@ -13,18 +13,45 @@ func IsOrderRevisionMessage(userText string) bool {
 	if text == "" {
 		return false
 	}
+	revisionVerbs := []string{
+		"order", "pesan", "beli", "paket", "bukan", "ganti", "ubah", "revisi", "gantiin",
+	}
 	if q, ok := parseOrderQty(userText); ok && q > 0 {
-		if strings.Contains(text, "order") || strings.Contains(text, "pesan") ||
-			strings.Contains(text, "beli") || strings.Contains(text, "paket") ||
-			strings.Contains(text, "bukan") || strings.Contains(text, "ganti") {
-			return true
+		for _, v := range revisionVerbs {
+			if strings.Contains(text, v) {
+				return true
+			}
 		}
 	}
 	if strings.Contains(text, "bukan") &&
 		(strings.Contains(text, "paket") || strings.Contains(text, "pcs") || strings.Contains(text, "biji")) {
 		return true
 	}
+	if (strings.Contains(text, "ubah") || strings.Contains(text, "revisi")) &&
+		(strings.Contains(text, "paket") || strings.Contains(text, "jadi")) {
+		return true
+	}
 	return false
+}
+
+// tryApplyQtyRevision updates qty when customer revises count mid-checkout.
+func tryApplyQtyRevision(st *orderState, userText string) bool {
+	if st == nil {
+		return false
+	}
+	q, ok := parseOrderQty(userText)
+	if !ok || q < 1 {
+		return false
+	}
+	text := strings.ToLower(strings.TrimSpace(userText))
+	isRevision := IsOrderRevisionMessage(userText) ||
+		strings.Contains(text, "ubah") || strings.Contains(text, "revisi") ||
+		strings.Contains(text, "ganti") || (st.Qty > 0 && q != st.Qty)
+	if !isRevision {
+		return false
+	}
+	st.Qty = q
+	return true
 }
 
 // IsCasualPraiseLike — pujian singkat ke bot, tetap in-scope.

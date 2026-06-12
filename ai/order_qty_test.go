@@ -23,6 +23,15 @@ func TestIsOrderRevisionMessage(t *testing.T) {
 	if IsPricingUnitClarification("bukan revisi, saya order 3 paket bukan 1 paket") {
 		t.Fatal("revision should not be pricing clarification")
 	}
+	for _, msg := range []string{
+		"revisi jadi 10 pakettt",
+		"loh, ubah jadi 10 paket",
+		"gw mau ubah jadi 10 paket bisa ?",
+	} {
+		if !IsOrderRevisionMessage(msg) {
+			t.Fatalf("expected revision: %q", msg)
+		}
+	}
 }
 
 func TestIsCasualPraiseInScope(t *testing.T) {

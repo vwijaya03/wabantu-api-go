@@ -1002,6 +1002,10 @@ func (s *AutoReplyService) handleOrderFlow(
 
 	case "ask_recipient":
 		st := copyBase(stateNorm)
+		if tryApplyQtyRevision(&st, userText) {
+			s.setOrderState(ctx, tenantID, convo.ID, st)
+			return sendWithConfirm(st, tmpl.AskRecipient)
+		}
 		mergeShippingText(&st, userText)
 		name, phone := parseRecipientLine(userText)
 		if name != "" {
@@ -1034,6 +1038,10 @@ func (s *AutoReplyService) handleOrderFlow(
 
 	case "ask_address", "ask_address_full":
 		st := copyBase(stateNorm)
+		if tryApplyQtyRevision(&st, userText) {
+			s.setOrderState(ctx, tenantID, convo.ID, st)
+			return sendWithConfirm(st, tmpl.AskRecipient)
+		}
 		mergeShippingText(&st, userText)
 		if !st.shippingComplete() {
 			s.setOrderState(ctx, tenantID, convo.ID, st)
