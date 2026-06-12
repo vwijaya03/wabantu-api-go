@@ -17,11 +17,11 @@ func formatCatalogPrice(it *dbCatalogItem) string {
 	if it == nil || it.SellPrice <= 0 {
 		return "Harga belum di-set"
 	}
-	unit := it.SellUnit
-	if unit == "" {
-		unit = "pcs"
+	info := parseCatalogPriceInfo(it)
+	if info.isPackListing {
+		return fmt.Sprintf("Rp%.0f/paket (isi %d pcs)", info.listPrice, info.packCount)
 	}
-	return fmt.Sprintf("Rp%.0f/%s", it.SellPrice, unit)
+	return fmt.Sprintf("Rp%.0f/%s", info.listPrice, info.unitLabel)
 }
 
 func formatMoney(amount float64) string {

@@ -326,12 +326,15 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return s.handleCustomerOrderStatus(ctx, conn, payload.TenantSchema, payload, convo, channel, contact)
 	}
 
+	clearedOrderForCorrection := false
+
 	// Active order flow — only when message is really continuing checkout (not greeting/harga/batal).
 	if orderSt, _ := s.getOrderState(ctx, payload.TenantID, convo.ID); orderSt != nil {
 		tone := strOrEmpty(profile.Tone)
 		if ShouldBreakOrderFlow(userText, orderSt.Step) {
+			clearedOrderForCorrection = IsUserSalesCorrection(userText)
 			s.clearOrderState(ctx, payload.TenantID, convo.ID)
-			rlog.Info("AI job: order flow cleared for new intent", "prevStep", orderSt.Step)
+			rlog.Info("AI job: order flow cleared for new intent", "prevStep", orderSt.Step, "correction", clearedOrderForCorrection)
 			if IsGreetingLike(userText) {
 				greet := GreetingReply(userText, tone, strOrEmpty(profile.GreetingTemplate))
 				out := metaNoLLM(reasonNonQuestion, PathGreeting)
@@ -342,7 +345,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 			// Fall through → classifier / LLM for harga, tanya produk, dll.
 		} else {
 			sent, oErr := s.handleOrderFlow(ctx, conn, payload.TenantSchema, payload.TenantID, convo, channel, contact,
-				userText, profile, kbEntries, payload.InboundMessageID)
+				userText, profile, kbEntries, history, payload.InboundMessageID)
 			return sent, oErr
 		}
 	}
@@ -372,6 +375,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	} else if IsAcknowledgmentLike(userText) {
 		classifier = classifyResult{Label: "in_scope_question", Confidence: 0.85}
 	} else if classifier.Label == "in_scope_non_question" &&
+		!IsConsultingPurchaseQuestion(userText) &&
 		(HasPurchaseIntent(userText) || IsOrderFollowUpFromHistory(history, userText)) {
 		classifier = classifyResult{Label: "order_intent", Confidence: 0.85}
 	}
@@ -397,11 +401,22 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 
 	// ── Katalog WABantu (business_catalog_item) — prioritas sebelum FAQ/LLM ──
 	if inScope {
-		if catReply, ok := replyFromBusinessCatalog(userText, profile, catalog); ok {
+		if catReply, ok := replyFromBusinessCatalog(userText, profile, catalog, history); ok {
+			if clearedOrderForCorrection {
+				catReply = prependSalesCorrection(strOrEmpty(profile.Tone) == "formal", catReply)
+			}
 			finalReply := applyOutputPolicy(catReply)
 			out := metaNoLLM(reasonAIGenerated, PathCatalogDB)
 			out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 			err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
+			return err == nil, err
+		}
+		if clearedOrderForCorrection {
+			formal := strOrEmpty(profile.Tone) == "formal"
+			out := metaNoLLM(reasonAIGenerated, PathConsulting)
+			out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
+			err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact,
+				salesCorrectionReply(formal), "ai", out)
 			return err == nil, err
 		}
 	}
@@ -435,7 +450,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 
 	// ── Browsing katalog (mis. "mau tanya produk") — jangan redirect generik ──
 	if inScope && IsCatalogBrowsingIntent(userText) {
-		if catReply, ok := replyFromBusinessCatalog(userText, profile, catalog); ok {
+		if catReply, ok := replyFromBusinessCatalog(userText, profile, catalog, history); ok {
 			finalReply := applyOutputPolicy(catReply)
 			out := metaNoLLM(reasonAIGenerated, PathCatalogDB)
 			out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
@@ -470,7 +485,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	// ── Handle: order intent state machine ───────────────────────────────
 	if classifier.Label == "order_intent" || (IsOrderContinuationMessage(userText) && hasOrderIntentText(userText)) {
 		sent, oErr := s.handleOrderFlow(ctx, conn, payload.TenantSchema, payload.TenantID, convo, channel, contact,
-			userText, profile, kbEntries, payload.InboundMessageID)
+			userText, profile, kbEntries, history, payload.InboundMessageID)
 		return sent, oErr
 	}
 
@@ -636,6 +651,7 @@ func (s *AutoReplyService) handleOrderFlow(
 	userText string,
 	profile *dbBusinessProfile,
 	kb []dbKBEntry,
+	history []dbMessage,
 	inboundID string,
 ) (bool, error) {
 	scopeKW := businessScopeKeywords(profile)
@@ -649,6 +665,7 @@ func (s *AutoReplyService) handleOrderFlow(
 	}
 
 	tmpl := orderTemplatesFromKB(kb, strOrEmpty(profile.Tone) == "formal")
+	formal := strOrEmpty(profile.Tone) == "formal"
 	catalog, catErr := loadActiveCatalog(ctx, q, 40)
 	if catErr != nil {
 		rlog.Warn("AI order: catalog load failed", "err", catErr)
@@ -836,6 +853,10 @@ func (s *AutoReplyService) handleOrderFlow(
 			st.Color = cl
 		}
 		if !st.variantComplete() {
+			if wouldRepeatOutbound(history, tmpl.AskVariant) {
+				s.clearOrderState(ctx, tenantID, convo.ID)
+				return send(orderFlowLoopBreakReply(formal))
+			}
 			return send(tmpl.AskVariant)
 		}
 		if hints.HasQty {
@@ -844,11 +865,11 @@ func (s *AutoReplyService) handleOrderFlow(
 		if st.Qty < 1 {
 			st.Step = "ask_qty"
 			s.setOrderState(ctx, tenantID, convo.ID, st)
-			return send(tmpl.AskQty)
+			return sendWithConfirm(st, tmpl.AskQty)
 		}
 		st.Step = "ask_recipient"
 		s.setOrderState(ctx, tenantID, convo.ID, st)
-		return send(tmpl.AskRecipient)
+		return sendWithConfirm(st, tmpl.AskRecipient)
 
 	case "ask_qty":
 		st := copyBase(stateNorm)

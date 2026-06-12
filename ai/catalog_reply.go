@@ -2,8 +2,15 @@ package ai
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+)
+
+var (
+	catalogPackInNameRe    = regexp.MustCompile(`(?i)\[\s*(\d+)\s*pcs\s*\]`)
+	catalogLeadingPackRe   = regexp.MustCompile(`(?i)^(\d+)\s*pcs\b`)
 )
 
 const catalogEmptyMarker = "[Katalog WABantu: kosong]"
@@ -21,7 +28,9 @@ func IsCatalogBrowsingIntent(userText string) bool {
 		"tanya produk", "tanya-tanya produk", "nanya produk",
 		"produk di toko", "produk yang dijual", "yang dijual di toko",
 		"tunjukkan produk", "tunjukan produk", "lihat produk", "mau lihat produk",
-		"beberapa produk", "produk apa", "jual apa",
+		"beberapa produk", "produk apa", "jual apa", "jualan apa",
+		"tersedia jualan", "tersedia produk", "tersedia barang",
+		"di toko ini", "di toko ada", "toko ini jual",
 	}
 	for _, p := range phrases {
 		if strings.Contains(text, p) {
@@ -42,9 +51,10 @@ func IsCatalogListQuestion(userText string) bool {
 		"list sku", "daftar sku", "list kode", "minta sku", "lihat sku",
 		"lihat katalog", "tunjukkan katalog", "tampilkan katalog", "show katalog",
 		"produk apa saja", "barang apa saja", "apa saja produk", "apa saja barang",
+		"jualan apa saja", "jualan apa aja", "jual apa saja", "jual apa aja",
 		"katalog apa", "koleksi apa", "jenis produk", "macam produk", "macam barang",
 		"minta list", "kasih list", "berikan list", "kirim list", "list dong",
-		"ada produk apa", "jual apa aja", "jual apa saja",
+		"ada produk apa", "tersedia apa", "tersedia jualan", "menjual apa",
 	}
 	for _, p := range phrases {
 		if strings.Contains(text, p) {
@@ -63,19 +73,50 @@ func IsCatalogListQuestion(userText string) bool {
 	return false
 }
 
+// isGeneralStoreCatalogQuestion — tanya isi toko secara umum (bukan satu SKU).
+func isGeneralStoreCatalogQuestion(userText string) bool {
+	if IsCatalogListQuestion(userText) {
+		return true
+	}
+	text := strings.ToLower(strings.TrimSpace(userText))
+	if text == "" {
+		return false
+	}
+	signals := []string{
+		"apa saja", "apa aja", "apa2",
+		"jualan apa", "jual apa", "menjual apa",
+		"tersedia apa", "ada apa", "punya apa",
+		"semua produk", "semua barang", "macam-macam",
+	}
+	for _, s := range signals {
+		if strings.Contains(text, s) {
+			return true
+		}
+	}
+	if strings.Contains(text, "di toko") &&
+		(strings.Contains(text, "jualan") || strings.Contains(text, "produk") || strings.Contains(text, "barang")) {
+		return true
+	}
+	return false
+}
+
 // IsCatalogProductInquiry — tanya harga/stok produk tertentu (bukan checkout).
 func IsCatalogProductInquiry(userText string) bool {
-	if HasPurchaseIntent(userText) {
+	if HasPurchaseIntent(userText) || IsConsultingPurchaseQuestion(userText) {
 		return false
 	}
 	text := strings.ToLower(strings.TrimSpace(userText))
 	if text == "" {
 		return false
 	}
-	if IsCatalogListQuestion(userText) {
+	if isGeneralStoreCatalogQuestion(userText) {
 		return false
 	}
-	hints := []string{"harga", "stok", "stock", "ready", "tersedia", "berapa", "rp ", "rp."}
+	hints := []string{"harga", "stok", "stock", "ready", "berapa", "rp ", "rp."}
+	// "tersedia" hanya inquiry produk jika tidak tanya umum (mis. "stok jeans ready?").
+	if strings.Contains(text, "tersedia") && !strings.Contains(text, "apa") {
+		hints = append(hints, "tersedia")
+	}
 	for _, h := range hints {
 		if strings.Contains(text, h) {
 			return true
@@ -84,11 +125,206 @@ func IsCatalogProductInquiry(userText string) bool {
 	return false
 }
 
+// IsPricingUnitClarification — tanya satuan harga (per pcs/paket/piece), sering follow-up "itu harga...".
+func IsPricingUnitClarification(userText string) bool {
+	text := strings.ToLower(strings.TrimSpace(userText))
+	if text == "" {
+		return false
+	}
+	signals := []string{
+		"per piece", "per paket", "per pcs", "per pc", "per potong", "per biji",
+		"per unit", "satu pcs", "satu paket", "satu biji", "harga per",
+		"hitung per", "bayar per",
+		"paket isi", "isi berapa", "isi nya berapa", "isinya berapa",
+		"1 paket", "satu paket isi",
+	}
+	for _, s := range signals {
+		if strings.Contains(text, s) {
+			return true
+		}
+	}
+	if strings.Contains(text, "bingung") &&
+		(strings.Contains(text, "harga") || strings.Contains(text, "pcs") || strings.Contains(text, "paket") || strings.Contains(text, "piece")) {
+		return true
+	}
+	if (strings.Contains(text, "itu") || strings.Contains(text, "ini")) &&
+		strings.Contains(text, "harga") &&
+		(strings.Contains(text, "pcs") || strings.Contains(text, "paket") || strings.Contains(text, "piece")) {
+		return true
+	}
+	return false
+}
+
+func isCatalogContextualReference(userText string) bool {
+	text := strings.ToLower(strings.TrimSpace(userText))
+	prefixes := []string{"itu ", "ini ", "yang tadi", "yang barusan", "produk itu", "harga itu", "yang ini"}
+	for _, p := range prefixes {
+		if strings.HasPrefix(text, p) || strings.Contains(text, " "+strings.TrimSpace(p)) {
+			return true
+		}
+	}
+	return false
+}
+
+func matchCatalogFromRecentOutbound(history []dbMessage, catalog []dbCatalogItem) *dbCatalogItem {
+	if len(history) == 0 || len(catalog) == 0 {
+		return nil
+	}
+	seen := 0
+	for i := len(history) - 1; i >= 0 && seen < 4; i-- {
+		if history[i].Direction != "out" {
+			continue
+		}
+		seen++
+		if match := matchCatalogItem(history[i].Body, catalog); match != nil {
+			return match
+		}
+	}
+	return nil
+}
+
+func resolveCatalogMatch(userText string, history []dbMessage, catalog []dbCatalogItem) *dbCatalogItem {
+	if match := matchCatalogItem(userText, catalog); match != nil {
+		return match
+	}
+	if isCatalogContextualReference(userText) || IsPricingUnitClarification(userText) ||
+		IsConsultingPurchaseQuestion(userText) {
+		return matchCatalogFromRecentOutbound(history, catalog)
+	}
+	return nil
+}
+
+func extractPackCountFromName(name string) int {
+	if n := bracketPackCount(name); n > 1 {
+		return n
+	}
+	if m := catalogLeadingPackRe.FindStringSubmatch(name); len(m) > 1 {
+		if n, err := strconv.Atoi(m[1]); err == nil && n > 1 {
+			return n
+		}
+	}
+	return 0
+}
+
+// bracketPackCount — judul [N PCS] di Omah Apparel: sell_price = harga 1 paket (isi N pcs), bukan per pcs.
+func bracketPackCount(name string) int {
+	if m := catalogPackInNameRe.FindStringSubmatch(name); len(m) > 1 {
+		if n, err := strconv.Atoi(m[1]); err == nil && n > 1 {
+			return n
+		}
+	}
+	return 0
+}
+
+type catalogPriceInfo struct {
+	packCount       int
+	isPackListing   bool
+	listPrice       float64
+	unitLabel       string
+	perPiecePrice   float64
+}
+
+func parseCatalogPriceInfo(it *dbCatalogItem) catalogPriceInfo {
+	info := catalogPriceInfo{unitLabel: "pcs"}
+	if it == nil || it.SellPrice <= 0 {
+		return info
+	}
+	unit := strings.TrimSpace(it.SellUnit)
+	if unit == "" {
+		unit = "pcs"
+	}
+	info.listPrice = it.SellPrice
+	info.packCount = bracketPackCount(it.Name)
+	if info.packCount > 1 {
+		info.isPackListing = true
+		info.unitLabel = "paket"
+		info.perPiecePrice = it.SellPrice / float64(info.packCount)
+	} else {
+		info.unitLabel = unit
+	}
+	return info
+}
+
+func buildPricingClarificationReply(formal bool, it *dbCatalogItem) string {
+	if it == nil {
+		return ""
+	}
+	price := parseCatalogPriceInfo(it)
+	name := shortDisplayName(it.Name)
+	priceLine := formatCatalogPrice(it)
+
+	var lines []string
+	if formal {
+		lines = append(lines, fmt.Sprintf("Untuk %s:", name))
+	} else {
+		lines = append(lines, fmt.Sprintf("Kak, untuk %s:", name))
+	}
+	lines = append(lines, "")
+	lines = append(lines, fmt.Sprintf("Harga di katalog: %s.", priceLine))
+	if price.isPackListing {
+		if formal {
+			lines = append(lines, fmt.Sprintf("1 paket berisi %d pcs.", price.packCount))
+			lines = append(lines, fmt.Sprintf("Per pcs ≈ %s (%s ÷ %d).", formatMoney(price.perPiecePrice), formatMoney(price.listPrice), price.packCount))
+		} else {
+			lines = append(lines, fmt.Sprintf("Judul [%d PCS] = 1 paket isi %d pcs ya kak.", price.packCount, price.packCount))
+			lines = append(lines, fmt.Sprintf("Harga 1 biji ≈ %s (%s ÷ %d).", formatMoney(price.perPiecePrice), formatMoney(price.listPrice), price.packCount))
+		}
+	}
+	cta := "Mau pesan per pcs atau per paket? Sebut jumlahnya ya kak."
+	if formal {
+		cta = "Silakan sebutkan jumlah pesanan (per pcs atau per paket)."
+	}
+	if price.isPackListing {
+		cta = "Kalau mau pesan, sebut berapa paket ya kak."
+		if formal {
+			cta = "Jika ingin memesan, sebutkan jumlah paket."
+		}
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n") + "\n\n" + cta)
+}
+
+func buildRetailPolicyReply(formal bool, it *dbCatalogItem) string {
+	if it == nil {
+		return ""
+	}
+	price := parseCatalogPriceInfo(it)
+	name := shortDisplayName(it.Name)
+	priceLine := formatCatalogPrice(it)
+
+	var lines []string
+	if price.isPackListing {
+		if formal {
+			lines = append(lines, fmt.Sprintf("Untuk %s:", name))
+			lines = append(lines, "")
+			lines = append(lines, fmt.Sprintf("Dijual per paket isi %d pcs (belum eceran 1 biji terpisah).", price.packCount))
+			lines = append(lines, fmt.Sprintf("Harga paket: %s.", priceLine))
+			lines = append(lines, fmt.Sprintf("Per pcs ≈ %s.", formatMoney(price.perPiecePrice)))
+		} else {
+			lines = append(lines, fmt.Sprintf("Kak, %s dijual per paket isi %d pcs ya — belum eceran 1 biji.", name, price.packCount))
+			lines = append(lines, fmt.Sprintf("Harga 1 paket: %s (~%s/biji).", priceLine, formatMoney(price.perPiecePrice)))
+		}
+	} else {
+		if formal {
+			lines = append(lines, fmt.Sprintf("Bisa kak, %s dijual per %s.", name, price.unitLabel))
+			lines = append(lines, fmt.Sprintf("Harga: %s.", priceLine))
+		} else {
+			lines = append(lines, fmt.Sprintf("Bisa kak, %s bisa beli per %s.", name, price.unitLabel))
+			lines = append(lines, fmt.Sprintf("Harganya %s.", priceLine))
+		}
+	}
+	cta := "Kalau sudah mau pesan, bilang aja ya kak — nanti saya bantu data pengirimannya."
+	if formal {
+		cta = "Jika ingin memesan, silakan beri tahu — kami bantu proses pengiriman."
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n") + "\n\n" + cta)
+}
+
 // replyFromBusinessCatalog answers from business_catalog_item without LLM/KB hijack.
 func replyFromBusinessCatalog(
 	userText string,
 	profile *dbBusinessProfile,
 	catalog []dbCatalogItem,
+	history []dbMessage,
 ) (reply string, handled bool) {
 	if profile == nil {
 		return "", false
@@ -96,12 +332,25 @@ func replyFromBusinessCatalog(
 	formal := strOrEmpty(profile.Tone) == "formal"
 	bizName := strings.TrimSpace(profile.BusinessName)
 
-	if IsCatalogBrowsingIntent(userText) {
+	if IsCatalogBrowsingIntent(userText) || isGeneralStoreCatalogQuestion(userText) {
 		return buildCatalogListReply(formal, bizName, catalog, profile), true
 	}
 
-	// Checkout intent → order flow state machine, bukan balasan katalog statis.
+	// Checkout eksplisit → order flow state machine, bukan balasan katalog statis.
 	if HasPurchaseIntent(userText) {
+		return "", false
+	}
+
+	if IsConsultingPurchaseQuestion(userText) {
+		if match := resolveCatalogMatch(userText, history, catalog); match != nil {
+			return buildRetailPolicyReply(formal, match), true
+		}
+	}
+
+	if IsPricingUnitClarification(userText) || isCatalogContextualReference(userText) {
+		if match := resolveCatalogMatch(userText, history, catalog); match != nil {
+			return buildPricingClarificationReply(formal, match), true
+		}
 		return "", false
 	}
 
@@ -109,9 +358,15 @@ func replyFromBusinessCatalog(
 		if len(catalog) == 0 {
 			return buildCatalogEmptyReply(formal, bizName, profile), true
 		}
-		if match := matchCatalogItem(userText, catalog); match != nil {
+		if match := resolveCatalogMatch(userText, history, catalog); match != nil {
+			if IsPricingUnitClarification(userText) {
+				return buildPricingClarificationReply(formal, match), true
+			}
 			qty, _ := parseOrderQty(userText)
 			return buildCatalogItemReply(formal, match, qty), true
+		}
+		if isCatalogContextualReference(userText) || IsPricingUnitClarification(userText) {
+			return "", false
 		}
 		return buildCatalogNotFoundReply(formal, bizName, catalog, profile), true
 	}
@@ -184,11 +439,12 @@ func buildCatalogItemReply(formal bool, it *dbCatalogItem, qty int) string {
 		lines = append(lines, "Ukuran: "+size)
 	}
 	if qty > 0 && it.SellPrice > 0 {
+		price := parseCatalogPriceInfo(it)
 		lines = append(lines, "")
 		lines = append(lines, fmt.Sprintf("Qty: %d", qty))
 		lines = append(lines, "")
 		lines = append(lines, "Subtotal:")
-		lines = append(lines, formatMoney(float64(qty)*it.SellPrice))
+		lines = append(lines, formatMoney(float64(qty)*price.listPrice))
 	}
 	cta := "Kalau mau lanjut order, sebut jumlah + data pengiriman ya kak."
 	if formal {
@@ -268,13 +524,12 @@ func BuildCatalogContext(catalog []dbCatalogItem) string {
 			lines = append(lines, fmt.Sprintf("…+%d produk lainnya", len(catalog)-30))
 			break
 		}
-		unit := it.SellUnit
-		if unit == "" {
-			unit = "pcs"
-		}
 		price := "harga belum di-set"
 		if it.SellPrice > 0 {
-			price = fmt.Sprintf("Rp%.0f/%s", it.SellPrice, unit)
+			price = formatCatalogPrice(&it)
+			if info := parseCatalogPriceInfo(&it); info.isPackListing {
+				price += fmt.Sprintf(" (~%s/pcs)", formatMoney(info.perPiecePrice))
+			}
 		}
 		lines = append(lines, fmt.Sprintf("- %s | %s | kode internal: %s", it.Name, price, it.ExternalCode))
 	}
