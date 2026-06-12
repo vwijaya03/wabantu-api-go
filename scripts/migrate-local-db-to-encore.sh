@@ -184,7 +184,7 @@ else
   echo "[5/6] Skipped — no tenant schemas."
 fi
 
-echo "  Fixing ownership + GRANTs (encore-migrator)..."
+echo "  Fixing ownership + GRANTs (db_system_admin / db_tenant_admin)..."
 "$ROOT/scripts/fix-cloud-db-grants.sh" "$ENV_NAME"
 "$ROOT/scripts/verify-cloud-deploy-ready.sh" "$ENV_NAME"
 

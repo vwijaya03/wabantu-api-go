@@ -138,7 +138,8 @@ encore db conn-uri tenant --env=staging --write
 | `--write` | Baca + tulis **data** di tabel (bukan owner schema `t_*`) |
 | `--admin` | Owner schema `t_*` — `DROP SCHEMA`, migrasi, restore |
 
-Schema `t_*` dimiliki role admin Encore (mis. `encore_admin_...`), **bukan** user `encore` / `encore_writer` dari `--write`.  
+Schema `t_*` dimiliki **`db_tenant_admin`** (database owner — role yang dipakai Encore saat deploy dynamic grants).  
+Koneksi `--admin` (`encore_admin_...`) bisa `SET ROLE db_tenant_admin` untuk DDL.  
 `DROP SCHEMA ... CASCADE` dengan koneksi `--write` → error `must be owner of schema`.
 
 ### Hapus tenant / schema `t_*`

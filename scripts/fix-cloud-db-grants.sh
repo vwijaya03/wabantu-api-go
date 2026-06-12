@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Fix Postgres ownership + GRANTs after migrate-local-db-to-encore.sh (Encore Cloud).
 #
-# Encore deploy runs migrations + dynamic grants as role "encore-migrator".
-# pg_restore --no-owner leaves schemas/tables owned by the wrong role → deploy fails:
-#   - permission denied for schema t_*
-#   - permission denied for table schema_migrations
+# Encore deploy runs migrations + dynamic grants as the database owner role:
+#   - system DB  → db_system_admin
+#   - tenant DB  → db_tenant_admin
+# pg_restore --no-owner leaves schemas/tables owned by encore_admin_* → deploy fails:
+#   permission denied for schema t_*
 #
 # Usage: ./scripts/fix-cloud-db-grants.sh staging
 set -euo pipefail
@@ -16,34 +17,35 @@ cd "$ROOT"
 SYSTEM_URI="$(encore db conn-uri system --env="$ENV_NAME" --admin)"
 TENANT_URI="$(encore db conn-uri tenant --env="$ENV_NAME" --admin)"
 
-ADMIN_ROLE="$(psql "$TENANT_URI" -tAc "SELECT current_user" | tr -d '[:space:]')"
-MIGRATOR_ROLE="$(psql "$TENANT_URI" -tAc "SELECT rolname FROM pg_roles WHERE rolname = 'encore-migrator' LIMIT 1" | tr -d '[:space:]')"
-TARGET_ROLE="${MIGRATOR_ROLE:-$ADMIN_ROLE}"
+SYSTEM_OWNER="$(psql "$SYSTEM_URI" -tAc "
+  SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = current_database()" | tr -d '[:space:]')"
+TENANT_OWNER="$(psql "$TENANT_URI" -tAc "
+  SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = current_database()" | tr -d '[:space:]')"
 
-if [[ -z "$TARGET_ROLE" ]]; then
-  echo "ERROR: could not resolve target DB role" >&2
+if [[ -z "$SYSTEM_OWNER" || -z "$TENANT_OWNER" ]]; then
+  echo "ERROR: could not resolve database owner roles" >&2
   exit 1
 fi
 
 echo "=== Fix cloud DB grants ($ENV_NAME) ==="
-echo "Admin role:   $ADMIN_ROLE"
-echo "Target owner: $TARGET_ROLE (Encore migrator + dynamic grants)"
+echo "System DB owner (dynamic grants): $SYSTEM_OWNER"
+echo "Tenant DB owner (dynamic grants): $TENANT_OWNER"
 echo
 
 fix_database() {
   local label="$1"
   local uri="$2"
   local schema_regex="$3"
+  local target_role="$4"
 
-  echo "--- $label ---"
+  echo "--- $label (owner → $target_role) ---"
   psql "$uri" -v ON_ERROR_STOP=1 <<SQL
 DO \$\$
 DECLARE
   r record;
   s text;
-  target_role text := '${TARGET_ROLE}';
+  target_role text := '${target_role}';
 BEGIN
-  -- Reassign objects to encore-migrator (or admin fallback).
   FOR r IN
     SELECT DISTINCT pg_get_userbyid(c.relowner) AS owner
     FROM pg_class c
@@ -86,20 +88,29 @@ END \$\$;
 SQL
 }
 
-fix_database "system DB (public)" "$SYSTEM_URI" '^public\$'
-fix_database "tenant DB (t_*)" "$TENANT_URI" '^t_'
+fix_database "system DB (public)" "$SYSTEM_URI" '^public\$' "$SYSTEM_OWNER"
+fix_database "tenant DB (t_*)" "$TENANT_URI" '^t_' "$TENANT_OWNER"
 
 echo
-echo "Verify system public.schema_migrations:"
+echo "Verify system public.schema_migrations (expect: $SYSTEM_OWNER):"
 psql "$SYSTEM_URI" -c "
   SELECT tablename, tableowner
   FROM pg_tables WHERE schemaname = 'public' AND tablename = 'schema_migrations';"
 
 echo
-echo "Verify tenant schema owners (expect: $TARGET_ROLE):"
+echo "Verify tenant schema owners (expect: $TENANT_OWNER):"
 psql "$TENANT_URI" -c "
   SELECT nspname AS schema, pg_get_userbyid(nspowner) AS owner
   FROM pg_namespace WHERE nspname ~ '^t_' ORDER BY 1;"
 
 echo
-echo "Done. Retry Encore deploy (push / Redeploy in dashboard)."
+echo "Verify db_tenant_admin can access t_* schemas:"
+psql "$TENANT_URI" -c "
+  SELECT nspname,
+         has_schema_privilege('$TENANT_OWNER', nspname, 'USAGE') AS usage,
+         has_schema_privilege('$TENANT_OWNER', nspname, 'CREATE') AS create
+  FROM pg_namespace WHERE nspname ~ '^t_' ORDER BY 1;"
+
+echo
+echo "Done. Run: ./scripts/verify-cloud-deploy-ready.sh $ENV_NAME"
+echo "Then retry Encore deploy."

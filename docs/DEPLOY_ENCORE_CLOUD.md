@@ -443,8 +443,8 @@ Custom domain & production AWS/GCP: plan Pro — https://encore.dev/docs/platfor
 | `pg_restore` exit 1, `RI_ConstraintTrigger` | Managed PG tidak bisa `DISABLE TRIGGER` pada FK system | Abaikan jika script cetak `ok system tenant rows: N` |
 | `schema "public" already exists` | Schema system sudah ada di cloud | Normal saat re-run; script terbaru skip DDL jika tabel sudah ada |
 | Login `db error` setelah migrasi | `pg_restore --no-privileges` — role `encore_writer` tidak punya `SELECT` | `./scripts/fix-cloud-db-grants.sh staging` (script migrasi terbaru sudah GRANT otomatis) |
-| Deploy gagal: `permission denied for schema t_*` (dynamic grants) | Schema/tabel bukan milik `encore-migrator` setelah `pg_restore` | `./scripts/fix-cloud-db-grants.sh staging` → `./scripts/verify-cloud-deploy-ready.sh staging` → redeploy |
-| Deploy gagal: `permission denied for table schema_migrations` | Tabel migrasi system DB owner salah | Sama — `fix-cloud-db-grants.sh` (reassign ke `encore-migrator`) |
+| Deploy gagal: `permission denied for schema t_*` (dynamic grants) | Schema `t_*` bukan milik `db_tenant_admin` setelah `pg_restore` | `./scripts/fix-cloud-db-grants.sh staging` → `./scripts/verify-cloud-deploy-ready.sh staging` → redeploy |
+| Deploy gagal: `permission denied for table schema_migrations` | Tabel migrasi bukan milik `db_system_admin` / `db_tenant_admin` | Sama — `fix-cloud-db-grants.sh` (reassign ke database owner role) |
 | API `prepare catalog pricing failed` / DDL error | App role cloud tidak bisa `CREATE`/`ALTER`/`DROP` | Deploy kode terbaru (`shared/tenantschema` skip DDL jika schema sudah ada); `./scripts/verify-cloud-tenant-schemas.sh staging` |
 | `relation "public.tenant" does not exist` | DB cloud **kosong** (belum ada tabel) | Script terbaru restore **schema system** dulu; atau `git push encore` sampai deploy sukses |
 | Webhook Meta gagal verifikasi | Token tidak sama | Samakan `WebhookVerifyToken` dengan Meta console |
@@ -476,7 +476,7 @@ Connect cloud account di dashboard → Encore provision RDS, dll. Lihat https://
 | `scripts/setup-secrets-for-cloud.sh` | Copy secrets `api/.env` → env cloud |
 | `scripts/setup-secrets-from-env.sh` | Copy secrets → `type:local` |
 | `scripts/migrate-local-db-to-encore.sh` | Migrasi Postgres lokal → cloud (+ GRANT otomatis) |
-| `scripts/fix-cloud-db-grants.sh` | Reassign owner ke `encore-migrator` + GRANT (wajib setelah migrasi DB) |
+| `scripts/fix-cloud-db-grants.sh` | Reassign owner ke `db_system_admin` / `db_tenant_admin` + GRANT (wajib setelah migrasi DB) |
 | `scripts/verify-cloud-deploy-ready.sh` | Cek owner `schema_migrations` + `t_*` sebelum push deploy |
 | `scripts/apply-tenant-schema-cloud.sh` | DDL pricing, `contact.status`, branch, workflow per `t_*` |
 | `scripts/apply-pii-schema-cloud.sh` | DDL kolom PII (`*_enc`, `*_idx`) semua schema `t_*` |
