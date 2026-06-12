@@ -268,6 +268,8 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	rlog.Info("AI job: inbound text", "lenUserText", len(userText))
 
 	if IsGreetingLike(userText) {
+		// Sapaan baru = sesi baru; jangan biarkan draft order Redis mengganggu pertanyaan berikutnya.
+		s.clearOrderState(ctx, payload.TenantID, convo.ID)
 		greet := GreetingReply(userText, strOrEmpty(profile.Tone), strOrEmpty(profile.GreetingTemplate))
 		out := metaNoLLM(reasonNonQuestion, PathGreeting)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
@@ -708,6 +710,22 @@ func (s *AutoReplyService) handleOrderFlow(
 		err := s.sendAiMessage(ctx, q, tenantID, convo, channel, contact, text, "system", out)
 		return err == nil, err
 	}
+	sendCatalog := func(text string) (bool, error) {
+		out := metaNoLLM(reasonAIGenerated, PathCatalogDB)
+		out.LogAndRecord(ctx, convo.ID, inboundID, 0, 0)
+		err := s.sendAiMessage(ctx, q, tenantID, convo, channel, contact, applyOutputPolicy(text), "ai", out)
+		return err == nil, err
+	}
+	tryCatalogEscape := func() (bool, error) {
+		if !IsCatalogBrowsingIntent(userText) && !isGeneralStoreCatalogQuestion(userText) {
+			return false, nil
+		}
+		s.clearOrderState(ctx, tenantID, convo.ID)
+		if catReply, ok := replyFromBusinessCatalog(userText, profile, catalog, history); ok {
+			return sendCatalog(catReply)
+		}
+		return false, nil
+	}
 	sendWithConfirm := func(st orderState, prompt string) (bool, error) {
 		line := catalogConfirmLine(st)
 		if line != "" {
@@ -722,6 +740,11 @@ func (s *AutoReplyService) handleOrderFlow(
 	}
 
 	state, _ := s.getOrderState(ctx, tenantID, convo.ID)
+	if state != nil {
+		if sent, err := tryCatalogEscape(); sent || err != nil {
+			return sent, err
+		}
+	}
 	hints := parseOrderHints(userText)
 	copyBase := func(st orderState) orderState {
 		st = normalizeOrderState(st)
@@ -885,8 +908,17 @@ func (s *AutoReplyService) handleOrderFlow(
 			st.Color = cl
 		}
 		if !st.variantComplete() {
+			if IsCatalogBrowsingIntent(userText) || isGeneralStoreCatalogQuestion(userText) {
+				s.clearOrderState(ctx, tenantID, convo.ID)
+				if catReply, ok := replyFromBusinessCatalog(userText, profile, catalog, history); ok {
+					return sendCatalog(catReply)
+				}
+			}
 			if wouldRepeatOutbound(history, tmpl.AskVariant) {
 				s.clearOrderState(ctx, tenantID, convo.ID)
+				if catReply, ok := replyFromBusinessCatalog(userText, profile, catalog, history); ok {
+					return sendCatalog(catReply)
+				}
 				return send(orderFlowLoopBreakReply(formal))
 			}
 			return send(tmpl.AskVariant)

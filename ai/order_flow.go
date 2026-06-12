@@ -451,6 +451,9 @@ func ShouldBreakOrderFlow(userText, step string) bool {
 	if IsConsultingPurchaseQuestion(userText) {
 		return true
 	}
+	if IsCatalogBrowsingIntent(userText) || isGeneralStoreCatalogQuestion(userText) {
+		return true
+	}
 	if IsOrderFlowCancelled(userText) {
 		return true
 	}

@@ -85,6 +85,7 @@ func isGeneralStoreCatalogQuestion(userText string) bool {
 	signals := []string{
 		"apa saja", "apa aja", "apa2",
 		"jualan apa", "jual apa", "menjual apa",
+		"kamu jualan", "kamu jual", "lu jualan", "lu jual",
 		"tersedia apa", "ada apa", "punya apa",
 		"semua produk", "semua barang", "macam-macam",
 	}
