@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Apply PII column DDL to all tenant schemas on Encore Cloud (requires --admin).
+# Apply core tenant schema patches on Encore Cloud (pricing, contact.status, branch, …).
+#
+# Prerequisite: encore auth login, admin access to tenant DB.
 #
 # Usage:
-#   ./scripts/apply-pii-schema-cloud.sh staging
+#   ./scripts/apply-tenant-schema-cloud.sh staging
 #
-# Webhook/inbox use encrypted contact writes only when phone_number_idx exists.
-# Until this runs, the app falls back to legacy phone_number columns.
+# On cloud the app runtime cannot CREATE/ALTER — this script uses --admin.
+# Run before or after apply-pii-schema-cloud.sh (order does not matter).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -13,10 +15,9 @@ ENV_NAME="${1:?Usage: $0 <encore-env> (e.g. staging)}"
 cd "$ROOT"
 
 ADMIN_URI="$(encore db conn-uri tenant --env="$ENV_NAME" --admin)"
+PATCH_SQL="$(go run ./scripts/cmd/cloud-tenant-patch-sql/)"
 
-PATCH_SQL="$(go run ./scripts/cmd/pii-patch-sql/)"
-
-echo "=== Apply PII schema patch ($ENV_NAME) ==="
+echo "=== Apply tenant schema patch ($ENV_NAME) ==="
 
 schemas="$(psql "$ADMIN_URI" -tAc "SELECT nspname FROM pg_namespace WHERE nspname ~ '^t_' ORDER BY 1")"
 if [[ -z "$schemas" ]]; then
@@ -39,4 +40,4 @@ if [[ "$fail" -ne 0 ]]; then
   exit 1
 fi
 
-echo "Done. Verify: ./scripts/verify-cloud-tenant-schemas.sh $ENV_NAME"
+echo "Done. Verify: ./scripts/verify-tenant-migrations-cloud.sh $ENV_NAME"

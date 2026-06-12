@@ -368,6 +368,33 @@ Update URL callback ke domain Encore Cloud:
 
 ---
 
+## Langkah 7b — Schema tenant & PII di cloud (setelah deploy)
+
+Di Encore Cloud, role aplikasi **tidak bisa** `CREATE TABLE` / `ALTER` — tenant lama yang di-migrate bisa ketinggalan patch (pricing, `contact.status`, dll.). Jalankan dengan role **admin**:
+
+```bash
+./scripts/apply-tenant-schema-cloud.sh staging
+./scripts/apply-pii-schema-cloud.sh staging
+```
+
+Script idempotent: menambah kolom `*_enc` / `*_idx` per schema `t_*`. Tabel modul opsional (events, finance, broadcast) **dilewati** jika belum ada di tenant tersebut — aman untuk schema parsial seperti `t_omah_apparel_1`.
+
+Lalu backfill data lama untuk **semua** tenant sekaligus:
+
+```bash
+./scripts/backfill-pii-cloud.sh staging
+```
+
+Verifikasi semua migrasi tenant sudah lengkap:
+
+```bash
+./scripts/verify-tenant-migrations-cloud.sh staging
+```
+
+(Satu schema saja: `DATABASE_URL=... DATA_ENCRYPTION_KEY=... go run ./scripts/cmd/backfill-pii/ -schema=t_xxx`)
+
+---
+
 ## Deploy ulang (update kode)
 
 Setelah setup awal, deploy berikutnya cukup:
@@ -448,6 +475,10 @@ Connect cloud account di dashboard → Encore provision RDS, dll. Lihat https://
 | `scripts/setup-secrets-from-env.sh` | Copy secrets → `type:local` |
 | `scripts/migrate-local-db-to-encore.sh` | Migrasi Postgres lokal → cloud (+ GRANT otomatis) |
 | `scripts/fix-cloud-db-grants.sh` | Perbaiki hak akses DB cloud setelah migrasi (login `db error`) |
+| `scripts/apply-tenant-schema-cloud.sh` | DDL pricing, `contact.status`, branch, workflow per `t_*` |
+| `scripts/apply-pii-schema-cloud.sh` | DDL kolom PII (`*_enc`, `*_idx`) semua schema `t_*` |
+| `scripts/backfill-pii-cloud.sh` | Backfill plaintext → terenkripsi semua tenant di cloud |
+| `scripts/verify-tenant-migrations-cloud.sh` | Cek PII, kolom contact, plaintext tersisa, GRANT per `t_*` |
 | `scripts/verify-cloud-tenant-schemas.sh` | Cek tabel tenant + GRANT SELECT di cloud |
 | `shared/tenantschema/` | Skip runtime DDL di Encore Cloud bila schema sudah lengkap |
 | `encore.app` | App ID Encore |
