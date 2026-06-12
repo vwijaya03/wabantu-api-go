@@ -48,20 +48,29 @@ else
   echo "OK: $count tenant schema(s) owned by $TENANT_OWNER"
 fi
 
-# Orphans: t_* in tenant DB but not registered in system.tenant
-mapfile -t registered < <(psql "$SYSTEM_URI" -tAc "
+# Orphans: t_* in tenant DB but not registered in tenant_company
+registered=()
+while IFS= read -r line; do
+  line="$(echo "$line" | tr -d '[:space:]')"
+  [[ -z "$line" ]] && continue
+  registered+=("$line")
+done < <(psql "$SYSTEM_URI" -tAc "
   SELECT tc.schema_name
   FROM tenant_company tc
   JOIN tenant t ON t.id = tc.tenant_id
   WHERE t.deleted_at IS NULL
     AND tc.schema_name IS NOT NULL AND tc.schema_name <> ''")
-mapfile -t all_schemas < <(psql "$TENANT_URI" -tAc "SELECT nspname FROM pg_namespace WHERE nspname ~ '^t_'")
+all_schemas=()
+while IFS= read -r line; do
+  line="$(echo "$line" | tr -d '[:space:]')"
+  [[ -z "$line" ]] && continue
+  all_schemas+=("$line")
+done < <(psql "$TENANT_URI" -tAc "SELECT nspname FROM pg_namespace WHERE nspname ~ '^t_'")
 orphan_list=()
 for s in "${all_schemas[@]}"; do
-  [[ -z "$s" ]] && continue
   found=0
   for r in "${registered[@]}"; do
-    [[ "$s" == "$(echo "$r" | tr -d '[:space:]')" ]] && found=1 && break
+    [[ "$s" == "$r" ]] && found=1 && break
   done
   [[ "$found" -eq 0 ]] && orphan_list+=("$s")
 done
