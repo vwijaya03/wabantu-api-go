@@ -72,6 +72,9 @@ func IsOrderStatusInquiry(userText string) bool {
 	if text == "" {
 		return false
 	}
+	if IsMinimumOrderQuestion(userText) {
+		return false
+	}
 	if IsOrderCancelRequest(userText) {
 		return false
 	}

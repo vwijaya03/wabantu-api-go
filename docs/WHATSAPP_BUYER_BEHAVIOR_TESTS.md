@@ -1,4 +1,4 @@
-# WhatsApp Buyer Behavior — Research & 1000 Unit Tests
+# WhatsApp Buyer Behavior — Research & 2000+ Unit Tests
 
 Dokumen ini merangkum perilaku pembeli via WhatsApp yang di-handle bot Omah Apparel, suite test otomatis, dan bug yang ditemukan + diperbaiki dari test tersebut.
 
@@ -10,7 +10,34 @@ cd api-go
 ./scripts/run-ai-unit-tests.sh
 # atau subset:
 encore test ./ai/ -run TestBuyerBehavior1000 -count=1
+encore test ./ai/ -run TestWABuyerCases2000 -count=1
 ```
+
+---
+
+## Suite 2000 — structured buyer cases
+
+`TestWABuyerCases2000` menjalankan **2000** kasus terstruktur dengan field:
+
+| Field | Arti |
+|-------|------|
+| `input_user` | Pesan pembeli (variasi bahasa) |
+| `current_state` | State FSM awal (opsional) |
+| `expected_state` | `none`, `ask_*`, `cleared`, `completed` |
+| `expected_intent` | `greeting`, `browsing`, `consulting`, `cart_ready`, `checkout`, `correction`, … |
+| `expected_response_behavior` | Perilaku balasan (bukan teks persis) |
+
+**25 kategori:** greeting, browse catalog, search, price, size, qty, MOQ, comparison, recommendation, add/update/remove cart, change product/qty/address/recipient, checkout, payment, order status, complaint, human escalation, correction, ambiguous intent, topic switching, abandoned cart, + adversarial.
+
+**Variasi bahasa:** formal, informal, typo, slang, Indo-English, regional (monggo/punten).
+
+| File | Fungsi |
+|------|--------|
+| `wa_buyer_cases_gen.go` | Generator 2000 kasus |
+| `wa_buyer_style.go` | Transformasi bahasa WA |
+| `wa_buyer_case.go` | `EvaluateWABuyerCase` + deteksi behavior |
+| `wa_buyer_assert.go` | Assertion fleksibel intent/behavior |
+| `wa_buyer_2000_test.go` | Runner |
 
 ---
 
@@ -115,9 +142,90 @@ Setelah `encore run`, uji 2–3 thread singkat di WA; sisanya di-cover 1000 test
 
 ---
 
+## Bug tambahan dari suite 2000 (adversarial)
+
+### 5. Sapaan formal menelan pesan belanja
+
+**Gejala:** `Selamat siang kak, jualan apa aja` / `harga abon berapa` dianggap **greeting** — tidak masuk katalog.
+
+**Penyebab:** `IsGreetingLike` match prefix `selamat siang` tanpa cek tail pesan.
+
+**Fix:** `greeting.go` + `safety.go` — `isCommerceDominant`, strip lead-in WA, tail setelah koma bukan greeting murni → bukan greeting.
+
+---
+
+### 6. `order` di `questionKeywords` → false consulting
+
+**Gejala:** `order abon 3 biji` tidak masuk order flow (`IsQuestionLike` true → `hasPurchaseIntent` false).
+
+**Penyebab:** Kata `order`/`pesan` dianggap pertanyaan hanya karena ada di `questionKeywords`.
+
+**Fix:** Hapus `order`/`pesan` dari `questionKeywords`; `IsConsultingPurchaseQuestion` hanya aktif jika ada `?` atau prefix `bisa`/`boleh`/`kalau`.
+
+---
+
+### 7. `mau 1 biji abon` = konsultasi MOQ
+
+**Gejala:** Pesanan eksplisit dengan `1 biji` dianggap tanya kebijakan eceran.
+
+**Penyebab:** `retailPolicySignals` match substring `1 biji` di `IsConsultingPurchaseQuestion`.
+
+**Fix:** `sales_state.go` — skip MOQ consult jika ada `mau`/`beli` + qty tanpa tanda tanya.
+
+---
+
+### 8. `min order` / `min pesan` = greeting
+
+**Gejala:** Pertanyaan MOQ dibalas sapaan.
+
+**Penyebab:** `IsCasualChatOpener` menganggap token `min` sebagai sapaan singkat.
+
+**Fix:** `IsMinimumOrderQuestion` di-check sebelum greeting; `IsCasualChatOpener` exclude MOQ.
+
+---
+
+### 9. `mau cari hello kitty` = checkout (hallucinated flow)
+
+**Gejala:** Pencarian produk memicu `cart_ready` + `ask_qty`.
+
+**Penyebab:** `hasPurchaseIntent` true karena `mau` + match katalog tanpa membedakan `cari`.
+
+**Fix:** `order_flow.go` — frasa `cari` tanpa intent order eksplisit bukan purchase intent.
+
+---
+
+### 10. Koreksi `ha?` tidak break flow
+
+**Gejala:** `ha?` / `Selamat siang kak, ha?` saat `ask_variant` tetap lanjut order.
+
+**Penyebab:** `IsUserSalesCorrection` tidak deteksi `ha?` dengan suffix (`ha? dong`) atau setelah lead-in formal.
+
+**Fix:** `sales_state.go` — `isConfusionOnly` per token pertama; cek tail setelah koma; `conversation_sim.go` return early saat break + set intent correction.
+
+---
+
+### 11. Simulator greeting butuh in-scope (drift dari production)
+
+**Gejala:** `halo` → `consulting` di test, padahal production selalu greeting.
+
+**Penyebab:** `conversation_sim.go` mensyaratkan `inScope` untuk greeting.
+
+**Fix:** Samakan `autoreply.go` — greeting selalu menang.
+
+---
+
+### 12. `hasPurchaseIntent` tanpa katalog di simulator
+
+**Gejala:** `saya jadi beli abon` tidak masuk FSM di sim.
+
+**Fix:** `conversation_sim.go` pakai `hasPurchaseIntent(text, catalog)`.
+
+---
+
 ## Ringkasan hasil test (terakhir)
 
 ```
-encore test ./ai/ -run TestBuyerBehavior -count=1  → PASS (1000 cases)
-encore test ./ai/ -count=1                         → PASS (semua paket ai)
+encore test ./ai/ -run TestBuyerBehavior1000 -count=1  → PASS
+encore test ./ai/ -run TestWABuyerCases2000 -count=1    → PASS (2000 cases)
+encore test ./ai/ -count=1                              → PASS (semua paket ai)
 ```

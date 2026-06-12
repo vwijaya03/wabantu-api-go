@@ -51,19 +51,21 @@ func IsConsultingPurchaseQuestion(userText string) bool {
 	}
 	for _, s := range retailPolicySignals {
 		if strings.Contains(text, s) {
+			// "mau 1 biji abon" = pesanan eksplisit, bukan tanya kebijakan eceran.
+			if !IsQuestionLike(userText) && mentionsOrderQty(text) &&
+				(strings.Contains(text, "mau") || strings.Contains(text, "pengen") ||
+					strings.Contains(text, "pengin") || hasOrderIntentText(userText)) {
+				return false
+			}
 			return true
 		}
 	}
 	hasBuy := hasOrderIntentText(userText) || strings.Contains(text, "mau")
-	for _, p := range consultingPurchasePrefixes {
-		if strings.HasPrefix(text, p+" ") || strings.HasPrefix(text, p) ||
-			strings.Contains(text, " "+p+" ") || strings.Contains(text, " "+p) {
-			if hasBuy || mentionsOrderQty(text) {
-				return true
-			}
-		}
+	if hasConsultingPurchasePrefix(text) && (hasBuy || mentionsOrderQty(text)) {
+		return true
 	}
-	if IsQuestionLike(userText) && (hasBuy || mentionsOrderQty(text)) {
+	if (strings.Contains(text, "?") || hasConsultingPurchasePrefix(text)) &&
+		(hasBuy || mentionsOrderQty(text)) {
 		if !hasExplicitCartReadyPhrase(text) {
 			return true
 		}
@@ -71,19 +73,45 @@ func IsConsultingPurchaseQuestion(userText string) bool {
 	return false
 }
 
+func hasConsultingPurchasePrefix(text string) bool {
+	for _, p := range consultingPurchasePrefixes {
+		if strings.HasPrefix(text, p+" ") || strings.HasPrefix(text, p) ||
+			strings.Contains(text, " "+p+" ") || strings.Contains(text, " "+p) {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeBuyerTextForRules(text string) string {
+	text = strings.ToLower(strings.TrimSpace(text))
+	repl := strings.NewReplacer("pengen", "mau", "pengin", "mau", "gw ", "saya ", "gue ", "saya ")
+	return repl.Replace(text)
+}
+
 // IsUserSalesCorrection — user menolak checkout / koreksi AI ("masih tanya", "jangan checkout dulu").
 func IsUserSalesCorrection(userText string) bool {
-	text := strings.ToLower(strings.TrimSpace(userText))
+	text := normalizeBuyerTextForRules(userText)
 	if text == "" {
 		return false
 	}
+	if idx := strings.Index(text, ","); idx >= 0 {
+		tail := strings.TrimSpace(text[idx+1:])
+		if tail != "" && (matchesSalesCorrectionPhrases(tail) || isConfusionOnly(tail)) {
+			return true
+		}
+	}
+	if matchesSalesCorrectionPhrases(text) || isConfusionOnly(text) {
+		return true
+	}
+	return false
+}
+
+func matchesSalesCorrectionPhrases(text string) bool {
 	for _, p := range salesCorrectionPhrases {
 		if strings.Contains(text, p) {
 			return true
 		}
-	}
-	if isConfusionOnly(userText) {
-		return true
 	}
 	return false
 }
@@ -91,9 +119,16 @@ func IsUserSalesCorrection(userText string) bool {
 func isConfusionOnly(userText string) bool {
 	text := strings.ToLower(strings.TrimSpace(userText))
 	text = strings.TrimRight(text, "?!. ")
-	switch text {
+	if text == "" {
+		return false
+	}
+	fields := strings.Fields(strings.NewReplacer("?", " ", "!", " ").Replace(text))
+	if len(fields) == 0 {
+		return false
+	}
+	switch fields[0] {
 	case "ha", "hah", "hei", "eh", "loh", "lah", "kok":
-		return true
+		return len(fields) <= 2
 	}
 	return false
 }

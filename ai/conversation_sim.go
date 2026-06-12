@@ -41,7 +41,8 @@ func (s *ConversationSimulator) appendHistory(in, out string) {
 func (s *ConversationSimulator) Turn(userText string) TurnOutcome {
 	out := TurnOutcome{}
 
-	if IsGreetingLike(userText) && s.inScope(userText) {
+	// Match autoreply.go: greetings always win (clear draft order), tidak perlu in-scope.
+	if IsGreetingLike(userText) {
 		s.Order = nil
 		out.Path = PathGreeting
 		out.Intent = SalesIntent{State: SalesStateGreeting}
@@ -63,7 +64,7 @@ func (s *ConversationSimulator) Turn(userText string) TurnOutcome {
 	}
 
 	orderActive := s.Order != nil
-	inScope := s.inScope(userText)
+	inScope := s.inScope(userText) || isCommerceDominant(userText)
 
 	if orderActive {
 		step := s.Order.Step
@@ -71,6 +72,15 @@ func (s *ConversationSimulator) Turn(userText string) TurnOutcome {
 			s.Order = nil
 			out.BrokeFlow = true
 			orderActive = false
+			out.Path = PathConsulting
+			if IsUserSalesCorrection(userText) {
+				out.Intent = SalesIntent{State: SalesStateCorrection, Topic: SalesTopicGeneral, Confidence: 0.92}
+				out.Reply = orderFlowLoopBreakReply(strOrEmpty(s.Profile.Tone) == "formal")
+			} else {
+				out.Intent = ResolveSalesIntent(userText, s.History, false, s.inScope(userText), s.Profile, s.Catalog)
+			}
+			s.appendHistory(userText, out.Reply)
+			return out
 		} else {
 			res := AdvanceOrderFlow(OrderFlowInput{
 				UserText: userText,
@@ -86,6 +96,7 @@ func (s *ConversationSimulator) Turn(userText string) TurnOutcome {
 			out.Path = res.Path
 			out.Reply = res.Reply
 			out.Completed = res.Completed
+			out.Intent = SalesIntent{State: SalesStateCheckout, Topic: SalesTopicGeneral, Confidence: 0.9}
 			if res.Cleared {
 				s.Order = nil
 			} else {
@@ -125,7 +136,7 @@ func (s *ConversationSimulator) Turn(userText string) TurnOutcome {
 	}
 
 	cr := salesIntentToClassifier(intent)
-	if cr.Label == "order_intent" || HasPurchaseIntent(userText) {
+	if cr.Label == "order_intent" || hasPurchaseIntent(userText, s.Catalog) {
 		res := AdvanceOrderFlow(OrderFlowInput{
 			UserText: userText,
 			State:    s.Order,

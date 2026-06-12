@@ -14,7 +14,7 @@ import (
 
 var (
 	// Explicit qty with whitespace before unit (avoids matching "1PCS" in catalog product titles).
-	orderQtyWithUnitRe = regexp.MustCompile(`(?i)(?:^|\s)(\d{1,4})\s+(pcs|pc|biji|buah|item|unit|piece|pieces|paket)\b`)
+	orderQtyWithUnitRe = regexp.MustCompile(`(?i)(?:^|\s)(\d{1,4})\s+(pcs|pc|biji|buah|item|unit|piece|pieces|paket|pket)\b`)
 	orderQtyLabelRe    = regexp.MustCompile(`(?i)\b(?:qty|jumlah)\s*[:\-]?\s*(\d{1,4})\b`)
 	orderQtyBareLineRe = regexp.MustCompile(`(?i)^\s*(\d{1,4})\s*(?:biji|pcs|pc|buah|piece|pieces|paket)?\s*[!.?]*\s*$`)
 	orderQtyLusinRe    = regexp.MustCompile(`(?i)(?:^|\s)(\d{1,3})\s*lusin\b`)
@@ -274,10 +274,18 @@ func hasOrderIntentText(userText string) bool {
 
 // HasPurchaseIntent — CART_READY: checkout eksplisit tanpa "?", bukan pertanyaan konsultasi.
 func HasPurchaseIntent(userText string) bool {
+	return hasPurchaseIntent(userText, nil)
+}
+
+func hasPurchaseIntent(userText string, catalog []dbCatalogItem) bool {
 	if IsConsultingPurchaseQuestion(userText) {
 		return false
 	}
 	text := strings.ToLower(strings.TrimSpace(userText))
+	if strings.Contains(text, "cari") && !hasOrderIntentText(userText) && !hasExplicitCartReadyPhrase(text) &&
+		!mentionsOrderQty(text) {
+		return false
+	}
 	if text == "" || IsQuestionLike(userText) {
 		return false
 	}
@@ -309,6 +317,16 @@ func HasPurchaseIntent(userText string) bool {
 		}
 		for _, kw := range apparelProductKeywords {
 			if strings.Contains(text, kw) {
+				return true
+			}
+		}
+	}
+	if len(catalog) > 0 {
+		if match := matchCatalogItem(userText, catalog); match != nil {
+			if _, ok := parseOrderQty(userText); ok {
+				return true
+			}
+			if hasWant || hasOrderIntentText(userText) {
 				return true
 			}
 		}

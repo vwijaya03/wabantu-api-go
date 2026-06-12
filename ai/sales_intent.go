@@ -73,6 +73,24 @@ func ResolveSalesIntent(
 	if IsShippingQuoteQuestion(userText) {
 		return SalesIntent{State: SalesStateConsulting, Topic: SalesTopicShipping, Confidence: 0.9}
 	}
+	if IsComplaintLike(userText) {
+		return SalesIntent{State: SalesStateConsulting, Topic: SalesTopicGeneral, Confidence: 0.9}
+	}
+	if IsHumanEscalationRequest(userText) {
+		return SalesIntent{State: SalesStateConsulting, Topic: SalesTopicGeneral, Confidence: 0.9}
+	}
+	if IsPaymentQuestion(userText) {
+		return SalesIntent{State: SalesStateConsulting, Topic: SalesTopicGeneral, Confidence: 0.9}
+	}
+	if IsMinimumOrderQuestion(userText) {
+		return SalesIntent{State: SalesStateConsulting, Topic: SalesTopicRetailPolicy, Confidence: 0.88}
+	}
+	if IsProductComparisonQuestion(userText) {
+		return SalesIntent{State: SalesStateConsulting, Topic: SalesTopicProduct, Confidence: 0.88}
+	}
+	if IsRecommendationRequest(userText) {
+		return SalesIntent{State: SalesStateBrowsing, Topic: SalesTopicList, Confidence: 0.88}
+	}
 	if IsOrderRevisionMessage(userText) {
 		return SalesIntent{State: SalesStateCheckout, Topic: SalesTopicProduct, Confidence: 0.92}
 	}
@@ -80,7 +98,7 @@ func ResolveSalesIntent(
 		(IsOrderContinuationMessage(userText) || HasPurchaseIntent(userText)) {
 		return SalesIntent{State: SalesStateCheckout, Topic: SalesTopicGeneral, Confidence: 0.88}
 	}
-	if HasPurchaseIntent(userText) {
+	if hasPurchaseIntent(userText, catalog) {
 		if IsOffBusinessProductRequest(userText, businessScopeKeywords(profile)) {
 			return SalesIntent{State: SalesStateOutOfScope, Confidence: 0.92}
 		}

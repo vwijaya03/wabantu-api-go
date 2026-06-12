@@ -27,8 +27,9 @@ func IsCatalogBrowsingIntent(userText string) bool {
 	phrases := []string{
 		"tanya produk", "tanya-tanya produk", "nanya produk",
 		"produk di toko", "produk yang dijual", "yang dijual di toko",
-		"tunjukkan produk", "tunjukan produk", "lihat produk", "mau lihat produk",
-		"beberapa produk", "produk apa", "jual apa", "jualan apa",
+		"tunjukkan produk", "tunjukan produk", "lihat produk", "liat katalog",
+		"mau liat katalog", "mau lihat produk",
+		"beberapa produk", "produk apa", "produknya apa", "jual apa", "jualan apa",
 		"tersedia jualan", "tersedia produk", "tersedia barang",
 		"di toko ini", "di toko ada", "toko ini jual",
 	}
@@ -52,6 +53,7 @@ func IsCatalogListQuestion(userText string) bool {
 		"lihat katalog", "tunjukkan katalog", "tampilkan katalog", "show katalog",
 		"produk apa saja", "barang apa saja", "apa saja produk", "apa saja barang",
 		"jualan apa saja", "jualan apa aja", "jual apa saja", "jual apa aja",
+		"menu apa saja", "menu apa aja", "show catalog", "show katalog",
 		"katalog apa", "koleksi apa", "jenis produk", "macam produk", "macam barang",
 		"minta list", "kasih list", "berikan list", "kirim list", "list dong",
 		"ada produk apa", "tersedia apa", "tersedia jualan", "menjual apa",
@@ -113,7 +115,7 @@ func IsCatalogProductInquiry(userText string) bool {
 	if isGeneralStoreCatalogQuestion(userText) {
 		return false
 	}
-	hints := []string{"harga", "stok", "stock", "ready", "berapa", "rp ", "rp."}
+	hints := []string{"harga", "harg", "stok", "stock", "ready", "berapa", "brp", "rp ", "rp.", "price"}
 	// "tersedia" hanya inquiry produk jika tidak tanya umum (mis. "stok jeans ready?").
 	if strings.Contains(text, "tersedia") && !strings.Contains(text, "apa") {
 		hints = append(hints, "tersedia")
@@ -336,12 +338,13 @@ func replyFromBusinessCatalog(
 	formal := strOrEmpty(profile.Tone) == "formal"
 	bizName := strings.TrimSpace(profile.BusinessName)
 
-	if IsCatalogBrowsingIntent(userText) || isGeneralStoreCatalogQuestion(userText) {
+	if IsCatalogBrowsingIntent(userText) || isGeneralStoreCatalogQuestion(userText) ||
+		IsRecommendationRequest(userText) {
 		return buildCatalogListReply(formal, bizName, catalog, profile), true
 	}
 
 	// Checkout eksplisit → order flow state machine, bukan balasan katalog statis.
-	if HasPurchaseIntent(userText) {
+	if hasPurchaseIntent(userText, catalog) {
 		return "", false
 	}
 

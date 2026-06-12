@@ -26,7 +26,7 @@ var idStopwords = map[string]struct{}{
 var questionKeywords = []string{
 	"apa", "apakah", "berapa", "gimana", "bagaimana",
 	"kapan", "bisa", "stok", "size", "ukuran",
-	"harga", "order", "pesan", "ongkir", "dimana", "lokasi", "mana",
+	"harga", "ongkir", "dimana", "lokasi", "mana",
 }
 
 var greetingPrefixes = []string{
@@ -44,6 +44,7 @@ var retailIntentKeywords = []string{
 	"mau", "tanya", "nanya", "tny", "beli", "pesan", "order", "checkout",
 	"pcs", "pc", "biji", "buah", "qty", "jumlah", "unit", "saja",
 	"harga", "stok", "stock", "ready", "tersedia", "ada", "jual", "jualan",
+	"catalog", "menu", "rekomend", "minimum", "minimal", "min order",
 	"ukuran", "size", "warna", "model", "varian", "katalog", "produk", "barang",
 	"kirim", "ongkir", "pengiriman", "berapa", "apakah", "bisa", "cari", "butuh", "minat",
 	"toko", "tokonya", "dimana", "lokasi", "alamat", "terima kasih", "makasih",
@@ -119,25 +120,24 @@ func IsGreetingLike(raw string) bool {
 	if raw == "" {
 		return false
 	}
+	if IsMinimumOrderQuestion(raw) {
+		return false
+	}
 	text := strings.ToLower(strings.TrimSpace(raw))
 	if text == "" {
 		return false
 	}
-	for _, g := range greetingPrefixes {
-		if text == g || strings.HasPrefix(text, g+" ") {
-			return true
+	if idx := strings.Index(text, ","); idx >= 0 {
+		tail := strings.TrimSpace(text[idx+1:])
+		if tail != "" && (isCommerceDominant(tail) || !isPureGreetingCore(tail)) {
+			return false
 		}
 	}
-	for _, w := range standaloneGreetingWords {
-		if text == w {
-			return true
-		}
+	if isCommerceDominant(text) && !isPureGreetingCore(text) {
+		return false
 	}
-	// "selamat", "selamat kak", etc.
-	if text == "selamat" || strings.HasPrefix(text, "selamat ") {
-		return len(strings.Fields(text)) <= 4
-	}
-	if IsCasualChatOpener(text) {
+	core := stripWaPoliteLeadIn(text)
+	if isPureGreetingCore(text) || isPureGreetingCore(core) {
 		return true
 	}
 	return false

@@ -110,10 +110,89 @@ func formatGreetingReply(period GreetingPeriod, formal bool) string {
 	return phrase + " kak! Ada yang bisa aku bantu?"
 }
 
+// waPoliteLeadIns — prefix dari generator test / WA Indonesia sebelum maksud utama.
+var waPoliteLeadIns = []string{
+	"selamat pagi kak, ", "selamat siang kak, ", "selamat sore kak, ", "selamat malam kak, ",
+	"monggo mas, ", "punten mas, ", "hi kak, ",
+}
+
+func stripWaPoliteLeadIn(text string) string {
+	text = strings.ToLower(strings.TrimSpace(text))
+	for {
+		changed := false
+		for _, p := range waPoliteLeadIns {
+			if strings.HasPrefix(text, p) {
+				text = strings.TrimSpace(text[len(p):])
+				changed = true
+			}
+		}
+		if !changed {
+			break
+		}
+	}
+	return text
+}
+
+// isCommerceDominant — pesan berisi maksud belanja/konsultasi, bukan sapaan murni.
+func isCommerceDominant(text string) bool {
+	text = strings.ToLower(strings.TrimSpace(text))
+	if text == "" {
+		return false
+	}
+	if IsCatalogBrowsingIntent(text) || IsCatalogListQuestion(text) ||
+		IsRecommendationRequest(text) || IsMinimumOrderQuestion(text) ||
+		IsProductComparisonQuestion(text) || IsPaymentQuestion(text) ||
+		IsComplaintLike(text) || IsHumanEscalationRequest(text) ||
+		IsOrderStatusInquiry(text) || IsStoreLocationQuestion(text) ||
+		IsShippingQuoteQuestion(text) || hasOrderIntentText(text) ||
+		IsConsultingPurchaseQuestion(text) || hasPurchaseIntent(text, nil) {
+		return true
+	}
+	for _, kw := range retailIntentKeywords {
+		switch kw {
+		case "ada", "mau", "bisa", "apakah":
+			continue
+		}
+		if strings.Contains(text, kw) {
+			return true
+		}
+	}
+	for _, kw := range apparelProductKeywords {
+		if strings.Contains(text, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+func isPureGreetingCore(text string) bool {
+	text = strings.ToLower(strings.TrimSpace(text))
+	if text == "" {
+		return false
+	}
+	for _, g := range greetingPrefixes {
+		if text == g || strings.HasPrefix(text, g+" ") {
+			return true
+		}
+	}
+	for _, w := range standaloneGreetingWords {
+		if text == w {
+			return true
+		}
+	}
+	if text == "selamat" || strings.HasPrefix(text, "selamat ") {
+		return len(strings.Fields(text)) <= 4
+	}
+	return IsCasualChatOpener(text)
+}
+
 // IsCasualChatOpener — short WA openers ("malam gan", "malam min") that are not order-form answers.
 func IsCasualChatOpener(text string) bool {
 	text = strings.ToLower(strings.TrimSpace(text))
 	if text == "" || len(strings.Fields(text)) > 5 {
+		return false
+	}
+	if IsMinimumOrderQuestion(text) {
 		return false
 	}
 	for _, p := range []string{"malam ", "pagi ", "siang ", "sore ", "halo ", "hai ", "hei "} {
