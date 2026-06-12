@@ -11,6 +11,7 @@ func TestIsCatalogListQuestion(t *testing.T) {
 		"daftar barang apa saja",
 		"katalog",
 		"list dong",
+		"mau liat beberapa list SKU nya dong",
 	}
 	for _, c := range cases {
 		if !IsCatalogListQuestion(c) {

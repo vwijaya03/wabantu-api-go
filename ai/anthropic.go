@@ -96,7 +96,7 @@ func (c *AnthropicClient) generateOnce(ctx context.Context, model, system, busin
 		history,
 		"",
 		fmt.Sprintf("Pesan pelanggan terbaru: %s", userMessage),
-		"Tugas: berikan satu balasan WhatsApp yang aman dan membantu.",
+		"Tugas: berikan satu balasan WhatsApp sales assistant yang aman, membantu, dan mendorong checkout. Produk/harga hanya dari katalog resmi.",
 	}, "\n")
 
 	rlog.Info("anthropic request",

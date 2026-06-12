@@ -361,14 +361,20 @@ func applyCatalogMatch(st *orderState, it *dbCatalogItem) {
 }
 
 func catalogConfirmLine(st orderState) string {
+	summary := formatOrderSummary(st)
+	if summary != "" {
+		return summary
+	}
 	if st.ProductName == "" {
 		return ""
 	}
-	price := ""
-	if st.UnitPrice > 0 {
-		price = fmt.Sprintf(" (Rp%.0f/%s)", st.UnitPrice, st.SellUnit)
+	it := &dbCatalogItem{
+		Name:       st.ProductName,
+		SellPrice:  st.UnitPrice,
+		SellUnit:   st.SellUnit,
+		ExternalCode: st.ExternalCode,
 	}
-	return fmt.Sprintf("Produk: %s%s", st.ProductName, price)
+	return strings.TrimSpace("Produk:\n" + st.ProductName + "\n\nHarga:\n" + formatCatalogPrice(it))
 }
 
 func missingOrderDataPrompt(st orderState, tmpl orderFlowTemplates) string {

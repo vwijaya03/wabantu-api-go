@@ -627,6 +627,10 @@ func (s *AutoReplyService) handleOrderFlow(
 	}
 
 	tmpl := orderTemplatesFromKB(kb, strOrEmpty(profile.Tone) == "formal")
+	catalog, catErr := loadActiveCatalog(ctx, q, 40)
+	if catErr != nil {
+		rlog.Warn("AI order: catalog load failed", "err", catErr)
+	}
 	send := func(text string) (bool, error) {
 		out := metaNoLLM(reasonNonQuestion, PathOrderFlow)
 		out.LogAndRecord(ctx, convo.ID, inboundID, 0, 0)
@@ -638,12 +642,12 @@ func (s *AutoReplyService) handleOrderFlow(
 		if line != "" {
 			prompt = line + "\n\n" + prompt
 		}
+		if st.Qty > 0 && st.productComplete() {
+			if upsell := formatUpsellBlock(st, catalog); upsell != "" {
+				prompt += "\n\n" + upsell
+			}
+		}
 		return send(prompt)
-	}
-
-	catalog, catErr := loadActiveCatalog(ctx, q, 40)
-	if catErr != nil {
-		rlog.Warn("AI order: catalog load failed", "err", catErr)
 	}
 
 	state, _ := s.getOrderState(ctx, tenantID, convo.ID)
@@ -732,6 +736,14 @@ func (s *AutoReplyService) handleOrderFlow(
 	}
 
 	stateNorm := normalizeOrderState(*state)
+
+	if IsOrderTotalRequest(userText) && stateNorm.productComplete() && stateNorm.Qty > 0 {
+		msg := formatOrderSummary(stateNorm)
+		if upsell := formatUpsellBlock(stateNorm, catalog); upsell != "" {
+			msg += "\n\n" + upsell
+		}
+		return send(msg)
+	}
 
 	switch stateNorm.Step {
 	case "ask_product":
@@ -842,7 +854,7 @@ func (s *AutoReplyService) handleOrderFlow(
 				return sendWithConfirm(st, tmpl.RetryStep)
 			}
 			s.clearOrderState(ctx, tenantID, convo.ID)
-			return send(tmpl.Complete)
+			return send(orderCompleteMessage(st, tmpl))
 		}
 		st.Step = "ask_address_full"
 		s.setOrderState(ctx, tenantID, convo.ID, st)
@@ -865,7 +877,7 @@ func (s *AutoReplyService) handleOrderFlow(
 			return sendWithConfirm(st, tmpl.RetryStep)
 		}
 		s.clearOrderState(ctx, tenantID, convo.ID)
-		return send(tmpl.Complete)
+		return send(orderCompleteMessage(st, tmpl))
 	}
 
 	return send(tmpl.RetryStep)

@@ -15,6 +15,7 @@ func IsCatalogListQuestion(userText string) bool {
 	}
 	phrases := []string{
 		"daftar produk", "list produk", "list barang", "daftar barang",
+		"list sku", "daftar sku", "list kode", "minta sku", "lihat sku",
 		"lihat katalog", "tunjukkan katalog", "tampilkan katalog", "show katalog",
 		"produk apa saja", "barang apa saja", "apa saja produk", "apa saja barang",
 		"katalog apa", "koleksi apa", "jenis produk", "macam produk", "macam barang",
@@ -80,7 +81,8 @@ func replyFromBusinessCatalog(
 			return buildCatalogEmptyReply(formal, bizName, profile), true
 		}
 		if match := matchCatalogItem(userText, catalog); match != nil {
-			return buildCatalogItemReply(formal, match), true
+			qty, _ := parseOrderQty(userText)
+			return buildCatalogItemReply(formal, match, qty), true
 		}
 		return buildCatalogNotFoundReply(formal, bizName, catalog, profile), true
 	}
@@ -90,7 +92,8 @@ func replyFromBusinessCatalog(
 		if match := matchCatalogItem(userText, catalog); match != nil {
 			if strings.Contains(strings.ToLower(userText), strings.ToLower(match.Name)) ||
 				overlapScore(tokenize(userText), tokenize(match.Name)) >= 0.2 {
-				return buildCatalogItemReply(formal, match), true
+				qty, _ := parseOrderQty(userText)
+				return buildCatalogItemReply(formal, match, qty), true
 			}
 		}
 	}
@@ -103,11 +106,11 @@ func buildCatalogListReply(formal bool, bizName string, catalog []dbCatalogItem,
 	}
 	var intro string
 	if formal {
-		intro = fmt.Sprintf("Berikut daftar produk aktif %s dari katalog WABantu kami:\n\n", bizName)
+		intro = fmt.Sprintf("Berikut katalog %s kami:\n\n", bizName)
 	} else {
-		intro = fmt.Sprintf("Ini daftar produk aktif %s dari katalog WABantu ya kak:\n\n", bizName)
+		intro = fmt.Sprintf("Ini katalog %s ya kak:\n\n", bizName)
 	}
-	body := formatCatalogListBody(catalog, 25)
+	body := formatCatalogListBody(catalog, 8)
 	footer := catalogExternalFooter(profile, false)
 	return strings.TrimSpace(intro + body + footer)
 }
@@ -131,58 +134,56 @@ func buildCatalogNotFoundReply(formal bool, bizName string, catalog []dbCatalogI
 	} else {
 		head = fmt.Sprintf("Maaf kak, produknya belum ketemu di katalog WABantu %s.\n\nIni yang ada sekarang:\n\n", bizName)
 	}
-	body := formatCatalogListBody(catalog, 20)
+	body := formatCatalogListBody(catalog, 6)
 	footer := catalogExternalFooter(profile, false)
 	return strings.TrimSpace(head + body + footer)
 }
 
-func buildCatalogItemReply(formal bool, it *dbCatalogItem) string {
+func buildCatalogItemReply(formal bool, it *dbCatalogItem, qty int) string {
 	if it == nil {
 		return ""
 	}
-	unit := it.SellUnit
-	if unit == "" {
-		unit = "pcs"
-	}
-	priceLine := "harga belum di-set"
-	if it.SellPrice > 0 {
-		priceLine = fmt.Sprintf("Rp%.0f/%s", it.SellPrice, unit)
-	}
-	if formal {
-		return fmt.Sprintf("Produk: %s (kode %s)\nHarga: %s\n\nSilakan sebutkan ukuran/warna dan jumlah jika ingin memesan.",
-			it.Name, it.ExternalCode, priceLine)
-	}
-	return fmt.Sprintf("Produk: %s (kode %s)\nHarga: %s\n\nKalau mau order, sebut ukuran/warna + jumlah ya kak.",
-		it.Name, it.ExternalCode, priceLine)
-}
-
-func formatCatalogListBody(catalog []dbCatalogItem, max int) string {
-	if max < 1 || max > 40 {
-		max = 25
-	}
+	size := extractSizeFromProductName(it.Name)
 	var lines []string
-	for i := 0; i < len(catalog) && i < max; i++ {
-		lines = append(lines, formatCatalogLine(&catalog[i], i+1))
+	lines = append(lines, "Produk:")
+	lines = append(lines, it.Name)
+	lines = append(lines, "")
+	lines = append(lines, "Harga:")
+	lines = append(lines, formatCatalogPrice(it))
+	if size != "" {
+		lines = append(lines, "")
+		lines = append(lines, "Ukuran: "+size)
 	}
-	if len(catalog) > max {
-		lines = append(lines, fmt.Sprintf("…dan %d produk lainnya.", len(catalog)-max))
+	if qty > 0 && it.SellPrice > 0 {
+		lines = append(lines, "")
+		lines = append(lines, fmt.Sprintf("Qty: %d", qty))
+		lines = append(lines, "")
+		lines = append(lines, "Subtotal:")
+		lines = append(lines, formatMoney(float64(qty)*it.SellPrice))
 	}
-	return strings.Join(lines, "\n")
+	cta := "Kalau mau lanjut order, sebut jumlah + data pengiriman ya kak."
+	if formal {
+		cta = "Silakan sebutkan jumlah dan data pengiriman jika ingin memesan."
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n") + "\n\n" + cta)
 }
 
-func formatCatalogLine(it *dbCatalogItem, num int) string {
-	if it == nil {
-		return ""
+func formatCatalogListBody(catalog []dbCatalogItem, maxFeatured int) string {
+	if maxFeatured < 1 || maxFeatured > 12 {
+		maxFeatured = 8
 	}
-	price := ""
-	if it.SellPrice > 0 {
-		unit := it.SellUnit
-		if unit == "" {
-			unit = "pcs"
-		}
-		price = fmt.Sprintf(" — Rp%.0f/%s", it.SellPrice, unit)
+	var parts []string
+	if categories := extractCatalogCategories(catalog); len(categories) > 0 {
+		parts = append(parts, "📂 Kategori\n"+formatCategoryList(categories, 8))
 	}
-	return fmt.Sprintf("%d. %s%s [%s]", num, it.Name, price, it.ExternalCode)
+	featured := pickFeaturedCatalogItems(catalog, maxFeatured)
+	if len(featured) > 0 {
+		parts = append(parts, "🔥 Produk Terlaris\n\n"+formatFeaturedProductsBody(featured))
+	}
+	if len(catalog) > len(featured) {
+		parts = append(parts, fmt.Sprintf("Ada %d varian lain di katalog. Sebut nama produk yang kakak mau ya.", len(catalog)))
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 func catalogExternalFooter(profile *dbBusinessProfile, catalogEmpty bool) string {
@@ -216,8 +217,8 @@ func BuildCatalogContext(catalog []dbCatalogItem) string {
 		if it.SellPrice > 0 {
 			price = fmt.Sprintf("Rp%.0f/%s", it.SellPrice, unit)
 		}
-		lines = append(lines, fmt.Sprintf("- %s [%s] %s", it.Name, it.ExternalCode, price))
+		lines = append(lines, fmt.Sprintf("- %s | %s | kode internal: %s", it.Name, price, it.ExternalCode))
 	}
-	lines = append(lines, "Aturan: jawab produk/harga hanya dari daftar di atas. Jangan arahkan Instagram/website sebagai sumber utama jika daftar ini terisi. Jangan mengarang produk di luar daftar.")
+	lines = append(lines, "Aturan: jawab produk/harga hanya dari daftar di atas. Jangan tampilkan kode internal/SKU ke pelanggan. Jangan dump daftar panjang — gunakan kategori + produk unggulan. Jangan mengarang produk di luar daftar.")
 	return strings.Join(lines, "\n")
 }
