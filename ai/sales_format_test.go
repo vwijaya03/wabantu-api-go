@@ -12,7 +12,7 @@ func TestFormatCatalogListBodyNoSKU(t *testing.T) {
 		{ID: "3", ExternalCode: "LOL-L", Name: "1PCS CELANA DALAM BOXER LOL - L", SellPrice: 21500, SellUnit: "pcs"},
 	}
 	body := formatCatalogListBody(catalog, 8)
-	if !strings.Contains(body, "🔥 Produk Terlaris") || !strings.Contains(body, "📂 Kategori") {
+	if !strings.Contains(body, "🔥 Produk Pilihan") {
 		t.Fatalf("expected featured format, got:\n%s", body)
 	}
 	if strings.Contains(body, "[HELLO") || strings.Contains(body, "HELLO-KITTY") {
@@ -40,6 +40,24 @@ func TestFormatOrderSummary(t *testing.T) {
 func TestIsOrderTotalRequest(t *testing.T) {
 	if !IsOrderTotalRequest("minta totalannya juga ya") {
 		t.Fatal("expected total request")
+	}
+}
+
+func TestParseOrderQtyLusin(t *testing.T) {
+	qty, ok := parseOrderQty("mau beli abon sapi 1 lusin")
+	if !ok || qty != 12 {
+		t.Fatalf("expected 12 for 1 lusin, got %d ok=%v", qty, ok)
+	}
+}
+
+func TestCatalogItemNeedsVariant(t *testing.T) {
+	food := &dbCatalogItem{Name: "Abon Sapi 500G"}
+	apparel := &dbCatalogItem{Name: "1PCS CELANA DALAM BOXER - L"}
+	if catalogItemNeedsVariant(food) {
+		t.Fatal("abon should not need variant")
+	}
+	if !catalogItemNeedsVariant(apparel) {
+		t.Fatal("boxer should need variant")
 	}
 }
 

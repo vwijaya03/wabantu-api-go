@@ -59,6 +59,13 @@ Kode pos: 60600`)
 	}
 }
 
+func TestVariantCompleteSkipsNonApparel(t *testing.T) {
+	st := orderState{ProductName: "Abon Sapi 500G"}
+	if !st.variantComplete() {
+		t.Fatal("food product should skip variant step")
+	}
+}
+
 func TestBuildVariantLabel(t *testing.T) {
 	got := buildVariantLabel("XL", "biru")
 	if got != "Ukuran: XL | Warna: biru" {

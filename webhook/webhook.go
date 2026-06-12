@@ -22,6 +22,7 @@ import (
 	appdb "encore.app/wabantu/shared/db"
 	"encore.app/wabantu/shared/inboxrealtime"
 	"encore.app/wabantu/shared/pii"
+	"encore.app/wabantu/shared/strutil"
 	"encore.app/wabantu/shared/tenantschema"
 	"encore.app/wabantu/tenant"
 	"encore.app/wabantu/whatsapp"
@@ -177,9 +178,7 @@ func ingestMessage(ctx context.Context, msg whatsapp.InboundMessage) error {
 	if preview == "" {
 		preview = msg.Type
 	}
-	if len(preview) > 280 {
-		preview = preview[:280]
-	}
+	preview = strutil.TruncateUTF8(preview, 280)
 	if _, err := conn.ExecContext(ctx,
 		`UPDATE conversation
 		 SET unread_count = unread_count + 1,

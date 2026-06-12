@@ -32,16 +32,59 @@ func formatMoney(amount float64) string {
 }
 
 func inferProductFamily(it dbCatalogItem) string {
+	if cat := inferCatalogCategory(it); cat != "" {
+		return cat
+	}
 	code := strings.TrimSpace(it.ExternalCode)
-	if code != "" {
+	if code != "" && isValidCategoryLabel(code) {
 		family := codeSizeSuffixRe.ReplaceAllString(code, "")
-		if family != "" && family != code {
+		if family != "" && family != code && isValidCategoryLabel(family) {
 			return humanizeFamilyLabel(family)
 		}
 	}
 	name := catalogQtyPrefixRe.ReplaceAllString(it.Name, "")
 	name = productSizeSuffixRe.ReplaceAllString(name, "")
-	return strings.TrimSpace(name)
+	name = strings.TrimSpace(name)
+	if isValidCategoryLabel(name) {
+		return name
+	}
+	return ""
+}
+
+func isValidCategoryLabel(s string) bool {
+	s = strings.TrimSpace(s)
+	if len(s) < 3 {
+		return false
+	}
+	if regexp.MustCompile(`^\d+$`).MatchString(s) {
+		return false
+	}
+	if regexp.MustCompile(`(?i)^(xs|s|m|l|xl|xxl),`).MatchString(s) {
+		return false
+	}
+	if strings.Contains(strings.ToLower(s), ",acak") {
+		return false
+	}
+	return true
+}
+
+func inferCatalogCategory(it dbCatalogItem) string {
+	name := strings.ToLower(it.Name)
+	switch {
+	case strings.Contains(name, "abon") || strings.Contains(name, "keripik") || strings.Contains(name, "snack"):
+		return "Makanan"
+	case strings.Contains(name, "anak perempuan") || (strings.Contains(name, "perempuan") && strings.Contains(name, "anak")):
+		return "Anak Perempuan"
+	case strings.Contains(name, "anak"):
+		return "Anak"
+	case strings.Contains(name, "pria") || strings.Contains(name, "cowok"):
+		return "Pria Dewasa"
+	case strings.Contains(name, "wanita") || strings.Contains(name, "cewek"):
+		return "Wanita"
+	case strings.Contains(name, "celana") || strings.Contains(name, "jeans") || strings.Contains(name, "boxer"):
+		return "Pakaian"
+	}
+	return ""
 }
 
 func humanizeFamilyLabel(s string) string {
@@ -54,19 +97,68 @@ func extractCatalogCategories(catalog []dbCatalogItem) []string {
 	seen := make(map[string]struct{})
 	var cats []string
 	for _, it := range catalog {
-		family := inferProductFamily(it)
-		if family == "" {
+		cat := inferCatalogCategory(it)
+		if cat == "" {
+			cat = inferProductFamily(it)
+		}
+		if cat == "" || !isValidCategoryLabel(cat) {
 			continue
 		}
-		key := strings.ToLower(family)
+		key := strings.ToLower(cat)
 		if _, ok := seen[key]; ok {
 			continue
 		}
 		seen[key] = struct{}{}
-		cats = append(cats, family)
+		cats = append(cats, cat)
 	}
 	sort.Strings(cats)
 	return cats
+}
+
+func shortDisplayName(name string) string {
+	name = catalogQtyPrefixRe.ReplaceAllString(name, "")
+	if len(name) > 48 {
+		return strings.TrimSpace(name[:45]) + "..."
+	}
+	return strings.TrimSpace(name)
+}
+
+func groupCatalogByCategory(catalog []dbCatalogItem) map[string][]dbCatalogItem {
+	out := make(map[string][]dbCatalogItem)
+	seen := make(map[string]struct{})
+	for _, it := range catalog {
+		cat := inferCatalogCategory(it)
+		if cat == "" {
+			cat = "Lainnya"
+		}
+		family := strings.ToLower(inferProductFamily(it))
+		if family != "" {
+			key := cat + "|" + family
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+		}
+		out[cat] = append(out[cat], it)
+	}
+	return out
+}
+
+func categoryEmoji(cat string) string {
+	switch strings.ToLower(cat) {
+	case "makanan":
+		return "🍖"
+	case "anak perempuan", "anak":
+		return "👧"
+	case "pria dewasa":
+		return "👨"
+	case "wanita":
+		return "👩"
+	case "pakaian":
+		return "👕"
+	default:
+		return "•"
+	}
 }
 
 func pickFeaturedCatalogItems(catalog []dbCatalogItem, max int) []dbCatalogItem {
@@ -164,20 +256,26 @@ func formatOrderSummary(st orderState) string {
 	}
 	subtotal := float64(qty) * st.UnitPrice
 
+	it := &dbCatalogItem{Name: st.ProductName, ExternalCode: st.ExternalCode}
+	needsVariant := catalogItemNeedsVariant(it)
+
 	var b strings.Builder
-	b.WriteString("Ringkasan Pesanan\n\n")
+	b.WriteString("🛒 Ringkasan Pesanan\n\n")
 	b.WriteString("Produk:\n")
 	b.WriteString(st.ProductName + "\n\n")
 	b.WriteString(fmt.Sprintf("Qty: %d\n", qty))
 	b.WriteString(fmt.Sprintf("Harga: %s\n\n", priceLine))
-	if variant := buildVariantLabel(st.Size, st.Color); variant != "" {
-		b.WriteString(variant + "\n\n")
-	} else if sz := extractSizeFromProductName(st.ProductName); sz != "" && st.Size == "" {
-		b.WriteString("Ukuran: " + sz + "\n\n")
+	if needsVariant {
+		if variant := buildVariantLabel(st.Size, st.Color); variant != "" {
+			b.WriteString(variant + "\n\n")
+		} else if sz := extractSizeFromProductName(st.ProductName); sz != "" && st.Size == "" {
+			b.WriteString("Ukuran: " + sz + "\n\n")
+		}
 	}
 	if st.UnitPrice > 0 {
 		b.WriteString("Subtotal:\n")
 		b.WriteString(formatMoney(subtotal))
+		b.WriteString("\n\nBelum termasuk ongkir.")
 	}
 	return strings.TrimSpace(b.String())
 }

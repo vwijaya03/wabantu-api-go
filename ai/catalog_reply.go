@@ -2,10 +2,34 @@ package ai
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
 const catalogEmptyMarker = "[Katalog WABantu: kosong]"
+
+// IsCatalogBrowsingIntent — pelanggan masih browsing katalog (bukan checkout).
+func IsCatalogBrowsingIntent(userText string) bool {
+	if IsCatalogListQuestion(userText) {
+		return true
+	}
+	text := strings.ToLower(strings.TrimSpace(userText))
+	if text == "" {
+		return false
+	}
+	phrases := []string{
+		"tanya produk", "tanya-tanya produk", "nanya produk",
+		"produk di toko", "produk yang dijual", "yang dijual di toko",
+		"tunjukkan produk", "tunjukan produk", "lihat produk", "mau lihat produk",
+		"beberapa produk", "produk apa", "jual apa",
+	}
+	for _, p := range phrases {
+		if strings.Contains(text, p) {
+			return true
+		}
+	}
+	return false
+}
 
 // IsCatalogListQuestion — pelanggan minta daftar produk/katalog.
 func IsCatalogListQuestion(userText string) bool {
@@ -72,8 +96,13 @@ func replyFromBusinessCatalog(
 	formal := strOrEmpty(profile.Tone) == "formal"
 	bizName := strings.TrimSpace(profile.BusinessName)
 
-	if IsCatalogListQuestion(userText) {
+	if IsCatalogBrowsingIntent(userText) {
 		return buildCatalogListReply(formal, bizName, catalog, profile), true
+	}
+
+	// Checkout intent → order flow state machine, bukan balasan katalog statis.
+	if HasPurchaseIntent(userText) {
+		return "", false
 	}
 
 	if IsCatalogProductInquiry(userText) {
@@ -150,7 +179,7 @@ func buildCatalogItemReply(formal bool, it *dbCatalogItem, qty int) string {
 	lines = append(lines, "")
 	lines = append(lines, "Harga:")
 	lines = append(lines, formatCatalogPrice(it))
-	if size != "" {
+	if size != "" && catalogItemNeedsVariant(it) {
 		lines = append(lines, "")
 		lines = append(lines, "Ukuran: "+size)
 	}
@@ -169,21 +198,51 @@ func buildCatalogItemReply(formal bool, it *dbCatalogItem, qty int) string {
 }
 
 func formatCatalogListBody(catalog []dbCatalogItem, maxFeatured int) string {
-	if maxFeatured < 1 || maxFeatured > 12 {
-		maxFeatured = 8
+	if maxFeatured < 1 || maxFeatured > 8 {
+		maxFeatured = 5
 	}
+	grouped := groupCatalogByCategory(catalog)
+	cats := extractCatalogCategories(catalog)
+	if len(cats) == 0 {
+		for c := range grouped {
+			cats = append(cats, c)
+		}
+		sort.Strings(cats)
+	}
+
 	var parts []string
-	if categories := extractCatalogCategories(catalog); len(categories) > 0 {
-		parts = append(parts, "📂 Kategori\n"+formatCategoryList(categories, 8))
+	parts = append(parts, "🔥 Produk Pilihan\n")
+
+	shown := 0
+	for _, cat := range cats {
+		if shown >= maxFeatured {
+			break
+		}
+		items := grouped[cat]
+		if len(items) == 0 {
+			continue
+		}
+		parts = append(parts, categoryEmoji(cat)+" "+cat)
+		for _, it := range items {
+			if shown >= maxFeatured {
+				break
+			}
+			parts = append(parts, fmt.Sprintf("• %s\n%s", shortDisplayName(it.Name), formatCatalogPrice(&it)))
+			shown++
+		}
 	}
-	featured := pickFeaturedCatalogItems(catalog, maxFeatured)
-	if len(featured) > 0 {
-		parts = append(parts, "🔥 Produk Terlaris\n\n"+formatFeaturedProductsBody(featured))
+	if shown == 0 {
+		featured := pickFeaturedCatalogItems(catalog, maxFeatured)
+		parts = append(parts, formatFeaturedProductsBody(featured))
+		shown = len(featured)
 	}
-	if len(catalog) > len(featured) {
-		parts = append(parts, fmt.Sprintf("Ada %d varian lain di katalog. Sebut nama produk yang kakak mau ya.", len(catalog)))
+	if len(catalog) > shown {
+		parts = append(parts, fmt.Sprintf("\nAda produk lain di katalog. Sebut nama produk yang kakak mau ya."))
 	}
-	return strings.Join(parts, "\n\n")
+	if len(cats) > 1 {
+		parts = append(parts, "\nMau lihat kategori tertentu? Sebut saja ya kak.")
+	}
+	return strings.Join(parts, "\n")
 }
 
 func catalogExternalFooter(profile *dbBusinessProfile, catalogEmpty bool) string {

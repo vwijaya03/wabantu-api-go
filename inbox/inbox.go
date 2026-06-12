@@ -19,6 +19,7 @@ import (
 	apperr "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/pii"
 	"encore.app/wabantu/shared/tenantschema"
+	"encore.app/wabantu/shared/strutil"
 	"encore.app/wabantu/shared/tenantctx"
 	"encore.app/wabantu/shared/types"
 	"encore.app/wabantu/whatsapp"
@@ -651,10 +652,7 @@ func SendMessage(ctx context.Context, id string, p *SendMessageParams) (*SendMes
 		return nil, apperr.Internal("failed to save message")
 	}
 
-	preview := text
-	if len(preview) > 280 {
-		preview = preview[:280]
-	}
+	preview := strutil.TruncateUTF8(text, 280)
 	_, _ = conn.ExecContext(ctx,
 		`UPDATE conversation SET last_message_at = $1, last_message_preview = $2, status = 'open' WHERE id = $3`,
 		m.CreatedAt, preview, id)
