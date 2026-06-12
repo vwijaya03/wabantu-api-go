@@ -81,8 +81,9 @@ for s in "${all_schemas[@]}"; do
   [[ "$found" -eq 0 ]] && orphan_list+=("$s")
 done
 if [[ ${#orphan_list[@]} -gt 0 ]]; then
-  echo "WARN: orphan schemas (not in tenant_company): ${orphan_list[*]}"
-  echo "      Drop orphans in Encore SQL console if deploy fails on them"
+  echo "FAIL: orphan schemas block Encore dynamic grants: ${orphan_list[*]}"
+  echo "      Run: ./scripts/prune-orphan-tenant-schemas-cloud.sh $ENV_NAME --apply"
+  fail=1
 fi
 
 echo
