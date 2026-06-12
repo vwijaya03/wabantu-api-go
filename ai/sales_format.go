@@ -332,9 +332,17 @@ func formatUpsellBlock(st orderState, catalog []dbCatalogItem) string {
 }
 
 func orderCompleteMessage(st orderState, tmpl orderFlowTemplates) string {
+	return orderCompleteMessageWithRef("", st, tmpl)
+}
+
+func orderCompleteMessageWithRef(orderID string, st orderState, tmpl orderFlowTemplates) string {
 	summary := formatOrderSummary(st)
-	if summary == "" {
-		return tmpl.Complete
+	complete := tmpl.Complete
+	if ref := FormatOrderNumber(orderID); ref != "" {
+		complete = fmt.Sprintf("Nomor pesanan: %s\n\n%s", ref, complete)
 	}
-	return summary + "\n\n" + tmpl.Complete
+	if summary == "" {
+		return complete
+	}
+	return summary + "\n\n" + complete
 }
