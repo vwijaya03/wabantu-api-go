@@ -175,7 +175,7 @@ func StartSetupInterview(ctx context.Context) (*SetupInterviewStartResponse, err
 		return nil, err
 	}
 	if !user.CanPerformOwnerActions() {
-		return nil, apperr.Forbidden("hanya owner yang bisa setup interview")
+		return nil, apperr.Forbidden("hanya owner atau admin platform (saat pantau tenant) yang bisa setup interview")
 	}
 
 	_, rem, lim := usage.CheckQuota(ctx, user.TenantSchema, "ai_token")
@@ -225,7 +225,7 @@ func GetSetupInterviewSession(ctx context.Context, sessionId string) (*SetupInte
 		return nil, err
 	}
 	if !user.CanPerformOwnerActions() {
-		return nil, apperr.Forbidden("hanya owner yang bisa setup interview")
+		return nil, apperr.Forbidden("hanya owner atau admin platform (saat pantau tenant) yang bisa setup interview")
 	}
 	session, err := loadSetupInterviewSession(ctx, sessionId, user.TenantSchema)
 	if err != nil {
@@ -242,7 +242,7 @@ func SendSetupInterviewMessage(ctx context.Context, sessionId string, req *Setup
 		return nil, err
 	}
 	if !user.CanPerformOwnerActions() {
-		return nil, apperr.Forbidden("hanya owner yang bisa setup interview")
+		return nil, apperr.Forbidden("hanya owner atau admin platform (saat pantau tenant) yang bisa setup interview")
 	}
 	if req == nil {
 		return nil, apperr.BadRequest("message wajib diisi")
@@ -404,7 +404,7 @@ func PublishSetupInterview(ctx context.Context, sessionId string, req *SetupInte
 		return nil, err
 	}
 	if !user.CanPerformOwnerActions() {
-		return nil, apperr.Forbidden("hanya owner yang bisa publish setup")
+		return nil, apperr.Forbidden("hanya owner atau admin platform (saat pantau tenant) yang bisa publish setup")
 	}
 	session, err := loadSetupInterviewSession(ctx, sessionId, user.TenantSchema)
 	if err != nil {

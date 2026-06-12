@@ -66,6 +66,18 @@ func TestVariantCompleteSkipsNonApparel(t *testing.T) {
 	}
 }
 
+func TestContactDisplayNameShouldUpdate(t *testing.T) {
+	if !contactDisplayNameShouldUpdate("", "+6281292066606", "Antoni Budianto") {
+		t.Fatal("expected update on empty name")
+	}
+	if contactDisplayNameShouldUpdate("Antoni Budianto", "+6281292066606", "Budi") {
+		t.Fatal("should not overwrite existing real name")
+	}
+	if !contactDisplayNameShouldUpdate("6281292066606", "+6281292066606", "Antoni Budianto") {
+		t.Fatal("expected update when name is phone-like")
+	}
+}
+
 func TestBuildVariantLabel(t *testing.T) {
 	got := buildVariantLabel("XL", "biru")
 	if got != "Ukuran: XL | Warna: biru" {

@@ -603,6 +603,7 @@ func persistDraftOrder(
 	if err != nil {
 		return "", err
 	}
+	syncContactDisplayNameFromOrder(ctx, tq, contactID, st.RecipientName)
 	rlog.Info("AI order: draft persisted",
 		"orderId", orderID,
 		"convoId", convoID,
