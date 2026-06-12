@@ -503,6 +503,20 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 			userText, profile, kbEntries, history, payload.InboundMessageID)
 		return sent, oErr
 	}
+	if inScope && (IsOrderRevisionMessage(userText) ||
+		(mentionsOrderQty(userText) && IsActiveCheckoutFromHistory(history, userText))) {
+		sent, oErr := s.handleOrderFlow(ctx, conn, payload.TenantSchema, payload.TenantID, convo, channel, contact,
+			userText, profile, kbEntries, history, payload.InboundMessageID)
+		return sent, oErr
+	}
+	if inScope && IsCasualPraiseLike(userText) {
+		formal := strOrEmpty(profile.Tone) == "formal"
+		out := metaNoLLM(reasonAIGenerated, PathConsulting)
+		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
+		err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact,
+			casualPraiseReply(formal), "ai", out)
+		return err == nil, err
+	}
 
 	// ── In-scope question → LLM path ────────────────────────────────────
 	s.resetScopeCounters(ctx, payload.TenantID, convo.ID)
@@ -717,6 +731,9 @@ func (s *AutoReplyService) handleOrderFlow(
 		return err == nil, err
 	}
 	tryCatalogEscape := func() (bool, error) {
+		if IsOrderRevisionMessage(userText) {
+			return false, nil
+		}
 		if !IsCatalogBrowsingIntent(userText) && !isGeneralStoreCatalogQuestion(userText) {
 			return false, nil
 		}
@@ -796,6 +813,27 @@ func (s *AutoReplyService) handleOrderFlow(
 			return base
 		}
 		return st
+	}
+
+	if state == nil && (IsOrderRevisionMessage(userText) || mentionsOrderQty(userText)) {
+		if match := matchCatalogFromRecentOutbound(history, catalog); match != nil {
+			st := orderState{Step: "ask_variant"}
+			applyCatalogMatch(&st, match)
+			if q, ok := parseOrderQty(userText); ok {
+				st.Qty = q
+			}
+			inferVariantFromProductName(&st)
+			if st.variantComplete() && st.Qty > 0 {
+				st.Step = "ask_recipient"
+				s.setOrderState(ctx, tenantID, convo.ID, st)
+				return sendWithConfirm(st, tmpl.AskRecipient)
+			}
+			if st.Qty > 0 {
+				st.Step = "ask_qty"
+				s.setOrderState(ctx, tenantID, convo.ID, st)
+				return sendWithConfirm(st, tmpl.AskQty)
+			}
+		}
 	}
 
 	if state == nil {
@@ -885,6 +923,12 @@ func (s *AutoReplyService) handleOrderFlow(
 
 	case "ask_variant":
 		st := copyBase(stateNorm)
+		if hints.HasQty {
+			st.Qty = hints.Qty
+		} else if q, ok := parseOrderQty(userText); ok {
+			st.Qty = q
+		}
+		inferVariantFromProductName(&st)
 		if !catalogItemNeedsVariant(&dbCatalogItem{Name: st.ProductName, ExternalCode: st.ExternalCode}) {
 			if hints.HasQty {
 				st.Qty = hints.Qty
@@ -906,6 +950,11 @@ func (s *AutoReplyService) handleOrderFlow(
 		}
 		if cl != "" {
 			st.Color = cl
+		}
+		if st.variantComplete() && st.Qty > 0 {
+			st.Step = "ask_recipient"
+			s.setOrderState(ctx, tenantID, convo.ID, st)
+			return sendWithConfirm(st, tmpl.AskRecipient)
 		}
 		if !st.variantComplete() {
 			if IsCatalogBrowsingIntent(userText) || isGeneralStoreCatalogQuestion(userText) {

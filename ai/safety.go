@@ -54,6 +54,7 @@ var retailIntentKeywords = []string{
 // Customer engagement — replies about the bot/conversation stay in scope (not out_of_scope).
 var customerEngagementKeywords = []string{
 	"balas", "balasan", "kok", "salah", "keliru", "bilang", "kata", "maksud", "tadi",
+	"pinter", "pandai", "mantap", "keren", "bagus", "jos", "joss",
 }
 
 // Apparel / fashion product terms (Omah-style tenants).

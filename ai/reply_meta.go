@@ -57,7 +57,7 @@ func metaFromRoute(reason, path string, route RoutingDecision) AiReplyMeta {
 		Path:    path,
 		Model:   route.Model,
 		Tier:    route.Tier,
-		LLMUsed: path == PathLLM,
+		LLMUsed: path == PathLLM || path == PathLLMTools || path == PathLLMGrounded,
 	}
 }
 

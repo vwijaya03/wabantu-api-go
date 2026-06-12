@@ -14,9 +14,9 @@ import (
 
 var (
 	// Explicit qty with whitespace before unit (avoids matching "1PCS" in catalog product titles).
-	orderQtyWithUnitRe = regexp.MustCompile(`(?i)(?:^|\s)(\d{1,4})\s+(pcs|pc|biji|buah|item|unit|piece|pieces)\b`)
+	orderQtyWithUnitRe = regexp.MustCompile(`(?i)(?:^|\s)(\d{1,4})\s+(pcs|pc|biji|buah|item|unit|piece|pieces|paket)\b`)
 	orderQtyLabelRe    = regexp.MustCompile(`(?i)\b(?:qty|jumlah)\s*[:\-]?\s*(\d{1,4})\b`)
-	orderQtyBareLineRe = regexp.MustCompile(`(?i)^\s*(\d{1,4})\s*(?:biji|pcs|pc|buah|piece|pieces)?\s*[!.?]*\s*$`)
+	orderQtyBareLineRe = regexp.MustCompile(`(?i)^\s*(\d{1,4})\s*(?:biji|pcs|pc|buah|piece|pieces|paket)?\s*[!.?]*\s*$`)
 	orderQtyLusinRe    = regexp.MustCompile(`(?i)(?:^|\s)(\d{1,3})\s*lusin\b`)
 	orderQtyOneLusinRe = regexp.MustCompile(`(?i)(?:^|\s)1\s*lusin\b|satu\s*lusin`)
 	orderQtyIndoWordRe = regexp.MustCompile(`(?i)\b(satu|dua|tiga|empat|lima|enam|tujuh|delapan|sembilan|sepuluh)\s*(pcs|pc|biji|buah|piece|pieces|lusin)?\b`)
@@ -141,6 +141,11 @@ func parseQtyFromLine(line string) (int, bool) {
 		return q, q > 0
 	}
 	if m := orderQtyWithUnitRe.FindStringSubmatch(line); len(m) > 1 {
+		var q int
+		fmt.Sscanf(m[1], "%d", &q)
+		return q, q > 0
+	}
+	if m := orderQtyPackRe.FindStringSubmatch(line); len(m) > 1 {
 		var q int
 		fmt.Sscanf(m[1], "%d", &q)
 		return q, q > 0
@@ -445,6 +450,9 @@ var orderAddrHintRe = regexp.MustCompile(`(?i)(jalan|\bjl\.?\b|rt|rw|kel\.|kec\.
 
 // ShouldBreakOrderFlow — new intent (greeting, harga, tanya produk) while Redis order state is active.
 func ShouldBreakOrderFlow(userText, step string) bool {
+	if IsOrderRevisionMessage(userText) {
+		return false
+	}
 	if IsUserSalesCorrection(userText) {
 		return true
 	}
@@ -522,6 +530,7 @@ func normalizeOrderState(st orderState) orderState {
 	case "ask_address":
 		st.Step = "ask_address_full"
 	}
+	inferVariantFromProductName(&st)
 	return st
 }
 

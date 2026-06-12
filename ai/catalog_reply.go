@@ -137,7 +137,10 @@ func IsPricingUnitClarification(userText string) bool {
 		"per unit", "satu pcs", "satu paket", "satu biji", "harga per",
 		"hitung per", "bayar per",
 		"paket isi", "isi berapa", "isi nya berapa", "isinya berapa",
-		"1 paket", "satu paket isi",
+		"satu paket isi",
+	}
+	if IsOrderRevisionMessage(userText) {
+		return false
 	}
 	for _, s := range signals {
 		if strings.Contains(text, s) {
@@ -339,6 +342,11 @@ func replyFromBusinessCatalog(
 
 	// Checkout eksplisit → order flow state machine, bukan balasan katalog statis.
 	if HasPurchaseIntent(userText) {
+		return "", false
+	}
+
+	// Revisi pesanan (qty/paket) → order flow, bukan katalog.
+	if IsOrderRevisionMessage(userText) {
 		return "", false
 	}
 

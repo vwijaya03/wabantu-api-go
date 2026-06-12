@@ -73,6 +73,9 @@ func ResolveSalesIntent(
 	if IsShippingQuoteQuestion(userText) {
 		return SalesIntent{State: SalesStateConsulting, Topic: SalesTopicShipping, Confidence: 0.9}
 	}
+	if IsOrderRevisionMessage(userText) {
+		return SalesIntent{State: SalesStateCheckout, Topic: SalesTopicProduct, Confidence: 0.92}
+	}
 	if orderActive && !ShouldBreakOrderFlow(userText, "ask_variant") &&
 		(IsOrderContinuationMessage(userText) || HasPurchaseIntent(userText)) {
 		return SalesIntent{State: SalesStateCheckout, Topic: SalesTopicGeneral, Confidence: 0.88}

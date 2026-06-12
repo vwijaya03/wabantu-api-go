@@ -385,6 +385,7 @@ func applyCatalogMatch(st *orderState, it *dbCatalogItem) {
 	if st.ProductName == "" {
 		st.ProductName = it.Name
 	}
+	inferVariantFromProductName(st)
 }
 
 func catalogConfirmLine(st orderState) string {
