@@ -168,9 +168,6 @@ if [[ "$LOCAL_TENANT_ROWS" != "$CLOUD_TENANT_ROWS" ]]; then
 fi
 echo "  ok system tenant rows: $CLOUD_TENANT_ROWS"
 
-echo "  Applying GRANTs on system DB (required for app login)..."
-cloud_grant_system "$CLOUD_SYSTEM_URI"
-
 if [[ ${#TENANT_SCHEMAS[@]} -gt 0 ]]; then
   CLOUD_TENANT_SCHEMAS="$(psql "$CLOUD_TENANT_URI" -tAc "SELECT count(*) FROM pg_namespace WHERE nspname ~ '^t_'" 2>/dev/null || echo 0)"
   if [[ "$CLOUD_TENANT_SCHEMAS" -lt "${#TENANT_SCHEMAS[@]}" ]]; then
@@ -183,11 +180,13 @@ if [[ ${#TENANT_SCHEMAS[@]} -gt 0 ]]; then
   echo "[6/6] Restore tenant data to cloud..."
   pg_restore_tolerant "tenant data" -d "$CLOUD_TENANT_URI" --data-only --no-owner --no-privileges "$TENANT_DUMP"
 
-  echo "  Applying GRANTs on tenant t_* schemas..."
-  cloud_grant_tenant_schemas "$CLOUD_TENANT_URI"
 else
   echo "[5/6] Skipped — no tenant schemas."
 fi
+
+echo "  Fixing ownership + GRANTs (encore-migrator)..."
+"$ROOT/scripts/fix-cloud-db-grants.sh" "$ENV_NAME"
+"$ROOT/scripts/verify-cloud-deploy-ready.sh" "$ENV_NAME"
 
 echo
 echo "Done. Verify with:"
