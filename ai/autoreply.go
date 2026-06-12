@@ -369,34 +369,47 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	if !inScope && (IsActiveCheckoutFromHistory(history, userText) || IsAcknowledgmentLike(userText)) {
 		inScope = true
 	}
-	classifier := classifyMessage(userText, inScope, profile)
-	if IsStoreLocationQuestion(userText) || IsShippingQuoteQuestion(userText) {
-		classifier = classifyResult{Label: "in_scope_question", Confidence: 0.9}
-	} else if IsAcknowledgmentLike(userText) {
-		classifier = classifyResult{Label: "in_scope_question", Confidence: 0.85}
-	} else if classifier.Label == "in_scope_non_question" &&
-		!IsConsultingPurchaseQuestion(userText) &&
-		(HasPurchaseIntent(userText) || IsOrderFollowUpFromHistory(history, userText)) {
-		classifier = classifyResult{Label: "order_intent", Confidence: 0.85}
-	}
-	if ac, ok := ActivityContextFrom(ctx); ok {
-		ac.Classifier = classifier.Label
-		ctx = WithActivityContext(ctx, ac)
-	}
 
 	catalog, catLoadErr := loadActiveCatalog(ctx, conn, 50)
 	if catLoadErr != nil {
 		rlog.Warn("AI job: catalog load failed", "err", catLoadErr)
 	}
 
+	orderActiveNow, _ := s.getOrderState(ctx, payload.TenantID, convo.ID)
+	intent := ResolveSalesIntent(userText, history, orderActiveNow != nil, inScope, profile, catalog)
+	classifier := salesIntentToClassifier(intent)
+	// Fallback ke classifier lama untuk edge case intent confidence rendah.
+	if intent.Confidence < 0.72 {
+		legacy := classifyMessage(userText, inScope, profile)
+		if legacy.Label == "sensitive_escalate" || legacy.Label == "order_intent" || legacy.Label == "out_of_scope" {
+			classifier = legacy
+		}
+	}
+	if IsAcknowledgmentLike(userText) {
+		classifier = classifyResult{Label: "in_scope_question", Confidence: 0.85}
+	} else if intent.State == SalesStateCartReady {
+		classifier = classifyResult{Label: "order_intent", Confidence: intent.Confidence}
+	} else if intent.State == SalesStateSensitive {
+		classifier = classifyResult{Label: "sensitive_escalate", Confidence: intent.Confidence}
+	} else if intent.State == SalesStateOutOfScope {
+		classifier = classifyResult{Label: "out_of_scope", Confidence: intent.Confidence}
+	}
+	if ac, ok := ActivityContextFrom(ctx); ok {
+		ac.Classifier = classifier.Label + ":" + intent.State
+		ctx = WithActivityContext(ctx, ac)
+	}
+
 	rlog.Info("AI job: scope check",
 		"inScope", inScope,
 		"classifier", classifier.Label,
+		"salesState", intent.State,
+		"salesTopic", intent.Topic,
 		"userPreview", previewText(userText, 80),
 	)
 	rlog.Info("AI job: classifier",
 		"label", classifier.Label,
 		"confidence", classifier.Confidence,
+		"salesState", intent.State,
 	)
 
 	// ── Katalog WABantu (business_catalog_item) — prioritas sebelum FAQ/LLM ──
@@ -571,15 +584,27 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		"hist", len(histCtx),
 	)
 
-	reply, compUsage, err := s.anthropic.GenerateReplyWithModel(ctx, route.Model, sys, business, kbCtx, histCtx, userText)
+	toolExec := NewCatalogToolExecutor(catalog)
+	reply, compUsage, usedTools, err := s.anthropic.GenerateSalesReplyWithCatalogTools(
+		ctx, route.Model, sys, business, kbCtx, histCtx, userText, toolExec,
+	)
 	if err != nil {
-		rlog.Error("AI job: anthropic.GenerateReply failed",
+		rlog.Error("AI job: anthropic sales reply failed",
 			"err", err,
 			"model", route.Model,
 			"tenantId", payload.TenantID,
 			"convoId", convo.ID,
 		)
 		return false, err
+	}
+
+	groundedReply, wasGrounded, groundReason := groundLLMReply(reply, userText, profile, catalog, history)
+	if wasGrounded {
+		rlog.Warn("AI job: LLM reply grounded to catalog",
+			"reason", groundReason,
+			"tenantId", payload.TenantID,
+			"convoId", convo.ID,
+		)
 	}
 
 	_, _, newSession := usage.TrackAIExchange(ctx, payload.TenantID, convo.ID)
@@ -592,9 +617,16 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		_ = usage.RecordEvent(ctx, payload.TenantSchema, "ai_token", tokens, nil)
 	}
 
-	finalReply := applyOutputPolicy(reply)
+	finalReply := applyOutputPolicy(groundedReply)
 	s.setCachedAnswer(ctx, payload.TenantID, userText, finalReply)
-	out := metaFromRoute(reasonAIGenerated, PathLLM, route)
+	llmPath := PathLLM
+	if usedTools {
+		llmPath = PathLLMTools
+	}
+	if wasGrounded {
+		llmPath = PathLLMGrounded
+	}
+	out := metaFromRoute(reasonAIGenerated, llmPath, route)
 	out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, compUsage.InputTokens, compUsage.OutputTokens)
 	err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
 	return err == nil, err

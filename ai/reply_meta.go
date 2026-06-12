@@ -34,6 +34,8 @@ const (
 	PathFAQCache          = "faq_cache"
 	PathFAQDirect         = "faq_direct"
 	PathLLM               = "llm"
+	PathLLMTools          = "llm_tools"
+	PathLLMGrounded       = "llm_grounded"
 	PathCostLimit         = "cost_limit"
 	PathAutoFallback      = "auto_fallback"
 )
