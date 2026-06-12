@@ -69,7 +69,8 @@ DO $$
 DECLARE s text;
 BEGIN
   FOR s IN SELECT nspname FROM pg_namespace WHERE nspname ~ '^t_' LOOP
-    EXECUTE format('GRANT USAGE ON SCHEMA %I TO encore_writer, encore_reader, encore_services', s);
+    EXECUTE format('ALTER SCHEMA %I OWNER TO %I', s, current_user);
+    EXECUTE format('GRANT USAGE, CREATE ON SCHEMA %I TO encore_writer, encore_reader, encore_services', s);
     EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA %I TO encore_writer, encore_services', s);
     EXECUTE format('GRANT SELECT ON ALL TABLES IN SCHEMA %I TO encore_reader', s);
     EXECUTE format('GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA %I TO encore_writer, encore_services', s);
