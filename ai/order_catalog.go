@@ -342,7 +342,34 @@ func (st orderState) productComplete() bool {
 	return strings.TrimSpace(st.ProductName) != "" || strings.TrimSpace(st.CatalogItemID) != ""
 }
 
+// catalogItemNeedsVariant — apparel/ukuran; makanan & produk tanpa varian dilewati.
+func catalogItemNeedsVariant(it *dbCatalogItem) bool {
+	if it == nil {
+		return false
+	}
+	name := strings.ToLower(strings.TrimSpace(it.Name))
+	if name == "" {
+		return false
+	}
+	if extractSizeFromProductName(it.Name) != "" {
+		return true
+	}
+	for _, kw := range []string{
+		"celana", "boxer", "jeans", "baju", "kaos", "dress", "rok", "kemeja",
+		"jaket", "hoodie", "dalam", "highwaist", "hotpants", "skinny",
+	} {
+		if strings.Contains(name, kw) {
+			return true
+		}
+	}
+	return false
+}
+
 func (st orderState) variantComplete() bool {
+	it := &dbCatalogItem{Name: st.ProductName, ExternalCode: st.ExternalCode}
+	if !catalogItemNeedsVariant(it) {
+		return true
+	}
 	return st.Size != "" || st.Color != ""
 }
 

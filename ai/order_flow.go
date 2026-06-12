@@ -17,6 +17,9 @@ var (
 	orderQtyWithUnitRe = regexp.MustCompile(`(?i)(?:^|\s)(\d{1,4})\s+(pcs|pc|biji|buah|item|unit|piece|pieces)\b`)
 	orderQtyLabelRe    = regexp.MustCompile(`(?i)\b(?:qty|jumlah)\s*[:\-]?\s*(\d{1,4})\b`)
 	orderQtyBareLineRe = regexp.MustCompile(`(?i)^\s*(\d{1,4})\s*(?:biji|pcs|pc|buah|piece|pieces)?\s*[!.?]*\s*$`)
+	orderQtyLusinRe    = regexp.MustCompile(`(?i)(?:^|\s)(\d{1,3})\s*lusin\b`)
+	orderQtyOneLusinRe = regexp.MustCompile(`(?i)(?:^|\s)1\s*lusin\b|satu\s*lusin`)
+	orderQtyIndoWordRe = regexp.MustCompile(`(?i)\b(satu|dua|tiga|empat|lima|enam|tujuh|delapan|sembilan|sepuluh)\s*(pcs|pc|biji|buah|piece|pieces|lusin)?\b`)
 	gluedCatalogQtyRe  = regexp.MustCompile(`(?i)\d+pcs`)
 	orderSizeLineRe    = regexp.MustCompile(`(?i)\b(xs|s|m|l|xl|xxl|xxxl|3xl|4xl|5xl|\d{2})\b`)
 )
@@ -104,7 +107,34 @@ type parsedOrderHints struct {
 	HasSize bool
 }
 
+var indoQtyWords = map[string]int{
+	"satu": 1, "dua": 2, "tiga": 3, "empat": 4, "lima": 5,
+	"enam": 6, "tujuh": 7, "delapan": 8, "sembilan": 9, "sepuluh": 10,
+}
+
 func parseQtyFromLine(line string) (int, bool) {
+	lower := strings.ToLower(strings.TrimSpace(line))
+	if orderQtyOneLusinRe.MatchString(lower) {
+		return 12, true
+	}
+	if m := orderQtyLusinRe.FindStringSubmatch(line); len(m) > 1 {
+		var n int
+		fmt.Sscanf(m[1], "%d", &n)
+		if n > 0 {
+			return n * 12, true
+		}
+	}
+	if m := orderQtyIndoWordRe.FindStringSubmatch(lower); len(m) > 2 {
+		if n, ok := indoQtyWords[m[1]]; ok {
+			unit := strings.ToLower(m[2])
+			if unit == "lusin" {
+				return n * 12, true
+			}
+			if unit != "" || n > 0 {
+				return n, true
+			}
+		}
+	}
 	if m := orderQtyLabelRe.FindStringSubmatch(line); len(m) > 1 {
 		var q int
 		fmt.Sscanf(m[1], "%d", &q)

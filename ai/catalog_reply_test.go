@@ -52,6 +52,18 @@ func TestBuildCatalogListReplyFilled(t *testing.T) {
 	}
 }
 
+func TestIsCatalogBrowsingIntent(t *testing.T) {
+	msgs := []string{
+		"mau tanya tanya produk di toko ini",
+		"bisa tunjukkan beberapa produk yang dijual di toko ini ?",
+	}
+	for _, m := range msgs {
+		if !IsCatalogBrowsingIntent(m) {
+			t.Fatalf("expected browsing intent: %q", m)
+		}
+	}
+}
+
 func TestTryFAQSkipsCatalogList(t *testing.T) {
 	kb := []dbKBEntry{{Question: "list produk", Answer: "Cek IG kami @toko"}}
 	if _, ok := tryFAQDirectAnswer("minta list produk", kb); ok {

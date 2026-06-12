@@ -5,6 +5,8 @@ import (
 
 	"encore.dev/rlog"
 	"strings"
+
+	"encore.app/wabantu/shared/strutil"
 )
 
 func previewText(s string, max int) string {
@@ -12,7 +14,7 @@ func previewText(s string, max int) string {
 	if max <= 0 || len(s) <= max {
 		return s
 	}
-	return s[:max] + "…"
+	return strutil.TruncateUTF8Ellipsis(s, max)
 }
 
 // Delivery path — how the outbound reply was produced (for logs + message.metadata).

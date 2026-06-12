@@ -16,6 +16,7 @@ import (
 
 	appdb "encore.app/wabantu/shared/db"
 	"encore.app/wabantu/shared/inboxrealtime"
+	"encore.app/wabantu/shared/strutil"
 	"encore.app/wabantu/shared/pii"
 	"encore.app/wabantu/usage"
 	"encore.app/wabantu/whatsapp"
@@ -422,6 +423,17 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return err == nil, err
 	}
 
+	// ── Browsing katalog (mis. "mau tanya produk") — jangan redirect generik ──
+	if inScope && IsCatalogBrowsingIntent(userText) {
+		if catReply, ok := replyFromBusinessCatalog(userText, profile, catalog); ok {
+			finalReply := applyOutputPolicy(catReply)
+			out := metaNoLLM(reasonAIGenerated, PathCatalogDB)
+			out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
+			err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
+			return err == nil, err
+		}
+	}
+
 	// ── Handle: in-scope non-question ────────────────────────────────────
 	if classifier.Label == "in_scope_non_question" {
 		c, _ := s.bumpCounter(ctx, payload.TenantID, convo.ID, "nonscope")
@@ -791,6 +803,21 @@ func (s *AutoReplyService) handleOrderFlow(
 
 	case "ask_variant":
 		st := copyBase(stateNorm)
+		if !catalogItemNeedsVariant(&dbCatalogItem{Name: st.ProductName, ExternalCode: st.ExternalCode}) {
+			if hints.HasQty {
+				st.Qty = hints.Qty
+			} else if q, ok := parseOrderQty(userText); ok {
+				st.Qty = q
+			}
+			if st.Qty < 1 {
+				st.Step = "ask_qty"
+				s.setOrderState(ctx, tenantID, convo.ID, st)
+				return sendWithConfirm(st, tmpl.AskQty)
+			}
+			st.Step = "ask_recipient"
+			s.setOrderState(ctx, tenantID, convo.ID, st)
+			return sendWithConfirm(st, tmpl.AskRecipient)
+		}
 		sz, cl := parseSizeAndColor(userText)
 		if sz != "" {
 			st.Size = sz
@@ -1011,7 +1038,7 @@ func applyOutputPolicy(text string) string {
 	cleaned = mdLinkRe.ReplaceAllString(cleaned, "$1")
 	cleaned = strings.TrimSpace(cleaned)
 	if len(cleaned) > maxReplyLen {
-		cleaned = cleaned[:maxReplyLen]
+		cleaned = strutil.TruncateUTF8(cleaned, maxReplyLen)
 	}
 	if blockedOutput.MatchString(cleaned) {
 		return "Maaf kak, untuk keamanan kami hanya bisa bantu pertanyaan seputar produk, harga, stok, dan order ya 🙏"
@@ -1409,10 +1436,7 @@ func (s *AutoReplyService) sendAiMessage(
 		return fmt.Errorf("send whatsapp: %w", err)
 	}
 
-	preview := text
-	if len(preview) > 280 {
-		preview = preview[:280]
-	}
+	preview := strutil.TruncateUTF8(text, 280)
 
 	metadataJSON, _ := json.Marshal(meta)
 	var msgCreatedAt time.Time

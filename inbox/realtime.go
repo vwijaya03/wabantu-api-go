@@ -11,6 +11,7 @@ import (
 	"encore.app/wabantu/auth"
 	apperr "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/inboxrealtime"
+	"encore.app/wabantu/shared/strutil"
 )
 
 type UnreadSummaryResponse struct {
@@ -87,9 +88,7 @@ func HandoffConversation(ctx context.Context, id string, p *HandoffParams) error
 	if p != nil && p.Reason != nil && strings.TrimSpace(*p.Reason) != "" {
 		reason = strings.TrimSpace(*p.Reason)
 	}
-	if len(reason) > 280 {
-		reason = reason[:280]
-	}
+	reason = strutil.TruncateUTF8(reason, 280)
 
 	conn, err := tConn(ctx, user.TenantSchema)
 	if err != nil {
@@ -182,9 +181,7 @@ func BulkHandoffConversation(ctx context.Context, req *BulkIDsParams) error {
 	if req.Reason != nil && strings.TrimSpace(*req.Reason) != "" {
 		reason = strings.TrimSpace(*req.Reason)
 	}
-	if len(reason) > 280 {
-		reason = reason[:280]
-	}
+	reason = strutil.TruncateUTF8(reason, 280)
 
 	conn, err := tConn(ctx, user.TenantSchema)
 	if err != nil {
