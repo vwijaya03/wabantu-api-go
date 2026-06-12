@@ -20,7 +20,7 @@ func TestValidateReplyAgainstCatalog_priceMismatch(t *testing.T) {
 	catalog := []dbCatalogItem{{
 		Name: "[3 PCS] CELANA DALAM BOXER PRIA MOTIF MONO SPOT - M", SellPrice: 56900, SellUnit: "pcs",
 	}}
-	reply := "Boxer mono spot Rp170700/pcs ya kak."
+	reply := "Boxer mono spot Rp99999/pcs ya kak."
 	v := validateReplyAgainstCatalog(reply, catalog)
 	if v.OK {
 		t.Fatal("expected price mismatch")

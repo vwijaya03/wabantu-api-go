@@ -841,7 +841,12 @@ func (s *AutoReplyService) handleOrderFlow(
 		if match := matchCatalogItem(userText, catalog); match != nil {
 			applyCatalogMatch(&st, match)
 			sz, cl := parseSizeAndColor(userText)
-			st.Size, st.Color = sz, cl
+			if sz != "" {
+				st.Size = sz
+			}
+			if cl != "" {
+				st.Color = cl
+			}
 			if hints.HasQty {
 				st.Qty = hints.Qty
 			}

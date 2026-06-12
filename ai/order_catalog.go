@@ -407,7 +407,7 @@ func catalogConfirmLine(st orderState) string {
 
 func missingOrderDataPrompt(st orderState, tmpl orderFlowTemplates) string {
 	st = normalizeOrderState(st)
-	if !st.productComplete() || strings.TrimSpace(st.CatalogItemID) == "" {
+	if !st.productComplete() {
 		return tmpl.AskProduct
 	}
 	if !st.variantComplete() {
