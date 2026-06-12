@@ -296,6 +296,9 @@ func RunTenantDDL(ctx context.Context, schemaName string) error {
 	if _, err := conn.ExecContext(ctx, fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS "%s"`, schemaName)); err != nil {
 		return fmt.Errorf("create schema: %w", err)
 	}
+	if err := ensureCloudSchemaDeployGrants(ctx, conn, schemaName); err != nil {
+		return fmt.Errorf("cloud schema grants: %w", err)
+	}
 	if _, err := conn.ExecContext(ctx, fmt.Sprintf(`SET search_path TO "%s"`, schemaName)); err != nil {
 		return fmt.Errorf("set search_path: %w", err)
 	}
@@ -316,6 +319,9 @@ func RunTenantDDL(ctx context.Context, schemaName string) error {
 	}
 	if err := seedFinanceApprovalSetting(ctx, conn); err != nil {
 		return fmt.Errorf("seed finance approval setting: %w", err)
+	}
+	if err := ensureCloudSchemaDeployGrants(ctx, conn, schemaName); err != nil {
+		return fmt.Errorf("cloud schema grants final: %w", err)
 	}
 	return nil
 }

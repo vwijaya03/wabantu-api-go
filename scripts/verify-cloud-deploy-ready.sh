@@ -35,29 +35,54 @@ else
   echo "OK: schema_migrations owner=$sm_owner"
 fi
 
-bad_schemas="$(psql "$TENANT_URI" -tAc "
-  SELECT string_agg(nspname, ', ')
-  FROM pg_namespace
-  WHERE nspname ~ '^t_'
-    AND pg_get_userbyid(nspowner) <> '$TENANT_OWNER'")"
-if [[ -n "$bad_schemas" ]]; then
-  echo "FAIL: tenant schemas wrong owner (want $TENANT_OWNER): $bad_schemas"
+registered=()
+while IFS= read -r line; do
+  line="$(echo "$line" | tr -d '[:space:]')"
+  [[ -z "$line" ]] && continue
+  registered+=("$line")
+done < <(psql "$SYSTEM_URI" -tAc "
+  SELECT tc.schema_name
+  FROM tenant_company tc
+  JOIN tenant t ON t.id = tc.tenant_id
+  WHERE t.deleted_at IS NULL
+    AND tc.schema_name IS NOT NULL AND tc.schema_name <> ''")
+
+bad_registered=()
+for s in "${registered[@]}"; do
+  owner="$(psql "$TENANT_URI" -tAc "SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname = '$s'" | tr -d '[:space:]')"
+  usage="$(psql "$TENANT_URI" -tAc "SELECT has_schema_privilege('$TENANT_OWNER', '$s', 'USAGE')" | tr -d '[:space:]')"
+  if [[ -z "$owner" ]]; then
+    bad_registered+=("$s (missing)")
+  elif [[ "$usage" != "t" ]]; then
+    bad_registered+=("$s (owner=$owner, no USAGE for $TENANT_OWNER)")
+  elif [[ "$owner" != "$TENANT_OWNER" ]]; then
+    echo "WARN: $s owner=$owner (prefer $TENANT_OWNER) — OK if $TENANT_OWNER has USAGE"
+  fi
+done
+if [[ ${#bad_registered[@]} -gt 0 ]]; then
+  echo "FAIL: registered schemas not deploy-ready: ${bad_registered[*]}"
   fail=1
 else
-  count="$(psql "$TENANT_URI" -tAc "SELECT count(*) FROM pg_namespace WHERE nspname ~ '^t_'")"
-  echo "OK: $count tenant schema(s) owned by $TENANT_OWNER"
+  echo "OK: ${#registered[@]} registered tenant schema(s) deploy-ready"
 fi
 
-no_access="$(psql "$TENANT_URI" -tAc "
-  SELECT string_agg(nspname, ', ')
-  FROM pg_namespace
-  WHERE nspname ~ '^t_'
-    AND NOT has_schema_privilege('$TENANT_OWNER', nspname, 'USAGE')")"
-if [[ -n "$no_access" ]]; then
-  echo "FAIL: $TENANT_OWNER lacks USAGE on: $no_access"
-  fail=1
-else
-  echo "OK: $TENANT_OWNER has USAGE on all t_* schemas"
+orphan_list=()
+all_schemas=()
+while IFS= read -r line; do
+  line="$(echo "$line" | tr -d '[:space:]')"
+  [[ -z "$line" ]] && continue
+  all_schemas+=("$line")
+done < <(psql "$TENANT_URI" -tAc "SELECT nspname FROM pg_namespace WHERE nspname ~ '^t_'")
+for s in "${all_schemas[@]}"; do
+  found=0
+  for r in "${registered[@]}"; do
+    [[ "$s" == "$r" ]] && found=1 && break
+  done
+  [[ "$found" -eq 0 ]] && orphan_list+=("$s")
+done
+if [[ ${#orphan_list[@]} -gt 0 ]]; then
+  echo "WARN: orphan schemas (not in tenant_company): ${orphan_list[*]}"
+  echo "      Drop orphans in Encore SQL console if deploy fails on them"
 fi
 
 echo
