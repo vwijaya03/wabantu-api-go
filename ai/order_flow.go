@@ -267,14 +267,17 @@ func hasOrderIntentText(userText string) bool {
 	return false
 }
 
-// HasPurchaseIntent — in-scope checkout lines without "?" (e.g. "mau 1 pcs jiniso highwaist XL").
+// HasPurchaseIntent — CART_READY: checkout eksplisit tanpa "?", bukan pertanyaan konsultasi.
 func HasPurchaseIntent(userText string) bool {
-	if hasOrderIntentText(userText) {
-		return true
+	if IsConsultingPurchaseQuestion(userText) {
+		return false
 	}
 	text := strings.ToLower(strings.TrimSpace(userText))
-	if text == "" {
+	if text == "" || IsQuestionLike(userText) {
 		return false
+	}
+	if hasExplicitCartReadyPhrase(text) {
+		return true
 	}
 	hasWant := strings.Contains(text, "mau") || strings.Contains(text, "pengen") ||
 		strings.Contains(text, "pengin") || strings.Contains(text, "ingin")
@@ -289,6 +292,16 @@ func HasPurchaseIntent(userText string) bool {
 		}
 	}
 	if mentionsOrderQty(text) {
+		for _, kw := range apparelProductKeywords {
+			if strings.Contains(text, kw) {
+				return true
+			}
+		}
+	}
+	if hasOrderIntentText(userText) {
+		if mentionsOrderQty(text) || orderSizeLineRe.MatchString(text) {
+			return true
+		}
 		for _, kw := range apparelProductKeywords {
 			if strings.Contains(text, kw) {
 				return true
@@ -432,6 +445,12 @@ var orderAddrHintRe = regexp.MustCompile(`(?i)(jalan|\bjl\.?\b|rt|rw|kel\.|kec\.
 
 // ShouldBreakOrderFlow — new intent (greeting, harga, tanya produk) while Redis order state is active.
 func ShouldBreakOrderFlow(userText, step string) bool {
+	if IsUserSalesCorrection(userText) {
+		return true
+	}
+	if IsConsultingPurchaseQuestion(userText) {
+		return true
+	}
 	if IsOrderFlowCancelled(userText) {
 		return true
 	}
@@ -463,10 +482,7 @@ func ShouldBreakOrderFlow(userText, step string) bool {
 	// "mau tanya jeans" / info produk — bukan melanjutkan form order.
 	if strings.Contains(text, "tanya") && !strings.Contains(text, "pesan") &&
 		step != "ask_address_full" && step != "ask_address" && step != "ask_recipient" {
-		if strings.Contains(text, "jeans") || strings.Contains(text, "produk") ||
-			strings.Contains(text, "harga") || strings.Contains(text, "ukuran") {
-			return true
-		}
+		return true
 	}
 
 	// Stuck on address/recipient steps but user sends unrelated chat.

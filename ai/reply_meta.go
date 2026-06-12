@@ -30,6 +30,7 @@ const (
 	PathOrderCancel       = "order_cancel"
 	PathOrderStatus       = "order_status"
 	PathCatalogDB         = "catalog_db"
+	PathConsulting        = "consulting"
 	PathFAQCache          = "faq_cache"
 	PathFAQDirect         = "faq_direct"
 	PathLLM               = "llm"

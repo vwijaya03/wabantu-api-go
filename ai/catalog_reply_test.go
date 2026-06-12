@@ -56,11 +56,132 @@ func TestIsCatalogBrowsingIntent(t *testing.T) {
 	msgs := []string{
 		"mau tanya tanya produk di toko ini",
 		"bisa tunjukkan beberapa produk yang dijual di toko ini ?",
+		"di toko ini tersedia jualan apa saja ya ?",
 	}
 	for _, m := range msgs {
 		if !IsCatalogBrowsingIntent(m) {
 			t.Fatalf("expected browsing intent: %q", m)
 		}
+	}
+}
+
+func TestReplyFromBusinessCatalog_storeListQuestion(t *testing.T) {
+	profile := &dbBusinessProfile{BusinessName: "Omah Apparel", Tone: strPtr("casual")}
+	catalog := []dbCatalogItem{
+		{ExternalCode: "A1", Name: "Abon Sapi 500G", SellPrice: 35000, SellUnit: "pcs"},
+	}
+	userText := "di toko ini tersedia jualan apa saja ya ?"
+	reply, ok := replyFromBusinessCatalog(userText, profile, catalog, nil)
+	if !ok {
+		t.Fatal("expected catalog list reply")
+	}
+	if strings.Contains(reply, "belum ketemu") {
+		t.Fatalf("list question should not say not found: %s", reply)
+	}
+	if !strings.Contains(reply, "katalog") || !strings.Contains(reply, "Abon Sapi") {
+		t.Fatalf("expected catalog list intro + product: %s", reply)
+	}
+}
+
+func TestReplyFromBusinessCatalog_pricingUnitFollowUp(t *testing.T) {
+	profile := &dbBusinessProfile{BusinessName: "Omah Apparel", Tone: strPtr("casual")}
+	catalog := []dbCatalogItem{
+		{
+			ExternalCode: "BOXER-3",
+			Name:         "[3 PCS] CELANA DALAM BOXER PRIA MOTIF MONO SPOT",
+			SellPrice:    56900,
+			SellUnit:     "pcs",
+		},
+	}
+	history := []dbMessage{{
+		Direction: "out",
+		Body:      "Iya kak! **[3 PCS] CELANA DALAM BOXER PRIA MOTIF MONO SPOT**\n\n• Harga: Rp56.900/pcs",
+	}}
+	userText := "itu harga per piece atau per paket ? saya kok bingung"
+	reply, ok := replyFromBusinessCatalog(userText, profile, catalog, history)
+	if !ok {
+		t.Fatal("expected pricing clarification reply")
+	}
+	if strings.Contains(reply, "belum ketemu") {
+		t.Fatalf("should not say not found: %s", reply)
+	}
+	if !strings.Contains(reply, "Rp56900/paket") && !strings.Contains(reply, "Rp56.900/paket") {
+		t.Fatalf("expected pack price in reply: %s", reply)
+	}
+	if strings.Contains(reply, "170700") || strings.Contains(reply, "170.700") {
+		t.Fatalf("should not multiply pack price by qty: %s", reply)
+	}
+	if !strings.Contains(reply, "18967") && !strings.Contains(reply, "18.967") {
+		t.Fatalf("expected per-pcs breakdown: %s", reply)
+	}
+}
+
+func TestReplyFromBusinessCatalog_packContentQuestion(t *testing.T) {
+	profile := &dbBusinessProfile{BusinessName: "Omah Apparel", Tone: strPtr("casual")}
+	catalog := []dbCatalogItem{{
+		ExternalCode: "BOXER-3",
+		Name:         "[3 PCS] CELANA DALAM BOXER PRIA MOTIF MONO SPOT - M",
+		SellPrice:    56900,
+		SellUnit:     "pcs",
+	}}
+	history := []dbMessage{{
+		Direction: "out",
+		Body:      "Kak, untuk [3 PCS] CELANA DALAM BOXER PRIA MOTIF MONO SPOT:\n\nHarga di katalog: Rp56900/paket (isi 3 pcs).",
+	}}
+	reply, ok := replyFromBusinessCatalog("1 paket isi berapa ?", profile, catalog, history)
+	if !ok {
+		t.Fatal("expected pack content reply")
+	}
+	if strings.Contains(reply, "belum ketemu") {
+		t.Fatalf("should not say not found: %s", reply)
+	}
+	if !strings.Contains(reply, "3 pcs") {
+		t.Fatalf("expected pack size: %s", reply)
+	}
+}
+
+func TestReplyFromBusinessCatalog_retailPolicyQuestion(t *testing.T) {
+	profile := &dbBusinessProfile{BusinessName: "Omah Apparel", Tone: strPtr("casual")}
+	catalog := []dbCatalogItem{{
+		ExternalCode: "BOXER-3",
+		Name:         "[3 PCS] CELANA DALAM BOXER PRIA MOTIF MONO SPOT - L",
+		SellPrice:    56900,
+		SellUnit:     "pcs",
+	}}
+	history := []dbMessage{{
+		Direction: "out",
+		Body:      "Produk:\n[3 PCS] CELANA DALAM BOXER PRIA MOTIF MONO SPOT - L\n\nHarga:\nRp56900/paket (isi 3 pcs)",
+	}}
+	reply, ok := replyFromBusinessCatalog("boleh beli 1 pcs ?", profile, catalog, history)
+	if !ok {
+		t.Fatal("expected retail policy reply")
+	}
+	if strings.Contains(reply, "belum ketemu") || strings.Contains(reply, "Ringkasan Pesanan") {
+		t.Fatalf("unexpected reply: %s", reply)
+	}
+	if !strings.Contains(reply, "eceran") || !strings.Contains(reply, "paket") {
+		t.Fatalf("expected pack-only policy: %s", reply)
+	}
+}
+
+func TestFormatCatalogPrice_packListing(t *testing.T) {
+	it := &dbCatalogItem{
+		Name:      "[3 PCS] CELANA DALAM BOXER PRIA MOTIF MONO SPOT - M",
+		SellPrice: 56900,
+		SellUnit:  "pcs",
+	}
+	got := formatCatalogPrice(it)
+	if !strings.Contains(got, "Rp56900/paket") || !strings.Contains(got, "isi 3 pcs") {
+		t.Fatalf("unexpected pack price format: %s", got)
+	}
+}
+
+func TestIsCatalogProductInquiry_notStoreList(t *testing.T) {
+	if IsCatalogProductInquiry("di toko ini tersedia jualan apa saja ya ?") {
+		t.Fatal("general store list should not be product inquiry")
+	}
+	if !IsCatalogProductInquiry("stok jeans highwaist ready nggak kak") {
+		t.Fatal("specific availability should still be product inquiry")
 	}
 }
 
