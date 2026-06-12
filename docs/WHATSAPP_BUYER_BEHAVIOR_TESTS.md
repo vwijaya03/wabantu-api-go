@@ -86,7 +86,7 @@ browse/consult → cart_ready → ask_product → ask_variant → ask_qty
 | `order_flow_sim.go` | `AdvanceOrderFlow` — FSM murni tanpa Redis/DB |
 | `conversation_sim.go` | `ConversationSimulator.Turn` — multi-turn routing |
 | `buyer_behavior_gen.go` | Generator 1000 skenario |
-| `fixtures_omah.go` | Katalog Omah Apparel test |
+| `fixtures_omah.go` | Fixture Omah (simulator + unit test); dipakai saat `encore run` compile |
 
 ---
 
@@ -138,7 +138,7 @@ Unit test tidak mengganti uji end-to-end dengan Redis + DB + WhatsApp:
 - LLM path (`llm`, `llm_tools`) dan grounding
 - Race condition / duplicate webhook
 
-Setelah `encore run`, uji 2–3 thread singkat di WA; sisanya di-cover 1000 test otomatis.
+Setelah `encore run`, uji 2–3 thread singkat di WA; sisanya di-cover ~3000 test otomatis (1000 + 2000).
 
 ---
 
@@ -219,6 +219,16 @@ Setelah `encore run`, uji 2–3 thread singkat di WA; sisanya di-cover 1000 test
 **Gejala:** `saya jadi beli abon` tidak masuk FSM di sim.
 
 **Fix:** `conversation_sim.go` pakai `hasPurchaseIntent(text, catalog)`.
+
+---
+
+### 13. `encore run` gagal compile: `undefined: strPtr`
+
+**Gejala:** `encore run` / build gagal di `fixtures_omah.go: undefined: strPtr`.
+
+**Penyebab:** `strPtr` hanya didefinisikan di `catalog_reply_test.go` (file `*_test.go` tidak ikut build production).
+
+**Fix:** `strPtr` dipindah ke `autoreply.go` (sebelahan `strOrEmpty`); helper test duplikat dihapus.
 
 ---
 

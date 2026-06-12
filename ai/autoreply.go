@@ -1357,6 +1357,8 @@ func strOrEmpty(s *string) string {
 	return *s
 }
 
+func strPtr(s string) *string { return &s }
+
 // ─── Redis helpers ───────────────────────────────────────────────────────────
 
 func normalizeQuestion(text string) string {

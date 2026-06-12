@@ -191,5 +191,3 @@ func TestTryFAQSkipsCatalogList(t *testing.T) {
 		t.Fatal("FAQ must not hijack catalog list")
 	}
 }
-
-func strPtr(s string) *string { return &s }
