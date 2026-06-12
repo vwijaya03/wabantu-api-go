@@ -46,15 +46,33 @@ func finishRows(rows *sql.Rows) error {
 }
 
 func backfillContacts(ctx context.Context, db dbTX, key string) error {
-	rows, err := db.QueryContext(ctx, `
+	hasBirth, err := columnExistsOnConn(ctx, db, "contact", "birth_date")
+	if err != nil {
+		return fmt.Errorf("backfill contacts: %w", err)
+	}
+	selectSQL := `
+		SELECT id, phone_number, display_name
+		FROM contact
+		WHERE deleted_at IS NULL
+		  AND (phone_number_enc IS NULL OR phone_number_enc = '')
+		  AND NULLIF(TRIM(phone_number), '') IS NOT NULL
+		  AND phone_number <> $1
+		LIMIT $2`
+	if hasBirth {
+		selectSQL = `
 		SELECT id, phone_number, display_name, birth_date::text
 		FROM contact
 		WHERE deleted_at IS NULL
 		  AND (phone_number_enc IS NULL OR phone_number_enc = '')
 		  AND NULLIF(TRIM(phone_number), '') IS NOT NULL
 		  AND phone_number <> $1
-		LIMIT $2`, Placeholder, backfillBatch)
+		LIMIT $2`
+	}
+	rows, err := db.QueryContext(ctx, selectSQL, Placeholder, backfillBatch)
 	if err != nil {
+		if isMissingRelation(err) || isMissingColumn(err) {
+			return nil
+		}
 		return fmt.Errorf("backfill contacts: %w", err)
 	}
 	type row struct {
@@ -63,27 +81,33 @@ func backfillContacts(ctx context.Context, db dbTX, key string) error {
 	var batch []row
 	for rows.Next() {
 		var r row
-		var displayName, birthDate sql.NullString
-		if err := rows.Scan(&r.id, &r.phone, &displayName, &birthDate); err != nil {
+		var displayName sql.NullString
+		if hasBirth {
+			var birthDate sql.NullString
+			if err := rows.Scan(&r.id, &r.phone, &displayName, &birthDate); err != nil {
+				_ = rows.Close()
+				return err
+			}
+			r.birth = birthDate.String
+		} else if err := rows.Scan(&r.id, &r.phone, &displayName); err != nil {
 			_ = rows.Close()
 			return err
 		}
 		r.display = displayName.String
-		r.birth = birthDate.String
 		batch = append(batch, r)
 	}
 	if err := finishRows(rows); err != nil {
 		return err
 	}
 	for _, r := range batch {
-		if err := writeContactRow(ctx, db, key, r.id, r.phone, r.display, r.birth); err != nil {
+		if err := writeContactRow(ctx, db, key, r.id, r.phone, r.display, r.birth, hasBirth); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func writeContactRow(ctx context.Context, db dbTX, key, id, phone, displayName, birthDate string) error {
+func writeContactRow(ctx context.Context, db dbTX, key, id, phone, displayName, birthDate string, clearBirthCol bool) error {
 	phoneEnc, err := Encrypt(phone, key)
 	if err != nil {
 		return err
@@ -116,6 +140,21 @@ func writeContactRow(ctx context.Context, db dbTX, key, id, phone, displayName, 
 			return err
 		}
 	}
+	if clearBirthCol {
+		_, err = db.ExecContext(ctx, `
+			UPDATE contact SET
+			  phone_number_enc = $1,
+			  phone_number_idx = $2,
+			  display_name_enc = NULLIF($3, ''),
+			  display_name_idx = NULLIF($4, ''),
+			  birth_date_enc = NULLIF($5, ''),
+			  phone_number = $6,
+			  display_name = CASE WHEN $3 <> '' THEN $6 ELSE display_name END,
+			  birth_date = NULL
+			WHERE id = $7`,
+			phoneEnc, phoneIdx, displayEnc, nullIfEmptyStr(displayIdx), birthEnc, Placeholder, id)
+		return err
+	}
 	_, err = db.ExecContext(ctx, `
 		UPDATE contact SET
 		  phone_number_enc = $1,
@@ -124,8 +163,7 @@ func writeContactRow(ctx context.Context, db dbTX, key, id, phone, displayName, 
 		  display_name_idx = NULLIF($4, ''),
 		  birth_date_enc = NULLIF($5, ''),
 		  phone_number = $6,
-		  display_name = CASE WHEN $3 <> '' THEN $6 ELSE display_name END,
-		  birth_date = NULL
+		  display_name = CASE WHEN $3 <> '' THEN $6 ELSE display_name END
 		WHERE id = $7`,
 		phoneEnc, phoneIdx, displayEnc, nullIfEmptyStr(displayIdx), birthEnc, Placeholder, id)
 	return err
@@ -141,6 +179,9 @@ func backfillLeads(ctx context.Context, db dbTX, key string) error {
 		  AND phone_number <> $1
 		LIMIT $2`, Placeholder, backfillBatch)
 	if err != nil {
+		if isMissingRelation(err) {
+			return nil
+		}
 		return fmt.Errorf("backfill leads: %w", err)
 	}
 	type row struct {
@@ -198,7 +239,7 @@ func backfillEventPersons(ctx context.Context, db dbTX, key string) error {
 		  AND full_name <> $1
 		LIMIT $2`, Placeholder, backfillBatch)
 	if err != nil {
-		if isMissingColumn(err) {
+		if isMissingColumn(err) || isMissingRelation(err) {
 			return nil
 		}
 		return fmt.Errorf("backfill evt_event_person: %w", err)
@@ -243,7 +284,7 @@ func backfillStaffRoster(ctx context.Context, db dbTX, key string) error {
 		  AND full_name <> $1
 		LIMIT $2`, Placeholder, backfillBatch)
 	if err != nil {
-		if isMissingColumn(err) {
+		if isMissingColumn(err) || isMissingRelation(err) {
 			return nil
 		}
 		return fmt.Errorf("backfill evt_staff_roster: %w", err)
@@ -288,7 +329,7 @@ func backfillChecklistTitles(ctx context.Context, db dbTX, key string) error {
 		  AND title <> $1
 		LIMIT $2`, Placeholder, backfillBatch)
 	if err != nil {
-		if isMissingColumn(err) {
+		if isMissingColumn(err) || isMissingRelation(err) {
 			return nil
 		}
 		return fmt.Errorf("backfill fin_checklist_template: %w", err)
@@ -330,7 +371,7 @@ func backfillRecurringTitles(ctx context.Context, db dbTX, key string) error {
 		  AND title <> $1
 		LIMIT $2`, Placeholder, backfillBatch)
 	if err != nil {
-		if isMissingColumn(err) {
+		if isMissingColumn(err) || isMissingRelation(err) {
 			return nil
 		}
 		return fmt.Errorf("backfill fin_recurring: %w", err)
@@ -371,7 +412,7 @@ func backfillBroadcastRecipients(ctx context.Context, db dbTX, key string) error
 		  AND phone_number <> $1
 		LIMIT $2`, Placeholder, backfillBatch)
 	if err != nil {
-		if isMissingColumn(err) {
+		if isMissingColumn(err) || isMissingRelation(err) {
 			return nil
 		}
 		return fmt.Errorf("backfill broadcast_recipient: %w", err)
@@ -413,10 +454,30 @@ func nullIfEmptyStr(s string) string {
 	return s
 }
 
+func columnExistsOnConn(ctx context.Context, db dbTX, table, column string) (bool, error) {
+	var exists bool
+	err := db.QueryRowContext(ctx, `
+		SELECT EXISTS (
+		  SELECT 1 FROM information_schema.columns
+		  WHERE table_schema = current_schema()
+		    AND table_name = $1 AND column_name = $2
+		)`, table, column).Scan(&exists)
+	return exists, err
+}
+
 func isMissingColumn(err error) bool {
 	if err == nil {
 		return false
 	}
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "does not exist") && strings.Contains(msg, "column")
+}
+
+func isMissingRelation(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "does not exist") &&
+		(strings.Contains(msg, "relation") || strings.Contains(msg, "table"))
 }
