@@ -136,5 +136,42 @@ File: `chaos_buyer_gen.go`, `chaos_buyer_100_test.go`.
 
 ```
 encore test ./ai/ -run TestChaosBuyer100 -count=1  → PASS (100 cases)
+encore test ./ai/ -run TestOrderGuard50 -count=1    → PASS (50 cases)
 encore test ./ai/ -count=1                          → PASS
 ```
+
+---
+
+## Insiden lanjutan (Jun 2026 — thread sama, sesi baru)
+
+| User | Bot | Masalah |
+|------|-----|---------|
+| `order mana yang kamu batalkan ?` | "tidak ada pesanan aktif" | Clarification kena **cancel** karena kata `batalkan` |
+| `halo` | greeting OK | Draft clear, tapi… |
+| `mau order boxer mono spot 10 paket bisa ?` | **Status WB-EAA94534 dibatalkan** (Hello Kitty) | `IsOrderStatusInquiry`: `order` + `?` → false positive |
+| `loh saya mau order barang woi` | LLM "belum di katalog" | Bukan status, tapi produk tidak spesifik |
+
+### Bug 6 — `"mau order X bisa?"` = status inquiry
+
+**Penyebab:** `(order) && (?)` terlalu luas — `"mau order boxer..."` match.
+
+**Fix:** `IsNewPurchaseIntentQuestion` + `IsConsultingPurchaseQuestion` mengecualikan dari status; `IsCancelClarificationQuestion` untuk tanya "order mana".
+
+### Bug 7 — Multi-order tanpa guard
+
+**Penyebab:** `loadLatestOrderForConversation` selalu ambil order terakhir (termasuk cancelled); tidak ada disambiguasi jika >1 order aktif.
+
+**Fix:** `resolvePersistedOrderAction` — parse `WB-XXXX`, hitung order cancellable, minta nomor pesanan jika >1.
+
+### Suite 50 test — `TestOrderGuard50`
+
+| Kategori | Count | Fokus |
+|----------|-------|-------|
+| `new_purchase_not_status` | 12 | order baru ≠ status |
+| `cancel_clarification` | 10 | "order mana yang dibatalkan" |
+| `reset_then_order` | 8 | halo → order baru |
+| `status_inquiry_true` | 10 | cek pesanan sah |
+| `order_ref_parse` | 5 | WB-XXXX dari chat |
+| `production_thread` | 5 | replay thread Jun 2026 |
+
+File: `order_guard_gen.go`, `order_guard_50_test.go`.

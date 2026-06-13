@@ -262,10 +262,15 @@ var OrderIntentKeywords = []string{
 	"jadi ambil", "jadi beli", "nyesan",
 }
 
+var orderIntentWordRe = regexp.MustCompile(`(?i)\b(order|pesan|pesen|pesin|beli|checkout|nyesan)\b`)
+
 func hasOrderIntentText(userText string) bool {
 	text := strings.ToLower(userText)
+	if orderIntentWordRe.MatchString(text) {
+		return true
+	}
 	for _, kw := range OrderIntentKeywords {
-		if strings.Contains(text, kw) {
+		if strings.Contains(kw, " ") && strings.Contains(text, kw) {
 			return true
 		}
 	}

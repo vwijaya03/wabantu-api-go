@@ -51,6 +51,14 @@ func (s *ConversationSimulator) Turn(userText string) TurnOutcome {
 		return out
 	}
 
+	// Match autoreply.go: status inquiry before cancel (clarification ≠ cancel command).
+	if IsOrderStatusInquiry(userText) {
+		out.Path = PathOrderStatus
+		out.Intent = SalesIntent{State: SalesStateConsulting, Topic: SalesTopicOrderStatus, Confidence: 0.9}
+		s.appendHistory(userText, "")
+		return out
+	}
+
 	if IsOrderCancelRequest(userText) || IsDraftOrderCancelRequest(userText) {
 		hadOrder := s.Order != nil
 		s.Order = nil

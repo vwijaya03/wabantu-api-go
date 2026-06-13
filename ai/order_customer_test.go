@@ -90,13 +90,58 @@ func TestIsOrderStatusInquiry(t *testing.T) {
 	}{
 		{"pesanan yang atas nama saya ada kah ?", true},
 		{"status pesanan saya", true},
+		{"order mana yang kamu batalkan ?", true},
 		{"mau saya batalkan ya", false},
 		{"halo kak", false},
+		{"mau order boxer mono spot 10 paket bisa ?", false},
+		{"loh saya mau order barang woi", false},
+		{"bisa order boxer mono spot 5 paket?", false},
 	}
 	for _, tc := range cases {
 		if got := IsOrderStatusInquiry(tc.text); got != tc.want {
 			t.Fatalf("IsOrderStatusInquiry(%q) = %v, want %v", tc.text, got, tc.want)
 		}
+	}
+}
+
+func TestIsCancelClarificationQuestion(t *testing.T) {
+	for _, msg := range []string{
+		"order mana yang kamu batalkan ?",
+		"pesanan mana yang dibatalkan?",
+		"kok order saya dibatalkan?",
+		"kenapa dibatalkan?",
+	} {
+		if !IsCancelClarificationQuestion(msg) {
+			t.Fatalf("IsCancelClarificationQuestion(%q) want true", msg)
+		}
+		if IsDraftOrderCancelRequest(msg) {
+			t.Fatalf("IsDraftOrderCancelRequest(%q) want false for clarification", msg)
+		}
+	}
+}
+
+func TestIsNewPurchaseIntentQuestion(t *testing.T) {
+	for _, msg := range []string{
+		"mau order boxer mono spot 10 paket bisa ?",
+		"loh saya mau order barang woi",
+		"bisa order de wasa 3 paket?",
+		"mau pesan abon 2 biji boleh?",
+	} {
+		if !IsNewPurchaseIntentQuestion(msg) {
+			t.Fatalf("IsNewPurchaseIntentQuestion(%q) want true", msg)
+		}
+		if IsOrderStatusInquiry(msg) {
+			t.Fatalf("IsOrderStatusInquiry(%q) want false for new purchase", msg)
+		}
+	}
+}
+
+func TestParseOrderRefFromMessage(t *testing.T) {
+	if got := parseOrderRefFromMessage("batalkan WB-EAA94534"); got != "WB-EAA94534" {
+		t.Fatalf("parseOrderRefFromMessage = %q", got)
+	}
+	if parseOrderRefFromMessage("halo kak") != "" {
+		t.Fatal("no ref expected")
 	}
 }
 

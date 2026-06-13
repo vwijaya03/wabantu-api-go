@@ -49,6 +49,11 @@ func IsConsultingPurchaseQuestion(userText string) bool {
 	if text == "" {
 		return false
 	}
+	for _, p := range orderStatusInquiryPhrases {
+		if strings.Contains(text, p) {
+			return false
+		}
+	}
 	for _, s := range retailPolicySignals {
 		if strings.Contains(text, s) {
 			// "mau 1 biji abon" = pesanan eksplisit, bukan tanya kebijakan eceran.

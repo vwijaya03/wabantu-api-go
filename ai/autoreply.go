@@ -324,10 +324,10 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		}
 		// Tanpa draft aktif: "ga jadi beli + ada nomor pesanan?" → jawab status, jangan cancel order lama.
 		if IsOrderStatusInquiry(userText) {
-			return s.handleCustomerOrderStatus(ctx, conn, payload.TenantSchema, payload, convo, channel, contact)
+			return s.handleCustomerOrderStatus(ctx, conn, payload.TenantSchema, payload, convo, channel, contact, userText)
 		}
 		if ShouldCancelPersistedOrder(userText) {
-			return s.handleCustomerOrderCancel(ctx, conn, payload.TenantSchema, payload, convo, channel, contact, profile)
+			return s.handleCustomerOrderCancel(ctx, conn, payload.TenantSchema, payload, convo, channel, contact, profile, userText)
 		}
 		out := metaNoLLM(reasonNonQuestion, PathOrderCancel)
 		out.OrderAction = "cancel"
@@ -337,7 +337,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return err == nil, err
 	}
 	if IsOrderStatusInquiry(userText) {
-		return s.handleCustomerOrderStatus(ctx, conn, payload.TenantSchema, payload, convo, channel, contact)
+		return s.handleCustomerOrderStatus(ctx, conn, payload.TenantSchema, payload, convo, channel, contact, userText)
 	}
 
 	clearedOrderForCorrection := false
@@ -1094,8 +1094,9 @@ func (s *AutoReplyService) handleCustomerOrderCancel(
 	channel *dbChannel,
 	contact *dbContact,
 	profile *dbBusinessProfile,
+	userText string,
 ) (bool, error) {
-	o, err := loadLatestOrderForConversation(ctx, conn, tenantSchema, convo.ID)
+	o, disambiguate, err := resolvePersistedOrderAction(ctx, conn, tenantSchema, convo.ID, userText)
 	if err != nil {
 		rlog.Warn("order cancel: load failed", "err", err, "convoId", convo.ID)
 		return false, err
@@ -1105,6 +1106,11 @@ func (s *AutoReplyService) handleCustomerOrderCancel(
 		meta.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 		err := s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, text, "system", meta)
 		return err == nil, err
+	}
+	if disambiguate {
+		meta := metaNoLLM(reasonNonQuestion, PathOrderCancel)
+		meta.OrderAction = "cancel"
+		return send(orderMultiDisambiguationReply(), meta)
 	}
 	if o == nil {
 		meta := metaNoLLM(reasonNonQuestion, PathOrderCancel)
@@ -1151,8 +1157,9 @@ func (s *AutoReplyService) handleCustomerOrderStatus(
 	convo *dbConversation,
 	channel *dbChannel,
 	contact *dbContact,
+	userText string,
 ) (bool, error) {
-	o, err := loadLatestOrderForConversation(ctx, conn, tenantSchema, convo.ID)
+	o, disambiguate, err := resolvePersistedOrderAction(ctx, conn, tenantSchema, convo.ID, userText)
 	if err != nil {
 		return false, err
 	}
@@ -1162,6 +1169,9 @@ func (s *AutoReplyService) handleCustomerOrderStatus(
 		meta.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 		err := s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, text, "system", meta)
 		return err == nil, err
+	}
+	if disambiguate {
+		return send(orderMultiDisambiguationReply())
 	}
 	if o == nil {
 		return send(orderNoneFoundReply())
