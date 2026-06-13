@@ -62,6 +62,8 @@ CREATE TABLE IF NOT EXISTS workflow_rule (
 ALTER TABLE whatsapp_channel ADD COLUMN IF NOT EXISTS branch_id UUID;
 ALTER TABLE conversation ADD COLUMN IF NOT EXISTS branch_id UUID;
 
+ALTER TABLE "order" ADD COLUMN IF NOT EXISTS income_wallet_id UUID;
+
 CREATE INDEX IF NOT EXISTS idx_contact_status_updated
     ON contact(status, updated_at DESC)
     WHERE deleted_at IS NULL;
@@ -85,6 +87,12 @@ BEGIN
 
     IF to_regclass('fin_checklist_template') IS NOT NULL THEN
         ALTER TABLE fin_checklist_template ADD COLUMN IF NOT EXISTS due_anchor_date DATE;
+    END IF;
+
+    IF to_regclass('fin_transaction') IS NOT NULL THEN
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_fin_txn_order_income_ref
+            ON fin_transaction (reference_no)
+            WHERE type = 'income' AND reference_no IS NOT NULL AND deleted_at IS NULL;
     END IF;
 END $patch$;
 `
