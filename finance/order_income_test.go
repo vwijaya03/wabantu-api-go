@@ -16,7 +16,7 @@ import (
 func TestRecordOrderCompletedIncomeZeroAmountNoDBCall(t *testing.T) {
 	// amount <= 0 → return nil immediately, no DB connection opened
 	for _, amt := range []float64{0, -1, -0.001} {
-		err := RecordOrderCompletedIncome(context.Background(), "does_not_exist", "user-1", "order-uuid", amt)
+		err := RecordOrderCompletedIncome(context.Background(), "does_not_exist", "user-1", "order-uuid", amt, "")
 		if err != nil {
 			t.Errorf("RecordOrderCompletedIncome(amount=%v) = %v, want nil", amt, err)
 		}
@@ -26,7 +26,7 @@ func TestRecordOrderCompletedIncomeZeroAmountNoDBCall(t *testing.T) {
 func TestRecordOrderCompletedIncomeEmptyOrderIDNoDBCall(t *testing.T) {
 	// empty / whitespace orderID → return nil immediately
 	for _, id := range []string{"", "   ", "\t"} {
-		err := RecordOrderCompletedIncome(context.Background(), "does_not_exist", "user-1", id, 50000)
+		err := RecordOrderCompletedIncome(context.Background(), "does_not_exist", "user-1", id, 50000, "")
 		if err != nil {
 			t.Errorf("RecordOrderCompletedIncome(orderID=%q) = %v, want nil", id, err)
 		}
