@@ -69,6 +69,8 @@ type Order struct {
 	OrderNumber          string           `json:"orderNumber"`
 	ConversationID       string           `json:"conversationId"`
 	ContactID            string           `json:"contactId"`
+	ContactDisplayName   string           `json:"contactDisplayName,omitempty"`
+	ContactPhone         string           `json:"contactPhone,omitempty"`
 	Items                []OrderItem      `json:"items"`
 	ShippingAddress      *ShippingAddress `json:"shippingAddress,omitempty"`
 	Notes                string           `json:"notes"`
@@ -213,13 +215,13 @@ func List(ctx context.Context, p *ListOrdersParams) (*ListOrdersResponse, error)
 	}
 
 	q := fmt.Sprintf(
-		`SELECT %s
+		`SELECT %s, %s
 		 FROM "%s"."order" o
 		 LEFT JOIN "%s".contact c ON c.id = o.contact_id
 		 %s
 		 ORDER BY o.created_at DESC
 		 LIMIT $%d OFFSET $%d`,
-		orderSelectCols("o"), u.TenantSchema, u.TenantSchema, where, idx, idx+1)
+		orderSelectCols("o"), contactJoinCols, u.TenantSchema, u.TenantSchema, where, idx, idx+1)
 	args = append(args, pageSize, offset)
 
 	rows, err := db.Query(ctx, q, args...)
@@ -230,7 +232,7 @@ func List(ctx context.Context, p *ListOrdersParams) (*ListOrdersResponse, error)
 
 	orders := make([]Order, 0)
 	for rows.Next() {
-		o, err := scanOrder(rows.Scan)
+		o, err := scanOrderWithContact(rows.Scan)
 		if err != nil {
 			return nil, err
 		}
@@ -247,10 +249,13 @@ func Get(ctx context.Context, id string) (*Order, error) {
 	}
 
 	row := db.QueryRow(ctx, fmt.Sprintf(
-		`SELECT %s FROM "%s"."order" WHERE id=$1 AND deleted_at IS NULL`,
-		orderSelectCols(""), u.TenantSchema), id)
+		`SELECT %s, %s
+		 FROM "%s"."order" o
+		 LEFT JOIN "%s".contact c ON c.id = o.contact_id
+		 WHERE o.id=$1 AND o.deleted_at IS NULL`,
+		orderSelectCols("o"), contactJoinCols, u.TenantSchema, u.TenantSchema), id)
 
-	o, err := scanOrder(row.Scan)
+	o, err := scanOrderWithContact(row.Scan)
 	if err != nil {
 		return nil, appErrs.NotFound("order not found")
 	}
