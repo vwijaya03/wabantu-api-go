@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"encore.app/wabantu/shared/tenantschema"
+	"encore.dev"
 )
 
 // tenantSchemaPatchSQL brings older tenant schemas in line with application code.
@@ -205,14 +206,46 @@ func RunSchemaPatches(ctx context.Context, schemaName string) error {
 // runAlwaysApplyPatches applies DDL that must run on every migration call regardless
 // of TenantPatchReady / FinanceModuleReady guards.  Every statement MUST be idempotent
 // (IF NOT EXISTS / IF EXISTS / ON CONFLICT).
+//
+// On Encore Cloud the app role cannot ALTER tables (SQLSTATE 42501) even when the
+// column/index already exists — Postgres still checks table ownership.  We therefore
+// introspect first and skip DDL when patches are already applied; missing patches on
+// cloud must be applied via scripts/apply-tenant-schema-cloud.sh (--admin).
 func runAlwaysApplyPatches(ctx context.Context, conn *sql.Conn) error {
-	_, err := conn.ExecContext(ctx, `
-		ALTER TABLE "order" ADD COLUMN IF NOT EXISTS income_wallet_id UUID;
-
+	ready, err := tenantschema.OrderIncomePatchReady(ctx, conn)
+	if err != nil {
+		return err
+	}
+	if ready {
+		return nil
+	}
+	if encore.Meta().Environment.Cloud != encore.CloudLocal {
+		return fmt.Errorf(
+			"patch order income belum diterapkan di cloud: jalankan ./scripts/apply-tenant-schema-cloud.sh %s",
+			encore.Meta().Environment.Name,
+		)
+	}
+	hasCol, err := tenantschema.ColumnExists(ctx, conn, "order", "income_wallet_id")
+	if err != nil {
+		return err
+	}
+	if !hasCol {
+		if _, err := conn.ExecContext(ctx, `ALTER TABLE "order" ADD COLUMN IF NOT EXISTS income_wallet_id UUID`); err != nil {
+			return err
+		}
+	}
+	finExists, err := tenantschema.TableExists(ctx, conn, "fin_transaction")
+	if err != nil || !finExists {
+		return err
+	}
+	hasIdx, err := tenantschema.IndexExists(ctx, conn, "idx_fin_txn_order_income_ref")
+	if err != nil || hasIdx {
+		return err
+	}
+	_, err = conn.ExecContext(ctx, `
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_fin_txn_order_income_ref
 			ON fin_transaction (reference_no)
-			WHERE type = 'income' AND reference_no IS NOT NULL AND deleted_at IS NULL;
-	`)
+			WHERE type = 'income' AND reference_no IS NOT NULL AND deleted_at IS NULL`)
 	return err
 }
 

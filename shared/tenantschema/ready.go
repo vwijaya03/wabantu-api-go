@@ -7,7 +7,8 @@ import (
 	"database/sql"
 )
 
-func tableExists(ctx context.Context, conn *sql.Conn, table string) (bool, error) {
+// TableExists reports whether a named table exists in the current schema.
+func TableExists(ctx context.Context, conn *sql.Conn, table string) (bool, error) {
 	var exists bool
 	err := conn.QueryRowContext(ctx, `
 		SELECT EXISTS (
@@ -15,6 +16,15 @@ func tableExists(ctx context.Context, conn *sql.Conn, table string) (bool, error
 		  WHERE table_schema = current_schema() AND table_name = $1
 		)`, table).Scan(&exists)
 	return exists, err
+}
+
+// ColumnExists reports whether a column exists on a table in the current schema.
+func ColumnExists(ctx context.Context, conn *sql.Conn, table, column string) (bool, error) {
+	return columnExists(ctx, conn, table, column)
+}
+
+func tableExists(ctx context.Context, conn *sql.Conn, table string) (bool, error) {
+	return TableExists(ctx, conn, table)
 }
 
 func columnExists(ctx context.Context, conn *sql.Conn, table, column string) (bool, error) {
@@ -112,6 +122,19 @@ func TenantPatchReady(ctx context.Context, conn *sql.Conn) (bool, error) {
 	return IndexExists(ctx, conn, "idx_catalog_source_code")
 }
 
+// OrderIncomePatchReady — order income wallet column (+ dedup index when finance exists).
+func OrderIncomePatchReady(ctx context.Context, conn *sql.Conn) (bool, error) {
+	ok, err := columnExists(ctx, conn, "order", "income_wallet_id")
+	if err != nil || !ok {
+		return false, err
+	}
+	finExists, err := tableExists(ctx, conn, "fin_transaction")
+	if err != nil || !finExists {
+		return true, nil
+	}
+	return IndexExists(ctx, conn, "idx_fin_txn_order_income_ref")
+}
+
 // PIIReady — encrypted PII columns present (contact + lead).
 func PIIReady(ctx context.Context, conn *sql.Conn) (bool, error) {
 	for _, col := range []string{"phone_number_enc", "phone_number_idx"} {
@@ -132,6 +155,7 @@ func CloudTenantReady(ctx context.Context, conn *sql.Conn) (bool, error) {
 		FinanceModuleReady,
 		EventsModuleReady,
 		PIIReady,
+		OrderIncomePatchReady,
 	}
 	for _, fn := range checks {
 		ok, err := fn(ctx, conn)
