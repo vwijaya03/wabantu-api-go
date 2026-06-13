@@ -66,6 +66,7 @@ type ShippingAddress struct {
 
 type Order struct {
 	ID                   string           `json:"id"`
+	OrderNumber          string           `json:"orderNumber"`
 	ConversationID       string           `json:"conversationId"`
 	ContactID            string           `json:"contactId"`
 	Items                []OrderItem      `json:"items"`
@@ -754,6 +755,7 @@ func scanOrder(scan func(dest ...any) error) (Order, error) {
 	); err != nil {
 		return o, err
 	}
+	o.OrderNumber = FormatOrderNumber(o.ID)
 	if len(itemsRaw) > 0 {
 		_ = json.Unmarshal(itemsRaw, &o.Items)
 	}

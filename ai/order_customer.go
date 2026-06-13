@@ -15,17 +15,9 @@ import (
 	"encore.app/wabantu/order"
 )
 
-// FormatOrderNumber — nomor pesanan singkat untuk pembeli (tanpa kolom DB baru).
-// Contoh: WB-A1B2C3D4 dari UUID order.
+// FormatOrderNumber — nomor pesanan singkat untuk pembeli (delegasi ke order package).
 func FormatOrderNumber(orderID string) string {
-	id := strings.ReplaceAll(strings.TrimSpace(orderID), "-", "")
-	if id == "" {
-		return ""
-	}
-	if len(id) > 8 {
-		id = id[:8]
-	}
-	return "WB-" + strings.ToUpper(id)
+	return order.FormatOrderNumber(orderID)
 }
 
 var orderCancelPhrases = []string{
