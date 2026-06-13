@@ -133,7 +133,7 @@ func TestOrderSelectColsNoPrefixContainsRequiredFields(t *testing.T) {
 		"shipping_address", "notes", "status",
 		"tracking_number", "courier",
 		"payment_transaction_id", "subtotal", "shipping_cost", "total",
-		"created_by", "created_at", "updated_at",
+		"income_wallet_id", "created_by", "created_at", "updated_at",
 	}
 	for _, f := range required {
 		if !strings.Contains(cols, f) {

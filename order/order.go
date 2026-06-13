@@ -351,6 +351,7 @@ func Update(ctx context.Context, id string, req *UpdateOrderParams) (*Order, err
 	idx := 1
 	var updatedShippingCost *float64
 	newStatus := ""
+	walletUpdated := false
 
 	if req.ContactID != nil {
 		sets = append(sets, fmt.Sprintf("contact_id=$%d", idx))
@@ -427,6 +428,7 @@ func Update(ctx context.Context, id string, req *UpdateOrderParams) (*Order, err
 		sets = append(sets, fmt.Sprintf("income_wallet_id=$%d", idx))
 		args = append(args, nullUUIDArg(*req.IncomeWalletID))
 		idx++
+		walletUpdated = true
 	}
 	if updatedSubtotal != nil && updatedShippingCost != nil {
 		sets = append(sets, fmt.Sprintf("total=$%d", idx))
@@ -465,22 +467,15 @@ func Update(ctx context.Context, id string, req *UpdateOrderParams) (*Order, err
 	}
 
 	if newStatus == "completed" {
-		if err := finance.RecordOrderCompletedIncome(ctx, u.TenantSchema, u.AccountID, o.ID, o.Total, o.IncomeWalletID); err != nil {
+		if err := finance.ResyncOrderCompletedIncome(ctx, u.TenantSchema, u.AccountID, o.ID, o.Total, o.IncomeWalletID); err != nil {
 			return nil, err
 		}
 	} else if newStatus == "draft" || newStatus == "cancelled" {
 		if err := finance.RemoveOrderIncomeTransaction(ctx, u.TenantSchema, o.ID); err != nil {
 			return nil, err
 		}
-	} else if newStatus == "" && (updatedSubtotal != nil || updatedShippingCost != nil) && o.Status == "completed" {
-		// Total changed on an already-completed order: re-sync income amount.
-		if err := finance.CheckCurrentPeriodUnlocked(ctx, u.TenantSchema); err != nil {
-			return nil, err
-		}
-		if err := finance.RemoveOrderIncomeTransaction(ctx, u.TenantSchema, o.ID); err != nil {
-			return nil, err
-		}
-		if err := finance.RecordOrderCompletedIncome(ctx, u.TenantSchema, u.AccountID, o.ID, o.Total, o.IncomeWalletID); err != nil {
+	} else if shouldResyncCompletedOrderIncome(newStatus, o.Status, updatedSubtotal, updatedShippingCost, walletUpdated) {
+		if err := finance.ResyncOrderCompletedIncome(ctx, u.TenantSchema, u.AccountID, o.ID, o.Total, o.IncomeWalletID); err != nil {
 			return nil, err
 		}
 	}
