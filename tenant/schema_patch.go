@@ -196,7 +196,24 @@ func RunSchemaPatches(ctx context.Context, schemaName string) error {
 	if err := runPIISchemaOnConn(ctx, conn); err != nil {
 		return err
 	}
+	if err := runAlwaysApplyPatches(ctx, conn); err != nil {
+		return err
+	}
 	return runFinanceSchemaAndSeed(ctx, conn)
+}
+
+// runAlwaysApplyPatches applies DDL that must run on every migration call regardless
+// of TenantPatchReady / FinanceModuleReady guards.  Every statement MUST be idempotent
+// (IF NOT EXISTS / IF EXISTS / ON CONFLICT).
+func runAlwaysApplyPatches(ctx context.Context, conn *sql.Conn) error {
+	_, err := conn.ExecContext(ctx, `
+		ALTER TABLE "order" ADD COLUMN IF NOT EXISTS income_wallet_id UUID;
+
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_fin_txn_order_income_ref
+			ON fin_transaction (reference_no)
+			WHERE type = 'income' AND reference_no IS NOT NULL AND deleted_at IS NULL;
+	`)
+	return err
 }
 
 func runPIISchemaOnConn(ctx context.Context, conn *sql.Conn) error {
