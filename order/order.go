@@ -457,6 +457,17 @@ func Update(ctx context.Context, id string, req *UpdateOrderParams) (*Order, err
 		if err := finance.RemoveOrderIncomeTransaction(ctx, u.TenantSchema, o.ID); err != nil {
 			return nil, err
 		}
+	} else if newStatus == "" && (updatedSubtotal != nil || updatedShippingCost != nil) && o.Status == "completed" {
+		// Total changed on an already-completed order: re-sync income amount.
+		if err := finance.CheckCurrentPeriodUnlocked(ctx, u.TenantSchema); err != nil {
+			return nil, err
+		}
+		if err := finance.RemoveOrderIncomeTransaction(ctx, u.TenantSchema, o.ID); err != nil {
+			return nil, err
+		}
+		if err := finance.RecordOrderCompletedIncome(ctx, u.TenantSchema, u.AccountID, o.ID, o.Total); err != nil {
+			return nil, err
+		}
 	}
 	return &o, nil
 }
