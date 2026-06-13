@@ -255,6 +255,8 @@ func parseOrderRefFromMessage(userText string) string {
 
 type persistedOrder struct {
 	ID              string
+	ContactID       string
+	ConversationID  string
 	Status          string
 	ItemsJSON       []byte
 	ShippingJSON    []byte
@@ -270,60 +272,56 @@ var cancellableOrderStatuses = map[string]bool{
 	"paid":       true,
 }
 
-func loadLatestOrderForConversation(ctx context.Context, q tenantQuerier, tenantSchema, convoID string) (*persistedOrder, error) {
-	if strings.TrimSpace(convoID) == "" {
+func loadLatestOrderForContact(ctx context.Context, q tenantQuerier, tenantSchema string, scope orderAccessScope) (*persistedOrder, error) {
+	if !scope.valid() {
 		return nil, nil
 	}
+	owner := sqlOrderOwnerFilter(1, 2)
 	row := q.QueryRowContext(ctx, fmt.Sprintf(`
-		SELECT id::text, status, items, shipping_address, subtotal, total, created_at
+		SELECT %s
 		FROM "%s"."order"
-		WHERE conversation_id = $1::uuid AND deleted_at IS NULL
+		WHERE conversation_id = $1::uuid AND deleted_at IS NULL%s
 		ORDER BY created_at DESC
-		LIMIT 1`, tenantSchema), convoID)
+		LIMIT 1`, persistedOrderSelectCols, tenantSchema, owner), scope.ConversationID, scope.ContactID)
 
-	var o persistedOrder
-	err := row.Scan(&o.ID, &o.Status, &o.ItemsJSON, &o.ShippingJSON, &o.Subtotal, &o.Total, &o.CreatedAt)
+	o, err := scanPersistedOrderRow(row.Scan)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
-	if err != nil {
-		return nil, err
-	}
-	return &o, nil
+	return o, err
 }
 
-func loadActiveOrderForConversation(ctx context.Context, q tenantQuerier, tenantSchema, convoID string) (*persistedOrder, error) {
-	if strings.TrimSpace(convoID) == "" {
+func loadActiveOrderForContact(ctx context.Context, q tenantQuerier, tenantSchema string, scope orderAccessScope) (*persistedOrder, error) {
+	if !scope.valid() {
 		return nil, nil
 	}
+	owner := sqlOrderOwnerFilter(1, 2)
 	row := q.QueryRowContext(ctx, fmt.Sprintf(`
-		SELECT id::text, status, items, shipping_address, subtotal, total, created_at
+		SELECT %s
 		FROM "%s"."order"
 		WHERE conversation_id = $1::uuid AND deleted_at IS NULL
-		  AND status NOT IN ('cancelled')
+		  AND status NOT IN ('cancelled')%s
 		ORDER BY created_at DESC
-		LIMIT 1`, tenantSchema), convoID)
+		LIMIT 1`, persistedOrderSelectCols, tenantSchema, owner), scope.ConversationID, scope.ContactID)
 
-	var o persistedOrder
-	err := row.Scan(&o.ID, &o.Status, &o.ItemsJSON, &o.ShippingJSON, &o.Subtotal, &o.Total, &o.CreatedAt)
+	o, err := scanPersistedOrderRow(row.Scan)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
-	if err != nil {
-		return nil, err
-	}
-	return &o, nil
+	return o, err
 }
 
-func countCancellableOrdersForConversation(ctx context.Context, q tenantQuerier, tenantSchema, convoID string) (int, error) {
-	if strings.TrimSpace(convoID) == "" {
+func countCancellableOrdersForContact(ctx context.Context, q tenantQuerier, tenantSchema string, scope orderAccessScope) (int, error) {
+	if !scope.valid() {
 		return 0, nil
 	}
+	owner := sqlOrderOwnerFilter(1, 2)
 	row := q.QueryRowContext(ctx, fmt.Sprintf(`
 		SELECT COUNT(*)
 		FROM "%s"."order"
 		WHERE conversation_id = $1::uuid AND deleted_at IS NULL
-		  AND status IN ('draft','processing','confirmed','paid')`, tenantSchema), convoID)
+		  AND status IN ('draft','processing','confirmed','paid')%s`, tenantSchema, owner),
+		scope.ConversationID, scope.ContactID)
 	var n int
 	if err := row.Scan(&n); err != nil {
 		return 0, err
@@ -331,70 +329,78 @@ func countCancellableOrdersForConversation(ctx context.Context, q tenantQuerier,
 	return n, nil
 }
 
-func loadCancellableOrdersForConversation(ctx context.Context, q tenantQuerier, tenantSchema, convoID string) ([]persistedOrder, error) {
-	if strings.TrimSpace(convoID) == "" {
+func loadCancellableOrdersForContact(ctx context.Context, q tenantQuerier, tenantSchema string, scope orderAccessScope) ([]persistedOrder, error) {
+	if !scope.valid() {
 		return nil, nil
 	}
+	owner := sqlOrderOwnerFilter(1, 2)
 	rows, err := q.QueryContext(ctx, fmt.Sprintf(`
-		SELECT id::text, status, items, shipping_address, subtotal, total, created_at
+		SELECT %s
 		FROM "%s"."order"
 		WHERE conversation_id = $1::uuid AND deleted_at IS NULL
-		  AND status IN ('draft','processing','confirmed','paid')
-		ORDER BY created_at DESC`, tenantSchema), convoID)
+		  AND status IN ('draft','processing','confirmed','paid')%s
+		ORDER BY created_at DESC`, persistedOrderSelectCols, tenantSchema, owner),
+		scope.ConversationID, scope.ContactID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var out []persistedOrder
 	for rows.Next() {
-		var o persistedOrder
-		if err := rows.Scan(&o.ID, &o.Status, &o.ItemsJSON, &o.ShippingJSON, &o.Subtotal, &o.Total, &o.CreatedAt); err != nil {
+		o, err := scanPersistedOrderRow(rows.Scan)
+		if err != nil {
 			return nil, err
 		}
-		out = append(out, o)
+		out = append(out, *o)
 	}
 	return out, rows.Err()
 }
 
-func loadActiveOrdersForConversation(ctx context.Context, q tenantQuerier, tenantSchema, convoID string) ([]persistedOrder, error) {
-	if strings.TrimSpace(convoID) == "" {
+func loadActiveOrdersForContact(ctx context.Context, q tenantQuerier, tenantSchema string, scope orderAccessScope) ([]persistedOrder, error) {
+	if !scope.valid() {
 		return nil, nil
 	}
+	owner := sqlOrderOwnerFilter(1, 2)
 	rows, err := q.QueryContext(ctx, fmt.Sprintf(`
-		SELECT id::text, status, items, shipping_address, subtotal, total, created_at
+		SELECT %s
 		FROM "%s"."order"
 		WHERE conversation_id = $1::uuid AND deleted_at IS NULL
-		  AND status NOT IN ('cancelled')
-		ORDER BY created_at DESC`, tenantSchema), convoID)
+		  AND status NOT IN ('cancelled')%s
+		ORDER BY created_at DESC`, persistedOrderSelectCols, tenantSchema, owner),
+		scope.ConversationID, scope.ContactID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var out []persistedOrder
 	for rows.Next() {
-		var o persistedOrder
-		if err := rows.Scan(&o.ID, &o.Status, &o.ItemsJSON, &o.ShippingJSON, &o.Subtotal, &o.Total, &o.CreatedAt); err != nil {
+		o, err := scanPersistedOrderRow(rows.Scan)
+		if err != nil {
 			return nil, err
 		}
-		out = append(out, o)
+		out = append(out, *o)
 	}
 	return out, rows.Err()
 }
 
 type persistedOrderResolve struct {
-	Order      *persistedOrder
-	NeedPick   bool
-	NotFound   bool
-	ActiveOnly bool
-	List       []persistedOrder
+	Order        *persistedOrder
+	NeedPick     bool
+	NotFound     bool
+	AccessDenied bool
+	ActiveOnly   bool
+	List         []persistedOrder
 }
 
-func resolvePersistedOrderStatus(ctx context.Context, q tenantQuerier, tenantSchema, convoID, userText string) (persistedOrderResolve, error) {
+func resolvePersistedOrderStatus(ctx context.Context, q tenantQuerier, tenantSchema string, scope orderAccessScope, userText string) (persistedOrderResolve, error) {
 	activeOnly := WantsActiveOrderOnly(userText)
 	if ref := parseOrderRefFromMessage(userText); ref != "" {
-		o, err := loadOrderByRefForConversation(ctx, q, tenantSchema, convoID, ref)
+		o, denied, err := loadOrderByRefForContact(ctx, q, tenantSchema, scope, ref)
 		if err != nil {
 			return persistedOrderResolve{}, err
+		}
+		if denied {
+			return persistedOrderResolve{AccessDenied: true}, nil
 		}
 		if o == nil {
 			return persistedOrderResolve{NotFound: true}, nil
@@ -405,7 +411,7 @@ func resolvePersistedOrderStatus(ctx context.Context, q tenantQuerier, tenantSch
 		return persistedOrderResolve{Order: o}, nil
 	}
 	if activeOnly {
-		list, err := loadActiveOrdersForConversation(ctx, q, tenantSchema, convoID)
+		list, err := loadActiveOrdersForContact(ctx, q, tenantSchema, scope)
 		if err != nil {
 			return persistedOrderResolve{}, err
 		}
@@ -418,25 +424,25 @@ func resolvePersistedOrderStatus(ctx context.Context, q tenantQuerier, tenantSch
 		}
 		return persistedOrderResolve{NeedPick: true, List: list}, nil
 	}
-	n, err := countCancellableOrdersForConversation(ctx, q, tenantSchema, convoID)
+	n, err := countCancellableOrdersForContact(ctx, q, tenantSchema, scope)
 	if err != nil {
 		return persistedOrderResolve{}, err
 	}
 	if n > 1 {
-		list, err := loadCancellableOrdersForConversation(ctx, q, tenantSchema, convoID)
+		list, err := loadCancellableOrdersForContact(ctx, q, tenantSchema, scope)
 		if err != nil {
 			return persistedOrderResolve{}, err
 		}
 		return persistedOrderResolve{NeedPick: true, List: list}, nil
 	}
-	o, err := loadActiveOrderForConversation(ctx, q, tenantSchema, convoID)
+	o, err := loadActiveOrderForContact(ctx, q, tenantSchema, scope)
 	if err != nil {
 		return persistedOrderResolve{}, err
 	}
 	if o != nil {
 		return persistedOrderResolve{Order: o}, nil
 	}
-	o, err = loadLatestOrderForConversation(ctx, q, tenantSchema, convoID)
+	o, err = loadLatestOrderForContact(ctx, q, tenantSchema, scope)
 	if err != nil {
 		return persistedOrderResolve{}, err
 	}
@@ -446,18 +452,21 @@ func resolvePersistedOrderStatus(ctx context.Context, q tenantQuerier, tenantSch
 	return persistedOrderResolve{Order: o}, nil
 }
 
-func resolvePersistedOrderCancel(ctx context.Context, q tenantQuerier, tenantSchema, convoID, userText string) (persistedOrderResolve, error) {
+func resolvePersistedOrderCancel(ctx context.Context, q tenantQuerier, tenantSchema string, scope orderAccessScope, userText string) (persistedOrderResolve, error) {
 	if ref := parseOrderRefFromMessage(userText); ref != "" {
-		o, err := loadOrderByRefForConversation(ctx, q, tenantSchema, convoID, ref)
+		o, denied, err := loadOrderByRefForContact(ctx, q, tenantSchema, scope, ref)
 		if err != nil {
 			return persistedOrderResolve{}, err
+		}
+		if denied {
+			return persistedOrderResolve{AccessDenied: true}, nil
 		}
 		if o == nil {
 			return persistedOrderResolve{NotFound: true}, nil
 		}
 		return persistedOrderResolve{Order: o}, nil
 	}
-	list, err := loadCancellableOrdersForConversation(ctx, q, tenantSchema, convoID)
+	list, err := loadCancellableOrdersForContact(ctx, q, tenantSchema, scope)
 	if err != nil {
 		return persistedOrderResolve{}, err
 	}
@@ -467,36 +476,39 @@ func resolvePersistedOrderCancel(ctx context.Context, q tenantQuerier, tenantSch
 	return persistedOrderResolve{NeedPick: true, List: list}, nil
 }
 
-func loadOrderByRefForConversation(ctx context.Context, q tenantQuerier, tenantSchema, convoID, ref string) (*persistedOrder, error) {
+// loadOrderByRefForContact — ref + contact scope; denied=true jika order ada di conversation tapi milik contact lain.
+func loadOrderByRefForContact(ctx context.Context, q tenantQuerier, tenantSchema string, scope orderAccessScope, ref string) (*persistedOrder, bool, error) {
 	prefix := strings.ToUpper(strings.TrimPrefix(strings.TrimSpace(ref), "WB-"))
-	if prefix == "" || strings.TrimSpace(convoID) == "" {
-		return nil, nil
+	if prefix == "" || !scope.valid() {
+		return nil, false, nil
 	}
 	row := q.QueryRowContext(ctx, fmt.Sprintf(`
-		SELECT id::text, status, items, shipping_address, subtotal, total, created_at
+		SELECT %s
 		FROM "%s"."order"
 		WHERE conversation_id = $1::uuid AND deleted_at IS NULL
 		  AND UPPER(REPLACE(id::text, '-', '')) LIKE $2 || '%%'
 		ORDER BY created_at DESC
-		LIMIT 1`, tenantSchema), convoID, prefix)
+		LIMIT 1`, persistedOrderSelectCols, tenantSchema), scope.ConversationID, prefix)
 
-	var o persistedOrder
-	err := row.Scan(&o.ID, &o.Status, &o.ItemsJSON, &o.ShippingJSON, &o.Subtotal, &o.Total, &o.CreatedAt)
+	o, err := scanPersistedOrderRow(row.Scan)
 	if err == sql.ErrNoRows {
-		return nil, nil
+		return nil, false, nil
 	}
-	if err != nil {
-		return nil, err
-	}
-	return &o, nil
-}
-
-func resolvePersistedOrderAction(ctx context.Context, q tenantQuerier, tenantSchema, convoID, userText string) (*persistedOrder, bool, error) {
-	res, err := resolvePersistedOrderStatus(ctx, q, tenantSchema, convoID, userText)
 	if err != nil {
 		return nil, false, err
 	}
-	if res.NeedPick || res.NotFound || res.ActiveOnly {
+	if !OrderAccessibleByContact(o, scope.ContactID, scope.ConversationID) {
+		return nil, true, nil
+	}
+	return o, false, nil
+}
+
+func resolvePersistedOrderAction(ctx context.Context, q tenantQuerier, tenantSchema string, scope orderAccessScope, userText string) (*persistedOrder, bool, error) {
+	res, err := resolvePersistedOrderStatus(ctx, q, tenantSchema, scope, userText)
+	if err != nil {
+		return nil, false, err
+	}
+	if res.NeedPick || res.NotFound || res.ActiveOnly || res.AccessDenied {
 		return res.Order, res.NeedPick, nil
 	}
 	return res.Order, false, nil
@@ -555,12 +567,15 @@ func orderStatusPickRefReply(orders []persistedOrder) string {
 	)
 }
 
-func cancelPersistedOrder(ctx context.Context, q tenantQuerier, tenantSchema, orderID string) error {
+func cancelPersistedOrder(ctx context.Context, q tenantQuerier, tenantSchema, orderID string, scope orderAccessScope) error {
+	owner := sqlOrderOwnerFilter(2, 3)
 	res, err := q.ExecContext(ctx, fmt.Sprintf(`
 		UPDATE "%s"."order"
 		SET status = 'cancelled', updated_at = NOW()
 		WHERE id = $1::uuid AND deleted_at IS NULL
-		  AND status IN ('draft','processing','confirmed','paid')`, tenantSchema), orderID)
+		  AND conversation_id = $2::uuid
+		  AND status IN ('draft','processing','confirmed','paid')%s`, tenantSchema, owner),
+		orderID, scope.ConversationID, scope.ContactID)
 	if err != nil {
 		return err
 	}

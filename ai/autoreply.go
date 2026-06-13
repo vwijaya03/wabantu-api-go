@@ -1101,7 +1101,8 @@ func (s *AutoReplyService) handleCustomerOrderCancel(
 	profile *dbBusinessProfile,
 	userText string,
 ) (bool, error) {
-	res, err := resolvePersistedOrderCancel(ctx, conn, tenantSchema, convo.ID, userText)
+	scope := orderAccessScope{ConversationID: convo.ID, ContactID: convo.ContactID}
+	res, err := resolvePersistedOrderCancel(ctx, conn, tenantSchema, scope, userText)
 	if err != nil {
 		rlog.Warn("order cancel: load failed", "err", err, "convoId", convo.ID)
 		return false, err
@@ -1111,6 +1112,11 @@ func (s *AutoReplyService) handleCustomerOrderCancel(
 		meta.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 		err := s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, text, "system", meta)
 		return err == nil, err
+	}
+	if res.AccessDenied {
+		meta := metaNoLLM(reasonNonQuestion, PathOrderCancel)
+		meta.OrderAction = "cancel"
+		return send(orderAccessDeniedReply(), meta)
 	}
 	if res.NotFound {
 		meta := metaNoLLM(reasonNonQuestion, PathOrderCancel)
@@ -1128,6 +1134,11 @@ func (s *AutoReplyService) handleCustomerOrderCancel(
 		meta.OrderAction = "cancel"
 		return send(orderNoneToCancelReply(), meta)
 	}
+	if contact != nil && !OrderChatAccessAllowed(o, scope, contact.PhoneNumber, contact.PhoneNumber) {
+		meta := metaNoLLM(reasonNonQuestion, PathOrderCancel)
+		meta.OrderAction = "cancel"
+		return send(orderAccessDeniedReply(), meta)
+	}
 	ref := FormatOrderNumber(o.ID)
 	if strings.EqualFold(o.Status, "cancelled") {
 		meta := metaNoLLM(reasonNonQuestion, PathOrderCancel)
@@ -1143,7 +1154,7 @@ func (s *AutoReplyService) handleCustomerOrderCancel(
 			ref, orderStatusLabelID(o.Status))
 		return send(msg, meta)
 	}
-	if err := cancelPersistedOrder(ctx, conn, tenantSchema, o.ID); err != nil {
+	if err := cancelPersistedOrder(ctx, conn, tenantSchema, o.ID, scope); err != nil {
 		if err == sql.ErrNoRows {
 			meta := metaNoLLM(reasonNonQuestion, PathOrderCancel)
 			meta.OrderID = o.ID
@@ -1170,7 +1181,8 @@ func (s *AutoReplyService) handleCustomerOrderStatus(
 	contact *dbContact,
 	userText string,
 ) (bool, error) {
-	res, err := resolvePersistedOrderStatus(ctx, conn, tenantSchema, convo.ID, userText)
+	scope := orderAccessScope{ConversationID: convo.ID, ContactID: convo.ContactID}
+	res, err := resolvePersistedOrderStatus(ctx, conn, tenantSchema, scope, userText)
 	if err != nil {
 		return false, err
 	}
@@ -1180,6 +1192,9 @@ func (s *AutoReplyService) handleCustomerOrderStatus(
 		meta.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 		err := s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, text, "system", meta)
 		return err == nil, err
+	}
+	if res.AccessDenied {
+		return send(orderAccessDeniedReply())
 	}
 	if res.NotFound {
 		return send(orderRefNotFoundReply(parseOrderRefFromMessage(userText)))
@@ -1193,6 +1208,9 @@ func (s *AutoReplyService) handleCustomerOrderStatus(
 	o := res.Order
 	if o == nil {
 		return send(orderNoneFoundReply())
+	}
+	if contact != nil && !OrderChatAccessAllowed(o, scope, contact.PhoneNumber, contact.PhoneNumber) {
+		return send(orderAccessDeniedReply())
 	}
 	meta.OrderID = o.ID
 	body := formatPersistedOrderSummary(o)
