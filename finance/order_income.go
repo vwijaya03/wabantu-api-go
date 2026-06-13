@@ -12,8 +12,9 @@ import (
 
 // RecordOrderCompletedIncome creates an approved income transaction when an order is completed.
 // Idempotent per order ID (reference_no): uses INSERT … ON CONFLICT DO NOTHING so concurrent
-// calls for the same order are safe without an explicit existence check.
-func RecordOrderCompletedIncome(ctx context.Context, tenantSchema, createdBy, orderID string, amount float64) error {
+// calls for the same order are safe without an explicit existence check. walletID may be empty
+// to use the default income wallet.
+func RecordOrderCompletedIncome(ctx context.Context, tenantSchema, createdBy, orderID string, amount float64, walletID string) error {
 	if amount <= 0 {
 		return nil
 	}
@@ -28,7 +29,7 @@ func RecordOrderCompletedIncome(ctx context.Context, tenantSchema, createdBy, or
 	}
 	defer conn.Close()
 
-	walletID, err := resolveDefaultIncomeWallet(ctx, conn)
+	resolvedWalletID, err := resolveIncomeWallet(ctx, conn, walletID)
 	if err != nil {
 		return err
 	}
@@ -58,7 +59,7 @@ func RecordOrderCompletedIncome(ctx context.Context, tenantSchema, createdBy, or
 		 VALUES ('income', $1, 'IDR', $2, $3, $4, $5, $6, 'approved', '{}', $7)
 		 ON CONFLICT DO NOTHING`,
 		amount,
-		walletID,
+		resolvedWalletID,
 		nullStr(categoryID),
 		desc,
 		orderID,
@@ -72,7 +73,7 @@ func RecordOrderCompletedIncome(ctx context.Context, tenantSchema, createdBy, or
 		return nil // idempotent: income row already exists
 	}
 
-	refreshWallets(ctx, conn, walletID, nil)
+	refreshWallets(ctx, conn, resolvedWalletID, nil)
 	return nil
 }
 
@@ -139,6 +140,25 @@ func RemoveOrderIncomeTransaction(ctx context.Context, tenantSchema, orderID str
 	return nil
 }
 
+func resolveIncomeWallet(ctx context.Context, conn *sql.Conn, walletID string) (string, error) {
+	walletID = strings.TrimSpace(walletID)
+	if walletID != "" {
+		var exists bool
+		if err := conn.QueryRowContext(ctx, `
+			SELECT EXISTS(
+			  SELECT 1 FROM fin_wallet
+			  WHERE id = $1 AND deleted_at IS NULL AND is_active = true
+			)`, walletID).Scan(&exists); err != nil {
+			return "", appErrs.Internal(err.Error())
+		}
+		if !exists {
+			return "", appErrs.BadRequest("dompet pemasukan tidak valid atau tidak aktif")
+		}
+		return walletID, nil
+	}
+	return resolveDefaultIncomeWallet(ctx, conn)
+}
+
 func resolveDefaultIncomeWallet(ctx context.Context, conn *sql.Conn) (string, error) {
 	var walletID string
 	err := conn.QueryRowContext(ctx, `
@@ -153,4 +173,18 @@ func resolveDefaultIncomeWallet(ctx context.Context, conn *sql.Conn) (string, er
 		return "", appErrs.Internal(err.Error())
 	}
 	return walletID, nil
+}
+
+// ValidateIncomeWallet ensures an optional wallet ID refers to an active wallet.
+func ValidateIncomeWallet(ctx context.Context, tenantSchema, walletID string) error {
+	if strings.TrimSpace(walletID) == "" {
+		return nil
+	}
+	conn, err := tenant.TenantConn(ctx, tenantSchema)
+	if err != nil {
+		return appErrs.Internal(err.Error())
+	}
+	defer conn.Close()
+	_, err = resolveIncomeWallet(ctx, conn, walletID)
+	return err
 }

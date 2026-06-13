@@ -81,6 +81,7 @@ type Order struct {
 	Subtotal             float64          `json:"subtotal"`
 	ShippingCost         float64          `json:"shippingCost"`
 	Total                float64          `json:"total"`
+	IncomeWalletID       string           `json:"incomeWalletId,omitempty"`
 	CreatedBy            string           `json:"createdBy"`
 	CreatedAt            time.Time        `json:"createdAt"`
 	UpdatedAt            time.Time        `json:"updatedAt"`
@@ -97,6 +98,7 @@ type CreateOrderParams struct {
 	TrackingNumber  string           `json:"trackingNumber,omitempty"`
 	Courier         string           `json:"courier,omitempty"`
 	ShippingCost    float64          `json:"shippingCost,omitempty"`
+	IncomeWalletID  string           `json:"incomeWalletId,omitempty"`
 }
 
 type UpdateOrderParams struct {
@@ -108,6 +110,7 @@ type UpdateOrderParams struct {
 	Courier              *string     `json:"courier,omitempty"`
 	PaymentTransactionID *string     `json:"paymentTransactionId,omitempty"`
 	ShippingCost         *float64    `json:"shippingCost,omitempty"`
+	IncomeWalletID       *string     `json:"incomeWalletId,omitempty"`
 }
 
 type ListOrdersParams struct {
@@ -154,13 +157,13 @@ func orderSelectCols(prefix string) string {
 		COALESCE(%s, '{}'), COALESCE(%s, ''), %s,
 		COALESCE(%s, ''), COALESCE(%s, ''),
 		COALESCE(%s::text, ''), %s, %s, %s,
-		COALESCE(%s::text, ''), %s, %s`,
+		COALESCE(%s::text, ''), COALESCE(%s::text, ''), %s, %s`,
 		col("id"),
 		col("conversation_id"), col("contact_id"), col("items"),
 		col("shipping_address"), col("notes"), col("status"),
 		col("tracking_number"), col("courier"),
 		col("payment_transaction_id"), col("subtotal"), col("shipping_cost"), col("total"),
-		col("created_by"), col("created_at"), col("updated_at"))
+		col("income_wallet_id"), col("created_by"), col("created_at"), col("updated_at"))
 }
 
 // ---------- endpoints ----------
@@ -301,6 +304,9 @@ func Create(ctx context.Context, p *CreateOrderParams) (*Order, error) {
 			return nil, err
 		}
 	}
+	if err := finance.ValidateIncomeWallet(ctx, u.TenantSchema, p.IncomeWalletID); err != nil {
+		return nil, err
+	}
 
 	itemsJSON, _ := json.Marshal(items)
 	addrJSON, _ := json.Marshal(p.ShippingAddress)
@@ -309,20 +315,21 @@ func Create(ctx context.Context, p *CreateOrderParams) (*Order, error) {
 	row := db.QueryRow(ctx, fmt.Sprintf(
 		`INSERT INTO "%s"."order"
 			(conversation_id, contact_id, items, shipping_address, notes,
-			 status, tracking_number, courier, subtotal, shipping_cost, total, created_by)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+			 status, tracking_number, courier, subtotal, shipping_cost, total,
+			 income_wallet_id, created_by)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 		 RETURNING %s`,
 		u.TenantSchema, orderSelectCols("")),
 		convID, contactID, itemsJSON, addrJSON, p.Notes,
 		status, strings.TrimSpace(p.TrackingNumber), strings.TrimSpace(p.Courier),
-		subtotal, p.ShippingCost, total, u.AccountID)
+		subtotal, p.ShippingCost, total, nullUUIDArg(p.IncomeWalletID), u.AccountID)
 
 	o, err := scanOrder(row.Scan)
 	if err != nil {
 		return nil, fmt.Errorf("create order: %w", err)
 	}
 	if status == "completed" {
-		if err := finance.RecordOrderCompletedIncome(ctx, u.TenantSchema, u.AccountID, o.ID, o.Total); err != nil {
+		if err := finance.RecordOrderCompletedIncome(ctx, u.TenantSchema, u.AccountID, o.ID, o.Total, o.IncomeWalletID); err != nil {
 			return nil, err
 		}
 	}
@@ -413,6 +420,14 @@ func Update(ctx context.Context, id string, req *UpdateOrderParams) (*Order, err
 		idx++
 		updatedShippingCost = req.ShippingCost
 	}
+	if req.IncomeWalletID != nil {
+		if err := finance.ValidateIncomeWallet(ctx, u.TenantSchema, *req.IncomeWalletID); err != nil {
+			return nil, err
+		}
+		sets = append(sets, fmt.Sprintf("income_wallet_id=$%d", idx))
+		args = append(args, nullUUIDArg(*req.IncomeWalletID))
+		idx++
+	}
 	if updatedSubtotal != nil && updatedShippingCost != nil {
 		sets = append(sets, fmt.Sprintf("total=$%d", idx))
 		args = append(args, *updatedSubtotal+*updatedShippingCost)
@@ -450,7 +465,7 @@ func Update(ctx context.Context, id string, req *UpdateOrderParams) (*Order, err
 	}
 
 	if newStatus == "completed" {
-		if err := finance.RecordOrderCompletedIncome(ctx, u.TenantSchema, u.AccountID, o.ID, o.Total); err != nil {
+		if err := finance.RecordOrderCompletedIncome(ctx, u.TenantSchema, u.AccountID, o.ID, o.Total, o.IncomeWalletID); err != nil {
 			return nil, err
 		}
 	} else if newStatus == "draft" || newStatus == "cancelled" {
@@ -564,7 +579,7 @@ func BatchUpdateStatus(ctx context.Context, req *BatchUpdateStatusParams) (*Batc
 				return nil, err
 			}
 			updated++
-			if err := finance.RecordOrderCompletedIncome(ctx, u.TenantSchema, u.AccountID, o.ID, o.Total); err != nil {
+			if err := finance.RecordOrderCompletedIncome(ctx, u.TenantSchema, u.AccountID, o.ID, o.Total, o.IncomeWalletID); err != nil {
 				return nil, err
 			}
 		}
@@ -821,7 +836,7 @@ func scanOrder(scan func(dest ...any) error) (Order, error) {
 		&addrRaw, &o.Notes, &o.Status,
 		&o.TrackingNumber, &o.Courier,
 		&o.PaymentTransactionID, &o.Subtotal, &o.ShippingCost, &o.Total,
-		&o.CreatedBy, &o.CreatedAt, &o.UpdatedAt,
+		&o.IncomeWalletID, &o.CreatedBy, &o.CreatedAt, &o.UpdatedAt,
 	); err != nil {
 		return o, err
 	}

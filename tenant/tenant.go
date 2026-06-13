@@ -626,6 +626,7 @@ CREATE TABLE IF NOT EXISTS "order" (
     subtotal               DECIMAL(15,4) NOT NULL DEFAULT 0,
     shipping_cost          DECIMAL(15,4) NOT NULL DEFAULT 0,
     total                  DECIMAL(15,4) NOT NULL DEFAULT 0,
+    income_wallet_id       UUID,
     created_by             UUID,
     created_at             TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at             TIMESTAMPTZ  NOT NULL DEFAULT now(),

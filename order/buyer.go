@@ -43,7 +43,7 @@ func scanOrderWithContact(scan func(dest ...any) error) (Order, error) {
 		&addrRaw, &o.Notes, &o.Status,
 		&o.TrackingNumber, &o.Courier,
 		&o.PaymentTransactionID, &o.Subtotal, &o.ShippingCost, &o.Total,
-		&o.CreatedBy, &o.CreatedAt, &o.UpdatedAt,
+		&o.IncomeWalletID, &o.CreatedBy, &o.CreatedAt, &o.UpdatedAt,
 		&nameEnc, &nameLegacy, &phoneEnc, &phoneLegacy,
 	); err != nil {
 		return o, err
