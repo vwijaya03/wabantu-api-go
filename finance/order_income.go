@@ -11,7 +11,8 @@ import (
 )
 
 // RecordOrderCompletedIncome creates an approved income transaction when an order is completed.
-// Idempotent per order ID (reference_no).
+// Idempotent per order ID (reference_no): uses INSERT … ON CONFLICT DO NOTHING so concurrent
+// calls for the same order are safe without an explicit existence check.
 func RecordOrderCompletedIncome(ctx context.Context, tenantSchema, createdBy, orderID string, amount float64) error {
 	if amount <= 0 {
 		return nil
@@ -26,26 +27,6 @@ func RecordOrderCompletedIncome(ctx context.Context, tenantSchema, createdBy, or
 		return appErrs.Internal(err.Error())
 	}
 	defer conn.Close()
-
-	var exists bool
-	if err := conn.QueryRowContext(ctx, `
-		SELECT EXISTS(
-		  SELECT 1 FROM fin_transaction
-		  WHERE reference_no = $1 AND type = 'income' AND deleted_at IS NULL
-		  LIMIT 1
-		)`, orderID).Scan(&exists); err != nil {
-		return appErrs.Internal(err.Error())
-	}
-	if exists {
-		return nil
-	}
-
-	// Legacy soft-deleted rows would bypass the active-only check and cause duplicates on re-complete.
-	if _, err := conn.ExecContext(ctx, `
-		DELETE FROM fin_transaction
-		WHERE reference_no = $1 AND type = 'income' AND deleted_at IS NOT NULL`, orderID); err != nil {
-		return appErrs.Internal(err.Error())
-	}
 
 	walletID, err := resolveDefaultIncomeWallet(ctx, conn)
 	if err != nil {
@@ -68,13 +49,14 @@ func RecordOrderCompletedIncome(ctx context.Context, tenantSchema, createdBy, or
 		createdBy = "00000000-0000-0000-0000-000000000000"
 	}
 
-	var txnID string
-	err = conn.QueryRowContext(ctx, `
+	// ON CONFLICT DO NOTHING handles the rare race where two requests complete the same
+	// order simultaneously. RowsAffected == 0 means a concurrent insert won → idempotent.
+	res, err := conn.ExecContext(ctx, `
 		INSERT INTO fin_transaction
 		 (type, amount, currency, wallet_id, category_id, description, reference_no,
 		  transaction_date, status, tags, created_by)
 		 VALUES ('income', $1, 'IDR', $2, $3, $4, $5, $6, 'approved', '{}', $7)
-		 RETURNING id`,
+		 ON CONFLICT DO NOTHING`,
 		amount,
 		walletID,
 		nullStr(categoryID),
@@ -82,13 +64,29 @@ func RecordOrderCompletedIncome(ctx context.Context, tenantSchema, createdBy, or
 		orderID,
 		today,
 		createdBy,
-	).Scan(&txnID)
+	)
 	if err != nil {
 		return appErrs.Internal("failed to record order income: " + err.Error())
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil // idempotent: income row already exists
 	}
 
 	refreshWallets(ctx, conn, walletID, nil)
 	return nil
+}
+
+// CheckCurrentPeriodUnlocked returns an error if the current finance period is locked.
+// Call this before persisting an order status change to 'completed' so the order DB write
+// is not committed when the subsequent finance insert would be rejected.
+func CheckCurrentPeriodUnlocked(ctx context.Context, tenantSchema string) error {
+	conn, err := tenant.TenantConn(ctx, tenantSchema)
+	if err != nil {
+		return appErrs.Internal(err.Error())
+	}
+	defer conn.Close()
+	today := financeToday(ctx, conn)
+	return ensurePeriodUnlocked(ctx, conn, walletPeriod(today))
 }
 
 // RemoveOrderIncomeTransaction deletes income rows linked to an order (reference_no).

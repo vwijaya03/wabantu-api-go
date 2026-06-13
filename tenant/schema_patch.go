@@ -166,6 +166,11 @@ WHERE frequency = 'monthly'
 DELETE FROM fin_approval_setting a
 USING fin_approval_setting b
 WHERE a.id > b.id;
+
+-- Prevents duplicate order income rows caused by concurrent order completions.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_fin_txn_order_income_ref
+    ON fin_transaction (reference_no)
+    WHERE type = 'income' AND reference_no IS NOT NULL AND deleted_at IS NULL;
 `
 
 // RunSchemaPatches applies idempotent ALTERs for an existing tenant schema.
