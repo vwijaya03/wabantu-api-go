@@ -12,10 +12,15 @@ const contactJoinCols = `COALESCE(c.display_name_enc, ''), COALESCE(c.display_na
 
 func decryptContactField(enc, legacy string) string {
 	key := strings.TrimSpace(secrets.DataEncryptionKey)
-	if v, err := pii.DecryptOrLegacy(enc, legacy, key); err == nil {
-		return strings.TrimSpace(v)
+	v, err := pii.DecryptOrLegacy(enc, legacy, key)
+	if err != nil {
+		v = legacy
 	}
-	return strings.TrimSpace(legacy)
+	v = strings.TrimSpace(v)
+	if v == "" || v == pii.Placeholder {
+		return ""
+	}
+	return v
 }
 
 func applyContactBuyer(o *Order, nameEnc, nameLegacy, phoneEnc, phoneLegacy string) {
@@ -24,6 +29,9 @@ func applyContactBuyer(o *Order, nameEnc, nameLegacy, phoneEnc, phoneLegacy stri
 	}
 	o.ContactDisplayName = decryptContactField(nameEnc, nameLegacy)
 	o.ContactPhone = decryptContactField(phoneEnc, phoneLegacy)
+	if o.ContactDisplayName == "" && o.ShippingAddress != nil {
+		o.ContactDisplayName = strings.TrimSpace(o.ShippingAddress.Name)
+	}
 }
 
 func scanOrderWithContact(scan func(dest ...any) error) (Order, error) {
@@ -41,7 +49,6 @@ func scanOrderWithContact(scan func(dest ...any) error) (Order, error) {
 		return o, err
 	}
 	o.OrderNumber = FormatOrderNumber(o.ID)
-	applyContactBuyer(&o, nameEnc, nameLegacy, phoneEnc, phoneLegacy)
 	if len(itemsRaw) > 0 {
 		_ = json.Unmarshal(itemsRaw, &o.Items)
 	}
@@ -54,6 +61,7 @@ func scanOrderWithContact(scan func(dest ...any) error) (Order, error) {
 			o.ShippingAddress = &addr
 		}
 	}
+	applyContactBuyer(&o, nameEnc, nameLegacy, phoneEnc, phoneLegacy)
 	return o, nil
 }
 
