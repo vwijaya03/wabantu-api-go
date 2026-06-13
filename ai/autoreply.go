@@ -267,6 +267,11 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	userText := SanitizeForPrompt(inbound.Body)
 	rlog.Info("AI job: inbound text", "lenUserText", len(userText))
 
+	// Status inquiry sebelum greeting — "halo min punya pesanan aktif?" bukan sapaan murni.
+	if IsOrderStatusInquiry(userText) {
+		return s.handleCustomerOrderStatus(ctx, conn, payload.TenantSchema, payload, convo, channel, contact, userText)
+	}
+
 	if IsGreetingLike(userText) {
 		// Sapaan baru = sesi baru; jangan biarkan draft order Redis mengganggu pertanyaan berikutnya.
 		s.clearOrderState(ctx, payload.TenantID, convo.ID)
@@ -1096,7 +1101,7 @@ func (s *AutoReplyService) handleCustomerOrderCancel(
 	profile *dbBusinessProfile,
 	userText string,
 ) (bool, error) {
-	o, disambiguate, err := resolvePersistedOrderAction(ctx, conn, tenantSchema, convo.ID, userText)
+	res, err := resolvePersistedOrderCancel(ctx, conn, tenantSchema, convo.ID, userText)
 	if err != nil {
 		rlog.Warn("order cancel: load failed", "err", err, "convoId", convo.ID)
 		return false, err
@@ -1107,11 +1112,17 @@ func (s *AutoReplyService) handleCustomerOrderCancel(
 		err := s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, text, "system", meta)
 		return err == nil, err
 	}
-	if disambiguate {
+	if res.NotFound {
 		meta := metaNoLLM(reasonNonQuestion, PathOrderCancel)
 		meta.OrderAction = "cancel"
-		return send(orderMultiDisambiguationReply(), meta)
+		return send(orderRefNotFoundReply(parseOrderRefFromMessage(userText)), meta)
 	}
+	if res.NeedPick {
+		meta := metaNoLLM(reasonNonQuestion, PathOrderCancel)
+		meta.OrderAction = "cancel"
+		return send(orderCancelPickRefReply(res.List), meta)
+	}
+	o := res.Order
 	if o == nil {
 		meta := metaNoLLM(reasonNonQuestion, PathOrderCancel)
 		meta.OrderAction = "cancel"
@@ -1159,7 +1170,7 @@ func (s *AutoReplyService) handleCustomerOrderStatus(
 	contact *dbContact,
 	userText string,
 ) (bool, error) {
-	o, disambiguate, err := resolvePersistedOrderAction(ctx, conn, tenantSchema, convo.ID, userText)
+	res, err := resolvePersistedOrderStatus(ctx, conn, tenantSchema, convo.ID, userText)
 	if err != nil {
 		return false, err
 	}
@@ -1170,9 +1181,16 @@ func (s *AutoReplyService) handleCustomerOrderStatus(
 		err := s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, text, "system", meta)
 		return err == nil, err
 	}
-	if disambiguate {
-		return send(orderMultiDisambiguationReply())
+	if res.NotFound {
+		return send(orderRefNotFoundReply(parseOrderRefFromMessage(userText)))
 	}
+	if res.ActiveOnly && res.Order == nil {
+		return send(orderNoActiveOrdersReply())
+	}
+	if res.NeedPick {
+		return send(orderStatusPickRefReply(res.List))
+	}
+	o := res.Order
 	if o == nil {
 		return send(orderNoneFoundReply())
 	}

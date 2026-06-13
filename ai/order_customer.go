@@ -194,8 +194,34 @@ func IsOrderFlowCancelled(userText string) bool {
 
 var orderStatusInquiryPhrases = []string{
 	"pesanan saya", "pesanan ku", "order saya", "ada pesanan", "punya pesanan",
+	"punya order", "ada order",
 	"status pesanan", "nomor pesanan", "no pesanan", "cek pesanan", "lihat pesanan",
 	"pesanan yang", "pesanan atas nama", "orderan saya", "pesanan mana",
+	"apakah saya punya", "saya punya pesanan", "masih punya pesanan",
+}
+
+// WantsActiveOrderOnly — tanya pesanan aktif/pending, bukan riwayat dibatalkan.
+func WantsActiveOrderOnly(userText string) bool {
+	text := strings.ToLower(strings.TrimSpace(userText))
+	if text == "" {
+		return false
+	}
+	for _, s := range []string{
+		"pending", "aktif", "masih punya", "masih ada", "belum selesai",
+		"belum dibatalkan", "masih order", "masih pesanan",
+	} {
+		if strings.Contains(text, s) {
+			return true
+		}
+	}
+	if (strings.Contains(text, "punya pesanan") || strings.Contains(text, "ada pesanan") ||
+		strings.Contains(text, "punya order") || strings.Contains(text, "ada order")) &&
+		(strings.Contains(text, "nggak") || strings.Contains(text, " gak") ||
+			strings.Contains(text, " ga") || strings.Contains(text, "tidak") ||
+			strings.Contains(text, "?")) {
+		return true
+	}
+	return false
 }
 
 // IsOrderStatusInquiry — customer asks about their existing order.
@@ -313,6 +339,142 @@ func countCancellableOrdersForConversation(ctx context.Context, q tenantQuerier,
 	return n, nil
 }
 
+func loadCancellableOrdersForConversation(ctx context.Context, q tenantQuerier, tenantSchema, convoID string) ([]persistedOrder, error) {
+	if strings.TrimSpace(convoID) == "" {
+		return nil, nil
+	}
+	rows, err := q.QueryContext(ctx, fmt.Sprintf(`
+		SELECT id::text, status, items, shipping_address, subtotal, total, created_at
+		FROM "%s"."order"
+		WHERE conversation_id = $1::uuid AND deleted_at IS NULL
+		  AND status IN ('draft','processing','confirmed','paid')
+		ORDER BY created_at DESC`, tenantSchema), convoID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []persistedOrder
+	for rows.Next() {
+		var o persistedOrder
+		if err := rows.Scan(&o.ID, &o.Status, &o.ItemsJSON, &o.ShippingJSON, &o.Subtotal, &o.Total, &o.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
+func loadActiveOrdersForConversation(ctx context.Context, q tenantQuerier, tenantSchema, convoID string) ([]persistedOrder, error) {
+	if strings.TrimSpace(convoID) == "" {
+		return nil, nil
+	}
+	rows, err := q.QueryContext(ctx, fmt.Sprintf(`
+		SELECT id::text, status, items, shipping_address, subtotal, total, created_at
+		FROM "%s"."order"
+		WHERE conversation_id = $1::uuid AND deleted_at IS NULL
+		  AND status NOT IN ('cancelled')
+		ORDER BY created_at DESC`, tenantSchema), convoID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []persistedOrder
+	for rows.Next() {
+		var o persistedOrder
+		if err := rows.Scan(&o.ID, &o.Status, &o.ItemsJSON, &o.ShippingJSON, &o.Subtotal, &o.Total, &o.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
+type persistedOrderResolve struct {
+	Order      *persistedOrder
+	NeedPick   bool
+	NotFound   bool
+	ActiveOnly bool
+	List       []persistedOrder
+}
+
+func resolvePersistedOrderStatus(ctx context.Context, q tenantQuerier, tenantSchema, convoID, userText string) (persistedOrderResolve, error) {
+	activeOnly := WantsActiveOrderOnly(userText)
+	if ref := parseOrderRefFromMessage(userText); ref != "" {
+		o, err := loadOrderByRefForConversation(ctx, q, tenantSchema, convoID, ref)
+		if err != nil {
+			return persistedOrderResolve{}, err
+		}
+		if o == nil {
+			return persistedOrderResolve{NotFound: true}, nil
+		}
+		if activeOnly && strings.EqualFold(o.Status, "cancelled") {
+			return persistedOrderResolve{ActiveOnly: true}, nil
+		}
+		return persistedOrderResolve{Order: o}, nil
+	}
+	if activeOnly {
+		list, err := loadActiveOrdersForConversation(ctx, q, tenantSchema, convoID)
+		if err != nil {
+			return persistedOrderResolve{}, err
+		}
+		if len(list) == 0 {
+			return persistedOrderResolve{ActiveOnly: true}, nil
+		}
+		if len(list) == 1 {
+			o := list[0]
+			return persistedOrderResolve{Order: &o}, nil
+		}
+		return persistedOrderResolve{NeedPick: true, List: list}, nil
+	}
+	n, err := countCancellableOrdersForConversation(ctx, q, tenantSchema, convoID)
+	if err != nil {
+		return persistedOrderResolve{}, err
+	}
+	if n > 1 {
+		list, err := loadCancellableOrdersForConversation(ctx, q, tenantSchema, convoID)
+		if err != nil {
+			return persistedOrderResolve{}, err
+		}
+		return persistedOrderResolve{NeedPick: true, List: list}, nil
+	}
+	o, err := loadActiveOrderForConversation(ctx, q, tenantSchema, convoID)
+	if err != nil {
+		return persistedOrderResolve{}, err
+	}
+	if o != nil {
+		return persistedOrderResolve{Order: o}, nil
+	}
+	o, err = loadLatestOrderForConversation(ctx, q, tenantSchema, convoID)
+	if err != nil {
+		return persistedOrderResolve{}, err
+	}
+	if o == nil {
+		return persistedOrderResolve{}, nil
+	}
+	return persistedOrderResolve{Order: o}, nil
+}
+
+func resolvePersistedOrderCancel(ctx context.Context, q tenantQuerier, tenantSchema, convoID, userText string) (persistedOrderResolve, error) {
+	if ref := parseOrderRefFromMessage(userText); ref != "" {
+		o, err := loadOrderByRefForConversation(ctx, q, tenantSchema, convoID, ref)
+		if err != nil {
+			return persistedOrderResolve{}, err
+		}
+		if o == nil {
+			return persistedOrderResolve{NotFound: true}, nil
+		}
+		return persistedOrderResolve{Order: o}, nil
+	}
+	list, err := loadCancellableOrdersForConversation(ctx, q, tenantSchema, convoID)
+	if err != nil {
+		return persistedOrderResolve{}, err
+	}
+	if len(list) == 0 {
+		return persistedOrderResolve{}, nil
+	}
+	return persistedOrderResolve{NeedPick: true, List: list}, nil
+}
+
 func loadOrderByRefForConversation(ctx context.Context, q tenantQuerier, tenantSchema, convoID, ref string) (*persistedOrder, error) {
 	prefix := strings.ToUpper(strings.TrimPrefix(strings.TrimSpace(ref), "WB-"))
 	if prefix == "" || strings.TrimSpace(convoID) == "" {
@@ -338,26 +500,67 @@ func loadOrderByRefForConversation(ctx context.Context, q tenantQuerier, tenantS
 }
 
 func resolvePersistedOrderAction(ctx context.Context, q tenantQuerier, tenantSchema, convoID, userText string) (*persistedOrder, bool, error) {
-	if ref := parseOrderRefFromMessage(userText); ref != "" {
-		o, err := loadOrderByRefForConversation(ctx, q, tenantSchema, convoID, ref)
-		return o, false, err
-	}
-	n, err := countCancellableOrdersForConversation(ctx, q, tenantSchema, convoID)
+	res, err := resolvePersistedOrderStatus(ctx, q, tenantSchema, convoID, userText)
 	if err != nil {
 		return nil, false, err
 	}
-	if n > 1 {
-		return nil, true, nil
+	if res.NeedPick || res.NotFound || res.ActiveOnly {
+		return res.Order, res.NeedPick, nil
 	}
-	o, err := loadActiveOrderForConversation(ctx, q, tenantSchema, convoID)
-	if err != nil {
-		return nil, false, err
+	return res.Order, false, nil
+}
+
+func orderShortLabel(o persistedOrder) string {
+	ref := FormatOrderNumber(o.ID)
+	var items []order.OrderItem
+	_ = json.Unmarshal(o.ItemsJSON, &items)
+	name := "Pesanan"
+	if len(items) > 0 && strings.TrimSpace(items[0].Name) != "" {
+		name = strings.TrimSpace(items[0].Name)
+		if len(name) > 40 {
+			name = name[:40] + "…"
+		}
 	}
-	if o != nil {
-		return o, false, nil
+	return fmt.Sprintf("%s — %s (%s)", ref, name, orderStatusLabelID(o.Status))
+}
+
+func formatOrderPickListReply(intro string, orders []persistedOrder, actionHint string) string {
+	var b strings.Builder
+	b.WriteString(intro)
+	b.WriteString("\n\n")
+	for i, o := range orders {
+		b.WriteString(fmt.Sprintf("%d. %s\n", i+1, orderShortLabel(o)))
 	}
-	o, err = loadLatestOrderForConversation(ctx, q, tenantSchema, convoID)
-	return o, false, err
+	b.WriteString("\n")
+	b.WriteString(actionHint)
+	return strings.TrimSpace(b.String())
+}
+
+func orderNoActiveOrdersReply() string {
+	return "Saat ini tidak ada pesanan aktif dari chat ini ya kak. Kalau mau order baru, sebut produk dari katalog."
+}
+
+func orderRefNotFoundReply(ref string) string {
+	if ref == "" {
+		return "Nomor pesanan tidak ditemukan di chat ini. Pastikan WB-XXXX dari pesanan kamu di percakapan ini ya kak."
+	}
+	return fmt.Sprintf("Nomor pesanan %s tidak ditemukan di chat ini. Cek lagi nomornya ya kak.", ref)
+}
+
+func orderCancelPickRefReply(orders []persistedOrder) string {
+	return formatOrderPickListReply(
+		"Untuk batalkan, pilih nomor pesanan yang benar ya kak:",
+		orders,
+		"Ketik: batalkan WB-XXXXXXXX (contoh batalkan WB-A1B2C3D4).",
+	)
+}
+
+func orderStatusPickRefReply(orders []persistedOrder) string {
+	return formatOrderPickListReply(
+		"Dari chat ini ada beberapa pesanan:",
+		orders,
+		"Sebut nomor pesanan (contoh WB-A1B2C3D4) kalau mau cek yang spesifik.",
+	)
 }
 
 func cancelPersistedOrder(ctx context.Context, q tenantQuerier, tenantSchema, orderID string) error {
@@ -463,5 +666,5 @@ func orderNoneFoundReply() string {
 }
 
 func orderMultiDisambiguationReply() string {
-	return "Kak, dari chat ini ada lebih dari satu pesanan aktif. Sebut nomor pesanan (contoh WB-A1B2C3D4) atau produknya ya, biar kami bantu batalkan/cek yang benar."
+	return "Kak, dari chat ini ada lebih dari satu pesanan aktif. Sebut nomor pesanan (contoh WB-A1B2C3D4) ya, biar kami bantu batalkan/cek yang benar."
 }

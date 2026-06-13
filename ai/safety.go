@@ -136,7 +136,7 @@ func IsGreetingLike(raw string) bool {
 			return false
 		}
 	}
-	if isCommerceDominant(text) && !isPureGreetingCore(text) {
+	if isCommerceDominant(text) {
 		return false
 	}
 	core := stripWaPoliteLeadIn(text)
