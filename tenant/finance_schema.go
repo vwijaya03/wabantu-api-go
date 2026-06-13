@@ -101,6 +101,10 @@ CREATE INDEX IF NOT EXISTS idx_fin_txn_date     ON fin_transaction(transaction_d
 CREATE INDEX IF NOT EXISTS idx_fin_txn_status   ON fin_transaction(status) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_fin_txn_export   ON fin_transaction(status, transaction_date DESC, created_at DESC) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_fin_txn_asset    ON fin_transaction(asset_id) WHERE asset_id IS NOT NULL;
+-- Prevents duplicate order income rows (concurrent completions / race condition guard).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_fin_txn_order_income_ref
+    ON fin_transaction (reference_no)
+    WHERE type = 'income' AND reference_no IS NOT NULL AND deleted_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS fin_asset (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),

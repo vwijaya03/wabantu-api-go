@@ -293,6 +293,15 @@ func Create(ctx context.Context, p *CreateOrderParams) (*Order, error) {
 	}
 	total := subtotal + p.ShippingCost
 
+	// Fail fast before writing the order row — if the finance period is locked
+	// we cannot record income afterwards, which would leave the order in an
+	// inconsistent state (status=completed but no finance entry).
+	if status == "completed" {
+		if err := finance.CheckCurrentPeriodUnlocked(ctx, u.TenantSchema); err != nil {
+			return nil, err
+		}
+	}
+
 	itemsJSON, _ := json.Marshal(items)
 	addrJSON, _ := json.Marshal(p.ShippingAddress)
 	convID, contactID := nullUUIDArg(p.ConversationID), nullUUIDArg(p.ContactID)
@@ -421,6 +430,13 @@ func Update(ctx context.Context, id string, req *UpdateOrderParams) (*Order, err
 		return nil, appErrs.BadRequest("no fields to update")
 	}
 
+	// Same fail-fast as Create: check period before touching the order row.
+	if newStatus == "completed" {
+		if err := finance.CheckCurrentPeriodUnlocked(ctx, u.TenantSchema); err != nil {
+			return nil, err
+		}
+	}
+
 	sets = append(sets, "updated_at=NOW()")
 	args = append(args, id)
 
@@ -514,6 +530,10 @@ func BatchUpdateStatus(ctx context.Context, req *BatchUpdateStatusParams) (*Batc
 		u.TenantSchema, strings.Join(placeholders, ", "))
 
 	if status == "completed" {
+		// Pre-flight: reject before touching any order row if the finance period is locked.
+		if err := finance.CheckCurrentPeriodUnlocked(ctx, u.TenantSchema); err != nil {
+			return nil, err
+		}
 		q = fmt.Sprintf(
 			`UPDATE "%s"."order"
 			 SET status=$1, updated_at=NOW()
