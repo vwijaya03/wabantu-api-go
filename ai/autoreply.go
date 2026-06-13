@@ -322,7 +322,19 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 				orderFlowCancelReply(tone), "system", out)
 			return err == nil, err
 		}
-		return s.handleCustomerOrderCancel(ctx, conn, payload.TenantSchema, payload, convo, channel, contact, profile)
+		// Tanpa draft aktif: "ga jadi beli + ada nomor pesanan?" → jawab status, jangan cancel order lama.
+		if IsOrderStatusInquiry(userText) {
+			return s.handleCustomerOrderStatus(ctx, conn, payload.TenantSchema, payload, convo, channel, contact)
+		}
+		if ShouldCancelPersistedOrder(userText) {
+			return s.handleCustomerOrderCancel(ctx, conn, payload.TenantSchema, payload, convo, channel, contact, profile)
+		}
+		out := metaNoLLM(reasonNonQuestion, PathOrderCancel)
+		out.OrderAction = "cancel"
+		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
+		err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact,
+			orderNoneToCancelReply(), "system", out)
+		return err == nil, err
 	}
 	if IsOrderStatusInquiry(userText) {
 		return s.handleCustomerOrderStatus(ctx, conn, payload.TenantSchema, payload, convo, channel, contact)
@@ -1008,6 +1020,10 @@ func (s *AutoReplyService) handleOrderFlow(
 	case "ask_recipient":
 		st := copyBase(stateNorm)
 		if tryApplyQtyRevision(&st, userText) {
+			s.setOrderState(ctx, tenantID, convo.ID, st)
+			return sendWithConfirm(st, tmpl.AskRecipient)
+		}
+		if tryApplyProductRevision(&st, userText, catalog) {
 			s.setOrderState(ctx, tenantID, convo.ID, st)
 			return sendWithConfirm(st, tmpl.AskRecipient)
 		}

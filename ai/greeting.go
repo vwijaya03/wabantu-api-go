@@ -192,7 +192,7 @@ func IsCasualChatOpener(text string) bool {
 	if text == "" || len(strings.Fields(text)) > 5 {
 		return false
 	}
-	if IsMinimumOrderQuestion(text) {
+	if IsDraftOrderCancelRequest(text) || IsMinimumOrderQuestion(text) {
 		return false
 	}
 	for _, p := range []string{"malam ", "pagi ", "siang ", "sore ", "halo ", "hai ", "hei "} {

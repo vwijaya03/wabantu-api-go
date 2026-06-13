@@ -23,8 +23,18 @@ func omahCatalog() []dbCatalogItem {
 		},
 		{
 			ID: "hello-kitty-l", ExternalCode: "HELLO-KITTY-L",
-			Name: "1PCS CELANA DALAM BOXER ANAK PEREMPUAN MOTIF HELLO KITTY - L",
+			Name: "1PCS CELANA DALAM BOXER ANAK PEREMPUAN MOTIF HELLO KITTY BUNGA LEMBUT - L",
 			SellPrice: 21500, SellUnit: "pcs",
+		},
+		{
+			ID: "hello-kitty-xl", ExternalCode: "HELLO-KITTY-XL",
+			Name: "1PCS CELANA DALAM BOXER ANAK PEREMPUAN MOTIF HELLO KITTY BUNGA LEMBUT - XL",
+			SellPrice: 21500, SellUnit: "pcs",
+		},
+		{
+			ID: "de-wasa-l", ExternalCode: "DE-WASA-L",
+			Name: "[3 PCS] CELANA DALAM L XL PRIA COWOK DE WASA LEMBUT BAHAN KAOS TERLARIS - L,Acak",
+			SellPrice: 42200, SellUnit: "pcs",
 		},
 		{ID: "abon-500g", Name: "Abon Sapi 500G", SellPrice: 35000, SellUnit: "pcs"},
 	}

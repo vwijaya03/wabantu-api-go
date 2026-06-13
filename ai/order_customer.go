@@ -35,24 +35,89 @@ var orderCancelPhrases = []string{
 	"batalkan pesanan", "batal pesanan", "cancel pesanan",
 }
 
-var orderCancelWordRe = regexp.MustCompile(`(?i)\b(batalkan?|cancel)\b`)
+var softCancelRegretPhrases = []string{
+	"tidak jadi", "gak jadi", "ga jadi", "nggak jadi", "tidak order", "gak order",
+}
 
-// IsOrderCancelRequest — customer wants to cancel in-progress or saved order.
-func IsOrderCancelRequest(userText string) bool {
+var explicitPersistedCancelPhrases = []string{
+	"batalkan pesanan", "batal pesanan", "cancel order", "batalkan order",
+	"cancel pesanan", "batal order", "batal pesan", "batalkan ya", "batalin",
+	"mau batalkan", "mau saya batalkan", "saya batalkan", "dibatalkan",
+}
+
+// batal | batalkan | cancel (standalone atau dalam frasa pendek).
+var orderCancelWordRe = regexp.MustCompile(`(?i)\b(batal(?:kan)?|cancel)\b`)
+
+func isRevisionNotCancel(userText string) bool {
 	text := strings.ToLower(strings.TrimSpace(userText))
-	if text == "" {
+	return orderRevisionSignals(text, userText)
+}
+
+// IsDraftOrderCancelRequest — batalkan draft Redis (termasuk "batal" / "cancel" saja).
+func IsDraftOrderCancelRequest(userText string) bool {
+	text := strings.ToLower(strings.TrimSpace(userText))
+	if text == "" || isRevisionNotCancel(userText) {
 		return false
 	}
-	// "ga jadi mau dirubah jadi 10 biji" = revisi qty, bukan batal pesanan.
-	if orderRevisionSignals(text, userText) {
-		return false
+	if orderCancelWordRe.MatchString(text) {
+		return true
 	}
-	for _, p := range orderCancelPhrases {
+	for _, p := range explicitPersistedCancelPhrases {
 		if strings.Contains(text, p) {
 			return true
 		}
 	}
-	return orderCancelWordRe.MatchString(text)
+	return false
+}
+
+// IsSoftCancelRegret — "ga jadi" tanpa kata batal eksplisit.
+func IsSoftCancelRegret(userText string) bool {
+	text := strings.ToLower(strings.TrimSpace(userText))
+	if text == "" || isRevisionNotCancel(userText) {
+		return false
+	}
+	for _, p := range softCancelRegretPhrases {
+		if strings.Contains(text, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsExplicitPersistedOrderCancel — batalkan order DB yang sudah tersimpan.
+func IsExplicitPersistedOrderCancel(userText string) bool {
+	text := strings.ToLower(strings.TrimSpace(userText))
+	if text == "" || isRevisionNotCancel(userText) {
+		return false
+	}
+	for _, p := range explicitPersistedCancelPhrases {
+		if strings.Contains(text, p) {
+			return true
+		}
+	}
+	// "batal", "cancel", "batalkan" saja → eksplisit.
+	fields := strings.Fields(strings.TrimRight(text, "?!. "))
+	if len(fields) <= 2 && orderCancelWordRe.MatchString(text) {
+		return true
+	}
+	return false
+}
+
+// ShouldCancelPersistedOrder — jangan batalkan order lama jika user cuma menyesal + tanya status.
+func ShouldCancelPersistedOrder(userText string) bool {
+	if IsExplicitPersistedOrderCancel(userText) {
+		return true
+	}
+	if IsSoftCancelRegret(userText) && !IsOrderStatusInquiry(userText) &&
+		!strings.Contains(strings.ToLower(userText), "?") {
+		return true
+	}
+	return false
+}
+
+// IsOrderCancelRequest — sinyal batal (draft atau persisted routing di autoreply).
+func IsOrderCancelRequest(userText string) bool {
+	return IsDraftOrderCancelRequest(userText) || IsSoftCancelRegret(userText)
 }
 
 // IsOrderFlowCancelled kept for callers; same as cancel request.

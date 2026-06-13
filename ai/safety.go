@@ -120,6 +120,9 @@ func IsGreetingLike(raw string) bool {
 	if raw == "" {
 		return false
 	}
+	if IsDraftOrderCancelRequest(raw) || IsSoftCancelRegret(raw) {
+		return false
+	}
 	if IsMinimumOrderQuestion(raw) {
 		return false
 	}

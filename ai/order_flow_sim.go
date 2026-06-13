@@ -336,6 +336,12 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 				Reply: buildOrderFlowReply(st, tmpl.AskRecipient, catalog),
 			}
 		}
+		if tryApplyProductRevision(&st, userText, catalog) {
+			return OrderFlowResult{
+				State: &st, Path: PathOrderFlow,
+				Reply: buildOrderFlowReply(st, tmpl.AskRecipient, catalog),
+			}
+		}
 		mergeShippingText(&st, userText)
 		name, phone := parseRecipientLine(userText)
 		if name != "" {

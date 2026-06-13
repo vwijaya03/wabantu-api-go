@@ -17,6 +17,52 @@ func TestFormatOrderNumber(t *testing.T) {
 }
 
 func TestIsOrderCancelRequest(t *testing.T) {
+	draftCases := []struct {
+		text string
+		want bool
+	}{
+		{"mau saya batalkan ya", true},
+		{"batalkan pesanan", true},
+		{"batal", true},
+		{"cancel", true},
+		{"batalkan", true},
+		{"ga jadi mau dirubah menjadi 10 biji ya", false},
+		{"loh ubah jadi 10 paket", false},
+		{"pesanan yang atas nama saya ada kah ?", false},
+		{"harga berapa", false},
+	}
+	for _, tc := range draftCases {
+		if got := IsDraftOrderCancelRequest(tc.text); got != tc.want {
+			t.Fatalf("IsDraftOrderCancelRequest(%q) = %v, want %v", tc.text, got, tc.want)
+		}
+	}
+	for _, tc := range []struct {
+		text string
+		want bool
+	}{
+		{"tidak jadi order", true},
+		{"ga jadi deh", true},
+	} {
+		if got := IsOrderCancelRequest(tc.text); got != tc.want {
+			t.Fatalf("IsOrderCancelRequest(%q) = %v, want %v", tc.text, got, tc.want)
+		}
+	}
+}
+
+func TestShouldCancelPersistedOrder(t *testing.T) {
+	statusMsg := "maaf baru bales, saya ga jadi beli ya kok. apa sudah dibuatkan nomor pesanan untuk saya ?"
+	if ShouldCancelPersistedOrder(statusMsg) {
+		t.Fatal("soft regret + status question should not cancel persisted order")
+	}
+	if !ShouldCancelPersistedOrder("batalkan pesanan") {
+		t.Fatal("explicit cancel should cancel persisted")
+	}
+	if !ShouldCancelPersistedOrder("batal") {
+		t.Fatal("standalone batal should cancel persisted")
+	}
+}
+
+func TestIsOrderCancelRequestLegacy(t *testing.T) {
 	cases := []struct {
 		text string
 		want bool

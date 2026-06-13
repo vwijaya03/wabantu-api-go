@@ -51,7 +51,7 @@ func (s *ConversationSimulator) Turn(userText string) TurnOutcome {
 		return out
 	}
 
-	if IsOrderCancelRequest(userText) {
+	if IsOrderCancelRequest(userText) || IsDraftOrderCancelRequest(userText) {
 		hadOrder := s.Order != nil
 		s.Order = nil
 		out.Canceled = true
