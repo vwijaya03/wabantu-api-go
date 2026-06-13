@@ -267,7 +267,14 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	userText := SanitizeForPrompt(inbound.Body)
 	rlog.Info("AI job: inbound text", "lenUserText", len(userText))
 
+	// Status inquiry sebelum greeting — "halo min punya pesanan aktif?" bukan sapaan murni.
+	if IsOrderStatusInquiry(userText) {
+		return s.handleCustomerOrderStatus(ctx, conn, payload.TenantSchema, payload, convo, channel, contact, userText)
+	}
+
 	if IsGreetingLike(userText) {
+		// Sapaan baru = sesi baru; jangan biarkan draft order Redis mengganggu pertanyaan berikutnya.
+		s.clearOrderState(ctx, payload.TenantID, convo.ID)
 		greet := GreetingReply(userText, strOrEmpty(profile.Tone), strOrEmpty(profile.GreetingTemplate))
 		out := metaNoLLM(reasonNonQuestion, PathGreeting)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
@@ -320,10 +327,22 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 				orderFlowCancelReply(tone), "system", out)
 			return err == nil, err
 		}
-		return s.handleCustomerOrderCancel(ctx, conn, payload.TenantSchema, payload, convo, channel, contact, profile)
+		// Tanpa draft aktif: "ga jadi beli + ada nomor pesanan?" → jawab status, jangan cancel order lama.
+		if IsOrderStatusInquiry(userText) {
+			return s.handleCustomerOrderStatus(ctx, conn, payload.TenantSchema, payload, convo, channel, contact, userText)
+		}
+		if ShouldCancelPersistedOrder(userText) {
+			return s.handleCustomerOrderCancel(ctx, conn, payload.TenantSchema, payload, convo, channel, contact, profile, userText)
+		}
+		out := metaNoLLM(reasonNonQuestion, PathOrderCancel)
+		out.OrderAction = "cancel"
+		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
+		err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact,
+			orderNoneToCancelReply(), "system", out)
+		return err == nil, err
 	}
 	if IsOrderStatusInquiry(userText) {
-		return s.handleCustomerOrderStatus(ctx, conn, payload.TenantSchema, payload, convo, channel, contact)
+		return s.handleCustomerOrderStatus(ctx, conn, payload.TenantSchema, payload, convo, channel, contact, userText)
 	}
 
 	clearedOrderForCorrection := false
@@ -369,34 +388,47 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	if !inScope && (IsActiveCheckoutFromHistory(history, userText) || IsAcknowledgmentLike(userText)) {
 		inScope = true
 	}
-	classifier := classifyMessage(userText, inScope, profile)
-	if IsStoreLocationQuestion(userText) || IsShippingQuoteQuestion(userText) {
-		classifier = classifyResult{Label: "in_scope_question", Confidence: 0.9}
-	} else if IsAcknowledgmentLike(userText) {
-		classifier = classifyResult{Label: "in_scope_question", Confidence: 0.85}
-	} else if classifier.Label == "in_scope_non_question" &&
-		!IsConsultingPurchaseQuestion(userText) &&
-		(HasPurchaseIntent(userText) || IsOrderFollowUpFromHistory(history, userText)) {
-		classifier = classifyResult{Label: "order_intent", Confidence: 0.85}
-	}
-	if ac, ok := ActivityContextFrom(ctx); ok {
-		ac.Classifier = classifier.Label
-		ctx = WithActivityContext(ctx, ac)
-	}
 
 	catalog, catLoadErr := loadActiveCatalog(ctx, conn, 50)
 	if catLoadErr != nil {
 		rlog.Warn("AI job: catalog load failed", "err", catLoadErr)
 	}
 
+	orderActiveNow, _ := s.getOrderState(ctx, payload.TenantID, convo.ID)
+	intent := ResolveSalesIntent(userText, history, orderActiveNow != nil, inScope, profile, catalog)
+	classifier := salesIntentToClassifier(intent)
+	// Fallback ke classifier lama untuk edge case intent confidence rendah.
+	if intent.Confidence < 0.72 {
+		legacy := classifyMessage(userText, inScope, profile)
+		if legacy.Label == "sensitive_escalate" || legacy.Label == "order_intent" || legacy.Label == "out_of_scope" {
+			classifier = legacy
+		}
+	}
+	if IsAcknowledgmentLike(userText) {
+		classifier = classifyResult{Label: "in_scope_question", Confidence: 0.85}
+	} else if intent.State == SalesStateCartReady {
+		classifier = classifyResult{Label: "order_intent", Confidence: intent.Confidence}
+	} else if intent.State == SalesStateSensitive {
+		classifier = classifyResult{Label: "sensitive_escalate", Confidence: intent.Confidence}
+	} else if intent.State == SalesStateOutOfScope {
+		classifier = classifyResult{Label: "out_of_scope", Confidence: intent.Confidence}
+	}
+	if ac, ok := ActivityContextFrom(ctx); ok {
+		ac.Classifier = classifier.Label + ":" + intent.State
+		ctx = WithActivityContext(ctx, ac)
+	}
+
 	rlog.Info("AI job: scope check",
 		"inScope", inScope,
 		"classifier", classifier.Label,
+		"salesState", intent.State,
+		"salesTopic", intent.Topic,
 		"userPreview", previewText(userText, 80),
 	)
 	rlog.Info("AI job: classifier",
 		"label", classifier.Label,
 		"confidence", classifier.Confidence,
+		"salesState", intent.State,
 	)
 
 	// ── Katalog WABantu (business_catalog_item) — prioritas sebelum FAQ/LLM ──
@@ -488,6 +520,20 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 			userText, profile, kbEntries, history, payload.InboundMessageID)
 		return sent, oErr
 	}
+	if inScope && (IsOrderRevisionMessage(userText) ||
+		(mentionsOrderQty(userText) && IsActiveCheckoutFromHistory(history, userText))) {
+		sent, oErr := s.handleOrderFlow(ctx, conn, payload.TenantSchema, payload.TenantID, convo, channel, contact,
+			userText, profile, kbEntries, history, payload.InboundMessageID)
+		return sent, oErr
+	}
+	if inScope && IsCasualPraiseLike(userText) {
+		formal := strOrEmpty(profile.Tone) == "formal"
+		out := metaNoLLM(reasonAIGenerated, PathConsulting)
+		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
+		err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact,
+			casualPraiseReply(formal), "ai", out)
+		return err == nil, err
+	}
 
 	// ── In-scope question → LLM path ────────────────────────────────────
 	s.resetScopeCounters(ctx, payload.TenantID, convo.ID)
@@ -571,15 +617,27 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		"hist", len(histCtx),
 	)
 
-	reply, compUsage, err := s.anthropic.GenerateReplyWithModel(ctx, route.Model, sys, business, kbCtx, histCtx, userText)
+	toolExec := NewCatalogToolExecutor(catalog)
+	reply, compUsage, usedTools, err := s.anthropic.GenerateSalesReplyWithCatalogTools(
+		ctx, route.Model, sys, business, kbCtx, histCtx, userText, toolExec,
+	)
 	if err != nil {
-		rlog.Error("AI job: anthropic.GenerateReply failed",
+		rlog.Error("AI job: anthropic sales reply failed",
 			"err", err,
 			"model", route.Model,
 			"tenantId", payload.TenantID,
 			"convoId", convo.ID,
 		)
 		return false, err
+	}
+
+	groundedReply, wasGrounded, groundReason := groundLLMReply(reply, userText, profile, catalog, history)
+	if wasGrounded {
+		rlog.Warn("AI job: LLM reply grounded to catalog",
+			"reason", groundReason,
+			"tenantId", payload.TenantID,
+			"convoId", convo.ID,
+		)
 	}
 
 	_, _, newSession := usage.TrackAIExchange(ctx, payload.TenantID, convo.ID)
@@ -592,9 +650,16 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		_ = usage.RecordEvent(ctx, payload.TenantSchema, "ai_token", tokens, nil)
 	}
 
-	finalReply := applyOutputPolicy(reply)
+	finalReply := applyOutputPolicy(groundedReply)
 	s.setCachedAnswer(ctx, payload.TenantID, userText, finalReply)
-	out := metaFromRoute(reasonAIGenerated, PathLLM, route)
+	llmPath := PathLLM
+	if usedTools {
+		llmPath = PathLLMTools
+	}
+	if wasGrounded {
+		llmPath = PathLLMGrounded
+	}
+	out := metaFromRoute(reasonAIGenerated, llmPath, route)
 	out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, compUsage.InputTokens, compUsage.OutputTokens)
 	err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
 	return err == nil, err
@@ -676,6 +741,25 @@ func (s *AutoReplyService) handleOrderFlow(
 		err := s.sendAiMessage(ctx, q, tenantID, convo, channel, contact, text, "system", out)
 		return err == nil, err
 	}
+	sendCatalog := func(text string) (bool, error) {
+		out := metaNoLLM(reasonAIGenerated, PathCatalogDB)
+		out.LogAndRecord(ctx, convo.ID, inboundID, 0, 0)
+		err := s.sendAiMessage(ctx, q, tenantID, convo, channel, contact, applyOutputPolicy(text), "ai", out)
+		return err == nil, err
+	}
+	tryCatalogEscape := func() (bool, error) {
+		if IsOrderRevisionMessage(userText) {
+			return false, nil
+		}
+		if !IsCatalogBrowsingIntent(userText) && !isGeneralStoreCatalogQuestion(userText) {
+			return false, nil
+		}
+		s.clearOrderState(ctx, tenantID, convo.ID)
+		if catReply, ok := replyFromBusinessCatalog(userText, profile, catalog, history); ok {
+			return sendCatalog(catReply)
+		}
+		return false, nil
+	}
 	sendWithConfirm := func(st orderState, prompt string) (bool, error) {
 		line := catalogConfirmLine(st)
 		if line != "" {
@@ -690,6 +774,11 @@ func (s *AutoReplyService) handleOrderFlow(
 	}
 
 	state, _ := s.getOrderState(ctx, tenantID, convo.ID)
+	if state != nil {
+		if sent, err := tryCatalogEscape(); sent || err != nil {
+			return sent, err
+		}
+	}
 	hints := parseOrderHints(userText)
 	copyBase := func(st orderState) orderState {
 		st = normalizeOrderState(st)
@@ -743,12 +832,38 @@ func (s *AutoReplyService) handleOrderFlow(
 		return st
 	}
 
+	if state == nil && (IsOrderRevisionMessage(userText) || mentionsOrderQty(userText)) {
+		if match := matchCatalogFromRecentOutbound(history, catalog); match != nil {
+			st := orderState{Step: "ask_variant"}
+			applyCatalogMatch(&st, match)
+			if q, ok := parseOrderQty(userText); ok {
+				st.Qty = q
+			}
+			inferVariantFromProductName(&st)
+			if st.variantComplete() && st.Qty > 0 {
+				st.Step = "ask_recipient"
+				s.setOrderState(ctx, tenantID, convo.ID, st)
+				return sendWithConfirm(st, tmpl.AskRecipient)
+			}
+			if st.Qty > 0 {
+				st.Step = "ask_qty"
+				s.setOrderState(ctx, tenantID, convo.ID, st)
+				return sendWithConfirm(st, tmpl.AskQty)
+			}
+		}
+	}
+
 	if state == nil {
 		st := orderState{Step: "ask_product"}
 		if match := matchCatalogItem(userText, catalog); match != nil {
 			applyCatalogMatch(&st, match)
 			sz, cl := parseSizeAndColor(userText)
-			st.Size, st.Color = sz, cl
+			if sz != "" {
+				st.Size = sz
+			}
+			if cl != "" {
+				st.Color = cl
+			}
 			if hints.HasQty {
 				st.Qty = hints.Qty
 			}
@@ -830,6 +945,12 @@ func (s *AutoReplyService) handleOrderFlow(
 
 	case "ask_variant":
 		st := copyBase(stateNorm)
+		if hints.HasQty {
+			st.Qty = hints.Qty
+		} else if q, ok := parseOrderQty(userText); ok {
+			st.Qty = q
+		}
+		inferVariantFromProductName(&st)
 		if !catalogItemNeedsVariant(&dbCatalogItem{Name: st.ProductName, ExternalCode: st.ExternalCode}) {
 			if hints.HasQty {
 				st.Qty = hints.Qty
@@ -852,9 +973,23 @@ func (s *AutoReplyService) handleOrderFlow(
 		if cl != "" {
 			st.Color = cl
 		}
+		if st.variantComplete() && st.Qty > 0 {
+			st.Step = "ask_recipient"
+			s.setOrderState(ctx, tenantID, convo.ID, st)
+			return sendWithConfirm(st, tmpl.AskRecipient)
+		}
 		if !st.variantComplete() {
+			if IsCatalogBrowsingIntent(userText) || isGeneralStoreCatalogQuestion(userText) {
+				s.clearOrderState(ctx, tenantID, convo.ID)
+				if catReply, ok := replyFromBusinessCatalog(userText, profile, catalog, history); ok {
+					return sendCatalog(catReply)
+				}
+			}
 			if wouldRepeatOutbound(history, tmpl.AskVariant) {
 				s.clearOrderState(ctx, tenantID, convo.ID)
+				if catReply, ok := replyFromBusinessCatalog(userText, profile, catalog, history); ok {
+					return sendCatalog(catReply)
+				}
 				return send(orderFlowLoopBreakReply(formal))
 			}
 			return send(tmpl.AskVariant)
@@ -889,6 +1024,14 @@ func (s *AutoReplyService) handleOrderFlow(
 
 	case "ask_recipient":
 		st := copyBase(stateNorm)
+		if tryApplyQtyRevision(&st, userText) {
+			s.setOrderState(ctx, tenantID, convo.ID, st)
+			return sendWithConfirm(st, tmpl.AskRecipient)
+		}
+		if tryApplyProductRevision(&st, userText, catalog) {
+			s.setOrderState(ctx, tenantID, convo.ID, st)
+			return sendWithConfirm(st, tmpl.AskRecipient)
+		}
 		mergeShippingText(&st, userText)
 		name, phone := parseRecipientLine(userText)
 		if name != "" {
@@ -921,6 +1064,10 @@ func (s *AutoReplyService) handleOrderFlow(
 
 	case "ask_address", "ask_address_full":
 		st := copyBase(stateNorm)
+		if tryApplyQtyRevision(&st, userText) {
+			s.setOrderState(ctx, tenantID, convo.ID, st)
+			return sendWithConfirm(st, tmpl.AskRecipient)
+		}
 		mergeShippingText(&st, userText)
 		if !st.shippingComplete() {
 			s.setOrderState(ctx, tenantID, convo.ID, st)
@@ -952,8 +1099,10 @@ func (s *AutoReplyService) handleCustomerOrderCancel(
 	channel *dbChannel,
 	contact *dbContact,
 	profile *dbBusinessProfile,
+	userText string,
 ) (bool, error) {
-	o, err := loadLatestOrderForConversation(ctx, conn, tenantSchema, convo.ID)
+	scope := orderAccessScope{ConversationID: convo.ID, ContactID: convo.ContactID}
+	res, err := resolvePersistedOrderCancel(ctx, conn, tenantSchema, scope, userText)
 	if err != nil {
 		rlog.Warn("order cancel: load failed", "err", err, "convoId", convo.ID)
 		return false, err
@@ -964,10 +1113,31 @@ func (s *AutoReplyService) handleCustomerOrderCancel(
 		err := s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, text, "system", meta)
 		return err == nil, err
 	}
+	if res.AccessDenied {
+		meta := metaNoLLM(reasonNonQuestion, PathOrderCancel)
+		meta.OrderAction = "cancel"
+		return send(orderAccessDeniedReply(), meta)
+	}
+	if res.NotFound {
+		meta := metaNoLLM(reasonNonQuestion, PathOrderCancel)
+		meta.OrderAction = "cancel"
+		return send(orderRefNotFoundReply(parseOrderRefFromMessage(userText)), meta)
+	}
+	if res.NeedPick {
+		meta := metaNoLLM(reasonNonQuestion, PathOrderCancel)
+		meta.OrderAction = "cancel"
+		return send(orderCancelPickRefReply(res.List), meta)
+	}
+	o := res.Order
 	if o == nil {
 		meta := metaNoLLM(reasonNonQuestion, PathOrderCancel)
 		meta.OrderAction = "cancel"
 		return send(orderNoneToCancelReply(), meta)
+	}
+	if contact != nil && !OrderChatAccessAllowed(o, scope, contact.PhoneNumber, contact.PhoneNumber) {
+		meta := metaNoLLM(reasonNonQuestion, PathOrderCancel)
+		meta.OrderAction = "cancel"
+		return send(orderAccessDeniedReply(), meta)
 	}
 	ref := FormatOrderNumber(o.ID)
 	if strings.EqualFold(o.Status, "cancelled") {
@@ -984,7 +1154,7 @@ func (s *AutoReplyService) handleCustomerOrderCancel(
 			ref, orderStatusLabelID(o.Status))
 		return send(msg, meta)
 	}
-	if err := cancelPersistedOrder(ctx, conn, tenantSchema, o.ID); err != nil {
+	if err := cancelPersistedOrder(ctx, conn, tenantSchema, o.ID, scope); err != nil {
 		if err == sql.ErrNoRows {
 			meta := metaNoLLM(reasonNonQuestion, PathOrderCancel)
 			meta.OrderID = o.ID
@@ -1009,8 +1179,10 @@ func (s *AutoReplyService) handleCustomerOrderStatus(
 	convo *dbConversation,
 	channel *dbChannel,
 	contact *dbContact,
+	userText string,
 ) (bool, error) {
-	o, err := loadLatestOrderForConversation(ctx, conn, tenantSchema, convo.ID)
+	scope := orderAccessScope{ConversationID: convo.ID, ContactID: convo.ContactID}
+	res, err := resolvePersistedOrderStatus(ctx, conn, tenantSchema, scope, userText)
 	if err != nil {
 		return false, err
 	}
@@ -1021,8 +1193,24 @@ func (s *AutoReplyService) handleCustomerOrderStatus(
 		err := s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, text, "system", meta)
 		return err == nil, err
 	}
+	if res.AccessDenied {
+		return send(orderAccessDeniedReply())
+	}
+	if res.NotFound {
+		return send(orderRefNotFoundReply(parseOrderRefFromMessage(userText)))
+	}
+	if res.ActiveOnly && res.Order == nil {
+		return send(orderNoActiveOrdersReply())
+	}
+	if res.NeedPick {
+		return send(orderStatusPickRefReply(res.List))
+	}
+	o := res.Order
 	if o == nil {
 		return send(orderNoneFoundReply())
+	}
+	if contact != nil && !OrderChatAccessAllowed(o, scope, contact.PhoneNumber, contact.PhoneNumber) {
+		return send(orderAccessDeniedReply())
 	}
 	meta.OrderID = o.ID
 	body := formatPersistedOrderSummary(o)
@@ -1230,6 +1418,8 @@ func strOrEmpty(s *string) string {
 	}
 	return *s
 }
+
+func strPtr(s string) *string { return &s }
 
 // ─── Redis helpers ───────────────────────────────────────────────────────────
 

@@ -56,13 +56,19 @@ func matchCatalogItem(userText string, catalog []dbCatalogItem) *dbCatalogItem {
 		return nil
 	}
 
+	exclude := catalogExcludeHints(text)
+	preferPria := strings.Contains(text, "pria") || strings.Contains(text, "cowok")
+	preferAnak := strings.Contains(text, "anak") || strings.Contains(text, "perempuan")
+
 	var best *dbCatalogItem
 	var bestScore float64
 	for i := range catalog {
 		it := &catalog[i]
 		nameLower := strings.ToLower(it.Name)
+		if catalogItemExcluded(nameLower, exclude) {
+			continue
+		}
 		score := overlapScore(tokens, tokenize(nameLower))
-		// Boost when catalog name appears as substring in user message.
 		if nameLower != "" && strings.Contains(text, nameLower) {
 			score += 0.35
 		}
@@ -70,6 +76,18 @@ func matchCatalogItem(userText string, catalog []dbCatalogItem) *dbCatalogItem {
 			if len(tok) >= 4 && strings.Contains(nameLower, tok) {
 				score += 0.08
 			}
+		}
+		score += catalogPhraseBoost(text, nameLower)
+		if preferPria {
+			if strings.Contains(nameLower, "pria") || strings.Contains(nameLower, "cowok") {
+				score += 0.25
+			}
+			if strings.Contains(nameLower, "perempuan") || strings.Contains(nameLower, "anak perempuan") {
+				score -= 0.35
+			}
+		}
+		if preferAnak && strings.Contains(nameLower, "anak") {
+			score += 0.15
 		}
 		if score > bestScore {
 			bestScore = score
@@ -80,6 +98,80 @@ func matchCatalogItem(userText string, catalog []dbCatalogItem) *dbCatalogItem {
 		return nil
 	}
 	return best
+}
+
+func catalogExcludeHints(text string) []string {
+	if !strings.Contains(text, "bukan") {
+		return nil
+	}
+	var out []string
+	for _, hint := range []string{"hello kitty", "mono spot", "de wasa", "abon", "boxer"} {
+		if strings.Contains(text, "bukan "+hint) || strings.Contains(text, "bukan "+strings.ReplaceAll(hint, " ", "")) {
+			out = append(out, hint)
+		}
+		if strings.Contains(text, hint) && strings.Contains(text, "bukan") {
+			// "boxer pria mono spot bukan hello kitty"
+			if hint == "hello kitty" && strings.Contains(text, "bukan") && strings.Contains(text, "hello") {
+				out = append(out, hint)
+			}
+		}
+	}
+	if strings.Contains(text, "bukan hello") || strings.Contains(text, "bukan hellokitty") {
+		out = append(out, "hello kitty")
+	}
+	return out
+}
+
+func catalogItemExcluded(nameLower string, exclude []string) bool {
+	for _, ex := range exclude {
+		if strings.Contains(nameLower, ex) {
+			return true
+		}
+	}
+	return false
+}
+
+func catalogPhraseBoost(text, nameLower string) float64 {
+	phrases := []string{"mono spot", "hello kitty", "de wasa", "abon sapi"}
+	var boost float64
+	for _, p := range phrases {
+		if strings.Contains(text, p) && strings.Contains(nameLower, p) {
+			boost += 0.4
+		}
+	}
+	return boost
+}
+
+// tryApplyProductRevision — ganti produk saat checkout ("bukan hello kitty", "mono spot bukan ...").
+func tryApplyProductRevision(st *orderState, userText string, catalog []dbCatalogItem) bool {
+	if st == nil || len(catalog) == 0 {
+		return false
+	}
+	text := strings.ToLower(strings.TrimSpace(userText))
+	hasSignal := strings.Contains(text, "bukan") || strings.Contains(text, "ubah produk") ||
+		strings.Contains(text, "ganti jadi") || strings.Contains(text, "ganti produk") ||
+		strings.Contains(text, "mau boxer") || strings.Contains(text, "mau mono") ||
+		(strings.Contains(text, "mono spot") && strings.Contains(text, "bukan")) ||
+		(strings.Contains(text, "hello kitty") && strings.Contains(text, "bukan")) ||
+		(strings.Contains(text, "de wasa") && !strings.Contains(text, "ganti jadi"))
+	if !hasSignal {
+		return false
+	}
+	match := matchCatalogItem(userText, catalog)
+	if match == nil {
+		return false
+	}
+	prevID := st.CatalogItemID
+	applyCatalogMatch(st, match)
+	inferVariantFromProductName(st)
+	sz, color := parseSizeAndColor(userText)
+	if sz != "" {
+		st.Size = sz
+	}
+	if color != "" {
+		st.Color = color
+	}
+	return st.CatalogItemID != prevID || st.ProductName != match.Name
 }
 
 func formatCatalogPicker(catalog []dbCatalogItem, max int) string {
@@ -385,6 +477,7 @@ func applyCatalogMatch(st *orderState, it *dbCatalogItem) {
 	if st.ProductName == "" {
 		st.ProductName = it.Name
 	}
+	inferVariantFromProductName(st)
 }
 
 func catalogConfirmLine(st orderState) string {
@@ -406,7 +499,7 @@ func catalogConfirmLine(st orderState) string {
 
 func missingOrderDataPrompt(st orderState, tmpl orderFlowTemplates) string {
 	st = normalizeOrderState(st)
-	if !st.productComplete() || strings.TrimSpace(st.CatalogItemID) == "" {
+	if !st.productComplete() {
 		return tmpl.AskProduct
 	}
 	if !st.variantComplete() {

@@ -25,3 +25,17 @@ func TestShouldNotBreakOrderFlowQty(t *testing.T) {
 		t.Fatal("qty reply should stay in order flow")
 	}
 }
+
+func TestShouldBreakOrderFlowCatalogList(t *testing.T) {
+	msgs := []string{
+		"jualan apa aja ni",
+		"loh kamu jualan apa saja",
+		"saya tanya, kamu itu jualan apa saja ?",
+		"kamu jualan apa",
+	}
+	for _, m := range msgs {
+		if !ShouldBreakOrderFlow(m, "ask_variant") {
+			t.Fatalf("catalog list should break order flow: %q", m)
+		}
+	}
+}

@@ -14,9 +14,9 @@ import (
 
 var (
 	// Explicit qty with whitespace before unit (avoids matching "1PCS" in catalog product titles).
-	orderQtyWithUnitRe = regexp.MustCompile(`(?i)(?:^|\s)(\d{1,4})\s+(pcs|pc|biji|buah|item|unit|piece|pieces)\b`)
+	orderQtyWithUnitRe = regexp.MustCompile(`(?i)(?:^|\s)(\d{1,4})\s+(pcs|pc|biji|buah|item|unit|piece|pieces|paket|pket)\b`)
 	orderQtyLabelRe    = regexp.MustCompile(`(?i)\b(?:qty|jumlah)\s*[:\-]?\s*(\d{1,4})\b`)
-	orderQtyBareLineRe = regexp.MustCompile(`(?i)^\s*(\d{1,4})\s*(?:biji|pcs|pc|buah|piece|pieces)?\s*[!.?]*\s*$`)
+	orderQtyBareLineRe = regexp.MustCompile(`(?i)^\s*(\d{1,4})\s*(?:biji|pcs|pc|buah|piece|pieces|paket)?\s*[!.?]*\s*$`)
 	orderQtyLusinRe    = regexp.MustCompile(`(?i)(?:^|\s)(\d{1,3})\s*lusin\b`)
 	orderQtyOneLusinRe = regexp.MustCompile(`(?i)(?:^|\s)1\s*lusin\b|satu\s*lusin`)
 	orderQtyIndoWordRe = regexp.MustCompile(`(?i)\b(satu|dua|tiga|empat|lima|enam|tujuh|delapan|sembilan|sepuluh)\s*(pcs|pc|biji|buah|piece|pieces|lusin)?\b`)
@@ -145,6 +145,11 @@ func parseQtyFromLine(line string) (int, bool) {
 		fmt.Sscanf(m[1], "%d", &q)
 		return q, q > 0
 	}
+	if m := orderQtyPackRe.FindStringSubmatch(line); len(m) > 1 {
+		var q int
+		fmt.Sscanf(m[1], "%d", &q)
+		return q, q > 0
+	}
 	if orderQtyBareLineRe.MatchString(line) {
 		if m := orderQtyBareLineRe.FindStringSubmatch(line); len(m) > 1 {
 			var q int
@@ -257,10 +262,15 @@ var OrderIntentKeywords = []string{
 	"jadi ambil", "jadi beli", "nyesan",
 }
 
+var orderIntentWordRe = regexp.MustCompile(`(?i)\b(order|pesan|pesen|pesin|beli|checkout|nyesan)\b`)
+
 func hasOrderIntentText(userText string) bool {
 	text := strings.ToLower(userText)
+	if orderIntentWordRe.MatchString(text) {
+		return true
+	}
 	for _, kw := range OrderIntentKeywords {
-		if strings.Contains(text, kw) {
+		if strings.Contains(kw, " ") && strings.Contains(text, kw) {
 			return true
 		}
 	}
@@ -269,10 +279,18 @@ func hasOrderIntentText(userText string) bool {
 
 // HasPurchaseIntent — CART_READY: checkout eksplisit tanpa "?", bukan pertanyaan konsultasi.
 func HasPurchaseIntent(userText string) bool {
+	return hasPurchaseIntent(userText, nil)
+}
+
+func hasPurchaseIntent(userText string, catalog []dbCatalogItem) bool {
 	if IsConsultingPurchaseQuestion(userText) {
 		return false
 	}
 	text := strings.ToLower(strings.TrimSpace(userText))
+	if strings.Contains(text, "cari") && !hasOrderIntentText(userText) && !hasExplicitCartReadyPhrase(text) &&
+		!mentionsOrderQty(text) {
+		return false
+	}
 	if text == "" || IsQuestionLike(userText) {
 		return false
 	}
@@ -304,6 +322,16 @@ func HasPurchaseIntent(userText string) bool {
 		}
 		for _, kw := range apparelProductKeywords {
 			if strings.Contains(text, kw) {
+				return true
+			}
+		}
+	}
+	if len(catalog) > 0 {
+		if match := matchCatalogItem(userText, catalog); match != nil {
+			if _, ok := parseOrderQty(userText); ok {
+				return true
+			}
+			if hasWant || hasOrderIntentText(userText) {
 				return true
 			}
 		}
@@ -445,10 +473,16 @@ var orderAddrHintRe = regexp.MustCompile(`(?i)(jalan|\bjl\.?\b|rt|rw|kel\.|kec\.
 
 // ShouldBreakOrderFlow — new intent (greeting, harga, tanya produk) while Redis order state is active.
 func ShouldBreakOrderFlow(userText, step string) bool {
+	if IsOrderRevisionMessage(userText) {
+		return false
+	}
 	if IsUserSalesCorrection(userText) {
 		return true
 	}
 	if IsConsultingPurchaseQuestion(userText) {
+		return true
+	}
+	if IsCatalogBrowsingIntent(userText) || isGeneralStoreCatalogQuestion(userText) {
 		return true
 	}
 	if IsOrderFlowCancelled(userText) {
@@ -493,6 +527,13 @@ func ShouldBreakOrderFlow(userText, step string) bool {
 		if phoneIDRe.MatchString(text) {
 			return false
 		}
+		if name, _ := parseRecipientLine(userText); name != "" {
+			return false
+		}
+		if strings.Contains(text, "nama:") || strings.Contains(text, "nama :") ||
+			strings.Contains(text, "hp:") || strings.Contains(text, "hp :") {
+			return false
+		}
 		if IsOrderContinuationMessage(userText) && !strings.Contains(text, "berapa") {
 			return false
 		}
@@ -519,6 +560,7 @@ func normalizeOrderState(st orderState) orderState {
 	case "ask_address":
 		st.Step = "ask_address_full"
 	}
+	inferVariantFromProductName(&st)
 	return st
 }
 

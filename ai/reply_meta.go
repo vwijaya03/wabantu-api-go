@@ -34,6 +34,8 @@ const (
 	PathFAQCache          = "faq_cache"
 	PathFAQDirect         = "faq_direct"
 	PathLLM               = "llm"
+	PathLLMTools          = "llm_tools"
+	PathLLMGrounded       = "llm_grounded"
 	PathCostLimit         = "cost_limit"
 	PathAutoFallback      = "auto_fallback"
 )
@@ -55,7 +57,7 @@ func metaFromRoute(reason, path string, route RoutingDecision) AiReplyMeta {
 		Path:    path,
 		Model:   route.Model,
 		Tier:    route.Tier,
-		LLMUsed: path == PathLLM,
+		LLMUsed: path == PathLLM || path == PathLLMTools || path == PathLLMGrounded,
 	}
 }
 

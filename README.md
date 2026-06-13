@@ -213,6 +213,10 @@ encore check
 encore test ./...
 # Atau paket tertentu:
 encore test ./ai ./usage
+# AI buyer behavior (1000 + 2000 skenario WA) — lihat docs/WHATSAPP_BUYER_BEHAVIOR_TESTS.md
+./scripts/fix-encore-test-db.sh   # jika role encore-migrator hilang
+./scripts/run-ai-unit-tests.sh
+encore test ./ai/ -run 'TestBuyerBehavior1000|TestWABuyerCases2000' -count=1
 
 # Shell ke database system / tenant (lokal)
 encore db shell system
