@@ -1135,8 +1135,7 @@ func DeleteTransaction(ctx context.Context, id string) (*OKResponse, error) {
 		return nil, err
 	}
 
-	conn.ExecContext(ctx,
-		`UPDATE fin_transaction SET deleted_at=now(), deleted_by=$1 WHERE id=$2`, u.AccountID, id)
+	conn.ExecContext(ctx, `DELETE FROM fin_transaction WHERE id=$1`, id)
 	var toPtr *string
 	if toWalletID.Valid && toWalletID.String != "" {
 		toPtr = &toWalletID.String
