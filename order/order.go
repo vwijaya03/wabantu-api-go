@@ -480,7 +480,7 @@ func Update(ctx context.Context, id string, req *UpdateOrderParams) (*Order, err
 		if err := finance.RemoveOrderIncomeTransaction(ctx, u.TenantSchema, o.ID); err != nil {
 			return nil, err
 		}
-		if err := finance.RecordOrderCompletedIncome(ctx, u.TenantSchema, u.AccountID, o.ID, o.Total); err != nil {
+		if err := finance.RecordOrderCompletedIncome(ctx, u.TenantSchema, u.AccountID, o.ID, o.Total, o.IncomeWalletID); err != nil {
 			return nil, err
 		}
 	}
