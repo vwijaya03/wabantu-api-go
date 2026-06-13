@@ -40,6 +40,13 @@ func RecordOrderCompletedIncome(ctx context.Context, tenantSchema, createdBy, or
 		return nil
 	}
 
+	// Legacy soft-deleted rows would bypass the active-only check and cause duplicates on re-complete.
+	if _, err := conn.ExecContext(ctx, `
+		DELETE FROM fin_transaction
+		WHERE reference_no = $1 AND type = 'income' AND deleted_at IS NOT NULL`, orderID); err != nil {
+		return appErrs.Internal(err.Error())
+	}
+
 	walletID, err := resolveDefaultIncomeWallet(ctx, conn)
 	if err != nil {
 		return err
@@ -84,7 +91,7 @@ func RecordOrderCompletedIncome(ctx context.Context, tenantSchema, createdBy, or
 	return nil
 }
 
-// RemoveOrderIncomeTransaction soft-deletes income rows linked to an order (reference_no).
+// RemoveOrderIncomeTransaction deletes income rows linked to an order (reference_no).
 func RemoveOrderIncomeTransaction(ctx context.Context, tenantSchema, orderID string) error {
 	orderID = strings.TrimSpace(orderID)
 	if orderID == "" {
@@ -100,7 +107,7 @@ func RemoveOrderIncomeTransaction(ctx context.Context, tenantSchema, orderID str
 	rows, err := conn.QueryContext(ctx, `
 		SELECT DISTINCT wallet_id::text
 		FROM fin_transaction
-		WHERE reference_no = $1 AND type = 'income' AND deleted_at IS NULL`, orderID)
+		WHERE reference_no = $1 AND type = 'income'`, orderID)
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
@@ -119,9 +126,8 @@ func RemoveOrderIncomeTransaction(ctx context.Context, tenantSchema, orderID str
 	}
 
 	res, err := conn.ExecContext(ctx, `
-		UPDATE fin_transaction
-		SET deleted_at = now(), updated_at = now()
-		WHERE reference_no = $1 AND type = 'income' AND deleted_at IS NULL`, orderID)
+		DELETE FROM fin_transaction
+		WHERE reference_no = $1 AND type = 'income'`, orderID)
 	if err != nil {
 		return appErrs.Internal("failed to remove order income transaction")
 	}
