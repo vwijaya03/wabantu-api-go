@@ -584,6 +584,10 @@ func Delete(ctx context.Context, id string) error {
 		return appErrs.Forbidden("owner access required")
 	}
 
+	if err := finance.RemoveOrderIncomeTransaction(ctx, u.TenantSchema, id); err != nil {
+		return err
+	}
+
 	uid, _ := auth.UserID()
 	res, err := db.Exec(ctx, fmt.Sprintf(`
 		UPDATE "%s"."order"
@@ -608,17 +612,47 @@ func BatchDelete(ctx context.Context, req *BatchDeleteParams) (*BatchDeleteRespo
 	if !u.CanPerformOwnerActions() {
 		return nil, appErrs.Forbidden("owner access required")
 	}
-	placeholders, args := batchIDs(req.IDs, 2)
+	placeholders, args := batchIDs(req.IDs, 1)
 	if len(placeholders) == 0 {
 		return nil, appErrs.BadRequest("ids are required")
 	}
+
+	rows, err := db.Query(ctx, fmt.Sprintf(
+		`SELECT id::text FROM "%s"."order" WHERE id IN (%s) AND deleted_at IS NULL`,
+		u.TenantSchema, strings.Join(placeholders, ", ")), args...)
+	if err != nil {
+		return nil, fmt.Errorf("batch delete orders: %w", err)
+	}
+	defer rows.Close()
+
+	orderIDs := make([]string, 0, len(req.IDs))
+	for rows.Next() {
+		var orderID string
+		if err := rows.Scan(&orderID); err != nil {
+			return nil, err
+		}
+		orderIDs = append(orderIDs, orderID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("batch delete orders: %w", err)
+	}
+	for _, orderID := range orderIDs {
+		if err := finance.RemoveOrderIncomeTransaction(ctx, u.TenantSchema, orderID); err != nil {
+			return nil, err
+		}
+	}
+
 	uid, _ := auth.UserID()
+	deletePlaceholders, deleteArgs := batchIDs(orderIDs, 2)
+	if len(deletePlaceholders) == 0 {
+		return &BatchDeleteResponse{Deleted: 0}, nil
+	}
 	execArgs := []any{string(uid)}
-	execArgs = append(execArgs, args...)
+	execArgs = append(execArgs, deleteArgs...)
 	res, err := db.Exec(ctx, fmt.Sprintf(`
 		UPDATE "%s"."order"
 		SET deleted_at=NOW(), deleted_by=$1, updated_at=NOW()
-		WHERE id IN (%s) AND deleted_at IS NULL`, u.TenantSchema, strings.Join(placeholders, ", ")), execArgs...)
+		WHERE id IN (%s) AND deleted_at IS NULL`, u.TenantSchema, strings.Join(deletePlaceholders, ", ")), execArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("batch delete orders: %w", err)
 	}
