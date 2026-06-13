@@ -77,6 +77,26 @@ func RecordOrderCompletedIncome(ctx context.Context, tenantSchema, createdBy, or
 	return nil
 }
 
+// ResyncOrderCompletedIncome replaces the finance income row for a completed order.
+// Use when total or wallet changes on an already-completed order, or when re-applying
+// status=completed so ON CONFLICT DO NOTHING does not leave a stale wallet/amount.
+func ResyncOrderCompletedIncome(ctx context.Context, tenantSchema, createdBy, orderID string, amount float64, walletID string) error {
+	orderID = strings.TrimSpace(orderID)
+	if orderID == "" {
+		return nil
+	}
+	if amount <= 0 {
+		return RemoveOrderIncomeTransaction(ctx, tenantSchema, orderID)
+	}
+	if err := CheckCurrentPeriodUnlocked(ctx, tenantSchema); err != nil {
+		return err
+	}
+	if err := RemoveOrderIncomeTransaction(ctx, tenantSchema, orderID); err != nil {
+		return err
+	}
+	return RecordOrderCompletedIncome(ctx, tenantSchema, createdBy, orderID, amount, walletID)
+}
+
 // CheckCurrentPeriodUnlocked returns an error if the current finance period is locked.
 // Call this before persisting an order status change to 'completed' so the order DB write
 // is not committed when the subsequent finance insert would be rejected.

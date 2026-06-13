@@ -45,6 +45,17 @@ func TestRemoveOrderIncomeTransactionEmptyOrderIDNoDBCall(t *testing.T) {
 	}
 }
 
+// ── ResyncOrderCompletedIncome — early-exit guards ────────────────────────────
+
+func TestResyncOrderCompletedIncomeEmptyOrderIDNoDBCall(t *testing.T) {
+	for _, id := range []string{"", "   ", "\t"} {
+		err := ResyncOrderCompletedIncome(context.Background(), "does_not_exist", "user-1", id, 50000, "")
+		if err != nil {
+			t.Errorf("ResyncOrderCompletedIncome(orderID=%q) = %v, want nil", id, err)
+		}
+	}
+}
+
 // ── walletPeriod — used by CheckCurrentPeriodUnlocked ─────────────────────────
 //
 // walletPeriod is the date→YYYY-MM extractor used internally by period lock
