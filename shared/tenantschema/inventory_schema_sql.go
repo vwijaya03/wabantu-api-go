@@ -1,0 +1,70 @@
+package tenantschema
+
+// InventorySchemaSQL is idempotent DDL for the inventory/HPP module (PR-A1).
+//
+// IMPORTANT — Encore Cloud safety:
+//   - Only CREATE TABLE / CREATE INDEX on NEW inv_* tables are used here.
+//   - There are deliberately NO ALTER statements on existing core tables
+//     (e.g. business_catalog_item, "order"), because on Encore Cloud the app
+//     DB role cannot ALTER tables it does not own (SQLSTATE 42501). Creating
+//     brand new tables is allowed for the app role, so this whole block is safe
+//     to run at runtime on both local and cloud for new and existing tenants.
+//
+// Per-item inventory config lives in inv_sku (keyed by catalog_item_id) instead
+// of new columns on business_catalog_item, precisely to avoid those ALTERs.
+const InventorySchemaSQL = `
+-- inv_setting: singleton per tenant — setup gate, default costing method, wizard output.
+CREATE TABLE IF NOT EXISTS inv_setting (
+    id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    setup_completed        BOOLEAN      NOT NULL DEFAULT false,
+    setup_completed_at     TIMESTAMPTZ,
+    default_costing_method VARCHAR(10)  NOT NULL DEFAULT 'average',
+    block_negative_stock   BOOLEAN      NOT NULL DEFAULT true,
+    wizard_answers         JSONB        NOT NULL DEFAULT '{}',
+    wizard_recommendation  JSONB        NOT NULL DEFAULT '{}',
+    updated_by             UUID,
+    created_at             TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at             TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    CONSTRAINT inv_setting_method_chk CHECK (default_costing_method IN ('fifo','lifo','average'))
+);
+
+-- inv_warehouse: stock locations. Default warehouse mirrors Jubelio location_id = -1.
+CREATE TABLE IF NOT EXISTS inv_warehouse (
+    id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    code                 VARCHAR(40)  NOT NULL,
+    name                 VARCHAR(120) NOT NULL,
+    external_location_id INT,
+    is_default           BOOLEAN      NOT NULL DEFAULT false,
+    is_active            BOOLEAN      NOT NULL DEFAULT true,
+    address              TEXT,
+    note                 TEXT,
+    display_order        INT          NOT NULL DEFAULT 0,
+    created_by           UUID,
+    created_at           TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at           TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    deleted_at           TIMESTAMPTZ,
+    deleted_by           UUID
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_inv_warehouse_code
+    ON inv_warehouse(code) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_inv_warehouse_default
+    ON inv_warehouse(is_default) WHERE is_default = true AND deleted_at IS NULL;
+
+-- inv_sku: per-catalog-item inventory configuration (1 row per tracked item).
+-- Kept separate from business_catalog_item so no ALTER is needed on the core table.
+CREATE TABLE IF NOT EXISTS inv_sku (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    catalog_item_id UUID         NOT NULL,
+    track_stock     BOOLEAN      NOT NULL DEFAULT true,
+    is_bundle       BOOLEAN      NOT NULL DEFAULT false,
+    costing_method  VARCHAR(10),
+    track_batch     BOOLEAN      NOT NULL DEFAULT false,
+    track_serial    BOOLEAN      NOT NULL DEFAULT false,
+    track_expiry    BOOLEAN      NOT NULL DEFAULT false,
+    base_uom        VARCHAR(20),
+    created_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    CONSTRAINT inv_sku_method_chk CHECK (costing_method IS NULL OR costing_method IN ('fifo','lifo','average'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_inv_sku_catalog ON inv_sku(catalog_item_id);
+`
