@@ -55,6 +55,7 @@ type InventorySetting struct {
 	SetupCompletedAt     *time.Time `json:"setupCompletedAt,omitempty"`
 	DefaultCostingMethod string     `json:"defaultCostingMethod"`
 	BlockNegativeStock   bool       `json:"blockNegativeStock"`
+	PurchasePostsExpense bool       `json:"purchasePostsExpense"`
 	WarehouseCount       int        `json:"warehouseCount"`
 }
 
@@ -74,6 +75,7 @@ type WarehouseInput struct {
 type UpdateSettingParams struct {
 	DefaultCostingMethod *string `json:"defaultCostingMethod"`
 	BlockNegativeStock   *bool   `json:"blockNegativeStock"`
+	PurchasePostsExpense *bool   `json:"purchasePostsExpense"`
 }
 
 // ---------- setting endpoints ----------
@@ -137,6 +139,13 @@ func UpdateSetting(ctx context.Context, p *UpdateSettingParams) (*InventorySetti
 			return nil, appErrs.Internal(err.Error())
 		}
 	}
+	if p.PurchasePostsExpense != nil {
+		if _, err := conn.ExecContext(ctx,
+			`UPDATE inv_setting SET purchase_posts_expense = $1, updated_by = $2, updated_at = now()`,
+			*p.PurchasePostsExpense, nullUUID(u.AccountID)); err != nil {
+			return nil, appErrs.Internal(err.Error())
+		}
+	}
 	s, err := loadSetting(ctx, conn)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
@@ -190,10 +199,10 @@ func loadSetting(ctx context.Context, conn *sql.Conn) (*InventorySetting, error)
 	s := &InventorySetting{}
 	var completedAt sql.NullTime
 	err := conn.QueryRowContext(ctx, `
-		SELECT setup_completed, setup_completed_at, default_costing_method, block_negative_stock
+		SELECT setup_completed, setup_completed_at, default_costing_method, block_negative_stock, purchase_posts_expense
 		FROM inv_setting
 		ORDER BY created_at
-		LIMIT 1`).Scan(&s.SetupCompleted, &completedAt, &s.DefaultCostingMethod, &s.BlockNegativeStock)
+		LIMIT 1`).Scan(&s.SetupCompleted, &completedAt, &s.DefaultCostingMethod, &s.BlockNegativeStock, &s.PurchasePostsExpense)
 	if errors.Is(err, sql.ErrNoRows) {
 		if _, ierr := conn.ExecContext(ctx, `
 			INSERT INTO inv_setting (setup_completed, default_costing_method, block_negative_stock)
