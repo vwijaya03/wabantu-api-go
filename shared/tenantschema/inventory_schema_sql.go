@@ -67,4 +67,65 @@ CREATE TABLE IF NOT EXISTS inv_sku (
     CONSTRAINT inv_sku_method_chk CHECK (costing_method IS NULL OR costing_method IN ('fifo','lifo','average'))
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_inv_sku_catalog ON inv_sku(catalog_item_id);
+
+-- inv_cost_layer (PR-A2): FIFO/LIFO cost layers — remaining qty at a unit cost.
+CREATE TABLE IF NOT EXISTS inv_cost_layer (
+    id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    catalog_item_id    UUID          NOT NULL,
+    warehouse_id       UUID          NOT NULL,
+    qty_remaining      NUMERIC(18,4) NOT NULL,
+    unit_cost          NUMERIC(18,4) NOT NULL,
+    batch_no           VARCHAR(64),
+    expiry_date        DATE,
+    source_movement_id UUID,
+    received_at        TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    created_at         TIMESTAMPTZ   NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_inv_cost_layer_pick
+    ON inv_cost_layer(catalog_item_id, warehouse_id, received_at, id)
+    WHERE qty_remaining > 0;
+
+-- inv_stock_balance (PR-A2): snapshot per (item, warehouse) for fast reads + AI.
+CREATE TABLE IF NOT EXISTS inv_stock_balance (
+    catalog_item_id UUID          NOT NULL,
+    warehouse_id    UUID          NOT NULL,
+    on_hand         NUMERIC(18,4) NOT NULL DEFAULT 0,
+    reserved        NUMERIC(18,4) NOT NULL DEFAULT 0,
+    avg_unit_cost   NUMERIC(18,4) NOT NULL DEFAULT 0,
+    total_value     NUMERIC(18,4) NOT NULL DEFAULT 0,
+    updated_at      TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    PRIMARY KEY (catalog_item_id, warehouse_id)
+);
+
+-- inv_stock_movement (PR-A2): append-only ledger; one row per stock operation.
+CREATE TABLE IF NOT EXISTS inv_stock_movement (
+    id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    catalog_item_id    UUID          NOT NULL,
+    warehouse_id       UUID          NOT NULL,
+    movement_type      VARCHAR(30)   NOT NULL,
+    direction          VARCHAR(3)    NOT NULL,
+    qty                NUMERIC(18,4) NOT NULL,
+    unit_cost          NUMERIC(18,4) NOT NULL DEFAULT 0,
+    total_cost         NUMERIC(18,4) NOT NULL DEFAULT 0,
+    qty_after          NUMERIC(18,4) NOT NULL DEFAULT 0,
+    avg_cost_after     NUMERIC(18,4) NOT NULL DEFAULT 0,
+    cost_layer_id      UUID,
+    batch_no           VARCHAR(64),
+    expiry_date        DATE,
+    ref_type           VARCHAR(30),
+    ref_id             UUID,
+    ref_line_id        UUID,
+    source_movement_id UUID,
+    finance_txn_id     UUID,
+    note               TEXT,
+    created_by         UUID,
+    created_at         TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    CONSTRAINT inv_movement_dir_chk CHECK (direction IN ('in','out'))
+);
+CREATE INDEX IF NOT EXISTS idx_inv_movement_item_wh
+    ON inv_stock_movement(catalog_item_id, warehouse_id, created_at, id);
+CREATE INDEX IF NOT EXISTS idx_inv_movement_ref
+    ON inv_stock_movement(ref_type, ref_id) WHERE ref_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_inv_movement_created
+    ON inv_stock_movement(created_at DESC);
 `
