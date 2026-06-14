@@ -153,10 +153,12 @@ func PIIReady(ctx context.Context, conn *sql.Conn) (bool, error) {
 // (all DDL is CREATE ... IF NOT EXISTS, so re-running InventorySchemaSQL is safe).
 //   - PR-A1: inv_setting, inv_warehouse, inv_sku
 //   - PR-A2: inv_cost_layer, inv_stock_balance, inv_stock_movement
+//   - PR-A4: inv_bundle_component
 func InventoryModuleReady(ctx context.Context, conn *sql.Conn) (bool, error) {
 	for _, t := range []string{
 		"inv_setting", "inv_warehouse", "inv_sku",
 		"inv_cost_layer", "inv_stock_balance", "inv_stock_movement",
+		"inv_bundle_component",
 	} {
 		ok, err := tableExists(ctx, conn, t)
 		if err != nil || !ok {

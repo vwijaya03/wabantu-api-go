@@ -134,6 +134,8 @@ dan menerapkannya ke semua schema `t_*` dengan role admin.
 | POST | `/api/v1/inventory/transfers` | owner | (A3) Transfer antar gudang |
 | POST | `/api/v1/inventory/opening-balance` | owner | (A3) Saldo awal (bulk) |
 | POST | `/api/v1/inventory/revaluations` | owner | (A3) Revaluasi HPP |
+| GET | `/api/v1/inventory/bundles/:id/components` | tenant | (A4) Komponen bundle |
+| PUT | `/api/v1/inventory/bundles/:id/components` | owner | (A4) Set komponen bundle |
 
 > ACL granular (staff read-only, dll.) ditambahkan di **A9**. Saat ini tulis =
 > owner/super_admin (`CanPerformOwnerActions`).
@@ -209,7 +211,28 @@ Catatan:
 
 Helper finance: `finance.RecordInventoryEntry` / `RemoveInventoryEntry` (idempotent per reference_no).
 
-## 7. Bundle _(rencana A4)_
+## 7. Bundle (PR-A4)
+
+Bundle = item katalog yang dijual sebagai paket; stok diambil dari **SKU anak**
+(ala Jubelio "ngambil stok anakan terkecil"). Tabel `inv_bundle_component`
+(`parent_catalog_item_id`, `child_catalog_item_id`, `qty` per 1 bundle).
+
+| Endpoint | Akses | Fungsi |
+|----------|-------|--------|
+| `GET /inventory/bundles/:catalogItemID/components` | tenant | Daftar komponen bundle |
+| `PUT /inventory/bundles/:catalogItemID/components` | owner | Set komponen (replace); `[]` kosong = batalkan bundle |
+
+Aturan:
+- Parent bundle ditandai `inv_sku.is_bundle = true` dan **tidak menyimpan stok sendiri**
+  (`track_stock = false`); stok berasal dari komponen.
+- Set komponen kosong → `is_bundle = false`, `track_stock = true` (kembali jadi item biasa).
+- Komponen tidak boleh: dirinya sendiri, duplikat, qty ≤ 0, atau berupa bundle
+  (bundle bertingkat belum didukung di v1).
+- Pure function untuk dipakai order flow (A8): `explodeBundle(components, bundleQty)`
+  → daftar issue per anak; `bundleAvailableQty(onHandByChild, components)` → jumlah
+  bundle yang bisa dipenuhi (min floor antar komponen).
+
+## 7b. _(placeholder)_
 
 ## 8. Purchase Order _(rencana A5)_
 
