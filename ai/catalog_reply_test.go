@@ -5,6 +5,22 @@ import (
 	"testing"
 )
 
+func TestFormatStockLabel(t *testing.T) {
+	cases := map[float64]string{
+		0:    "habis",
+		-3:   "habis",
+		5:    "5",
+		12:   "12",
+		1.5:  "1.5",
+		0.25: "0.25",
+	}
+	for in, want := range cases {
+		if got := formatStockLabel(in); got != want {
+			t.Fatalf("formatStockLabel(%v) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestIsCatalogListQuestion(t *testing.T) {
 	cases := []string{
 		"minta list produk",

@@ -393,6 +393,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	if catLoadErr != nil {
 		rlog.Warn("AI job: catalog load failed", "err", catLoadErr)
 	}
+	enrichCatalogStock(ctx, conn, catalog)
 
 	orderActiveNow, _ := s.getOrderState(ctx, payload.TenantID, convo.ID)
 	intent := ResolveSalesIntent(userText, history, orderActiveNow != nil, inScope, profile, catalog)
@@ -735,6 +736,7 @@ func (s *AutoReplyService) handleOrderFlow(
 	if catErr != nil {
 		rlog.Warn("AI order: catalog load failed", "err", catErr)
 	}
+	enrichCatalogStock(ctx, q, catalog)
 	send := func(text string) (bool, error) {
 		out := metaNoLLM(reasonNonQuestion, PathOrderFlow)
 		out.LogAndRecord(ctx, convo.ID, inboundID, 0, 0)

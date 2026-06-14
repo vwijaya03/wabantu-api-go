@@ -151,6 +151,7 @@ dan menerapkannya ke semua schema `t_*` dengan role admin.
 | POST | `/api/v1/inventory/recalculate` | owner | (A9) Recalculate HPP |
 | POST | `/api/v1/inventory/wizard/recommend` | owner | (A9) Rekomendasi metode HPP |
 | GET/PATCH | `/api/v1/inventory/skus/:id` | tenant/owner | (A9) Config inventory per item |
+| POST | `/api/v1/inventory/backfill/orders` | owner | (A10) Backfill stok pesanan lama (preview/eksekusi) |
 
 > ACL granular (staff read-only, dll.) ditambahkan di **A9**. Saat ini tulis =
 > owner/super_admin (`CanPerformOwnerActions`).
@@ -367,4 +368,21 @@ harga fluktuatif → Average; default Average. Jawaban + rekomendasi disimpan di
 **ACL**: model saat ini — **owner & super_admin** = tulis penuh, **staff** = baca.
 Memenuhi syarat "owner/superadmin pasti bisa". ACL granular per-staff = enhancement berikutnya.
 
-## 13. AI WhatsApp stok real + backfill order lama _(rencana A10)_
+## 13. AI WhatsApp stok real + backfill order lama (PR-A10)
+
+**AI stok real**: `enrichCatalogStock` menambahkan stok tersedia (`SUM(on_hand)` per
+item yang `track_stock`) ke katalog yang dipakai balasan AI — **gated** `setup_completed`
+dan best-effort (error/tabel belum ada → tanpa stok). Balasan produk
+(`buildCatalogItemReply`) menambah baris "Stok tersedia: N" (atau "habis").
+Tenant tanpa setup & unit test (item dibuat langsung) tidak terpengaruh.
+
+**Backfill order lama** (`POST /inventory/backfill/orders`, owner):
+- `execute=false` (preview): hitung pesanan committed yang belum punya movement
+  `sale_issue`, tandai yang stoknya tidak cukup.
+- `execute=true`: jalankan `SyncOrderStock` per pesanan (issue stok + COGS retroaktif),
+  laporkan `processed` / `failed` / `failures`. Gagal per pesanan tidak menghentikan sisanya.
+- Wajib `setup_completed`.
+
+| Endpoint | Akses | Fungsi |
+|----------|-------|--------|
+| `POST /inventory/backfill/orders` | owner | Preview / eksekusi backfill stok pesanan lama |

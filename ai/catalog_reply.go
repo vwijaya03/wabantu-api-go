@@ -325,6 +325,17 @@ func buildRetailPolicyReply(formal bool, it *dbCatalogItem) string {
 	return strings.TrimSpace(strings.Join(lines, "\n") + "\n\n" + cta)
 }
 
+// formatStockLabel renders available stock; whole numbers stay integer-clean.
+func formatStockLabel(qty float64) string {
+	if qty <= 0 {
+		return "habis"
+	}
+	if qty == float64(int64(qty)) {
+		return fmt.Sprintf("%d", int64(qty))
+	}
+	return fmt.Sprintf("%g", qty)
+}
+
 // replyFromBusinessCatalog answers from business_catalog_item without LLM/KB hijack.
 func replyFromBusinessCatalog(
 	userText string,
@@ -446,6 +457,10 @@ func buildCatalogItemReply(formal bool, it *dbCatalogItem, qty int) string {
 	lines = append(lines, "")
 	lines = append(lines, "Harga:")
 	lines = append(lines, formatCatalogPrice(it))
+	if it.StockTracked {
+		lines = append(lines, "")
+		lines = append(lines, "Stok tersedia: "+formatStockLabel(it.StockAvailable))
+	}
 	if size != "" && catalogItemNeedsVariant(it) {
 		lines = append(lines, "")
 		lines = append(lines, "Ukuran: "+size)
