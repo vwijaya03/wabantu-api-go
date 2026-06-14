@@ -565,6 +565,10 @@ func loadOrderItems(ctx context.Context, schema, id string) ([]OrderItem, error)
 	return items, nil
 }
 
+func shouldPrecheckBatchStockTransition(targetStatus, currentStatus string) bool {
+	return inventory.IsCommittedOrderStatus(targetStatus) && !inventory.IsCommittedOrderStatus(currentStatus)
+}
+
 //encore:api auth method=PATCH path=/api/v1/order-status/batch
 func BatchUpdateStatus(ctx context.Context, req *BatchUpdateStatusParams) (*BatchUpdateStatusResponse, error) {
 	u, err := getUser()
@@ -582,19 +586,15 @@ func BatchUpdateStatus(ctx context.Context, req *BatchUpdateStatusParams) (*Batc
 		return nil, appErrs.BadRequest("invalid order status")
 	}
 
-	placeholders := make([]string, 0, len(req.IDs))
-	args := []any{status}
-	for _, id := range req.IDs {
-		id = strings.TrimSpace(id)
-		if id == "" {
-			continue
-		}
-		placeholders = append(placeholders, fmt.Sprintf("$%d", len(args)+1))
-		args = append(args, id)
-	}
-	if len(placeholders) == 0 {
+	idPH, idArgs := batchIDs(req.IDs, 1)
+	if len(idPH) == 0 {
 		return nil, appErrs.BadRequest("ids are required")
 	}
+	updatePH := make([]string, len(idPH))
+	for i := range idPH {
+		updatePH[i] = fmt.Sprintf("$%d", i+2)
+	}
+	updateArgs := append([]any{status}, idArgs...)
 
 	if status == "completed" {
 		// Pre-flight: reject before touching any order row if the finance period is locked.
@@ -602,23 +602,56 @@ func BatchUpdateStatus(ctx context.Context, req *BatchUpdateStatusParams) (*Batc
 			return nil, err
 		}
 	}
-	cond := ""
+	skipCond := ""
 	if status == "completed" {
 		// Skip orders already completed so income is not re-recorded.
-		cond = " AND status <> 'completed'"
+		skipCond = " AND status <> 'completed'"
 	}
+
+	// Load targets first — fail stock precheck before mutating any row (same as PATCH /orders/:id).
+	pendingQ := fmt.Sprintf(
+		`SELECT %s FROM "%s"."order"
+		 WHERE id IN (%s) AND deleted_at IS NULL%s`,
+		orderSelectCols(""), u.TenantSchema, strings.Join(idPH, ", "), skipCond)
+	pendingRows, err := db.Query(ctx, pendingQ, idArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("batch load orders: %w", err)
+	}
+	pending := make([]Order, 0, len(idPH))
+	for pendingRows.Next() {
+		o, serr := scanOrder(pendingRows.Scan)
+		if serr != nil {
+			pendingRows.Close()
+			return nil, serr
+		}
+		pending = append(pending, o)
+	}
+	pendingRows.Close()
+	if err := pendingRows.Err(); err != nil {
+		return nil, fmt.Errorf("batch load orders: %w", err)
+	}
+	if inventory.IsCommittedOrderStatus(status) {
+		for _, o := range pending {
+			if shouldPrecheckBatchStockTransition(status, o.Status) {
+				if err := inventory.PrecheckOrderStock(ctx, u.TenantSchema, o.ID, orderStockItems(o.Items)); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+
 	q := fmt.Sprintf(
 		`UPDATE "%s"."order"
 		 SET status=$1, updated_at=NOW()
 		 WHERE id IN (%s) AND deleted_at IS NULL%s
 		 RETURNING %s`,
-		u.TenantSchema, strings.Join(placeholders, ", "), cond, orderSelectCols(""))
+		u.TenantSchema, strings.Join(updatePH, ", "), skipCond, orderSelectCols(""))
 
-	rows, err := db.Query(ctx, q, args...)
+	rows, err := db.Query(ctx, q, updateArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("batch update order status: %w", err)
 	}
-	orders := make([]Order, 0, len(placeholders))
+	orders := make([]Order, 0, len(idPH))
 	for rows.Next() {
 		o, serr := scanOrder(rows.Scan)
 		if serr != nil {

@@ -96,6 +96,21 @@ func TestJoinStrings(t *testing.T) {
 
 // ── validOrderStatuses ────────────────────────────────────────────────────────
 
+func TestShouldPrecheckBatchStockTransition(t *testing.T) {
+	if !shouldPrecheckBatchStockTransition("completed", "draft") {
+		t.Fatal("draft -> completed should precheck")
+	}
+	if shouldPrecheckBatchStockTransition("completed", "completed") {
+		t.Fatal("already completed should not precheck")
+	}
+	if shouldPrecheckBatchStockTransition("completed", "processing") {
+		t.Fatal("processing -> completed should not precheck (stock already issued)")
+	}
+	if !shouldPrecheckBatchStockTransition("processing", "draft") {
+		t.Fatal("draft -> processing should precheck")
+	}
+}
+
 func TestValidOrderStatusesContainsExpected(t *testing.T) {
 	required := []string{"draft", "processing", "shipped", "completed", "cancelled"}
 	for _, s := range required {
