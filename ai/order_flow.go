@@ -601,7 +601,7 @@ func persistDraftOrder(
 		Variant:       variant,
 		Size:          st.Size,
 		Color:         st.Color,
-		Qty:           qty,
+		Qty:           float64(qty),
 		UnitPrice:     unitPrice,
 		SellUnit:      st.SellUnit,
 	}

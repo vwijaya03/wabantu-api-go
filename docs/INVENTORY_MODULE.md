@@ -287,7 +287,33 @@ Pembayaran supplier (AP) detail menyusul sebagai enhancement.
 
 ## 10. Invoice & retur penjualan _(rencana A7)_
 
-## 11. Integrasi order + COGS _(rencana A8)_
+## 11. Integrasi order + COGS (PR-A8)
+
+Modul order memanggil `inventory.SyncOrderStock` (idempotent, **gated** `setup_completed`)
+setiap kali status/baris pesanan berubah. Reconcile berbasis _desired state_:
+
+| Status pesanan | Efek stok |
+|----------------|-----------|
+| committed (processing/shipped/completed/paid/confirmed) | stok **dikeluarkan** (`sale_issue`) sebanyak kebutuhan |
+| draft / cancelled | stok **dikembalikan** (`sale_cancel_restore`) |
+
+- **Idempotent**: hitung selisih `required − net_issued` per (item, gudang); hanya
+  movement selisih yang dibuat. Aman dipanggil berulang (processing→shipped tidak dobel potong).
+- **Bundle**: otomatis di-explode ke SKU anak saat reconcile.
+- **Per-baris gudang**: tiap baris pesanan punya `warehouseId` (default = gudang utama)
+  dan `lineId` (UUID) untuk telusur movement.
+- **Qty pecahan**: `order.items.qty` kini `float64` (dukung kg/gram); modul AI tetap
+  pakai qty bulat internal lalu konversi.
+- **Block oversell**: sebelum commit transisi ke committed, `PrecheckOrderStock` menolak
+  bila `block_negative_stock` dan stok kurang (fail-fast, pesanan tidak jadi pindah status).
+- **COGS** (mode akrual): `resyncOrderCOGS` menyetel expense **HPP / COGS** = net COGS
+  movement penjualan (idempotent, ref `cogs:<orderId>`). Mode cashflow: tidak ada COGS.
+- **Cancel/Delete cascade**: stok kembali + income pesanan dihapus (existing) + COGS dihapus.
+
+Tidak ada tabel/endpoint baru — perubahan pada `order` service + helper `inventory/order_sync.go`.
+Tenant tanpa `setup_completed` → perilaku order **persis seperti sebelumnya**.
+
+## 12. Recalculate HPP, wizard AI, ACL _(rencana A9)_
 
 ## 12. Recalculate HPP, wizard AI, ACL _(rencana A9)_
 
