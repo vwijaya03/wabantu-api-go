@@ -69,6 +69,9 @@ inv_warehouse (gudang)  ──────────┐                       
 | `inv_setting` | Singleton per tenant: `setup_completed`, `default_costing_method` (fifo/lifo/average), `block_negative_stock`, `wizard_answers`, `wizard_recommendation` |
 | `inv_warehouse` | Gudang. `is_default` (unik), `external_location_id` (−1 untuk default), `code` (unik, soft-delete aware) |
 | `inv_sku` | Config inventory per `catalog_item_id`: `track_stock`, `is_bundle`, `costing_method` (override, nullable=inherit), `track_batch/serial/expiry`, `base_uom` |
+| `inv_cost_layer` | (A2) Layer biaya FIFO/LIFO: `qty_remaining`, `unit_cost`, `batch_no`, `expiry_date`, `source_movement_id` |
+| `inv_stock_balance` | (A2) Snapshot per (item, gudang): `on_hand`, `reserved`, `avg_unit_cost`, `total_value` |
+| `inv_stock_movement` | (A2) Buku besar append-only: tiap operasi stok = 1 baris (qty, unit_cost, total_cost/COGS, qty_after, ref dokumen, source_movement_id) |
 
 Seed otomatis saat migrasi:
 - 1 gudang default (`Gudang Utama`, `external_location_id = -1`).
@@ -80,9 +83,6 @@ Seed otomatis saat migrasi:
 
 | Tabel | PR | Keterangan |
 |-------|----|------------|
-| `inv_stock_movement` | A2 | Buku besar pergerakan + HPP per baris |
-| `inv_stock_balance` | A2 | Snapshot `on_hand` + `avg_unit_cost` per (sku, gudang) |
-| `inv_cost_layer` | A2 | Layer FIFO/LIFO (qty sisa, unit cost, batch, expiry) |
 | `inv_bundle_component` | A4 | Bundle → komponen SKU anak |
 | `pur_purchase_order(_line)` | A5 | Purchase Order (partial receive) |
 | `pur_bill(_line)` | A6 | Bill/GRN → stok masuk + finance |
@@ -128,13 +128,57 @@ dan menerapkannya ke semua schema `t_*` dengan role admin.
 | POST | `/api/v1/inventory/warehouses` | owner | Tambah gudang |
 | PATCH | `/api/v1/inventory/warehouses/:id` | owner | Ubah gudang |
 | DELETE | `/api/v1/inventory/warehouses/:id` | owner | Hapus gudang (default tidak bisa dihapus) |
+| GET | `/api/v1/inventory/stock` | tenant | (A2) Saldo stok per item/gudang (on_hand, available, avg, nilai) |
+| GET | `/api/v1/inventory/movements` | tenant | (A2) Buku besar/kartu stok (filter item, gudang, tipe) |
 
 > ACL granular (staff read-only, dll.) ditambahkan di **A9**. Saat ini tulis =
 > owner/super_admin (`CanPerformOwnerActions`).
 
 ---
 
-## 5. Costing engine _(rencana A2)_
+## 5. Costing engine (PR-A2)
+
+### 5.1 Buku besar = sumber kebenaran
+
+Semua perubahan stok lewat `PostMovement` (`inventory/movement.go`), dijalankan
+**di dalam transaksi caller** (`*sql.Tx` dengan `search_path` tenant), sehingga
+satu Bill/Order bisa mempost beberapa movement + transaksi finance secara atomik.
+
+Tiap operasi menulis **1 baris** `inv_stock_movement` (qty selalu positif, arah
+`in`/`out`), memutakhirkan `inv_stock_balance`, dan untuk FIFO/LIFO memutakhirkan
+`inv_cost_layer`.
+
+### 5.2 Tiga metode
+
+| Metode | Stok masuk (`in`) | Stok keluar (`out`) |
+|--------|-------------------|---------------------|
+| **AVERAGE** | `avg = (onHand·avg + qty·cost) / (onHand+qty)`; tanpa layer | COGS = `avg · qty`; avg tetap |
+| **FIFO** | buat `inv_cost_layer` baru | `planConsumption` ambil layer terlama dulu |
+| **LIFO** | buat `inv_cost_layer` baru | `planConsumption` ambil layer terbaru dulu |
+
+Metode efektif per SKU = `inv_sku.costing_method` (override) → `inv_setting.default_costing_method` → `average`.
+
+### 5.3 Pure functions (teruji unit, tanpa DB)
+
+`inventory/costing_engine.go`:
+- `planConsumption(layers, qty)` → draw per-layer, total COGS, shortfall
+- `applyReceiptAverage`, `issueCostAverage`, `weightedUnitCost`
+- `applyIn` / `applyOut` (transisi snapshot saldo)
+
+COGS dihitung **eksak** (`total_cost`); `unit_cost` baris = `total_cost / qty`.
+
+### 5.4 Stok minus
+
+Jika `inv_setting.block_negative_stock = true` (default), `out` yang melebihi
+on-hand ditolak (`stok tidak cukup`). Jika dimatikan, stok boleh minus dan porsi
+tanpa layer di-cost pakai average terkini (estimasi terbaik).
+
+### 5.5 Catatan
+
+- FIFO mengurut `received_at` (FEFO/expiry-first menyusul bila dibutuhkan).
+- Presisi `NUMERIC(18,4)` untuk qty/cost; pembulatan 4 desimal di engine,
+  finance posting dibulatkan 2 desimal (A6/A8).
+- Endpoint baca: `GET /inventory/stock`, `GET /inventory/movements` (kartu stok).
 
 ## 6. Pergerakan manual: adjustment / transfer / opname / revaluasi _(rencana A3)_
 
