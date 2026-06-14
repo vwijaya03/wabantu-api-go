@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 
+	"encore.dev"
+
 	"encore.app/wabantu/shared/tenantschema"
 )
 
@@ -36,6 +38,12 @@ func runInventorySchemaAndSeed(ctx context.Context, conn *sql.Conn) error {
 		return fmt.Errorf("inventory schema check: %w", err)
 	}
 	if !ready {
+		if encore.Meta().Environment.Cloud != encore.CloudLocal {
+			return fmt.Errorf(
+				"inventory schema belum lengkap di cloud: jalankan ./scripts/apply-inventory-schema-cloud.sh %s",
+				encore.Meta().Environment.Name,
+			)
+		}
 		if _, err := conn.ExecContext(ctx, tenantschema.InventorySchemaSQL); err != nil {
 			return fmt.Errorf("inventory DDL: %w", err)
 		}

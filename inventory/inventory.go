@@ -196,6 +196,9 @@ func CompleteSetup(ctx context.Context) (*InventorySetting, error) {
 
 // loadSetting reads the singleton inv_setting row, creating it lazily if missing.
 func loadSetting(ctx context.Context, conn *sql.Conn) (*InventorySetting, error) {
+	if err := ensureInventoryModuleReady(ctx, conn); err != nil {
+		return nil, err
+	}
 	s := &InventorySetting{}
 	var completedAt sql.NullTime
 	err := conn.QueryRowContext(ctx, `
