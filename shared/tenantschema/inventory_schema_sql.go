@@ -128,4 +128,17 @@ CREATE INDEX IF NOT EXISTS idx_inv_movement_ref
     ON inv_stock_movement(ref_type, ref_id) WHERE ref_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_inv_movement_created
     ON inv_stock_movement(created_at DESC);
+
+-- inv_bundle_component (PR-A4): bundle parent -> child SKU + qty per 1 bundle unit.
+CREATE TABLE IF NOT EXISTS inv_bundle_component (
+    id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    parent_catalog_item_id UUID          NOT NULL,
+    child_catalog_item_id  UUID          NOT NULL,
+    qty                    NUMERIC(18,4) NOT NULL,
+    created_at             TIMESTAMPTZ   NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_inv_bundle_pair
+    ON inv_bundle_component(parent_catalog_item_id, child_catalog_item_id);
+CREATE INDEX IF NOT EXISTS idx_inv_bundle_parent
+    ON inv_bundle_component(parent_catalog_item_id);
 `
