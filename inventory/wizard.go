@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	appErrs "encore.app/wabantu/shared/errs"
+	"encore.app/wabantu/shared/types"
 	"encore.app/wabantu/tenant"
 	"encore.app/wabantu/usage"
 )
@@ -69,7 +70,11 @@ func WizardRecommend(ctx context.Context, p *WizardAnswers) (*WizardRecommendRes
 	if p == nil {
 		return nil, appErrs.BadRequest("jawaban wizard wajib diisi")
 	}
-	sanitizeWizardAnswers(p)
+	return runWizardRecommend(ctx, u, *p)
+}
+
+func runWizardRecommend(ctx context.Context, u *types.AuthUser, answers WizardAnswers) (*WizardRecommendResponse, error) {
+	sanitizeWizardAnswers(&answers)
 
 	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
 	if err != nil {
@@ -81,15 +86,15 @@ func WizardRecommend(ctx context.Context, p *WizardAnswers) (*WizardRecommendRes
 	}
 
 	biz := loadBusinessWizardContext(ctx, conn)
-	rec := ruleRecommendation(*p)
+	rec := ruleRecommendation(answers)
 	tokensUsed := 0
 
-	if aiRec, tokens, aiErr := recommendCostingWithAI(ctx, u.TenantSchema, u.TenantID, u.AccountID, *p, biz); aiErr == nil {
+	if aiRec, tokens, aiErr := recommendCostingWithAI(ctx, u.TenantSchema, u.TenantID, u.AccountID, answers, biz); aiErr == nil {
 		rec = aiRec
 		tokensUsed = tokens
 	}
 
-	answersJSON, _ := json.Marshal(p)
+	answersJSON, _ := json.Marshal(answers)
 	recJSON, _ := json.Marshal(rec)
 	if _, err := conn.ExecContext(ctx, `
 		UPDATE inv_setting SET wizard_answers = $1, wizard_recommendation = $2, updated_by = $3, updated_at = now()`,
