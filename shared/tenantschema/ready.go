@@ -154,11 +154,13 @@ func PIIReady(ctx context.Context, conn *sql.Conn) (bool, error) {
 //   - PR-A1: inv_setting, inv_warehouse, inv_sku
 //   - PR-A2: inv_cost_layer, inv_stock_balance, inv_stock_movement
 //   - PR-A4: inv_bundle_component
+//   - PR-A5: inv_document_sequence, pur_purchase_order(_line)
 func InventoryModuleReady(ctx context.Context, conn *sql.Conn) (bool, error) {
 	for _, t := range []string{
 		"inv_setting", "inv_warehouse", "inv_sku",
 		"inv_cost_layer", "inv_stock_balance", "inv_stock_movement",
 		"inv_bundle_component",
+		"inv_document_sequence", "pur_purchase_order", "pur_purchase_order_line",
 	} {
 		ok, err := tableExists(ctx, conn, t)
 		if err != nil || !ok {

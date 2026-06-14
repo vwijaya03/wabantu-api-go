@@ -141,4 +141,44 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_inv_bundle_pair
     ON inv_bundle_component(parent_catalog_item_id, child_catalog_item_id);
 CREATE INDEX IF NOT EXISTS idx_inv_bundle_parent
     ON inv_bundle_component(parent_catalog_item_id);
+
+-- inv_document_sequence (PR-A5): per-tenant running numbers for WPO/WBIL/WINV/WRET.
+CREATE TABLE IF NOT EXISTS inv_document_sequence (
+    doc_type VARCHAR(10) PRIMARY KEY,
+    next_no  BIGINT NOT NULL DEFAULT 1
+);
+
+-- pur_purchase_order (PR-A5): rencana pembelian (tidak mengubah stok/finance).
+CREATE TABLE IF NOT EXISTS pur_purchase_order (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    po_no            VARCHAR(40)  NOT NULL,
+    supplier_name    VARCHAR(200),
+    contact_id       UUID,
+    warehouse_id     UUID,
+    status           VARCHAR(20)  NOT NULL DEFAULT 'open',
+    transaction_date DATE         NOT NULL DEFAULT CURRENT_DATE,
+    note             TEXT,
+    subtotal         NUMERIC(18,4) NOT NULL DEFAULT 0,
+    created_by       UUID,
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    deleted_at       TIMESTAMPTZ,
+    deleted_by       UUID,
+    CONSTRAINT pur_po_status_chk CHECK (status IN ('open','partial','received','closed','cancelled'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pur_po_no ON pur_purchase_order(po_no) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_pur_po_status ON pur_purchase_order(status, created_at DESC) WHERE deleted_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS pur_purchase_order_line (
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    purchase_order_id UUID          NOT NULL REFERENCES pur_purchase_order(id) ON DELETE CASCADE,
+    catalog_item_id   UUID          NOT NULL,
+    warehouse_id      UUID          NOT NULL,
+    description       TEXT,
+    qty_ordered       NUMERIC(18,4) NOT NULL,
+    qty_received      NUMERIC(18,4) NOT NULL DEFAULT 0,
+    unit_cost         NUMERIC(18,4) NOT NULL DEFAULT 0,
+    created_at        TIMESTAMPTZ   NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_pur_po_line_po ON pur_purchase_order_line(purchase_order_id);
 `
