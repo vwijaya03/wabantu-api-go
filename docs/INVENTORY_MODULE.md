@@ -144,6 +144,10 @@ dan menerapkannya ke semua schema `t_*` dengan role admin.
 | POST | `/api/v1/inventory/bills` | owner | (A6) Terima barang (GRN) |
 | GET | `/api/v1/inventory/bills` | tenant | (A6) Daftar bill |
 | GET | `/api/v1/inventory/bills/:id` | tenant | (A6) Detail bill |
+| POST | `/api/v1/inventory/invoices/from-order/:orderID` | owner | (A7) Buat faktur dari pesanan |
+| GET | `/api/v1/inventory/invoices` (+`/:id`) | tenant | (A7) Daftar/detail faktur |
+| POST | `/api/v1/inventory/sales-returns` | owner | (A7) Retur penjualan |
+| GET | `/api/v1/inventory/sales-returns` (+`/:id`) | tenant | (A7) Daftar/detail retur |
 
 > ACL granular (staff read-only, dll.) ditambahkan di **A9**. Saat ini tulis =
 > owner/super_admin (`CanPerformOwnerActions`).
@@ -285,7 +289,27 @@ untuk menghindari dobel:
 Owner mengubah via `PATCH /inventory/setting`. Default = akrual (laba-rugi akurat).
 Pembayaran supplier (AP) detail menyusul sebagai enhancement.
 
-## 10. Invoice & retur penjualan _(rencana A7)_
+## 10. Invoice & retur penjualan (PR-A7)
+
+| Endpoint | Akses | Fungsi |
+|----------|-------|--------|
+| `POST /inventory/invoices/from-order/:orderID` | owner | Buat faktur dari pesanan (idempotent, 1 invoice/pesanan) |
+| `GET /inventory/invoices` / `:id` | tenant | Daftar / detail faktur |
+| `POST /inventory/sales-returns` | owner | Retur penjualan (stok masuk + reversal COGS) |
+| `GET /inventory/sales-returns` / `:id` | tenant | Daftar / detail retur |
+
+**Invoice**: dokumen `WINV-000001` dari pesanan; snapshot baris + `cogs` per baris
+(dihitung dari movement penjualan pesanan). Tidak ada efek finance (pendapatan/COGS
+dimiliki order flow A8).
+
+**Sales Return**: `WRET-000001`.
+- Stok masuk kembali (`return_in`) dengan **HPP layer asli** = HPP rata-rata movement
+  `sale_issue` pesanan tsb (`source_movement_id` menunjuk movement penjualan asli).
+- Validasi qty retur ≤ (terjual − sudah diretur).
+- Finance (mode akrual): retur mengurangi COGS → income ke **HPP / COGS** (ref `ret:<id>`).
+  Mode cashflow: tidak ada (COGS tidak pernah dicatat).
+- Catatan: pengembalian **uang/pendapatan** (refund) ke pelanggan ditangani terpisah
+  (sesuaikan pesanan / catat transaksi finance) — enhancement berikutnya.
 
 ## 11. Integrasi order + COGS (PR-A8)
 
