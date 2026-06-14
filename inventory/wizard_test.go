@@ -15,6 +15,10 @@ func TestRecommendCostingMethod(t *testing.T) {
 	if r := recommendCostingMethod(WizardAnswers{HighVolumeUniform: true}); r.Method != CostingAverage {
 		t.Fatalf("uniform -> %q, want average", r.Method)
 	}
+	// Rising price + slow turnover -> LIFO hint.
+	if r := recommendCostingMethod(WizardAnswers{PriceTrend: "rising", StockTurnover: "slow"}); r.Method != CostingLIFO {
+		t.Fatalf("rising slow -> %q, want lifo", r.Method)
+	}
 	// Volatile price -> Average.
 	if r := recommendCostingMethod(WizardAnswers{PriceVolatile: true}); r.Method != CostingAverage {
 		t.Fatalf("volatile -> %q, want average", r.Method)

@@ -6,40 +6,55 @@ import (
 
 	appErrs "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/tenant"
+	"encore.app/wabantu/usage"
 )
 
-// WizardAnswers captures the onboarding questions that drive a costing recommendation.
+// WizardAnswers captures the onboarding interview that drives a costing recommendation.
 type WizardAnswers struct {
-	Perishable        bool `json:"perishable"`        // mudah basi / ada kedaluwarsa (mis. salmon)
-	PriceVolatile     bool `json:"priceVolatile"`     // harga beli sering berubah
-	HighVolumeUniform bool `json:"highVolumeUniform"` // volume tinggi, barang seragam
-	NeedBatchTracking bool `json:"needBatchTracking"` // butuh telusur batch/lot
+	Perishable         bool   `json:"perishable"`         // mudah basi / ada kedaluwarsa (mis. salmon)
+	PriceVolatile      bool   `json:"priceVolatile"`      // harga beli sering berubah
+	HighVolumeUniform  bool   `json:"highVolumeUniform"`  // volume tinggi, barang seragam
+	NeedBatchTracking  bool   `json:"needBatchTracking"`  // butuh telusur batch/lot
+	UsesExpiryDates    bool   `json:"usesExpiryDates"`    // pakai tanggal kedaluwarsa di operasional
+	SeasonalStock      bool   `json:"seasonalStock"`      // stok musiman
+	BusinessType       string `json:"businessType"`       // retail, food, fashion, ...
+	ProductDescription string `json:"productDescription"` // cerita produk & pola stok
+	StockTurnover      string `json:"stockTurnover"`      // fast, medium, slow
+	PriceTrend         string `json:"priceTrend"`         // stable, rising, volatile
+	OwnerNotes         string `json:"ownerNotes"`         // catatan bebas owner
 }
 
-// WizardRecommendation is the suggested costing method + reasoning.
+// WizardRecommendation is the suggested costing method + reasoning for the owner.
 type WizardRecommendation struct {
-	Method string `json:"method"`
-	Reason string `json:"reason"`
+	Method  string `json:"method"`
+	Reason  string `json:"reason"`
+	Summary string `json:"summary,omitempty"` // penjelasan operasional untuk owner
+	Source  string `json:"source,omitempty"`  // "ai" atau "rules"
 }
 
-// recommendCostingMethod is a deterministic rule-based recommender (pure).
+// recommendCostingMethod is a deterministic rule-based recommender (pure fallback).
 func recommendCostingMethod(a WizardAnswers) WizardRecommendation {
 	switch {
-	case a.Perishable:
-		return WizardRecommendation{CostingFIFO, "Produk mudah basi / ada kedaluwarsa — FIFO agar stok lama keluar lebih dulu."}
+	case a.Perishable || a.UsesExpiryDates:
+		return WizardRecommendation{Method: CostingFIFO, Reason: "Produk mudah basi / ada kedaluwarsa — FIFO agar stok lama keluar lebih dulu (First In, First Out)."}
 	case a.NeedBatchTracking:
-		return WizardRecommendation{CostingFIFO, "Butuh telusur batch/lot — FIFO mempertahankan lapisan biaya per penerimaan."}
+		return WizardRecommendation{Method: CostingFIFO, Reason: "Butuh telusur batch/lot — FIFO mempertahankan lapisan biaya per penerimaan barang."}
+	case a.PriceTrend == "rising" && a.StockTurnover == "slow":
+		return WizardRecommendation{Method: CostingLIFO, Reason: "Harga beli cenderung naik dan stok lama masih di gudang — LIFO bisa mencerminkan biaya terbaru (konsultasikan akuntan jika ragu)."}
 	case a.HighVolumeUniform && !a.PriceVolatile:
-		return WizardRecommendation{CostingAverage, "Volume tinggi & barang seragam — Average lebih sederhana dan stabil."}
-	case a.PriceVolatile:
-		return WizardRecommendation{CostingAverage, "Harga beli fluktuatif — Average meredam naik-turun HPP."}
+		return WizardRecommendation{Method: CostingAverage, Reason: "Volume tinggi & barang seragam — Average (rata-rata tertimbang) lebih sederhana dan stabil."}
+	case a.PriceVolatile || a.PriceTrend == "volatile":
+		return WizardRecommendation{Method: CostingAverage, Reason: "Harga beli fluktuatif — Average meredam naik-turun HPP per periode."}
 	default:
-		return WizardRecommendation{CostingAverage, "Pilihan aman untuk UMKM — Average mudah dikelola."}
+		return WizardRecommendation{Method: CostingAverage, Reason: "Pilihan aman untuk UMKM — Average mudah dikelola sehari-hari."}
 	}
 }
 
 type WizardRecommendResponse struct {
-	Recommendation WizardRecommendation `json:"recommendation"`
+	Recommendation      WizardRecommendation `json:"recommendation"`
+	TokensUsed          int                  `json:"tokensUsed,omitempty"`
+	TokenQuotaRemaining int                  `json:"tokenQuotaRemaining,omitempty"`
+	TokenQuotaLimit     int                  `json:"tokenQuotaLimit,omitempty"`
 }
 
 //encore:api auth method=POST path=/api/v1/inventory/wizard/recommend
@@ -51,7 +66,10 @@ func WizardRecommend(ctx context.Context, p *WizardAnswers) (*WizardRecommendRes
 	if err := requireOwner(u); err != nil {
 		return nil, err
 	}
-	rec := recommendCostingMethod(*p)
+	if p == nil {
+		return nil, appErrs.BadRequest("jawaban wizard wajib diisi")
+	}
+	sanitizeWizardAnswers(p)
 
 	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
 	if err != nil {
@@ -59,8 +77,18 @@ func WizardRecommend(ctx context.Context, p *WizardAnswers) (*WizardRecommendRes
 	}
 	defer conn.Close()
 	if _, err := loadSetting(ctx, conn); err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
+
+	biz := loadBusinessWizardContext(ctx, conn)
+	rec := ruleRecommendation(*p)
+	tokensUsed := 0
+
+	if aiRec, tokens, aiErr := recommendCostingWithAI(ctx, u.TenantSchema, u.TenantID, u.AccountID, *p, biz); aiErr == nil {
+		rec = aiRec
+		tokensUsed = tokens
+	}
+
 	answersJSON, _ := json.Marshal(p)
 	recJSON, _ := json.Marshal(rec)
 	if _, err := conn.ExecContext(ctx, `
@@ -68,5 +96,12 @@ func WizardRecommend(ctx context.Context, p *WizardAnswers) (*WizardRecommendRes
 		answersJSON, recJSON, nullUUID(u.AccountID)); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	return &WizardRecommendResponse{Recommendation: rec}, nil
+
+	_, rem, lim := usage.CheckQuota(ctx, u.TenantSchema, "ai_token")
+	return &WizardRecommendResponse{
+		Recommendation:      rec,
+		TokensUsed:          tokensUsed,
+		TokenQuotaRemaining: rem,
+		TokenQuotaLimit:     lim,
+	}, nil
 }

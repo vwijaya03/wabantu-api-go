@@ -212,6 +212,13 @@ func RunSchemaPatches(ctx context.Context, schemaName string) error {
 // introspect first and skip DDL when patches are already applied; missing patches on
 // cloud must be applied via scripts/apply-tenant-schema-cloud.sh (--admin).
 func runAlwaysApplyPatches(ctx context.Context, conn *sql.Conn) error {
+	if err := alwaysApplyOrderIncomePatch(ctx, conn); err != nil {
+		return err
+	}
+	return alwaysApplyInventorySettingPatch(ctx, conn)
+}
+
+func alwaysApplyOrderIncomePatch(ctx context.Context, conn *sql.Conn) error {
 	ready, err := tenantschema.OrderIncomePatchReady(ctx, conn)
 	if err != nil {
 		return err
