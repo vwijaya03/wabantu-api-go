@@ -223,4 +223,73 @@ CREATE TABLE IF NOT EXISTS pur_bill_line (
     created_at             TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_pur_bill_line_bill ON pur_bill_line(bill_id);
+
+-- inv_invoice (PR-A7): faktur penjualan dari pesanan (dokumen + snapshot COGS).
+CREATE TABLE IF NOT EXISTS inv_invoice (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    invoice_no       VARCHAR(40)  NOT NULL,
+    order_id         UUID,
+    contact_id       UUID,
+    status           VARCHAR(20)  NOT NULL DEFAULT 'issued',
+    transaction_date DATE         NOT NULL DEFAULT CURRENT_DATE,
+    subtotal         NUMERIC(18,4) NOT NULL DEFAULT 0,
+    total_cogs       NUMERIC(18,4) NOT NULL DEFAULT 0,
+    note             TEXT,
+    created_by       UUID,
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    deleted_at       TIMESTAMPTZ,
+    deleted_by       UUID,
+    CONSTRAINT inv_invoice_status_chk CHECK (status IN ('draft','issued','paid','cancelled'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_inv_invoice_no ON inv_invoice(invoice_no) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_inv_invoice_order ON inv_invoice(order_id) WHERE order_id IS NOT NULL AND deleted_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS inv_invoice_line (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    invoice_id      UUID          NOT NULL REFERENCES inv_invoice(id) ON DELETE CASCADE,
+    catalog_item_id UUID,
+    order_line_id   UUID,
+    description     TEXT,
+    qty             NUMERIC(18,4) NOT NULL,
+    unit_price      NUMERIC(18,4) NOT NULL DEFAULT 0,
+    cogs            NUMERIC(18,4) NOT NULL DEFAULT 0,
+    warehouse_id    UUID,
+    created_at      TIMESTAMPTZ   NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_inv_invoice_line_inv ON inv_invoice_line(invoice_id);
+
+-- inv_sales_return (PR-A7): retur penjualan — stok masuk dengan HPP layer asli.
+CREATE TABLE IF NOT EXISTS inv_sales_return (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    return_no        VARCHAR(40)  NOT NULL,
+    order_id         UUID,
+    invoice_id       UUID,
+    contact_id       UUID,
+    status           VARCHAR(20)  NOT NULL DEFAULT 'posted',
+    transaction_date DATE         NOT NULL DEFAULT CURRENT_DATE,
+    note             TEXT,
+    total_cost       NUMERIC(18,4) NOT NULL DEFAULT 0,
+    created_by       UUID,
+    created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    deleted_at       TIMESTAMPTZ,
+    deleted_by       UUID,
+    CONSTRAINT inv_sales_return_status_chk CHECK (status IN ('posted','cancelled'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_inv_sales_return_no ON inv_sales_return(return_no) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_inv_sales_return_order ON inv_sales_return(order_id) WHERE order_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS inv_sales_return_line (
+    id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    sales_return_id    UUID          NOT NULL REFERENCES inv_sales_return(id) ON DELETE CASCADE,
+    catalog_item_id    UUID          NOT NULL,
+    warehouse_id       UUID          NOT NULL,
+    qty                NUMERIC(18,4) NOT NULL,
+    unit_cost          NUMERIC(18,4) NOT NULL DEFAULT 0,
+    movement_id        UUID,
+    source_movement_id UUID,
+    created_at         TIMESTAMPTZ   NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_inv_sales_return_line_ret ON inv_sales_return_line(sales_return_id);
 `
