@@ -148,6 +148,9 @@ dan menerapkannya ke semua schema `t_*` dengan role admin.
 | GET | `/api/v1/inventory/invoices` (+`/:id`) | tenant | (A7) Daftar/detail faktur |
 | POST | `/api/v1/inventory/sales-returns` | owner | (A7) Retur penjualan |
 | GET | `/api/v1/inventory/sales-returns` (+`/:id`) | tenant | (A7) Daftar/detail retur |
+| POST | `/api/v1/inventory/recalculate` | owner | (A9) Recalculate HPP |
+| POST | `/api/v1/inventory/wizard/recommend` | owner | (A9) Rekomendasi metode HPP |
+| GET/PATCH | `/api/v1/inventory/skus/:id` | tenant/owner | (A9) Config inventory per item |
 
 > ACL granular (staff read-only, dll.) ditambahkan di **A9**. Saat ini tulis =
 > owner/super_admin (`CanPerformOwnerActions`).
@@ -339,6 +342,29 @@ Tenant tanpa `setup_completed` → perilaku order **persis seperti sebelumnya**.
 
 ## 12. Recalculate HPP, wizard AI, ACL _(rencana A9)_
 
-## 12. Recalculate HPP, wizard AI, ACL _(rencana A9)_
+## 12. Recalculate HPP, wizard metode, config SKU, ACL (PR-A9)
+
+| Endpoint | Akses | Fungsi |
+|----------|-------|--------|
+| `POST /inventory/recalculate` | owner | Recompute layer+saldo+COGS dari replay movement (opsional per item) |
+| `POST /inventory/wizard/recommend` | owner | Rekomendasi metode HPP dari jawaban wizard (rule-based) |
+| `GET /inventory/skus/:catalogItemID` | tenant | Config inventory per item + metode efektif |
+| `PATCH /inventory/skus/:catalogItemID` | owner | Set track_stock, metode override, flag batch/serial/expiry, base UOM |
+
+**Recalculate HPP** (`replayMovements`, pure & teruji): memutar ulang ledger per
+(item, gudang) menurut metode aktif → memperbaiki `inv_cost_layer`, `inv_stock_balance`,
+dan biaya per-movement. Alat "kalau HPP kacau". Catatan: rebuild dari riwayat
+penerimaan/penjualan; **revaluasi manual tidak dipertahankan** (perlu diterapkan ulang).
+
+**Wizard metode**: `recommendCostingMethod` (rule-based, bisa diperkuat AI di UI):
+perishable/expiry → FIFO; butuh batch → FIFO; volume tinggi seragam → Average;
+harga fluktuatif → Average; default Average. Jawaban + rekomendasi disimpan di
+`inv_setting`. Owner menerapkan via `PATCH /inventory/setting`.
+
+**Ganti metode**: `PATCH /inventory/skus/:id` (override per item) atau
+`PATCH /inventory/setting` (default tenant) → memicu **recalculate** otomatis untuk item terkait.
+
+**ACL**: model saat ini — **owner & super_admin** = tulis penuh, **staff** = baca.
+Memenuhi syarat "owner/superadmin pasti bisa". ACL granular per-staff = enhancement berikutnya.
 
 ## 13. AI WhatsApp stok real + backfill order lama _(rencana A10)_
