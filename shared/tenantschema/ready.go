@@ -147,6 +147,17 @@ func PIIReady(ctx context.Context, conn *sql.Conn) (bool, error) {
 	return ok, err
 }
 
+// InventoryModuleReady — inventory/HPP module tables present (PR-A1).
+func InventoryModuleReady(ctx context.Context, conn *sql.Conn) (bool, error) {
+	for _, t := range []string{"inv_setting", "inv_warehouse", "inv_sku"} {
+		ok, err := tableExists(ctx, conn, t)
+		if err != nil || !ok {
+			return false, err
+		}
+	}
+	return true, nil
+}
+
 // CloudTenantReady — migrated / fully provisioned tenant (skip all runtime DDL).
 func CloudTenantReady(ctx context.Context, conn *sql.Conn) (bool, error) {
 	checks := []func(context.Context, *sql.Conn) (bool, error){
@@ -156,6 +167,7 @@ func CloudTenantReady(ctx context.Context, conn *sql.Conn) (bool, error) {
 		EventsModuleReady,
 		PIIReady,
 		OrderIncomePatchReady,
+		InventoryModuleReady,
 	}
 	for _, fn := range checks {
 		ok, err := fn(ctx, conn)

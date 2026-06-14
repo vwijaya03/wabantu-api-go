@@ -366,5 +366,8 @@ func runFinanceSchemaAndSeed(ctx context.Context, conn *sql.Conn) error {
 	if err := runEventsSchemaAndSeed(ctx, conn); err != nil {
 		return fmt.Errorf("events schema: %w", err)
 	}
+	if err := runInventorySchemaAndSeed(ctx, conn); err != nil {
+		return fmt.Errorf("inventory schema: %w", err)
+	}
 	return nil
 }
