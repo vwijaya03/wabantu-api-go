@@ -34,6 +34,14 @@ func RecordOrderCompletedIncome(ctx context.Context, tenantSchema, createdBy, or
 		return err
 	}
 
+	// Legacy soft-deleted rows bypass the partial unique index on reference_no and can
+	// allow duplicate income rows when an order is completed again.
+	if _, err := conn.ExecContext(ctx, `
+		DELETE FROM fin_transaction
+		WHERE reference_no = $1 AND type = 'income' AND deleted_at IS NOT NULL`, orderID); err != nil {
+		return appErrs.Internal(err.Error())
+	}
+
 	var categoryID sql.NullString
 	_ = conn.QueryRowContext(ctx, `
 		SELECT id::text FROM fin_category
