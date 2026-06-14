@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS inv_setting (
     setup_completed_at     TIMESTAMPTZ,
     default_costing_method VARCHAR(10)  NOT NULL DEFAULT 'average',
     block_negative_stock   BOOLEAN      NOT NULL DEFAULT true,
+    purchase_posts_expense BOOLEAN      NOT NULL DEFAULT false,
     wizard_answers         JSONB        NOT NULL DEFAULT '{}',
     wizard_recommendation  JSONB        NOT NULL DEFAULT '{}',
     updated_by             UUID,
@@ -27,6 +28,8 @@ CREATE TABLE IF NOT EXISTS inv_setting (
     updated_at             TIMESTAMPTZ  NOT NULL DEFAULT now(),
     CONSTRAINT inv_setting_method_chk CHECK (default_costing_method IN ('fifo','lifo','average'))
 );
+-- (PR-A6) cost-recognition toggle for existing tenants; safe on app-owned table.
+ALTER TABLE inv_setting ADD COLUMN IF NOT EXISTS purchase_posts_expense BOOLEAN NOT NULL DEFAULT false;
 
 -- inv_warehouse: stock locations. Default warehouse mirrors Jubelio location_id = -1.
 CREATE TABLE IF NOT EXISTS inv_warehouse (
@@ -181,4 +184,43 @@ CREATE TABLE IF NOT EXISTS pur_purchase_order_line (
     created_at        TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_pur_po_line_po ON pur_purchase_order_line(purchase_order_id);
+
+-- pur_bill (PR-A6): penerimaan barang (GRN). Menambah stok + (opsional) finance.
+CREATE TABLE IF NOT EXISTS pur_bill (
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    bill_no           VARCHAR(40)  NOT NULL,
+    purchase_order_id UUID,
+    supplier_name     VARCHAR(200),
+    contact_id        UUID,
+    warehouse_id      UUID,
+    status            VARCHAR(20)  NOT NULL DEFAULT 'posted',
+    transaction_date  DATE         NOT NULL DEFAULT CURRENT_DATE,
+    note              TEXT,
+    subtotal          NUMERIC(18,4) NOT NULL DEFAULT 0,
+    created_by        UUID,
+    created_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    deleted_at        TIMESTAMPTZ,
+    deleted_by        UUID,
+    CONSTRAINT pur_bill_status_chk CHECK (status IN ('posted','cancelled'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pur_bill_no ON pur_bill(bill_no) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_pur_bill_status ON pur_bill(status, created_at DESC) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_pur_bill_po ON pur_bill(purchase_order_id) WHERE purchase_order_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS pur_bill_line (
+    id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    bill_id                UUID          NOT NULL REFERENCES pur_bill(id) ON DELETE CASCADE,
+    purchase_order_line_id UUID,
+    catalog_item_id        UUID          NOT NULL,
+    warehouse_id           UUID          NOT NULL,
+    description            TEXT,
+    qty                    NUMERIC(18,4) NOT NULL,
+    unit_cost              NUMERIC(18,4) NOT NULL DEFAULT 0,
+    batch_no               VARCHAR(64),
+    expiry_date            DATE,
+    movement_id            UUID,
+    created_at             TIMESTAMPTZ   NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_pur_bill_line_bill ON pur_bill_line(bill_id);
 `

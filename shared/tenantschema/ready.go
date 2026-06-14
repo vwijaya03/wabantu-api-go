@@ -155,19 +155,21 @@ func PIIReady(ctx context.Context, conn *sql.Conn) (bool, error) {
 //   - PR-A2: inv_cost_layer, inv_stock_balance, inv_stock_movement
 //   - PR-A4: inv_bundle_component
 //   - PR-A5: inv_document_sequence, pur_purchase_order(_line)
+//   - PR-A6: pur_bill(_line) + inv_setting.purchase_posts_expense
 func InventoryModuleReady(ctx context.Context, conn *sql.Conn) (bool, error) {
 	for _, t := range []string{
 		"inv_setting", "inv_warehouse", "inv_sku",
 		"inv_cost_layer", "inv_stock_balance", "inv_stock_movement",
 		"inv_bundle_component",
 		"inv_document_sequence", "pur_purchase_order", "pur_purchase_order_line",
+		"pur_bill", "pur_bill_line",
 	} {
 		ok, err := tableExists(ctx, conn, t)
 		if err != nil || !ok {
 			return false, err
 		}
 	}
-	return true, nil
+	return columnExists(ctx, conn, "inv_setting", "purchase_posts_expense")
 }
 
 // CloudTenantReady — migrated / fully provisioned tenant (skip all runtime DDL).

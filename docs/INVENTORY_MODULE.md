@@ -141,6 +141,9 @@ dan menerapkannya ke semua schema `t_*` dengan role admin.
 | GET | `/api/v1/inventory/purchase-orders/:id` | tenant | (A5) Detail PO |
 | POST | `/api/v1/inventory/purchase-orders/:id/close` | owner | (A5) Tutup PO |
 | POST | `/api/v1/inventory/purchase-orders/:id/cancel` | owner | (A5) Batalkan PO |
+| POST | `/api/v1/inventory/bills` | owner | (A6) Terima barang (GRN) |
+| GET | `/api/v1/inventory/bills` | tenant | (A6) Daftar bill |
+| GET | `/api/v1/inventory/bills/:id` | tenant | (A6) Detail bill |
 
 > ACL granular (staff read-only, dll.) ditambahkan di **A9**. Saat ini tulis =
 > owner/super_admin (`CanPerformOwnerActions`).
@@ -254,7 +257,33 @@ Nomor `WPO-000001` via `inv_document_sequence` (atomik per tenant).
 - Status: `open → partial → received` (oleh Bill), atau `closed`/`cancelled` manual.
 - Pure-function: `formatDocNumber`, `poStatusFromReceipts` (dipakai Bill A6).
 
-## 9. Bill / penerimaan barang _(rencana A6)_
+## 9. Bill / penerimaan barang (PR-A6)
+
+Bill = penerimaan barang (GRN). Menambah stok via `PostMovement(purchase_receive)`
+per baris, dan (opsional) posting finance. Nomor `WBIL-000001`.
+
+| Endpoint | Akses | Fungsi |
+|----------|-------|--------|
+| `POST /inventory/bills` | owner | Terima barang (boleh standalone atau dari PO) |
+| `GET /inventory/bills` | tenant | Daftar bill |
+| `GET /inventory/bills/:id` | tenant | Detail + baris |
+
+- **Partial receive**: tiap baris boleh kaitkan `purchaseOrderLineId` → `qty_received`
+  PO bertambah; status PO dihitung ulang (`open → partial → received`).
+- **Per-baris gudang**, batch, expiry didukung.
+
+### Toggle pengakuan biaya (`inv_setting.purchase_posts_expense`)
+
+Karena Finance WABantu berbasis arus kas (tanpa akun aset), biaya diakui **di satu titik**
+untuk menghindari dobel:
+
+| Mode | `purchase_posts_expense` | Saat Bill | Saat jual (A8) |
+|------|--------------------------|-----------|----------------|
+| **Akrual** (default) | `false` | nilai persediaan naik, **tanpa** expense | expense **HPP / COGS** |
+| **Cashflow** | `true` | expense **Pembelian Persediaan** (kas keluar) | **tanpa** COGS |
+
+Owner mengubah via `PATCH /inventory/setting`. Default = akrual (laba-rugi akurat).
+Pembayaran supplier (AP) detail menyusul sebagai enhancement.
 
 ## 10. Invoice & retur penjualan _(rencana A7)_
 
