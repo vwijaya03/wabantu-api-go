@@ -4,10 +4,8 @@ Modul persediaan (stok), harga pokok penjualan (HPP/COGS), pergerakan stok, dan
 revaluasi untuk tenant WABantu. Mendukung metode costing **FIFO / LIFO / Average**,
 multi-gudang, bundle, Purchase Order → Bill, dan integrasi ke modul Finance.
 
-> Status: **dalam pengembangan bertahap (PR-A1 … A10)**. Bagian bertanda _(rencana)_
-> belum diimplementasikan; dokumen ini diperbarui tiap PR.
->
-> Panduan produk (owner/CS): lihat `web-frontend/docs/INVENTORY_MODULE.md`.
+> Status: **modul lengkap (PR-A1 … A10)** untuk core inventory. Panduan owner bisnis:
+> `web-frontend/docs/INVENTORY_MODULE.md` (diperbarui berkala).
 > Pemetaan referensi Jubelio: lihat `docs/INVENTORY_JUBELIO_MAPPING.md` _(rencana)_.
 
 ---
@@ -378,10 +376,17 @@ Tenant tanpa setup & unit test (item dibuat langsung) tidak terpengaruh.
 
 **Backfill order lama** (`POST /inventory/backfill/orders`, owner):
 - `execute=false` (preview): hitung pesanan committed yang belum punya movement
-  `sale_issue`, tandai yang stoknya tidak cukup.
+  `sale_issue`, tandai yang stoknya tidak cukup, plus **`issues[]`** detail per pesanan
+  (orderRef, shortages per item/gudang: qty butuh/tersedia/kurang) dan
+  **`suggestedOpening[]`** (qty minimal saldo awal yang disarankan, agregat per item+gudang).
 - `execute=true`: jalankan `SyncOrderStock` per pesanan (issue stok + COGS retroaktif),
-  laporkan `processed` / `failed` / `failures`. Gagal per pesanan tidak menghentikan sisanya.
+  laporkan `processed` / `failed` / `failures` / `issues` / `suggestedOpening`.
+  Gagal per pesanan tidak menghentikan sisanya. **Tidak ada auto-adjustment** — owner
+  mengisi saldo awal manual sesuai saran UI.
 - Wajib `setup_completed`.
+
+Panduan owner bisnis (bahasa Indonesia, lengkap): `web-frontend/docs/INVENTORY_MODULE.md`.
+Di UI, setiap halaman Persediaan punya tombol **(?)** (`lib/inventory/help-content.ts`).
 
 | Endpoint | Akses | Fungsi |
 |----------|-------|--------|

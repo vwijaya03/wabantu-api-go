@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"encore.app/wabantu/finance"
@@ -155,6 +156,17 @@ func SyncOrderStock(ctx context.Context, tenantSchema, orderID, status string, i
 	return resyncOrderCOGS(ctx, tenantSchema, conn, orderID, postExpense, createdBy)
 }
 
+// StockShortageLine describes one item+warehouse line that lacks stock for an order.
+type StockShortageLine struct {
+	CatalogItemID string  `json:"catalogItemId"`
+	ItemName      string  `json:"itemName"`
+	WarehouseID   string  `json:"warehouseId"`
+	WarehouseName string  `json:"warehouseName"`
+	QtyRequired   float64 `json:"qtyRequired"`
+	QtyAvailable  float64 `json:"qtyAvailable"`
+	QtyShort      float64 `json:"qtyShort"`
+}
+
 // PrecheckOrderStock fails fast (before the order row is committed) when entering a
 // committed status would oversell a tracked item under block_negative_stock. orderID
 // may be empty for a brand-new order.
@@ -165,25 +177,41 @@ func PrecheckOrderStock(ctx context.Context, tenantSchema, orderID string, items
 	}
 	defer conn.Close()
 
-	setup, _, block, err := loadSyncSetting(ctx, conn)
+	shortages, err := analyzeOrderStockShortageConn(ctx, conn, orderID, items)
 	if err != nil {
 		return err
 	}
+	if len(shortages) > 0 {
+		s := shortages[0]
+		return appErrs.BadRequest(fmt.Sprintf("stok tidak cukup untuk %s (tersedia %g, dibutuhkan %g)",
+			s.ItemName, s.QtyAvailable, s.QtyRequired))
+	}
+	return nil
+}
+
+// analyzeOrderStockShortageConn returns shortage lines when block_negative_stock is on
+// and committed stock would oversell. Empty slice means no shortage (or checks skipped).
+func analyzeOrderStockShortageConn(ctx context.Context, conn *sql.Conn, orderID string, items []OrderStockItem) ([]StockShortageLine, error) {
+	setup, _, block, err := loadSyncSetting(ctx, conn)
+	if err != nil {
+		return nil, err
+	}
 	if !setup || !block {
-		return nil
+		return nil, nil
 	}
 	defaultWarehouse, err := defaultWarehouseID(ctx, conn)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	required, err := resolveOrderRequirements(ctx, conn, items, defaultWarehouse)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	netIssued, err := orderNetIssued(ctx, conn, orderID)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	var shortages []StockShortageLine
 	for k, req := range required {
 		delta := round4(req - netIssued[k].qty)
 		if delta <= epsilon {
@@ -194,14 +222,26 @@ func PrecheckOrderStock(ctx context.Context, tenantSchema, orderID string, items
 			`SELECT COALESCE(on_hand,0) FROM inv_stock_balance WHERE catalog_item_id=$1 AND warehouse_id=$2`,
 			k.item, k.warehouse).Scan(&onHand)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return appErrs.Internal(err.Error())
+			return nil, appErrs.Internal(err.Error())
 		}
 		if delta > onHand+epsilon {
-			return appErrs.BadRequest(fmt.Sprintf("stok tidak cukup untuk %s (tersedia %g, dibutuhkan %g)",
-				itemName(ctx, conn, k.item), onHand, delta))
+			whID := k.warehouse
+			if whID == "" {
+				whID = defaultWarehouse
+			}
+			shortages = append(shortages, StockShortageLine{
+				CatalogItemID: k.item,
+				ItemName:      itemName(ctx, conn, k.item),
+				WarehouseID:   whID,
+				WarehouseName: warehouseName(ctx, conn, whID),
+				QtyRequired:   delta,
+				QtyAvailable:  onHand,
+				QtyShort:      round4(delta - onHand),
+			})
 		}
 	}
-	return nil
+	sortStockShortages(shortages)
+	return shortages, nil
 }
 
 // ---------- helpers ----------
@@ -347,4 +387,25 @@ func itemName(ctx context.Context, conn *sql.Conn, catalogItemID string) string 
 		return "item"
 	}
 	return name
+}
+
+func warehouseName(ctx context.Context, conn *sql.Conn, warehouseID string) string {
+	var name string
+	if err := conn.QueryRowContext(ctx,
+		`SELECT COALESCE(name,'') FROM inv_warehouse WHERE id=$1`, warehouseID).Scan(&name); err != nil {
+		return "gudang"
+	}
+	if strings.TrimSpace(name) == "" {
+		return "gudang"
+	}
+	return name
+}
+
+func sortStockShortages(lines []StockShortageLine) {
+	sort.Slice(lines, func(i, j int) bool {
+		if lines[i].ItemName != lines[j].ItemName {
+			return lines[i].ItemName < lines[j].ItemName
+		}
+		return lines[i].WarehouseName < lines[j].WarehouseName
+	})
 }
