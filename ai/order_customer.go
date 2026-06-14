@@ -608,9 +608,9 @@ func formatPersistedOrderSummary(o *persistedOrder) string {
 			if qty < 1 {
 				qty = 1
 			}
-			line := fmt.Sprintf("• %s × %d", strings.TrimSpace(it.Name), qty)
+			line := fmt.Sprintf("• %s × %s", strings.TrimSpace(it.Name), formatQtyLabel(qty))
 			if it.UnitPrice > 0 {
-				line += fmt.Sprintf(" (%s)", formatMoney(it.UnitPrice*float64(qty)))
+				line += fmt.Sprintf(" (%s)", formatMoney(it.UnitPrice*qty))
 			}
 			b.WriteString(line + "\n")
 		}
@@ -631,6 +631,15 @@ func formatPersistedOrderSummary(o *persistedOrder) string {
 		b.WriteString(fmt.Sprintf("\nTotal: %s", formatMoney(o.Total)))
 	}
 	return strings.TrimSpace(b.String())
+}
+
+// formatQtyLabel renders an order qty, keeping whole numbers integer-clean ("3")
+// and showing fractions when present ("1.5") — qty is float64 since PR-A8.
+func formatQtyLabel(qty float64) string {
+	if qty == float64(int64(qty)) {
+		return fmt.Sprintf("%d", int64(qty))
+	}
+	return fmt.Sprintf("%g", qty)
 }
 
 func orderStatusLabelID(status string) string {
