@@ -136,6 +136,11 @@ dan menerapkannya ke semua schema `t_*` dengan role admin.
 | POST | `/api/v1/inventory/revaluations` | owner | (A3) Revaluasi HPP |
 | GET | `/api/v1/inventory/bundles/:id/components` | tenant | (A4) Komponen bundle |
 | PUT | `/api/v1/inventory/bundles/:id/components` | owner | (A4) Set komponen bundle |
+| POST | `/api/v1/inventory/purchase-orders` | owner | (A5) Buat PO |
+| GET | `/api/v1/inventory/purchase-orders` | tenant | (A5) Daftar PO |
+| GET | `/api/v1/inventory/purchase-orders/:id` | tenant | (A5) Detail PO |
+| POST | `/api/v1/inventory/purchase-orders/:id/close` | owner | (A5) Tutup PO |
+| POST | `/api/v1/inventory/purchase-orders/:id/cancel` | owner | (A5) Batalkan PO |
 
 > ACL granular (staff read-only, dll.) ditambahkan di **A9**. Saat ini tulis =
 > owner/super_admin (`CanPerformOwnerActions`).
@@ -232,9 +237,22 @@ Aturan:
   → daftar issue per anak; `bundleAvailableQty(onHandByChild, components)` → jumlah
   bundle yang bisa dipenuhi (min floor antar komponen).
 
-## 7b. _(placeholder)_
+## 8. Purchase Order (PR-A5)
 
-## 8. Purchase Order _(rencana A5)_
+PO = **rencana pembelian**; tidak mengubah stok/finance (itu terjadi di Bill/A6).
+Nomor `WPO-000001` via `inv_document_sequence` (atomik per tenant).
+
+| Endpoint | Akses | Fungsi |
+|----------|-------|--------|
+| `POST /inventory/purchase-orders` | owner | Buat PO + baris (per-baris gudang) |
+| `GET /inventory/purchase-orders` | tenant | Daftar (filter status, q) |
+| `GET /inventory/purchase-orders/:id` | tenant | Detail + baris |
+| `POST /inventory/purchase-orders/:id/close` | owner | Tutup sisa (open/partial → closed) |
+| `POST /inventory/purchase-orders/:id/cancel` | owner | Batalkan (hanya bila belum ada penerimaan) |
+
+- Baris: `qty_ordered`, `qty_received` (diisi Bill), `unit_cost`, `warehouse_id` per baris.
+- Status: `open → partial → received` (oleh Bill), atau `closed`/`cancelled` manual.
+- Pure-function: `formatDocNumber`, `poStatusFromReceipts` (dipakai Bill A6).
 
 ## 9. Bill / penerimaan barang _(rencana A6)_
 
