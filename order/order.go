@@ -2,7 +2,9 @@ package order
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -12,6 +14,7 @@ import (
 	"encore.dev/storage/sqldb"
 
 	"encore.app/wabantu/finance"
+	"encore.app/wabantu/inventory"
 	appErrs "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/pricing"
 	"encore.app/wabantu/shared/tenantschema"
@@ -37,15 +40,17 @@ var validOrderStatuses = map[string]bool{
 // ---------- types ----------
 
 type OrderItem struct {
+	LineID        string  `json:"lineId,omitempty"`
 	CatalogItemID string  `json:"catalogItemId,omitempty"`
 	ExternalCode  string  `json:"externalCode,omitempty"`
 	Name          string  `json:"name"`
 	Variant       string  `json:"variant,omitempty"`
 	Size          string  `json:"size,omitempty"`
 	Color         string  `json:"color,omitempty"`
-	Qty           int     `json:"qty"`
+	Qty           float64 `json:"qty"`
 	UnitPrice     float64 `json:"unitPrice"`
 	SellUnit      string  `json:"sellUnit,omitempty"`
+	WarehouseID   string  `json:"warehouseId,omitempty"`
 }
 
 type ShippingAddress struct {
@@ -282,7 +287,7 @@ func Create(ctx context.Context, p *CreateOrderParams) (*Order, error) {
 
 	var subtotal float64
 	for _, it := range items {
-		subtotal += float64(it.Qty) * it.UnitPrice
+		subtotal += it.Qty * it.UnitPrice
 	}
 	status := strings.ToLower(strings.TrimSpace(p.Status))
 	if status == "" {
@@ -306,6 +311,12 @@ func Create(ctx context.Context, p *CreateOrderParams) (*Order, error) {
 	}
 	if err := finance.ValidateIncomeWallet(ctx, u.TenantSchema, p.IncomeWalletID); err != nil {
 		return nil, err
+	}
+	// Fail fast if creating directly into a stock-committed status would oversell.
+	if inventory.IsCommittedOrderStatus(status) {
+		if err := inventory.PrecheckOrderStock(ctx, u.TenantSchema, "", orderStockItems(items)); err != nil {
+			return nil, err
+		}
 	}
 
 	itemsJSON, _ := json.Marshal(items)
@@ -332,6 +343,9 @@ func Create(ctx context.Context, p *CreateOrderParams) (*Order, error) {
 		if err := finance.RecordOrderCompletedIncome(ctx, u.TenantSchema, u.AccountID, o.ID, o.Total, o.IncomeWalletID); err != nil {
 			return nil, err
 		}
+	}
+	if err := inventory.SyncOrderStock(ctx, u.TenantSchema, o.ID, o.Status, orderStockItems(o.Items), u.AccountID); err != nil {
+		return nil, err
 	}
 	return &o, nil
 }
@@ -364,6 +378,7 @@ func Update(ctx context.Context, id string, req *UpdateOrderParams) (*Order, err
 		idx++
 	}
 	var updatedSubtotal *float64
+	var normalizedItems []OrderItem
 	if len(req.Items) > 0 {
 		contactID := ""
 		if req.ContactID != nil {
@@ -373,13 +388,14 @@ func Update(ctx context.Context, id string, req *UpdateOrderParams) (*Order, err
 				`SELECT COALESCE(contact_id::text, '') FROM "%s"."order" WHERE id=$1 AND deleted_at IS NULL`,
 				u.TenantSchema), id).Scan(&contactID)
 		}
-		items, err := normalizeOrderItems(ctx, u.TenantSchema, contactID, req.Items)
-		if err != nil {
-			return nil, err
+		items, ierr := normalizeOrderItems(ctx, u.TenantSchema, contactID, req.Items)
+		if ierr != nil {
+			return nil, ierr
 		}
+		normalizedItems = items
 		subtotal := 0.0
 		for _, it := range items {
-			subtotal += float64(it.Qty) * it.UnitPrice
+			subtotal += it.Qty * it.UnitPrice
 		}
 		itemsJSON, _ := json.Marshal(items)
 		sets = append(sets, fmt.Sprintf("items=$%d", idx))
@@ -453,6 +469,19 @@ func Update(ctx context.Context, id string, req *UpdateOrderParams) (*Order, err
 			return nil, err
 		}
 	}
+	// Fail fast on overselling before committing a transition into a committed status.
+	if inventory.IsCommittedOrderStatus(newStatus) {
+		checkItems := normalizedItems
+		if checkItems == nil {
+			checkItems, err = loadOrderItems(ctx, u.TenantSchema, id)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if err := inventory.PrecheckOrderStock(ctx, u.TenantSchema, id, orderStockItems(checkItems)); err != nil {
+			return nil, err
+		}
+	}
 
 	sets = append(sets, "updated_at=NOW()")
 	args = append(args, id)
@@ -476,6 +505,11 @@ func Update(ctx context.Context, id string, req *UpdateOrderParams) (*Order, err
 		}
 	} else if shouldResyncCompletedOrderIncome(newStatus, o.Status, updatedSubtotal, updatedShippingCost, walletUpdated) {
 		if err := finance.ResyncOrderCompletedIncome(ctx, u.TenantSchema, u.AccountID, o.ID, o.Total, o.IncomeWalletID); err != nil {
+			return nil, err
+		}
+	}
+	if newStatus != "" || len(req.Items) > 0 {
+		if err := inventory.SyncOrderStock(ctx, u.TenantSchema, o.ID, o.Status, orderStockItems(o.Items), u.AccountID); err != nil {
 			return nil, err
 		}
 	}
@@ -510,7 +544,25 @@ func Cancel(ctx context.Context, id string) (*Order, error) {
 	if err := finance.RemoveOrderIncomeTransaction(ctx, u.TenantSchema, o.ID); err != nil {
 		return nil, err
 	}
+	if err := inventory.SyncOrderStock(ctx, u.TenantSchema, o.ID, "cancelled", orderStockItems(o.Items), u.AccountID); err != nil {
+		return nil, err
+	}
 	return &o, nil
+}
+
+// loadOrderItems reads an order's line items (for stock precheck / restore on delete).
+func loadOrderItems(ctx context.Context, schema, id string) ([]OrderItem, error) {
+	var raw []byte
+	err := db.QueryRow(ctx, fmt.Sprintf(
+		`SELECT COALESCE(items, '[]') FROM "%s"."order" WHERE id=$1 AND deleted_at IS NULL`, schema), id).Scan(&raw)
+	if err != nil {
+		return nil, appErrs.NotFound("order not found")
+	}
+	var items []OrderItem
+	if len(raw) > 0 {
+		_ = json.Unmarshal(raw, &items)
+	}
+	return items, nil
 }
 
 //encore:api auth method=PATCH path=/api/v1/order-status/batch
@@ -544,75 +596,60 @@ func BatchUpdateStatus(ctx context.Context, req *BatchUpdateStatusParams) (*Batc
 		return nil, appErrs.BadRequest("ids are required")
 	}
 
-	q := fmt.Sprintf(
-		`UPDATE "%s"."order"
-		 SET status=$1, updated_at=NOW()
-		 WHERE id IN (%s) AND deleted_at IS NULL`,
-		u.TenantSchema, strings.Join(placeholders, ", "))
-
 	if status == "completed" {
 		// Pre-flight: reject before touching any order row if the finance period is locked.
 		if err := finance.CheckCurrentPeriodUnlocked(ctx, u.TenantSchema); err != nil {
 			return nil, err
 		}
-		q = fmt.Sprintf(
-			`UPDATE "%s"."order"
-			 SET status=$1, updated_at=NOW()
-			 WHERE id IN (%s) AND deleted_at IS NULL AND status <> 'completed'`,
-			u.TenantSchema, strings.Join(placeholders, ", "))
-
-		rows, err := db.Query(ctx, q+fmt.Sprintf(" RETURNING %s", orderSelectCols("")), args...)
-		if err != nil {
-			return nil, fmt.Errorf("batch update order status: %w", err)
-		}
-		defer rows.Close()
-
-		var updated int
-		for rows.Next() {
-			o, err := scanOrder(rows.Scan)
-			if err != nil {
-				return nil, err
-			}
-			updated++
-			if err := finance.RecordOrderCompletedIncome(ctx, u.TenantSchema, u.AccountID, o.ID, o.Total, o.IncomeWalletID); err != nil {
-				return nil, err
-			}
-		}
-		if err := rows.Err(); err != nil {
-			return nil, fmt.Errorf("batch update order status: %w", err)
-		}
-		return &BatchUpdateStatusResponse{Updated: updated}, nil
 	}
-
-	if status == "draft" || status == "cancelled" {
-		rows, err := db.Query(ctx, q+` RETURNING id::text`, args...)
-		if err != nil {
-			return nil, fmt.Errorf("batch update order status: %w", err)
-		}
-		defer rows.Close()
-		var updated int
-		for rows.Next() {
-			var orderID string
-			if err := rows.Scan(&orderID); err != nil {
-				return nil, err
-			}
-			updated++
-			if err := finance.RemoveOrderIncomeTransaction(ctx, u.TenantSchema, orderID); err != nil {
-				return nil, err
-			}
-		}
-		if err := rows.Err(); err != nil {
-			return nil, fmt.Errorf("batch update order status: %w", err)
-		}
-		return &BatchUpdateStatusResponse{Updated: updated}, nil
+	cond := ""
+	if status == "completed" {
+		// Skip orders already completed so income is not re-recorded.
+		cond = " AND status <> 'completed'"
 	}
+	q := fmt.Sprintf(
+		`UPDATE "%s"."order"
+		 SET status=$1, updated_at=NOW()
+		 WHERE id IN (%s) AND deleted_at IS NULL%s
+		 RETURNING %s`,
+		u.TenantSchema, strings.Join(placeholders, ", "), cond, orderSelectCols(""))
 
-	res, err := db.Exec(ctx, q, args...)
+	rows, err := db.Query(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("batch update order status: %w", err)
 	}
-	n := res.RowsAffected()
-	return &BatchUpdateStatusResponse{Updated: int(n)}, nil
+	orders := make([]Order, 0, len(placeholders))
+	for rows.Next() {
+		o, serr := scanOrder(rows.Scan)
+		if serr != nil {
+			rows.Close()
+			return nil, serr
+		}
+		orders = append(orders, o)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("batch update order status: %w", err)
+	}
+
+	updated := 0
+	for _, o := range orders {
+		updated++
+		switch {
+		case status == "completed":
+			if err := finance.RecordOrderCompletedIncome(ctx, u.TenantSchema, u.AccountID, o.ID, o.Total, o.IncomeWalletID); err != nil {
+				return nil, err
+			}
+		case status == "draft" || status == "cancelled":
+			if err := finance.RemoveOrderIncomeTransaction(ctx, u.TenantSchema, o.ID); err != nil {
+				return nil, err
+			}
+		}
+		if err := inventory.SyncOrderStock(ctx, u.TenantSchema, o.ID, o.Status, orderStockItems(o.Items), u.AccountID); err != nil {
+			return nil, err
+		}
+	}
+	return &BatchUpdateStatusResponse{Updated: updated}, nil
 }
 
 //encore:api auth method=DELETE path=/api/v1/orders/:id
@@ -627,6 +664,12 @@ func Delete(ctx context.Context, id string) error {
 
 	if err := finance.RemoveOrderIncomeTransaction(ctx, u.TenantSchema, id); err != nil {
 		return err
+	}
+	// Restore any issued stock (treat delete like cancel) before removing the row.
+	if items, ierr := loadOrderItems(ctx, u.TenantSchema, id); ierr == nil {
+		if err := inventory.SyncOrderStock(ctx, u.TenantSchema, id, "cancelled", orderStockItems(items), u.AccountID); err != nil {
+			return err
+		}
 	}
 
 	uid, _ := auth.UserID()
@@ -710,6 +753,36 @@ func getUser() (*types.AuthUser, error) {
 	return u, nil
 }
 
+// genLineID returns a random UUIDv4-style id for an order line (stock traceability).
+func genLineID() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("line-%d", time.Now().UnixNano())
+	}
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%s-%s-%s-%s-%s",
+		hex.EncodeToString(b[0:4]), hex.EncodeToString(b[4:6]), hex.EncodeToString(b[6:8]),
+		hex.EncodeToString(b[8:10]), hex.EncodeToString(b[10:16]))
+}
+
+// orderStockItems maps order lines to the inventory sync view (catalog items only).
+func orderStockItems(items []OrderItem) []inventory.OrderStockItem {
+	out := make([]inventory.OrderStockItem, 0, len(items))
+	for _, it := range items {
+		if strings.TrimSpace(it.CatalogItemID) == "" {
+			continue
+		}
+		out = append(out, inventory.OrderStockItem{
+			LineID:        it.LineID,
+			CatalogItemID: it.CatalogItemID,
+			WarehouseID:   it.WarehouseID,
+			Qty:           it.Qty,
+		})
+	}
+	return out
+}
+
 func normalizeOrderItems(ctx context.Context, schema, contactID string, raw []OrderItem) ([]OrderItem, error) {
 	conn, err := tenant.TenantConn(ctx, schema)
 	if err != nil {
@@ -733,6 +806,11 @@ func normalizeOrderItems(ctx context.Context, schema, contactID string, raw []Or
 		if err != nil {
 			return nil, err
 		}
+		item.LineID = strings.TrimSpace(it.LineID)
+		if item.LineID == "" {
+			item.LineID = genLineID()
+		}
+		item.WarehouseID = strings.TrimSpace(it.WarehouseID)
 		items = append(items, item)
 	}
 	if len(items) == 0 {
@@ -805,7 +883,7 @@ func loadCatalogOrderItem(ctx context.Context, schema, priceTypeID, condition st
 	return item, nil
 }
 
-func createCatalogOrderItem(ctx context.Context, schema, code, name string, price float64, unit string, qty int) (OrderItem, error) {
+func createCatalogOrderItem(ctx context.Context, schema, code, name string, price float64, unit string, qty float64) (OrderItem, error) {
 	var item OrderItem
 	var sqlUnit any
 	if unit != "" {

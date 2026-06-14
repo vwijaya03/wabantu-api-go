@@ -13,6 +13,49 @@ type dbCatalogItem struct {
 	Name         string
 	SellPrice    float64
 	SellUnit     string
+	// Stock fields populated by enrichCatalogStock when the inventory module is
+	// set up for the tenant. Default zero values keep non-inventory tenants and
+	// unit tests (which build items directly) unaffected.
+	StockTracked   bool
+	StockAvailable float64
+}
+
+// enrichCatalogStock annotates catalog items with real available stock when the
+// inventory module is active for the tenant. Best-effort: any error (e.g. tables
+// absent on an un-migrated tenant, setup not completed) leaves the catalog as-is.
+func enrichCatalogStock(ctx context.Context, q tenantQuerier, catalog []dbCatalogItem) {
+	if len(catalog) == 0 {
+		return
+	}
+	var setup bool
+	if err := q.QueryRowContext(ctx,
+		`SELECT setup_completed FROM inv_setting ORDER BY created_at LIMIT 1`).Scan(&setup); err != nil || !setup {
+		return
+	}
+	rows, err := q.QueryContext(ctx, `
+		SELECT s.catalog_item_id::text, COALESCE(SUM(b.on_hand), 0)
+		FROM inv_sku s
+		LEFT JOIN inv_stock_balance b ON b.catalog_item_id = s.catalog_item_id
+		WHERE s.track_stock = true AND s.is_bundle = false
+		GROUP BY s.catalog_item_id`)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	avail := map[string]float64{}
+	for rows.Next() {
+		var id string
+		var qty float64
+		if rows.Scan(&id, &qty) == nil {
+			avail[id] = qty
+		}
+	}
+	for i := range catalog {
+		if qty, ok := avail[catalog[i].ID]; ok {
+			catalog[i].StockTracked = true
+			catalog[i].StockAvailable = qty
+		}
+	}
 }
 
 var (
