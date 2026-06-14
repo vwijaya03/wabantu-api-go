@@ -52,8 +52,15 @@ type InvSetupInterviewMessageRequest struct {
 }
 
 type InvSetupInterviewMessageResponse struct {
-	InvSetupInterviewStartResponse
-	TokensUsed int `json:"tokensUsed"`
+	SessionID              string            `json:"sessionId"`
+	Phase                  string            `json:"phase"`
+	Messages               []invSetupMessage `json:"messages"`
+	AnswersDraft           WizardAnswers     `json:"answersDraft"`
+	ReadyForRecommendation bool              `json:"readyForRecommendation"`
+	TokenQuotaRemaining    int               `json:"tokenQuotaRemaining"`
+	TokenQuotaLimit        int               `json:"tokenQuotaLimit"`
+	QuotaNotice            string            `json:"quotaNotice"`
+	TokensUsed             int               `json:"tokensUsed"`
 }
 
 type InvSetupInterviewGetResponse struct {
@@ -277,8 +284,15 @@ func SendInvSetupInterviewMessage(ctx context.Context, sessionId string, req *In
 	_, remAfter, _ := usage.CheckQuota(ctx, u.TenantSchema, "ai_token")
 	base := sessionToInvSetupResponse(session, remAfter, lim)
 	return &InvSetupInterviewMessageResponse{
-		InvSetupInterviewStartResponse: *base,
-		TokensUsed:                     tokens,
+		SessionID:              base.SessionID,
+		Phase:                  base.Phase,
+		Messages:               base.Messages,
+		AnswersDraft:           base.AnswersDraft,
+		ReadyForRecommendation: base.ReadyForRecommendation,
+		TokenQuotaRemaining:    base.TokenQuotaRemaining,
+		TokenQuotaLimit:        base.TokenQuotaLimit,
+		QuotaNotice:            base.QuotaNotice,
+		TokensUsed:             tokens,
 	}, nil
 }
 
