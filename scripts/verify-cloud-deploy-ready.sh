@@ -13,12 +13,11 @@ TENANT_URI="$(encore db conn-uri tenant --env="$ENV_NAME" --admin)"
 
 SYSTEM_OWNER="$(psql "$SYSTEM_URI" -tAc "
   SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = current_database()" | tr -d '[:space:]')"
-TENANT_OWNER="$(psql "$TENANT_URI" -tAc "
-  SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = current_database()" | tr -d '[:space:]')"
+TENANT_OWNER="$(psql "$TENANT_URI" -tAc "SELECT current_user" | tr -d '[:space:]')"
 
 echo "=== Encore deploy readiness ($ENV_NAME) ==="
 echo "System DB owner expected: $SYSTEM_OWNER"
-echo "Tenant DB owner expected: $TENANT_OWNER"
+echo "Tenant admin role expected: $TENANT_OWNER"
 echo
 
 fail=0

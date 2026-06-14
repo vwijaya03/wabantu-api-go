@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Fix Postgres ownership + GRANTs after migrate-local-db-to-encore.sh (Encore Cloud).
 #
-# Encore deploy runs migrations + dynamic grants as the database owner role:
-#   - system DB  → db_system_admin
-#   - tenant DB  → db_tenant_admin
-# pg_restore --no-owner leaves schemas/tables owned by encore_admin_* → deploy fails:
+# Encore Cloud dynamic grants on tenant DB run as the admin role from
+# `encore db conn-uri tenant --admin` (encore_admin_*), not db_tenant_admin.
+# System DB migrations use the database owner role (db_system_admin / encore-migrator).
+# pg_restore --no-owner leaves schemas/tables owned by wrong roles → deploy fails:
 #   permission denied for schema t_*
 #
 # Usage: ./scripts/fix-cloud-db-grants.sh staging
@@ -19,8 +19,7 @@ TENANT_URI="$(encore db conn-uri tenant --env="$ENV_NAME" --admin)"
 
 SYSTEM_OWNER="$(psql "$SYSTEM_URI" -tAc "
   SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = current_database()" | tr -d '[:space:]')"
-TENANT_OWNER="$(psql "$TENANT_URI" -tAc "
-  SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = current_database()" | tr -d '[:space:]')"
+TENANT_OWNER="$(psql "$TENANT_URI" -tAc "SELECT current_user" | tr -d '[:space:]')"
 
 if [[ -z "$SYSTEM_OWNER" || -z "$TENANT_OWNER" ]]; then
   echo "ERROR: could not resolve database owner roles" >&2
@@ -28,8 +27,8 @@ if [[ -z "$SYSTEM_OWNER" || -z "$TENANT_OWNER" ]]; then
 fi
 
 echo "=== Fix cloud DB grants ($ENV_NAME) ==="
-echo "System DB owner (dynamic grants): $SYSTEM_OWNER"
-echo "Tenant DB owner (dynamic grants): $TENANT_OWNER"
+echo "System DB owner (migrations): $SYSTEM_OWNER"
+echo "Tenant admin role (t_* dynamic grants): $TENANT_OWNER"
 echo
 
 fix_database() {
@@ -148,7 +147,7 @@ psql "$TENANT_URI" -c "
   FROM pg_namespace WHERE nspname ~ '^t_' ORDER BY 1;"
 
 echo
-echo "Verify db_tenant_admin can access t_* schemas:"
+echo "Verify admin role can access t_* schemas:"
 psql "$TENANT_URI" -c "
   SELECT nspname,
          has_schema_privilege('$TENANT_OWNER', nspname, 'USAGE') AS usage,
@@ -156,5 +155,6 @@ psql "$TENANT_URI" -c "
   FROM pg_namespace WHERE nspname ~ '^t_' ORDER BY 1;"
 
 echo
-echo "Done. Run: ./scripts/verify-cloud-deploy-ready.sh $ENV_NAME"
+echo "Done. Run: ./scripts/diagnose-cloud-db-grants.sh $ENV_NAME"
+echo "Then: ./scripts/verify-cloud-deploy-ready.sh $ENV_NAME"
 echo "Then retry Encore deploy."
