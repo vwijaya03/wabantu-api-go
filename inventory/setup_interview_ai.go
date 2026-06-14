@@ -194,22 +194,21 @@ func completeInvSetupInterviewTurn(
 ) (invSetupInterviewTurn, int, error) {
 	apiKey := strings.TrimSpace(wizardSecrets.AnthropicAPIKey)
 	if apiKey == "" {
-		return invSetupInterviewTurn{}, 0, fmt.Errorf("AI not configured")
+		rlog.Info("inventory setup interview: AI not configured, using rules fallback")
+		return completeInvSetupInterviewTurnRules(session, latestUser), 0, nil
 	}
 
 	userPrompt := buildInvSetupUserPrompt(session, biz, latestUser)
 	raw, compUsage, err := completeWizardText(ctx, apiKey, invSetupInterviewSystemPrompt, userPrompt, 768)
 	if err != nil {
-		return invSetupInterviewTurn{}, 0, err
+		rlog.Warn("inventory setup interview AI failed, using rules fallback", "err", err)
+		return completeInvSetupInterviewTurnRules(session, latestUser), 0, nil
 	}
 
 	turn, err := parseInvSetupInterviewTurn(raw)
 	if err != nil {
-		rlog.Warn("inventory setup interview parse failed", "err", err)
-		turn = invSetupInterviewTurn{
-			AssistantMessage: "Maaf, bisa ulangi dengan lebih singkat? Saya perlu tahu produk apa yang dijual dan bagaimana pola stoknya.",
-			Phase:            session.Phase,
-		}
+		rlog.Warn("inventory setup interview parse failed, using rules fallback", "err", err)
+		return completeInvSetupInterviewTurnRules(session, latestUser), 0, nil
 	}
 
 	tokens := compUsage.Input + compUsage.Output
