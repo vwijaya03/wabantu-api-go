@@ -51,12 +51,13 @@ type Warehouse struct {
 }
 
 type InventorySetting struct {
-	SetupCompleted       bool       `json:"setupCompleted"`
-	SetupCompletedAt     *time.Time `json:"setupCompletedAt,omitempty"`
-	DefaultCostingMethod string     `json:"defaultCostingMethod"`
-	BlockNegativeStock   bool       `json:"blockNegativeStock"`
-	PurchasePostsExpense bool       `json:"purchasePostsExpense"`
-	WarehouseCount       int        `json:"warehouseCount"`
+	SetupCompleted            bool       `json:"setupCompleted"`
+	SetupCompletedAt          *time.Time `json:"setupCompletedAt,omitempty"`
+	DefaultCostingMethod      string     `json:"defaultCostingMethod"`
+	BlockNegativeStock        bool       `json:"blockNegativeStock"`
+	PurchasePostsExpense      bool       `json:"purchasePostsExpense"`
+	WarehouseCount            int        `json:"warehouseCount"`
+	WizardInterviewCompleted  bool       `json:"wizardInterviewCompleted"`
 }
 
 type ListWarehousesResponse struct {
@@ -96,9 +97,16 @@ func GetSetting(ctx context.Context) (*InventorySetting, error) {
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
+	return enrichSetting(ctx, conn, s)
+}
+
+func enrichSetting(ctx context.Context, conn *sql.Conn, s *InventorySetting) (*InventorySetting, error) {
 	if err := conn.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM inv_warehouse WHERE deleted_at IS NULL`).Scan(&s.WarehouseCount); err != nil {
 		return nil, appErrs.Internal(err.Error())
+	}
+	if answers, rec, werr := loadWizardSnapshot(ctx, conn); werr == nil {
+		s.WizardInterviewCompleted = wizardInterviewCompleted(answers, rec)
 	}
 	return s, nil
 }
@@ -150,11 +158,7 @@ func UpdateSetting(ctx context.Context, p *UpdateSettingParams) (*InventorySetti
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	if err := conn.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM inv_warehouse WHERE deleted_at IS NULL`).Scan(&s.WarehouseCount); err != nil {
-		return nil, appErrs.Internal(err.Error())
-	}
-	return s, nil
+	return enrichSetting(ctx, conn, s)
 }
 
 //encore:api auth method=POST path=/api/v1/inventory/setup/complete
@@ -172,8 +176,19 @@ func CompleteSetup(ctx context.Context) (*InventorySetting, error) {
 	}
 	defer conn.Close()
 
-	if _, err := loadSetting(ctx, conn); err != nil {
+	s, err := loadSetting(ctx, conn)
+	if err != nil {
 		return nil, appErrs.Internal(err.Error())
+	}
+	if s.SetupCompleted {
+		return s, nil
+	}
+	answers, rec, err := loadWizardSnapshot(ctx, conn)
+	if err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	if err := validateInventorySetupActivation(answers, rec); err != nil {
+		return nil, err
 	}
 	if _, err := conn.ExecContext(ctx, `
 		UPDATE inv_setting
@@ -183,15 +198,11 @@ func CompleteSetup(ctx context.Context) (*InventorySetting, error) {
 		    updated_at = now()`, nullUUID(u.AccountID)); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	s, err := loadSetting(ctx, conn)
+	s, err = loadSetting(ctx, conn)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	if err := conn.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM inv_warehouse WHERE deleted_at IS NULL`).Scan(&s.WarehouseCount); err != nil {
-		return nil, appErrs.Internal(err.Error())
-	}
-	return s, nil
+	return enrichSetting(ctx, conn, s)
 }
 
 // loadSetting reads the singleton inv_setting row, creating it lazily if missing.
