@@ -33,5 +33,36 @@ func TestWizardAnswersReady(t *testing.T) {
 	}
 }
 
+func TestValidateInventorySetupActivation(t *testing.T) {
+	ready := WizardAnswers{
+		BusinessType:       "food",
+		ProductDescription: "Jual frozen food by kg dengan batch supplier mingguan",
+	}
+	rec := WizardRecommendation{Method: CostingAverage}
+	if err := validateInventorySetupActivation(ready, rec); err != nil {
+		t.Fatalf("expected ok: %v", err)
+	}
+
+	if err := validateInventorySetupActivation(WizardAnswers{}, rec); err == nil {
+		t.Fatal("expected error without interview")
+	}
+	if err := validateInventorySetupActivation(ready, WizardRecommendation{}); err == nil {
+		t.Fatal("expected error without recommendation")
+	}
+}
+
+func TestWizardInterviewCompleted(t *testing.T) {
+	ready := WizardAnswers{
+		BusinessType:       "retail",
+		ProductDescription: "Toko sembako dengan stok putar sedang dan harga stabil",
+	}
+	if wizardInterviewCompleted(ready, WizardRecommendation{Method: CostingFIFO}) != true {
+		t.Fatal("expected completed")
+	}
+	if wizardInterviewCompleted(WizardAnswers{}, WizardRecommendation{Method: CostingFIFO}) {
+		t.Fatal("expected incomplete without answers")
+	}
+}
+
 func strPtrTest(s string) *string { return &s }
 func boolPtrTest(b bool) *bool    { return &b }
