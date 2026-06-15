@@ -162,3 +162,16 @@ func UpdatePurchaseOrder(ctx context.Context, id string, p *UpdatePurchaseOrderP
 	}
 	return getPurchaseOrder(ctx, conn, id)
 }
+
+// purchaseOrderDeletable reports whether a PO can be hard-deleted (pure rule).
+func purchaseOrderDeletable(status string, hasReceipts, hasBills bool) bool {
+	if hasReceipts || hasBills {
+		return false
+	}
+	return status == "open" || status == "cancelled"
+}
+
+// purchaseOrderEditable reports whether line items can be replaced (pure rule).
+func purchaseOrderEditable(status string, hasReceipts bool) bool {
+	return status == "open" && !hasReceipts
+}
