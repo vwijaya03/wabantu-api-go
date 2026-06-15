@@ -1,0 +1,254 @@
+package inventory
+
+import (
+	"context"
+	"database/sql"
+	"time"
+
+	appErrs "encore.app/wabantu/shared/errs"
+)
+
+// ensureStockTxnBackfill creates inv_stock_transaction headers for legacy movements
+// that predate the transaction-header table (idempotent).
+func ensureStockTxnBackfill(ctx context.Context, conn *sql.Conn) error {
+	var ready bool
+	if err := conn.QueryRowContext(ctx, `
+		SELECT EXISTS (
+		  SELECT 1 FROM information_schema.tables
+		  WHERE table_schema = current_schema() AND table_name = 'inv_stock_transaction'
+		)`).Scan(&ready); err != nil {
+		return err
+	}
+	if !ready {
+		return nil
+	}
+	var orphans int
+	if err := conn.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM inv_stock_movement
+		WHERE ref_id IS NULL
+		  AND movement_type IN ('adjustment_plus','adjustment_minus','opening_balance','transfer_out','revaluation_cost')
+	`).Scan(&orphans); err != nil {
+		return err
+	}
+	if orphans == 0 {
+		return nil
+	}
+	return backfillStockTransactionHeaders(ctx, conn)
+}
+
+func backfillStockTransactionHeaders(ctx context.Context, conn *sql.Conn) error {
+	tx, err := conn.BeginTx(ctx, nil)
+	if err != nil {
+		return appErrs.Internal(err.Error())
+	}
+	defer tx.Rollback()
+
+	if err := backfillAdjustmentHeaders(ctx, tx); err != nil {
+		return err
+	}
+	if err := backfillRevaluationHeaders(ctx, tx); err != nil {
+		return err
+	}
+	if err := backfillOpeningHeaders(ctx, tx); err != nil {
+		return err
+	}
+	if err := backfillTransferHeaders(ctx, tx); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func backfillAdjustmentHeaders(ctx context.Context, tx *sql.Tx) error {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id::text, catalog_item_id::text, warehouse_id::text, movement_type, qty, unit_cost,
+		       COALESCE(note,''), COALESCE(created_by::text,''), created_at::date
+		FROM inv_stock_movement
+		WHERE ref_id IS NULL AND movement_type IN ('adjustment_plus','adjustment_minus')
+		ORDER BY created_at`)
+	if err != nil {
+		return appErrs.Internal(err.Error())
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var movID, item, wh, mtype, note, createdBy, txnDate string
+		var qty, unitCost float64
+		if err := rows.Scan(&movID, &item, &wh, &mtype, &qty, &unitCost, &note, &createdBy, &txnDate); err != nil {
+			return appErrs.Internal(err.Error())
+		}
+		signed := qty
+		if mtype == MovementAdjustMinus {
+			signed = -qty
+		}
+		txnID, docNo, err := insertStockTransactionHeader(ctx, tx, TxnKindAdjustment, txnDate, note, createdBy)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE inv_stock_transaction
+			SET catalog_item_id = $2, warehouse_id = $3, signed_qty = $4, unit_cost = $5, note = $6
+			WHERE id = $1`,
+			txnID, item, wh, signed, unitCost, nullStr(note)); err != nil {
+			return appErrs.Internal(err.Error())
+		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE inv_stock_movement SET ref_type = $2, ref_id = $3::uuid WHERE id = $1`,
+			movID, TxnKindAdjustment, txnID); err != nil {
+			return appErrs.Internal(err.Error())
+		}
+		_ = docNo
+	}
+	return rows.Err()
+}
+
+func backfillRevaluationHeaders(ctx context.Context, tx *sql.Tx) error {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id::text, catalog_item_id::text, warehouse_id::text, unit_cost,
+		       COALESCE(note,''), COALESCE(created_by::text,''), created_at::date
+		FROM inv_stock_movement
+		WHERE ref_id IS NULL AND movement_type = 'revaluation_cost'
+		ORDER BY created_at`)
+	if err != nil {
+		return appErrs.Internal(err.Error())
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var movID, item, wh, note, createdBy, txnDate string
+		var newCost float64
+		if err := rows.Scan(&movID, &item, &wh, &newCost, &note, &createdBy, &txnDate); err != nil {
+			return appErrs.Internal(err.Error())
+		}
+		txnID, _, err := insertStockTransactionHeader(ctx, tx, TxnKindRevaluation, txnDate, note, createdBy)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE inv_stock_transaction
+			SET catalog_item_id = $2, warehouse_id = $3, new_unit_cost = $4, note = $5
+			WHERE id = $1`,
+			txnID, item, wh, newCost, nullStr(note)); err != nil {
+			return appErrs.Internal(err.Error())
+		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE inv_stock_movement SET ref_type = $2, ref_id = $3::uuid WHERE id = $1`,
+			movID, TxnKindRevaluation, txnID); err != nil {
+			return appErrs.Internal(err.Error())
+		}
+	}
+	return rows.Err()
+}
+
+type openingGroupKey struct {
+	date      string
+	createdBy string
+}
+
+func backfillOpeningHeaders(ctx context.Context, tx *sql.Tx) error {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id::text, catalog_item_id::text, warehouse_id::text, qty, unit_cost,
+		       COALESCE(batch_no,''), expiry_date, COALESCE(created_by::text,''), created_at::date, created_at
+		FROM inv_stock_movement
+		WHERE ref_id IS NULL AND movement_type = 'opening_balance'
+		ORDER BY created_at`)
+	if err != nil {
+		return appErrs.Internal(err.Error())
+	}
+	defer rows.Close()
+
+	type openingRow struct {
+		movID, item, wh, batch, createdBy, txnDate string
+		expiry                                     sql.NullTime
+		qty, unitCost                              float64
+		createdAt                                  time.Time
+	}
+	groups := map[openingGroupKey][]openingRow{}
+	order := make([]openingGroupKey, 0)
+	for rows.Next() {
+		var r openingRow
+		if err := rows.Scan(&r.movID, &r.item, &r.wh, &r.qty, &r.unitCost, &r.batch, &r.expiry,
+			&r.createdBy, &r.txnDate, &r.createdAt); err != nil {
+			return appErrs.Internal(err.Error())
+		}
+		key := openingGroupKey{date: r.txnDate, createdBy: r.createdBy}
+		if _, ok := groups[key]; !ok {
+			order = append(order, key)
+		}
+		groups[key] = append(groups[key], r)
+	}
+	if err := rows.Err(); err != nil {
+		return appErrs.Internal(err.Error())
+	}
+
+	for _, key := range order {
+		lines := groups[key]
+		if len(lines) == 0 {
+			continue
+		}
+		txnID, docNo, err := insertStockTransactionHeader(ctx, tx, TxnKindOpeningBalance, key.date, "Saldo awal (backfill)", key.createdBy)
+		if err != nil {
+			return err
+		}
+		for i, r := range lines {
+			var lineID string
+			if err := tx.QueryRowContext(ctx, `
+				INSERT INTO inv_stock_transaction_line
+				  (transaction_id, catalog_item_id, warehouse_id, qty, unit_cost, batch_no, expiry_date, movement_id, sort_order)
+				VALUES ($1,$2,$3,$4,$5,$6,$7,$8::uuid,$9)
+				RETURNING id`,
+				txnID, r.item, r.wh, round4(r.qty), round4(r.unitCost),
+				nullStr(r.batch), r.expiry, r.movID, i).Scan(&lineID); err != nil {
+				return appErrs.Internal(err.Error())
+			}
+			if _, err := tx.ExecContext(ctx,
+				`UPDATE inv_stock_movement SET ref_type = $2, ref_id = $3::uuid WHERE id = $1`,
+				r.movID, TxnKindOpeningBalance, txnID); err != nil {
+				return appErrs.Internal(err.Error())
+			}
+			_ = lineID
+		}
+		_ = docNo
+	}
+	return nil
+}
+
+func backfillTransferHeaders(ctx context.Context, tx *sql.Tx) error {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT out_m.id::text, out_m.catalog_item_id::text, out_m.warehouse_id::text,
+		       in_m.warehouse_id::text, out_m.qty,
+		       COALESCE(out_m.note,''), COALESCE(out_m.created_by::text,''), out_m.created_at::date
+		FROM inv_stock_movement out_m
+		JOIN inv_stock_movement in_m ON in_m.source_movement_id = out_m.id
+		WHERE out_m.ref_id IS NULL
+		  AND out_m.movement_type = 'transfer_out'
+		  AND in_m.movement_type = 'transfer_in'
+		ORDER BY out_m.created_at`)
+	if err != nil {
+		return appErrs.Internal(err.Error())
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var outID, item, fromWh, toWh, note, createdBy, txnDate string
+		var qty float64
+		if err := rows.Scan(&outID, &item, &fromWh, &toWh, &qty, &note, &createdBy, &txnDate); err != nil {
+			return appErrs.Internal(err.Error())
+		}
+		txnID, _, err := insertStockTransactionHeader(ctx, tx, TxnKindTransfer, txnDate, note, createdBy)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE inv_stock_transaction
+			SET catalog_item_id = $2, from_warehouse_id = $3, to_warehouse_id = $4, signed_qty = $5, note = $6
+			WHERE id = $1`,
+			txnID, item, fromWh, toWh, qty, nullStr(note)); err != nil {
+			return appErrs.Internal(err.Error())
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE inv_stock_movement SET ref_type = $1, ref_id = $2::uuid
+			WHERE ref_id IS NULL AND movement_type IN ('transfer_out','transfer_in')
+			  AND (id = $3::uuid OR source_movement_id = $3::uuid)`,
+			TxnKindTransfer, txnID, outID); err != nil {
+			return appErrs.Internal(err.Error())
+		}
+	}
+	return rows.Err()
+}

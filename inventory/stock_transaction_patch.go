@@ -3,6 +3,7 @@ package inventory
 import (
 	"context"
 
+	"encore.app/wabantu/finance"
 	appErrs "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/tenant"
 )
@@ -41,73 +42,115 @@ func UpdateStockTransaction(ctx context.Context, id string, p *UpdateStockTransa
 	if err != nil {
 		return nil, err
 	}
-	kind := existing.Kind
-	if err := DeleteStockTransaction(ctx, id); err != nil {
+	if err := financeCheckPeriodForTxn(ctx, u.TenantSchema, existing.TransactionDate); err != nil {
 		return nil, err
 	}
 
-	switch kind {
+	movs, err := collectMovementsByRef(ctx, conn, txnKindRefType(existing.Kind), id)
+	if err != nil {
+		return nil, err
+	}
+	if err := removeFinanceForMovements(ctx, u.TenantSchema, movs); err != nil {
+		return nil, err
+	}
+
+	tx, terr := conn.BeginTx(ctx, nil)
+	if terr != nil {
+		return nil, appErrs.Internal(terr.Error())
+	}
+	defer tx.Rollback()
+
+	if _, err := purgeMovementsByRef(ctx, tx, txnKindRefType(existing.Kind), id); err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM inv_stock_transaction_line WHERE transaction_id = $1`, id); err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+
+	var adjResult *movementPostResult
+	var revalMovID string
+	var revalDelta float64
+	var revalNote string
+
+	switch existing.Kind {
 	case TxnKindAdjustment:
 		qty := p.Qty
 		if qty == 0 && existing.SignedQty != nil {
 			qty = *existing.SignedQty
 		}
-		cat := coalesceStr(p.CatalogItemID, existing.CatalogItemID)
-		wh := coalesceStr(p.WarehouseID, existing.WarehouseID)
 		uc := p.UnitCost
 		if uc == 0 && existing.UnitCost != nil {
 			uc = *existing.UnitCost
 		}
-		if _, err := CreateAdjustment(ctx, &AdjustmentParams{
-			CatalogItemID: cat, WarehouseID: wh, Qty: qty, UnitCost: uc,
-			BatchNo: p.BatchNo, ExpiryDate: p.ExpiryDate, Note: coalesceStr(p.Note, existing.Note),
-		}); err != nil {
-			return nil, err
-		}
+		adjResult, err = repostAdjustmentOnTx(ctx, tx, id, existing.DocNo, u.AccountID, &AdjustmentParams{
+			CatalogItemID: coalesceStr(p.CatalogItemID, existing.CatalogItemID),
+			WarehouseID:   coalesceStr(p.WarehouseID, existing.WarehouseID),
+			Qty:           qty,
+			UnitCost:      uc,
+			BatchNo:       p.BatchNo,
+			ExpiryDate:    p.ExpiryDate,
+			Note:          coalesceStr(p.Note, existing.Note),
+		})
 	case TxnKindTransfer:
 		qty := p.TransferQty
 		if qty <= 0 && existing.SignedQty != nil {
 			qty = *existing.SignedQty
 		}
-		if _, err := CreateTransfer(ctx, &TransferParams{
-			CatalogItemID: coalesceStr(p.CatalogItemID, existing.CatalogItemID),
+		err = repostTransferOnTx(ctx, tx, id, u.AccountID, &TransferParams{
+			CatalogItemID:   coalesceStr(p.CatalogItemID, existing.CatalogItemID),
 			FromWarehouseID: coalesceStr(p.FromWarehouseID, existing.FromWarehouseID),
 			ToWarehouseID:   coalesceStr(p.ToWarehouseID, existing.ToWarehouseID),
-			Qty: qty, Note: coalesceStr(p.Note, existing.Note),
-		}); err != nil {
-			return nil, err
-		}
+			Qty:             qty,
+			Note:            coalesceStr(p.Note, existing.Note),
+		})
 	case TxnKindOpeningBalance:
 		entries := p.Entries
 		if len(entries) == 0 {
 			return nil, appErrs.BadRequest("entries wajib untuk edit saldo awal")
 		}
-		if _, err := CreateOpeningBalance(ctx, &OpeningBalanceParams{Entries: entries}); err != nil {
-			return nil, err
-		}
+		err = repostOpeningOnTx(ctx, tx, id, existing.DocNo, u.AccountID, entries)
 	case TxnKindRevaluation:
 		nuc := p.NewUnitCost
 		if nuc == 0 && existing.NewUnitCost != nil {
 			nuc = *existing.NewUnitCost
 		}
-		if _, err := CreateRevaluation(ctx, &RevaluationParams{
+		revalNote = coalesceStr(p.Note, existing.Note)
+		revalMovID, revalDelta, err = repostRevaluationOnTx(ctx, tx, id, u.AccountID, u.TenantSchema, &RevaluationParams{
 			CatalogItemID: coalesceStr(p.CatalogItemID, existing.CatalogItemID),
 			WarehouseID:   coalesceStr(p.WarehouseID, existing.WarehouseID),
 			NewUnitCost:   nuc,
-			Note:          coalesceStr(p.Note, existing.Note),
-		}); err != nil {
-			return nil, err
-		}
+			Note:          revalNote,
+		})
 	default:
 		return nil, appErrs.BadRequest("jenis tidak didukung")
 	}
-
-	var newID string
-	if err := conn.QueryRowContext(ctx,
-		`SELECT id FROM inv_stock_transaction ORDER BY created_at DESC LIMIT 1`).Scan(&newID); err != nil {
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	return loadStockTransaction(ctx, conn, newID)
+
+	if err := recordAdjustmentFinance(ctx, u.TenantSchema, u.AccountID, adjResult); err != nil {
+		return nil, err
+	}
+	if err := recordRevaluationFinance(ctx, u.TenantSchema, u.AccountID, revalMovID, revalNote, revalDelta); err != nil {
+		return nil, err
+	}
+	return loadStockTransaction(ctx, conn, id)
+}
+
+func financeCheckPeriodForTxn(ctx context.Context, schema, txnDate string) error {
+	return finance.CheckPeriodUnlockedForDate(ctx, schema, txnDate)
+}
+
+func removeFinanceForMovements(ctx context.Context, schema string, movs []movementRef) error {
+	for _, m := range movs {
+		if err := finance.RemoveInventoryEntry(ctx, schema, m.id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func coalesceStr(a, b string) string {

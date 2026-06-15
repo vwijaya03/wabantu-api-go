@@ -74,6 +74,9 @@ func ListStockTransactions(ctx context.Context, p *ListStockTransactionsParams) 
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer conn.Close()
+	if err := ensureStockTxnBackfill(ctx, conn); err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
 
 	page, pageSize := p.Page, p.PageSize
 	if page < 1 {
