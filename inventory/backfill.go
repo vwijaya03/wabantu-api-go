@@ -113,21 +113,18 @@ func BackfillOrders(ctx context.Context, p *BackfillOrdersParams) (*BackfillOrde
 		return nil, err
 	}
 
-	defaultWarehouse, err := defaultWarehouseID(ctx, conn)
+	batch, err := newBackfillBatch(ctx, conn, rawOrders)
 	if err != nil {
 		return nil, err
 	}
+
 	type pendingOrder struct {
 		id, status string
 		items      []OrderStockItem
 	}
 	var pending []pendingOrder
 	for _, r := range rawOrders {
-		needs, nerr := orderNeedsStockSync(ctx, conn, r.id, r.status, r.items, defaultWarehouse)
-		if nerr != nil {
-			return nil, nerr
-		}
-		if !needs {
+		if !batch.needsStockSync(r.id, r.status, r.items) {
 			continue
 		}
 		pending = append(pending, pendingOrder{id: r.id, status: r.status, items: r.items})
@@ -142,7 +139,7 @@ func BackfillOrders(ctx context.Context, p *BackfillOrdersParams) (*BackfillOrde
 
 	if !p.Execute {
 		for _, po := range pending {
-			shortages, serr := analyzeOrderStockShortageConn(ctx, conn, po.id, po.items)
+			shortages, serr := batch.analyzeShortages(ctx, conn, po.id, po.items)
 			if serr != nil {
 				return nil, serr
 			}

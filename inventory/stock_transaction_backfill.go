@@ -10,12 +10,16 @@ import (
 
 // ensureStockTxnBackfill creates inv_stock_transaction headers for legacy movements
 // that predate the transaction-header table (idempotent).
-func ensureStockTxnBackfill(ctx context.Context, conn *sql.Conn) error {
+func ensureStockTxnBackfill(ctx context.Context, conn *sql.Conn, tenantSchema string) error {
+	if isStockTxnBackfillDoneCached(tenantSchema) {
+		return nil
+	}
 	done, err := isStockTxnBackfillDone(ctx, conn)
 	if err != nil {
 		return err
 	}
 	if done {
+		markStockTxnBackfillDoneCached(tenantSchema)
 		return nil
 	}
 	var ready bool
@@ -27,7 +31,11 @@ func ensureStockTxnBackfill(ctx context.Context, conn *sql.Conn) error {
 		return err
 	}
 	if !ready {
-		return markStockTxnBackfillDone(ctx, conn)
+		if err := markStockTxnBackfillDone(ctx, conn); err != nil {
+			return err
+		}
+		markStockTxnBackfillDoneCached(tenantSchema)
+		return nil
 	}
 	var hasOrphans bool
 	if err := conn.QueryRowContext(ctx, `
@@ -40,12 +48,20 @@ func ensureStockTxnBackfill(ctx context.Context, conn *sql.Conn) error {
 		return err
 	}
 	if !hasOrphans {
-		return markStockTxnBackfillDone(ctx, conn)
+		if err := markStockTxnBackfillDone(ctx, conn); err != nil {
+			return err
+		}
+		markStockTxnBackfillDoneCached(tenantSchema)
+		return nil
 	}
 	if err := backfillStockTransactionHeaders(ctx, conn); err != nil {
 		return err
 	}
-	return markStockTxnBackfillDone(ctx, conn)
+	if err := markStockTxnBackfillDone(ctx, conn); err != nil {
+		return err
+	}
+	markStockTxnBackfillDoneCached(tenantSchema)
+	return nil
 }
 
 func isStockTxnBackfillDone(ctx context.Context, conn *sql.Conn) (bool, error) {

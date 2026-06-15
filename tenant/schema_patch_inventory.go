@@ -20,6 +20,8 @@ CREATE INDEX IF NOT EXISTS idx_inv_movement_orphan_backfill
     ON inv_stock_movement(created_at)
     WHERE ref_id IS NULL
       AND movement_type IN ('adjustment_plus','adjustment_minus','opening_balance','transfer_out','revaluation_cost');
+CREATE INDEX IF NOT EXISTS idx_inv_stock_txn_line_item_wh
+    ON inv_stock_transaction_line(catalog_item_id, warehouse_id);
 `
 
 // alwaysApplyInventorySettingPatch ensures inv_setting has PR-A6 columns on local dev.
@@ -36,6 +38,27 @@ func alwaysApplyInventorySettingPatch(ctx context.Context, conn *sql.Conn) error
 		return err
 	}
 	return applyInventoryColumnPatch(ctx, conn, "stock_txn_backfill_done", inventoryStockTxnBackfillAlterSQL)
+}
+
+const inventoryStockTxnLineItemWhIndexSQL = `
+CREATE INDEX IF NOT EXISTS idx_inv_stock_txn_line_item_wh
+    ON inv_stock_transaction_line(catalog_item_id, warehouse_id);
+`
+
+// alwaysApplyInventoryIndexPatch adds indexes safe to re-run on every migration.
+func alwaysApplyInventoryIndexPatch(ctx context.Context, conn *sql.Conn) error {
+	hasTable, err := tenantschema.TableExists(ctx, conn, "inv_stock_transaction_line")
+	if err != nil {
+		return err
+	}
+	if !hasTable {
+		return nil
+	}
+	if encore.Meta().Environment.Cloud != encore.CloudLocal {
+		return nil
+	}
+	_, err = conn.ExecContext(ctx, inventoryStockTxnLineItemWhIndexSQL)
+	return err
 }
 
 func applyInventoryColumnPatch(ctx context.Context, conn *sql.Conn, column, alterSQL string) error {

@@ -82,7 +82,7 @@ func ListStockTransactions(ctx context.Context, p *ListStockTransactionsParams) 
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer conn.Close()
-	if err := ensureStockTxnBackfill(ctx, conn); err != nil {
+	if err := ensureStockTxnBackfill(ctx, conn, u.TenantSchema); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 

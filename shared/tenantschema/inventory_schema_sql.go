@@ -335,4 +335,5 @@ CREATE TABLE IF NOT EXISTS inv_stock_transaction_line (
     created_at      TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_inv_stock_txn_line_txn ON inv_stock_transaction_line(transaction_id);
+CREATE INDEX IF NOT EXISTS idx_inv_stock_txn_line_item_wh ON inv_stock_transaction_line(catalog_item_id, warehouse_id);
 `

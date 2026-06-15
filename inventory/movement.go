@@ -235,10 +235,11 @@ type ListStockResponse struct {
 }
 
 type ListStockParams struct {
-	WarehouseID string `query:"warehouseId"`
-	Q           string `query:"q"`
-	Page        int    `query:"page"`
-	PageSize    int    `query:"pageSize"`
+	WarehouseID   string `query:"warehouseId"`
+	CatalogItemID string `query:"catalogItemId"`
+	Q             string `query:"q"`
+	Page          int    `query:"page"`
+	PageSize      int    `query:"pageSize"`
 }
 
 //encore:api auth method=GET path=/api/v1/inventory/stock
@@ -270,6 +271,11 @@ func ListStock(ctx context.Context, p *ListStockParams) (*ListStockResponse, err
 	if strings.TrimSpace(p.WarehouseID) != "" {
 		where += fmt.Sprintf(" AND b.warehouse_id = $%d", idx)
 		args = append(args, p.WarehouseID)
+		idx++
+	}
+	if strings.TrimSpace(p.CatalogItemID) != "" {
+		where += fmt.Sprintf(" AND b.catalog_item_id = $%d", idx)
+		args = append(args, p.CatalogItemID)
 		idx++
 	}
 	if q := strings.TrimSpace(p.Q); q != "" {
