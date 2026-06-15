@@ -247,6 +247,9 @@ func ListStock(ctx context.Context, p *ListStockParams) (*ListStockResponse, err
 	if err != nil {
 		return nil, err
 	}
+	if err := ensureInventoryModuleSchema(ctx, u.TenantSchema); err != nil {
+		return nil, err
+	}
 	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
@@ -408,6 +411,7 @@ func ListMovements(ctx context.Context, p *ListMovementsParams) (*ListMovementsR
 		row MovementRow
 		ref *movementRef
 	}, 0)
+	refKeys := make([]refDocKey, 0)
 	for rows.Next() {
 		var m MovementRow
 		var batch, refType, refID, note sql.NullString
@@ -426,6 +430,7 @@ func ListMovements(ctx context.Context, p *ListMovementsParams) (*ListMovementsR
 		}{row: m}
 		if refType.Valid && refID.Valid {
 			entry.ref = &movementRef{refType: refType.String, refID: refID.String}
+			refKeys = append(refKeys, refDocKey{refType: refType.String, refID: refID.String})
 		}
 		scanned = append(scanned, entry)
 	}
@@ -436,11 +441,12 @@ func ListMovements(ctx context.Context, p *ListMovementsParams) (*ListMovementsR
 		return nil, appErrs.Internal(err.Error())
 	}
 
+	refDocs := batchResolveRefDocNos(ctx, conn, refKeys)
 	out := make([]MovementRow, 0, len(scanned))
 	for _, entry := range scanned {
 		m := entry.row
 		if entry.ref != nil {
-			if docNo := resolveRefDocNo(ctx, conn, entry.ref.refType, entry.ref.refID); docNo != "" {
+			if docNo := resolveRefDocNoFromMap(refDocs, entry.ref.refType, entry.ref.refID); docNo != "" {
 				m.RefDocNo = &docNo
 			}
 			if lbl := refTypeLabel(entry.ref.refType); lbl != "" {

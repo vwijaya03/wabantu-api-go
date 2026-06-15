@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS inv_setting (
     default_costing_method VARCHAR(10)  NOT NULL DEFAULT 'average',
     block_negative_stock   BOOLEAN      NOT NULL DEFAULT true,
     purchase_posts_expense BOOLEAN      NOT NULL DEFAULT false,
+    stock_txn_backfill_done BOOLEAN     NOT NULL DEFAULT false,
     wizard_answers         JSONB        NOT NULL DEFAULT '{}',
     wizard_recommendation  JSONB        NOT NULL DEFAULT '{}',
     updated_by             UUID,
@@ -30,6 +31,7 @@ CREATE TABLE IF NOT EXISTS inv_setting (
 );
 -- (PR-A6) cost-recognition toggle for existing tenants; safe on app-owned table.
 ALTER TABLE inv_setting ADD COLUMN IF NOT EXISTS purchase_posts_expense BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE inv_setting ADD COLUMN IF NOT EXISTS stock_txn_backfill_done BOOLEAN NOT NULL DEFAULT false;
 
 -- inv_warehouse: stock locations. Default warehouse mirrors Jubelio location_id = -1.
 CREATE TABLE IF NOT EXISTS inv_warehouse (
@@ -129,6 +131,10 @@ CREATE INDEX IF NOT EXISTS idx_inv_movement_item_wh
     ON inv_stock_movement(catalog_item_id, warehouse_id, created_at, id);
 CREATE INDEX IF NOT EXISTS idx_inv_movement_ref
     ON inv_stock_movement(ref_type, ref_id) WHERE ref_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_inv_movement_orphan_backfill
+    ON inv_stock_movement(created_at)
+    WHERE ref_id IS NULL
+      AND movement_type IN ('adjustment_plus','adjustment_minus','opening_balance','transfer_out','revaluation_cost');
 CREATE INDEX IF NOT EXISTS idx_inv_movement_created
     ON inv_stock_movement(created_at DESC);
 

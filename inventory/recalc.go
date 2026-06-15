@@ -49,8 +49,9 @@ func RecalculateHPP(ctx context.Context, p *RecalcParams) (*RecalcResponse, erro
 	defer tx.Rollback()
 
 	recomputed := 0
+	ccl := newCostingContextLoader()
 	for _, pr := range pairs {
-		cc, cerr := loadCostingContext(ctx, tx, pr.item)
+		cc, cerr := ccl.load(ctx, tx, pr.item)
 		if cerr != nil {
 			return nil, cerr
 		}
@@ -60,13 +61,8 @@ func RecalculateHPP(ctx context.Context, p *RecalcParams) (*RecalcResponse, erro
 		}
 		res := replayMovements(movs, cc.method)
 
-		for _, s := range res.Snapshots {
-			if _, err := tx.ExecContext(ctx, `
-				UPDATE inv_stock_movement
-				SET total_cost = $2, unit_cost = $3, qty_after = $4, avg_cost_after = $5
-				WHERE id = $1`, s.MovementID, s.TotalCost, s.UnitCost, s.QtyAfter, s.AvgAfter); err != nil {
-				return nil, appErrs.Internal(err.Error())
-			}
+		if err := applyMovementSnapshots(ctx, tx, res.Snapshots); err != nil {
+			return nil, err
 		}
 		if _, err := tx.ExecContext(ctx,
 			`DELETE FROM inv_cost_layer WHERE catalog_item_id = $1 AND warehouse_id = $2`,

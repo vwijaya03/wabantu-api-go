@@ -14,6 +14,14 @@ const inventoryPurchasePostsExpenseAlterSQL = `
 ALTER TABLE inv_setting ADD COLUMN IF NOT EXISTS purchase_posts_expense BOOLEAN NOT NULL DEFAULT false;
 `
 
+const inventoryStockTxnBackfillAlterSQL = `
+ALTER TABLE inv_setting ADD COLUMN IF NOT EXISTS stock_txn_backfill_done BOOLEAN NOT NULL DEFAULT false;
+CREATE INDEX IF NOT EXISTS idx_inv_movement_orphan_backfill
+    ON inv_stock_movement(created_at)
+    WHERE ref_id IS NULL
+      AND movement_type IN ('adjustment_plus','adjustment_minus','opening_balance','transfer_out','revaluation_cost');
+`
+
 // alwaysApplyInventorySettingPatch ensures inv_setting has PR-A6 columns on local dev.
 // On Encore Cloud, admin-owned tables must be patched via apply-inventory-schema-cloud.sh.
 func alwaysApplyInventorySettingPatch(ctx context.Context, conn *sql.Conn) error {
@@ -24,7 +32,14 @@ func alwaysApplyInventorySettingPatch(ctx context.Context, conn *sql.Conn) error
 	if !hasTable {
 		return nil
 	}
-	hasCol, err := tenantschema.ColumnExists(ctx, conn, "inv_setting", "purchase_posts_expense")
+	if err := applyInventoryColumnPatch(ctx, conn, "purchase_posts_expense", inventoryPurchasePostsExpenseAlterSQL); err != nil {
+		return err
+	}
+	return applyInventoryColumnPatch(ctx, conn, "stock_txn_backfill_done", inventoryStockTxnBackfillAlterSQL)
+}
+
+func applyInventoryColumnPatch(ctx context.Context, conn *sql.Conn, column, alterSQL string) error {
+	hasCol, err := tenantschema.ColumnExists(ctx, conn, "inv_setting", column)
 	if err != nil {
 		return err
 	}
@@ -37,6 +52,6 @@ func alwaysApplyInventorySettingPatch(ctx context.Context, conn *sql.Conn) error
 			encore.Meta().Environment.Name,
 		)
 	}
-	_, err = conn.ExecContext(ctx, inventoryPurchasePostsExpenseAlterSQL)
+	_, err = conn.ExecContext(ctx, alterSQL)
 	return err
 }

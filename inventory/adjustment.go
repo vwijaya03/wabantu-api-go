@@ -422,6 +422,20 @@ func CreateOpeningBalance(ctx context.Context, p *OpeningBalanceParams) (*Openin
 		return nil, err
 	}
 
+	catalogIDs := make([]string, 0, len(p.Entries))
+	warehouseIDs := make([]string, 0, len(p.Entries))
+	for _, e := range p.Entries {
+		catalogIDs = append(catalogIDs, e.CatalogItemID)
+		warehouseIDs = append(warehouseIDs, e.WarehouseID)
+	}
+	if err := validateCatalogItemsBatch(ctx, tx, catalogIDs); err != nil {
+		return nil, err
+	}
+	if err := validateWarehousesBatch(ctx, tx, warehouseIDs); err != nil {
+		return nil, err
+	}
+	ccl := newCostingContextLoader()
+
 	ids := make([]string, 0, len(p.Entries))
 	for i, e := range p.Entries {
 		if e.Qty <= epsilon {
@@ -430,12 +444,6 @@ func CreateOpeningBalance(ctx context.Context, p *OpeningBalanceParams) (*Openin
 		if e.UnitCost < 0 {
 			return nil, appErrs.BadRequest(fmt.Sprintf("baris %d: harga pokok tidak boleh negatif", i+1))
 		}
-		if err := validateCatalogItem(ctx, tx, e.CatalogItemID); err != nil {
-			return nil, fmt.Errorf("baris %d: %w", i+1, err)
-		}
-		if err := validateWarehouse(ctx, tx, e.WarehouseID); err != nil {
-			return nil, fmt.Errorf("baris %d: %w", i+1, err)
-		}
 		expiry, perr := parseDatePtr(e.ExpiryDate)
 		if perr != nil {
 			return nil, fmt.Errorf("baris %d: %w", i+1, perr)
@@ -443,7 +451,7 @@ func CreateOpeningBalance(ctx context.Context, p *OpeningBalanceParams) (*Openin
 		if err := ensureSku(ctx, tx, e.CatalogItemID); err != nil {
 			return nil, appErrs.Internal(err.Error())
 		}
-		cc, cerr := loadCostingContext(ctx, tx, e.CatalogItemID)
+		cc, cerr := ccl.load(ctx, tx, e.CatalogItemID)
 		if cerr != nil {
 			return nil, cerr
 		}

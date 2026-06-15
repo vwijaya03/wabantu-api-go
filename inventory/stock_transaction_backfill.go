@@ -11,6 +11,13 @@ import (
 // ensureStockTxnBackfill creates inv_stock_transaction headers for legacy movements
 // that predate the transaction-header table (idempotent).
 func ensureStockTxnBackfill(ctx context.Context, conn *sql.Conn) error {
+	done, err := isStockTxnBackfillDone(ctx, conn)
+	if err != nil {
+		return err
+	}
+	if done {
+		return nil
+	}
 	var ready bool
 	if err := conn.QueryRowContext(ctx, `
 		SELECT EXISTS (
@@ -20,20 +27,47 @@ func ensureStockTxnBackfill(ctx context.Context, conn *sql.Conn) error {
 		return err
 	}
 	if !ready {
-		return nil
+		return markStockTxnBackfillDone(ctx, conn)
 	}
-	var orphans int
+	var hasOrphans bool
 	if err := conn.QueryRowContext(ctx, `
-		SELECT COUNT(*) FROM inv_stock_movement
-		WHERE ref_id IS NULL
-		  AND movement_type IN ('adjustment_plus','adjustment_minus','opening_balance','transfer_out','revaluation_cost')
-	`).Scan(&orphans); err != nil {
+		SELECT EXISTS (
+		  SELECT 1 FROM inv_stock_movement
+		  WHERE ref_id IS NULL
+		    AND movement_type IN ('adjustment_plus','adjustment_minus','opening_balance','transfer_out','revaluation_cost')
+		  LIMIT 1
+		)`).Scan(&hasOrphans); err != nil {
 		return err
 	}
-	if orphans == 0 {
-		return nil
+	if !hasOrphans {
+		return markStockTxnBackfillDone(ctx, conn)
 	}
-	return backfillStockTransactionHeaders(ctx, conn)
+	if err := backfillStockTransactionHeaders(ctx, conn); err != nil {
+		return err
+	}
+	return markStockTxnBackfillDone(ctx, conn)
+}
+
+func isStockTxnBackfillDone(ctx context.Context, conn *sql.Conn) (bool, error) {
+	var done bool
+	err := conn.QueryRowContext(ctx, `
+		SELECT COALESCE(stock_txn_backfill_done, false)
+		FROM inv_setting ORDER BY created_at LIMIT 1`).Scan(&done)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		// column may not exist on tenants mid-migration
+		return false, nil
+	}
+	return done, nil
+}
+
+func markStockTxnBackfillDone(ctx context.Context, conn *sql.Conn) error {
+	_, err := conn.ExecContext(ctx, `
+		UPDATE inv_setting SET stock_txn_backfill_done = true, updated_at = now()
+		WHERE id = (SELECT id FROM inv_setting ORDER BY created_at LIMIT 1)`)
+	return err
 }
 
 func backfillStockTransactionHeaders(ctx context.Context, conn *sql.Conn) error {

@@ -30,18 +30,12 @@ func DeleteBill(ctx context.Context, id string) error {
 	if err := finance.CheckPeriodUnlockedForDate(ctx, u.TenantSchema, bill.TransactionDate); err != nil {
 		return err
 	}
-	if err := finance.RemoveInventoryEntry(ctx, u.TenantSchema, id); err != nil {
-		return err
-	}
-
 	movs, err := collectMovementsByRef(ctx, conn, "bill", id)
 	if err != nil {
 		return err
 	}
-	for _, m := range movs {
-		if err := finance.RemoveInventoryEntry(ctx, u.TenantSchema, m.id); err != nil {
-			return err
-		}
+	if err := finance.RemoveInventoryEntries(ctx, u.TenantSchema, movementFinanceRefs(id, movs)); err != nil {
+		return err
 	}
 
 	tx, terr := conn.BeginTx(ctx, nil)

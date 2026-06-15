@@ -84,17 +84,12 @@ func UpdateBill(ctx context.Context, id string, p *UpdateBillParams) (*Bill, err
 		}
 	}
 
-	if err := finance.RemoveInventoryEntry(ctx, u.TenantSchema, id); err != nil {
-		return nil, err
-	}
 	movs, err := collectMovementsByRef(ctx, conn, "bill", id)
 	if err != nil {
 		return nil, err
 	}
-	for _, m := range movs {
-		if err := finance.RemoveInventoryEntry(ctx, u.TenantSchema, m.id); err != nil {
-			return nil, err
-		}
+	if err := finance.RemoveInventoryEntries(ctx, u.TenantSchema, movementFinanceRefs(id, movs)); err != nil {
+		return nil, err
 	}
 
 	tx, terr := conn.BeginTx(ctx, nil)

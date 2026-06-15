@@ -118,13 +118,21 @@ func ListStockTransactions(ctx context.Context, p *ListStockTransactionsParams) 
 		       COALESCE(t.from_warehouse_id::text,''), COALESCE(t.to_warehouse_id::text,''),
 		       t.signed_qty, t.unit_cost, t.new_unit_cost, t.created_at,
 		       COALESCE(ci.name,''), COALESCE(w.name,''), COALESCE(wf.name,''), COALESCE(wt.name,''),
-		       (SELECT COUNT(*)::int FROM inv_stock_transaction_line l WHERE l.transaction_id = t.id)
+		       COALESCE(lc.line_count, 0)
 		FROM (
-			SELECT * FROM inv_stock_transaction t
+			SELECT id, doc_no, kind, transaction_date, note,
+			       catalog_item_id, warehouse_id, from_warehouse_id, to_warehouse_id,
+			       signed_qty, unit_cost, new_unit_cost, created_at
+			FROM inv_stock_transaction t
 			%s
 			ORDER BY t.created_at DESC, t.id DESC
 			LIMIT $%d OFFSET $%d
 		) t
+		LEFT JOIN LATERAL (
+			SELECT COUNT(*)::int AS line_count
+			FROM inv_stock_transaction_line l
+			WHERE l.transaction_id = t.id
+		) lc ON true
 		LEFT JOIN business_catalog_item ci ON ci.id = t.catalog_item_id
 		LEFT JOIN inv_warehouse w ON w.id = t.warehouse_id
 		LEFT JOIN inv_warehouse wf ON wf.id = t.from_warehouse_id
@@ -191,10 +199,9 @@ func DeleteStockTransaction(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	for _, m := range movs {
-		if err := finance.RemoveInventoryEntry(ctx, u.TenantSchema, m.id); err != nil {
-			return err
-		}
+	refs := movementFinanceRefs("", movs)
+	if err := finance.RemoveInventoryEntries(ctx, u.TenantSchema, refs); err != nil {
+		return err
 	}
 
 	tx, terr := conn.BeginTx(ctx, nil)

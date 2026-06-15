@@ -14,12 +14,19 @@ import (
 // ensureInventoryModuleSchema verifies inventory DDL on a dedicated connection.
 // Use before read-heavy handlers so runtime DDL does not share a conn with list queries.
 func ensureInventoryModuleSchema(ctx context.Context, schemaName string) error {
+	if isInventorySchemaReadyCached(schemaName) {
+		return nil
+	}
 	conn, err := tenant.TenantConn(ctx, schemaName)
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
 	defer conn.Close()
-	return ensureInventoryModuleReady(ctx, conn)
+	if err := ensureInventoryModuleReady(ctx, conn); err != nil {
+		return err
+	}
+	markInventorySchemaReady(schemaName)
+	return nil
 }
 
 // ensureInventoryModuleReady verifies inventory DDL is complete before reads/writes.

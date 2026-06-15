@@ -2,6 +2,7 @@ package inventory
 
 import (
 	"context"
+	"strings"
 
 	"encore.app/wabantu/finance"
 	appErrs "encore.app/wabantu/shared/errs"
@@ -148,12 +149,18 @@ func financeCheckPeriodForTxn(ctx context.Context, schema, txnDate string) error
 }
 
 func removeFinanceForMovements(ctx context.Context, schema string, movs []movementRef) error {
-	for _, m := range movs {
-		if err := finance.RemoveInventoryEntry(ctx, schema, m.id); err != nil {
-			return err
-		}
+	return finance.RemoveInventoryEntries(ctx, schema, movementFinanceRefs("", movs))
+}
+
+func movementFinanceRefs(extra string, movs []movementRef) []string {
+	refs := make([]string, 0, 1+len(movs))
+	if strings.TrimSpace(extra) != "" {
+		refs = append(refs, extra)
 	}
-	return nil
+	for _, m := range movs {
+		refs = append(refs, m.id)
+	}
+	return refs
 }
 
 func coalesceStr(a, b string) string {

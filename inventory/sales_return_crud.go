@@ -36,17 +36,12 @@ func deleteSalesReturnConn(ctx context.Context, conn *sql.Conn, tenantSchema, id
 	if err := finance.CheckPeriodUnlockedForDate(ctx, tenantSchema, ret.TransactionDate); err != nil {
 		return err
 	}
-	if err := finance.RemoveInventoryEntry(ctx, tenantSchema, "ret:"+id); err != nil {
-		return err
-	}
 	movs, err := collectMovementsByRef(ctx, conn, "sales_return", id)
 	if err != nil {
 		return err
 	}
-	for _, m := range movs {
-		if err := finance.RemoveInventoryEntry(ctx, tenantSchema, m.id); err != nil {
-			return err
-		}
+	if err := finance.RemoveInventoryEntries(ctx, tenantSchema, movementFinanceRefs("ret:"+id, movs)); err != nil {
+		return err
 	}
 	tx, terr := conn.BeginTx(ctx, nil)
 	if terr != nil {
@@ -127,17 +122,12 @@ func UpdateSalesReturn(ctx context.Context, id string, p *UpdateSalesReturnParam
 		}
 	}
 
-	if err := finance.RemoveInventoryEntry(ctx, u.TenantSchema, "ret:"+id); err != nil {
-		return nil, err
-	}
 	movs, err := collectMovementsByRef(ctx, conn, "sales_return", id)
 	if err != nil {
 		return nil, err
 	}
-	for _, m := range movs {
-		if err := finance.RemoveInventoryEntry(ctx, u.TenantSchema, m.id); err != nil {
-			return nil, err
-		}
+	if err := finance.RemoveInventoryEntries(ctx, u.TenantSchema, movementFinanceRefs("ret:"+id, movs)); err != nil {
+		return nil, err
 	}
 
 	tx, err := conn.BeginTx(ctx, nil)
