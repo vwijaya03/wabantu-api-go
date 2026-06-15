@@ -23,8 +23,14 @@ func committedStatusesForSQL() []string {
 }
 
 type BackfillOrdersParams struct {
-	Execute bool `json:"execute"` // false = preview only
+	Execute      bool `json:"execute"` // false = preview only
+	IssuesLimit  int  `json:"issuesLimit,omitempty"` // 0 = default; max 200 issues in response
 }
+
+const (
+	backfillDefaultIssuesLimit = 50
+	backfillMaxIssuesLimit     = 200
+)
 
 type BackfillOrderIssue struct {
 	OrderID   string              `json:"orderId"`
@@ -44,10 +50,16 @@ type BackfillSuggestedOpening struct {
 
 type BackfillOrdersResponse struct {
 	Preview            bool                       `json:"preview"`
-	PendingOrders      int                        `json:"pendingOrders"`  // committed orders lacking stock movements
-	Processed          int                        `json:"processed"`      // successfully synced (execute)
-	Failed             int                        `json:"failed"`         // failed to sync (execute)
-	Insufficient       []string                   `json:"insufficient"`   // order IDs blocked by stock (preview/execute)
+	PendingOrders      int                        `json:"pendingOrders"`      // committed orders lacking stock movements
+	SufficientOrders   int                        `json:"sufficientOrders"`   // pending minus insufficient (preview)
+	Processed          int                        `json:"processed"`          // successfully synced (execute)
+	Failed             int                        `json:"failed"`             // failed to sync (execute)
+	InsufficientCount  int                        `json:"insufficientCount"`  // orders blocked by stock shortage
+	IssueCount         int                        `json:"issueCount"`         // total issue rows (may exceed len(Issues))
+	IssuesTruncated    bool                       `json:"issuesTruncated"`    // true when IssueCount > len(Issues)
+	FailureCount       int                        `json:"failureCount"`       // total failure messages (execute)
+	FailuresTruncated  bool                       `json:"failuresTruncated"`  // true when failures list capped
+	Insufficient       []string                   `json:"insufficient,omitempty"` // legacy; capped sample of order IDs
 	Failures           []string                   `json:"failures,omitempty"`
 	Issues             []BackfillOrderIssue       `json:"issues,omitempty"`
 	SuggestedOpening   []BackfillSuggestedOpening `json:"suggestedOpening,omitempty"`
@@ -141,6 +153,7 @@ func BackfillOrders(ctx context.Context, p *BackfillOrdersParams) (*BackfillOrde
 			resp.Issues = append(resp.Issues, buildBackfillIssue(po.id, po.status, shortages, ""))
 		}
 		resp.SuggestedOpening = aggregateSuggestedOpening(resp.Issues)
+		finalizeBackfillResponse(resp, p.IssuesLimit)
 		return resp, nil
 	}
 
@@ -161,6 +174,7 @@ func BackfillOrders(ctx context.Context, p *BackfillOrdersParams) (*BackfillOrde
 	if len(resp.Issues) > 0 {
 		resp.SuggestedOpening = aggregateSuggestedOpening(resp.Issues)
 	}
+	finalizeBackfillResponse(resp, p.IssuesLimit)
 	return resp, nil
 }
 
@@ -286,15 +300,18 @@ func aggregateSuggestedOpening(issues []BackfillOrderIssue) []BackfillSuggestedO
 			}
 			k := openingKey{s.CatalogItemID, s.WarehouseID}
 			cur, ok := byKey[k]
-			if !ok || s.QtyShort > cur.MinQty {
-				byKey[k] = BackfillSuggestedOpening{
+			if !ok {
+				cur = BackfillSuggestedOpening{
 					CatalogItemID: s.CatalogItemID,
 					ItemName:      s.ItemName,
 					WarehouseID:   s.WarehouseID,
 					WarehouseName: s.WarehouseName,
 					MinQty:        s.QtyShort,
 				}
+			} else {
+				cur.MinQty = round4(cur.MinQty + s.QtyShort)
 			}
+			byKey[k] = cur
 		}
 	}
 	out := make([]BackfillSuggestedOpening, 0, len(byKey))
@@ -308,4 +325,42 @@ func aggregateSuggestedOpening(issues []BackfillOrderIssue) []BackfillSuggestedO
 		return out[i].WarehouseName < out[j].WarehouseName
 	})
 	return out
+}
+
+func resolveIssuesLimit(n int) int {
+	if n <= 0 {
+		return backfillDefaultIssuesLimit
+	}
+	if n > backfillMaxIssuesLimit {
+		return backfillMaxIssuesLimit
+	}
+	return n
+}
+
+const backfillMaxFailureMessages = 50
+
+// finalizeBackfillResponse sets summary counts and caps large payloads for UI/API scale.
+// suggestedOpening must already be computed from the full issue list.
+func finalizeBackfillResponse(resp *BackfillOrdersResponse, issuesLimit int) {
+	resp.InsufficientCount = len(resp.Insufficient)
+	resp.IssueCount = len(resp.Issues)
+	resp.SufficientOrders = resp.PendingOrders - resp.InsufficientCount
+	if resp.SufficientOrders < 0 {
+		resp.SufficientOrders = 0
+	}
+
+	limit := resolveIssuesLimit(issuesLimit)
+	if resp.IssueCount > limit {
+		resp.IssuesTruncated = true
+		resp.Issues = resp.Issues[:limit]
+	}
+	if resp.InsufficientCount > limit {
+		resp.Insufficient = resp.Insufficient[:limit]
+	}
+
+	resp.FailureCount = len(resp.Failures)
+	if resp.FailureCount > backfillMaxFailureMessages {
+		resp.FailuresTruncated = true
+		resp.Failures = resp.Failures[:backfillMaxFailureMessages]
+	}
 }
