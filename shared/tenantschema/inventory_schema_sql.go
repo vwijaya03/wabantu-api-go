@@ -292,4 +292,41 @@ CREATE TABLE IF NOT EXISTS inv_sales_return_line (
     created_at         TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_inv_sales_return_line_ret ON inv_sales_return_line(sales_return_id);
+
+-- inv_stock_transaction (manual stock ops with doc numbers: WADJ/WXFR/WOPN/WREV).
+CREATE TABLE IF NOT EXISTS inv_stock_transaction (
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    doc_no            VARCHAR(40)  NOT NULL,
+    kind              VARCHAR(30)  NOT NULL,
+    transaction_date  DATE         NOT NULL DEFAULT CURRENT_DATE,
+    note              TEXT,
+    catalog_item_id   UUID,
+    warehouse_id      UUID,
+    from_warehouse_id UUID,
+    to_warehouse_id   UUID,
+    signed_qty        NUMERIC(18,4),
+    unit_cost         NUMERIC(18,4),
+    new_unit_cost     NUMERIC(18,4),
+    created_by        UUID,
+    created_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    CONSTRAINT inv_stock_txn_kind_chk CHECK (kind IN ('adjustment','transfer','opening_balance','revaluation'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_inv_stock_txn_no ON inv_stock_transaction(doc_no);
+CREATE INDEX IF NOT EXISTS idx_inv_stock_txn_kind ON inv_stock_transaction(kind, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS inv_stock_transaction_line (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    transaction_id  UUID          NOT NULL REFERENCES inv_stock_transaction(id) ON DELETE CASCADE,
+    catalog_item_id UUID          NOT NULL,
+    warehouse_id    UUID          NOT NULL,
+    qty             NUMERIC(18,4) NOT NULL,
+    unit_cost       NUMERIC(18,4) NOT NULL DEFAULT 0,
+    batch_no        VARCHAR(64),
+    expiry_date     DATE,
+    movement_id     UUID,
+    sort_order      INT           NOT NULL DEFAULT 0,
+    created_at      TIMESTAMPTZ   NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_inv_stock_txn_line_txn ON inv_stock_transaction_line(transaction_id);
 `

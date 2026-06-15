@@ -16,6 +16,7 @@ import (
 // querier is satisfied by both *sql.Conn and *sql.Tx.
 type querier interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
 
@@ -128,10 +129,12 @@ func parseDatePtr(s *string) (*time.Time, error) {
 // ---------- response ----------
 
 type StockOpResult struct {
-	MovementIDs []string `json:"movementIds"`
-	QtyAfter    float64  `json:"qtyAfter"`
-	TotalCost   float64  `json:"totalCost"`
-	Shortfall   float64  `json:"shortfall,omitempty"`
+	TransactionID string   `json:"transactionId,omitempty"`
+	DocNo         string   `json:"docNo,omitempty"`
+	MovementIDs   []string `json:"movementIds"`
+	QtyAfter      float64  `json:"qtyAfter"`
+	TotalCost     float64  `json:"totalCost"`
+	Shortfall     float64  `json:"shortfall,omitempty"`
 }
 
 // ---------- adjustment ----------
@@ -195,6 +198,17 @@ func CreateAdjustment(ctx context.Context, p *AdjustmentParams) (*StockOpResult,
 	if err := ensureSku(ctx, tx, p.CatalogItemID); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
+	txnID, docNo, err := insertStockTransactionHeader(ctx, tx, TxnKindAdjustment, "", p.Note, u.AccountID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE inv_stock_transaction
+		SET catalog_item_id = $2, warehouse_id = $3, signed_qty = $4, unit_cost = $5, note = $6, updated_at = now()
+		WHERE id = $1`,
+		txnID, p.CatalogItemID, p.WarehouseID, p.Qty, nullFloat(p.UnitCost), nullStr(p.Note)); err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
 	cc, err := loadCostingContext(ctx, tx, p.CatalogItemID)
 	if err != nil {
 		return nil, err
@@ -210,7 +224,8 @@ func CreateAdjustment(ctx context.Context, p *AdjustmentParams) (*StockOpResult,
 		BlockNegative: cc.blockNegative,
 		BatchNo:       p.BatchNo,
 		ExpiryDate:    expiry,
-		RefType:       "adjustment",
+		RefType:       TxnKindAdjustment,
+		RefID:         txnID,
 		Note:          p.Note,
 		CreatedBy:     u.AccountID,
 	})
@@ -228,7 +243,10 @@ func CreateAdjustment(ctx context.Context, p *AdjustmentParams) (*StockOpResult,
 			return nil, err
 		}
 	}
-	return &StockOpResult{MovementIDs: []string{res.MovementID}, QtyAfter: res.QtyAfter, TotalCost: res.TotalCost, Shortfall: res.Shortfall}, nil
+	return &StockOpResult{
+		TransactionID: txnID, DocNo: docNo,
+		MovementIDs: []string{res.MovementID}, QtyAfter: res.QtyAfter, TotalCost: res.TotalCost, Shortfall: res.Shortfall,
+	}, nil
 }
 
 // ---------- transfer ----------
@@ -282,6 +300,17 @@ func CreateTransfer(ctx context.Context, p *TransferParams) (*StockOpResult, err
 	if err := ensureSku(ctx, tx, p.CatalogItemID); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
+	txnID, docNo, err := insertStockTransactionHeader(ctx, tx, TxnKindTransfer, "", p.Note, u.AccountID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE inv_stock_transaction
+		SET catalog_item_id = $2, from_warehouse_id = $3, to_warehouse_id = $4, signed_qty = $5, note = $6, updated_at = now()
+		WHERE id = $1`,
+		txnID, p.CatalogItemID, p.FromWarehouseID, p.ToWarehouseID, p.Qty, nullStr(p.Note)); err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
 	cc, err := loadCostingContext(ctx, tx, p.CatalogItemID)
 	if err != nil {
 		return nil, err
@@ -294,7 +323,8 @@ func CreateTransfer(ctx context.Context, p *TransferParams) (*StockOpResult, err
 		Qty:           round4(p.Qty),
 		CostingMethod: cc.method,
 		BlockNegative: cc.blockNegative,
-		RefType:       "transfer",
+		RefType:       TxnKindTransfer,
+		RefID:         txnID,
 		Note:          p.Note,
 		CreatedBy:     u.AccountID,
 	})
@@ -310,7 +340,8 @@ func CreateTransfer(ctx context.Context, p *TransferParams) (*StockOpResult, err
 		UnitCost:         out.UnitCost, // cost passes through from source
 		CostingMethod:    cc.method,
 		BlockNegative:    cc.blockNegative,
-		RefType:          "transfer",
+		RefType:          TxnKindTransfer,
+		RefID:            txnID,
 		SourceMovementID: out.MovementID,
 		Note:             p.Note,
 		CreatedBy:        u.AccountID,
@@ -321,7 +352,10 @@ func CreateTransfer(ctx context.Context, p *TransferParams) (*StockOpResult, err
 	if err := tx.Commit(); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	return &StockOpResult{MovementIDs: []string{out.MovementID, in.MovementID}, QtyAfter: in.QtyAfter, TotalCost: out.TotalCost}, nil
+	return &StockOpResult{
+		TransactionID: txnID, DocNo: docNo,
+		MovementIDs: []string{out.MovementID, in.MovementID}, QtyAfter: in.QtyAfter, TotalCost: out.TotalCost,
+	}, nil
 }
 
 // ---------- opening balance ----------
@@ -340,8 +374,10 @@ type OpeningBalanceParams struct {
 }
 
 type OpeningBalanceResponse struct {
-	Applied     int      `json:"applied"`
-	MovementIDs []string `json:"movementIds"`
+	TransactionID string   `json:"transactionId"`
+	DocNo         string   `json:"docNo"`
+	Applied       int      `json:"applied"`
+	MovementIDs   []string `json:"movementIds"`
 }
 
 //encore:api auth method=POST path=/api/v1/inventory/opening-balance
@@ -372,6 +408,11 @@ func CreateOpeningBalance(ctx context.Context, p *OpeningBalanceParams) (*Openin
 	}
 	defer tx.Rollback()
 
+	txnID, docNo, err := insertStockTransactionHeader(ctx, tx, TxnKindOpeningBalance, "", "Saldo awal", u.AccountID)
+	if err != nil {
+		return nil, err
+	}
+
 	ids := make([]string, 0, len(p.Entries))
 	for i, e := range p.Entries {
 		if e.Qty <= epsilon {
@@ -397,6 +438,16 @@ func CreateOpeningBalance(ctx context.Context, p *OpeningBalanceParams) (*Openin
 		if cerr != nil {
 			return nil, cerr
 		}
+		var lineID string
+		if err := tx.QueryRowContext(ctx, `
+			INSERT INTO inv_stock_transaction_line
+			  (transaction_id, catalog_item_id, warehouse_id, qty, unit_cost, batch_no, expiry_date, sort_order)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+			RETURNING id`,
+			txnID, e.CatalogItemID, e.WarehouseID, round4(e.Qty), round4(e.UnitCost),
+			nullStr(e.BatchNo), nullTime(expiry), i).Scan(&lineID); err != nil {
+			return nil, appErrs.Internal(err.Error())
+		}
 		res, merr := PostMovement(ctx, tx, MovementInput{
 			CatalogItemID: e.CatalogItemID,
 			WarehouseID:   e.WarehouseID,
@@ -408,19 +459,25 @@ func CreateOpeningBalance(ctx context.Context, p *OpeningBalanceParams) (*Openin
 			BlockNegative: cc.blockNegative,
 			BatchNo:       e.BatchNo,
 			ExpiryDate:    expiry,
-			RefType:       "opening_balance",
-			Note:          "Saldo awal",
+			RefType:       TxnKindOpeningBalance,
+			RefID:         txnID,
+			RefLineID:     lineID,
+			Note:          "Saldo awal " + docNo,
 			CreatedBy:     u.AccountID,
 		})
 		if merr != nil {
 			return nil, merr
+		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE inv_stock_transaction_line SET movement_id = $2 WHERE id = $1`, lineID, res.MovementID); err != nil {
+			return nil, appErrs.Internal(err.Error())
 		}
 		ids = append(ids, res.MovementID)
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	return &OpeningBalanceResponse{Applied: len(ids), MovementIDs: ids}, nil
+	return &OpeningBalanceResponse{TransactionID: txnID, DocNo: docNo, Applied: len(ids), MovementIDs: ids}, nil
 }
 
 // ---------- revaluation ----------
@@ -479,6 +536,18 @@ func CreateRevaluation(ctx context.Context, p *RevaluationParams) (*StockOpResul
 		return nil, appErrs.Internal(err.Error())
 	}
 
+	txnID, docNo, err := insertStockTransactionHeader(ctx, tx, TxnKindRevaluation, "", p.Note, u.AccountID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE inv_stock_transaction
+		SET catalog_item_id = $2, warehouse_id = $3, new_unit_cost = $4, note = $5, updated_at = now()
+		WHERE id = $1`,
+		txnID, p.CatalogItemID, p.WarehouseID, p.NewUnitCost, nullStr(p.Note)); err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+
 	newTotal, delta := revaluationDelta(onHand, oldTotal, p.NewUnitCost)
 
 	cc, err := loadCostingContext(ctx, tx, p.CatalogItemID)
@@ -520,11 +589,11 @@ func CreateRevaluation(ctx context.Context, p *RevaluationParams) (*StockOpResul
 	if err := tx.QueryRowContext(ctx, `
 		INSERT INTO inv_stock_movement
 		  (catalog_item_id, warehouse_id, movement_type, direction, qty, unit_cost, total_cost,
-		   qty_after, avg_cost_after, ref_type, note, created_by)
-		VALUES ($1,$2,$3,$4,0,$5,$6,$7,$5,'revaluation',$8,$9)
+		   qty_after, avg_cost_after, ref_type, ref_id, note, created_by)
+		VALUES ($1,$2,$3,$4,0,$5,$6,$7,$5,$8,$9,$10,$11)
 		RETURNING id`,
 		p.CatalogItemID, p.WarehouseID, MovementRevaluation, dir, p.NewUnitCost,
-		round4(abs(delta)), onHand, nullStr(p.Note), nullUUID(u.AccountID)).Scan(&movementID); err != nil {
+		round4(abs(delta)), onHand, TxnKindRevaluation, txnID, nullStr(p.Note), nullUUID(u.AccountID)).Scan(&movementID); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	if err := tx.Commit(); err != nil {
@@ -542,7 +611,10 @@ func CreateRevaluation(ctx context.Context, p *RevaluationParams) (*StockOpResul
 			return nil, err
 		}
 	}
-	return &StockOpResult{MovementIDs: []string{movementID}, QtyAfter: onHand, TotalCost: round4(abs(delta))}, nil
+	return &StockOpResult{
+		TransactionID: txnID, DocNo: docNo,
+		MovementIDs: []string{movementID}, QtyAfter: onHand, TotalCost: round4(abs(delta)),
+	}, nil
 }
 
 func abs(x float64) float64 {

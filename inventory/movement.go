@@ -328,6 +328,8 @@ type MovementRow struct {
 	BatchNo       *string   `json:"batchNo,omitempty"`
 	RefType       *string   `json:"refType,omitempty"`
 	RefID         *string   `json:"refId,omitempty"`
+	RefDocNo      *string   `json:"refDocNo,omitempty"`
+	RefKind       *string   `json:"refKind,omitempty"`
 	Note          *string   `json:"note,omitempty"`
 	CreatedAt     time.Time `json:"createdAt"`
 }
@@ -343,6 +345,7 @@ type ListMovementsParams struct {
 	CatalogItemID string `query:"catalogItemId"`
 	WarehouseID   string `query:"warehouseId"`
 	Type          string `query:"type"`
+	Q             string `query:"q"`
 	Page          int    `query:"page"`
 	PageSize      int    `query:"pageSize"`
 }
@@ -385,6 +388,16 @@ func ListMovements(ctx context.Context, p *ListMovementsParams) (*ListMovementsR
 		args = append(args, strings.TrimSpace(p.Type))
 		idx++
 	}
+	if q := strings.TrimSpace(p.Q); q != "" {
+		where += fmt.Sprintf(` AND (
+			COALESCE(ci.name,'') ILIKE $%d OR
+			EXISTS (SELECT 1 FROM pur_bill b WHERE b.id = m.ref_id AND m.ref_type = 'bill' AND b.bill_no ILIKE $%d) OR
+			EXISTS (SELECT 1 FROM inv_stock_transaction t WHERE t.id = m.ref_id AND t.doc_no ILIKE $%d) OR
+			EXISTS (SELECT 1 FROM inv_sales_return r WHERE r.id = m.ref_id AND m.ref_type = 'sales_return' AND r.return_no ILIKE $%d)
+		)`, idx, idx, idx, idx)
+		args = append(args, "%"+q+"%")
+		idx++
+	}
 
 	var total int
 	if err := conn.QueryRowContext(ctx, fmt.Sprintf(
@@ -421,6 +434,16 @@ func ListMovements(ctx context.Context, p *ListMovementsParams) (*ListMovementsR
 		m.RefType = nullStrPtr(refType)
 		m.RefID = nullStrPtr(refID)
 		m.Note = nullStrPtr(note)
+		if refType.Valid && refID.Valid {
+			docNo := resolveRefDocNo(ctx, conn, refType.String, refID.String)
+			if docNo != "" {
+				m.RefDocNo = &docNo
+			}
+			lbl := refTypeLabel(refType.String)
+			if lbl != "" {
+				m.RefKind = &lbl
+			}
+		}
 		out = append(out, m)
 	}
 	return &ListMovementsResponse{Movements: out, Total: total, Page: page, PageSize: pageSize}, nil

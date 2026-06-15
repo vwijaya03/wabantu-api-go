@@ -754,6 +754,11 @@ func BatchDelete(ctx context.Context, req *BatchDeleteParams) (*BatchDeleteRespo
 		return nil, fmt.Errorf("batch delete orders: %w", err)
 	}
 	for _, orderID := range orderIDs {
+		if items, ierr := loadOrderItems(ctx, u.TenantSchema, orderID); ierr == nil {
+			if err := inventory.SyncOrderStock(ctx, u.TenantSchema, orderID, "cancelled", orderStockItems(items), u.AccountID); err != nil {
+				return nil, err
+			}
+		}
 		if err := finance.RemoveOrderIncomeTransaction(ctx, u.TenantSchema, orderID); err != nil {
 			return nil, err
 		}
