@@ -96,6 +96,11 @@ func BackfillOrders(ctx context.Context, p *BackfillOrdersParams) (*BackfillOrde
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
+	rawOrders, err := scanBackfillOrderRows(rows)
+	if err != nil {
+		return nil, err
+	}
+
 	defaultWarehouse, err := defaultWarehouseID(ctx, conn)
 	if err != nil {
 		return nil, err
@@ -105,39 +110,16 @@ func BackfillOrders(ctx context.Context, p *BackfillOrdersParams) (*BackfillOrde
 		items      []OrderStockItem
 	}
 	var pending []pendingOrder
-	for rows.Next() {
-		var id, status string
-		var itemsRaw []byte
-		if err := rows.Scan(&id, &status, &itemsRaw); err != nil {
-			rows.Close()
-			return nil, appErrs.Internal(err.Error())
-		}
-		var lines []orderLineView
-		if len(itemsRaw) > 0 {
-			_ = json.Unmarshal(itemsRaw, &lines)
-		}
-		items := make([]OrderStockItem, 0, len(lines))
-		for _, l := range lines {
-			if strings.TrimSpace(l.CatalogItemID) == "" {
-				continue
-			}
-			items = append(items, OrderStockItem{LineID: l.LineID, CatalogItemID: l.CatalogItemID, WarehouseID: l.WarehouseID, Qty: l.Qty})
-		}
-		needs, nerr := orderNeedsStockSync(ctx, conn, id, status, items, defaultWarehouse)
+	for _, r := range rawOrders {
+		needs, nerr := orderNeedsStockSync(ctx, conn, r.id, r.status, r.items, defaultWarehouse)
 		if nerr != nil {
-			rows.Close()
 			return nil, nerr
 		}
 		if !needs {
 			continue
 		}
-		pending = append(pending, pendingOrder{id: id, status: status, items: items})
+		pending = append(pending, pendingOrder{id: r.id, status: r.status, items: r.items})
 	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return nil, appErrs.Internal(err.Error())
-	}
-	rows.Close()
 
 	resp := &BackfillOrdersResponse{
 		Preview:      !p.Execute,
@@ -180,6 +162,44 @@ func BackfillOrders(ctx context.Context, p *BackfillOrdersParams) (*BackfillOrde
 		resp.SuggestedOpening = aggregateSuggestedOpening(resp.Issues)
 	}
 	return resp, nil
+}
+
+type backfillOrderRow struct {
+	id, status string
+	items      []OrderStockItem
+}
+
+// scanBackfillOrderRows buffers committed orders before any follow-up queries on the
+// same connection (pgx rejects queries while a Rows cursor is open).
+func scanBackfillOrderRows(rows *sql.Rows) ([]backfillOrderRow, error) {
+	defer rows.Close()
+	out := make([]backfillOrderRow, 0)
+	for rows.Next() {
+		var id, status string
+		var itemsRaw []byte
+		if err := rows.Scan(&id, &status, &itemsRaw); err != nil {
+			return nil, appErrs.Internal(err.Error())
+		}
+		var lines []orderLineView
+		if len(itemsRaw) > 0 {
+			_ = json.Unmarshal(itemsRaw, &lines)
+		}
+		items := make([]OrderStockItem, 0, len(lines))
+		for _, l := range lines {
+			if strings.TrimSpace(l.CatalogItemID) == "" {
+				continue
+			}
+			items = append(items, OrderStockItem{
+				LineID: l.LineID, CatalogItemID: l.CatalogItemID,
+				WarehouseID: l.WarehouseID, Qty: l.Qty,
+			})
+		}
+		out = append(out, backfillOrderRow{id: id, status: status, items: items})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	return out, nil
 }
 
 func buildBackfillIssue(orderID, status string, shortages []StockShortageLine, message string) BackfillOrderIssue {
