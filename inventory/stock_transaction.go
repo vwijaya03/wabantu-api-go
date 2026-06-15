@@ -74,14 +74,14 @@ func ListStockTransactions(ctx context.Context, p *ListStockTransactionsParams) 
 	if err != nil {
 		return nil, err
 	}
+	if err := ensureInventoryModuleSchema(ctx, u.TenantSchema); err != nil {
+		return nil, err
+	}
 	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer conn.Close()
-	if err := ensureInventoryModuleReady(ctx, conn); err != nil {
-		return nil, appErrs.Internal(err.Error())
-	}
 	if err := ensureStockTxnBackfill(ctx, conn); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
@@ -119,14 +119,16 @@ func ListStockTransactions(ctx context.Context, p *ListStockTransactionsParams) 
 		       t.signed_qty, t.unit_cost, t.new_unit_cost, t.created_at,
 		       COALESCE(ci.name,''), COALESCE(w.name,''), COALESCE(wf.name,''), COALESCE(wt.name,''),
 		       (SELECT COUNT(*)::int FROM inv_stock_transaction_line l WHERE l.transaction_id = t.id)
-		FROM inv_stock_transaction t
+		FROM (
+			SELECT * FROM inv_stock_transaction t
+			%s
+			ORDER BY t.created_at DESC, t.id DESC
+			LIMIT $%d OFFSET $%d
+		) t
 		LEFT JOIN business_catalog_item ci ON ci.id = t.catalog_item_id
 		LEFT JOIN inv_warehouse w ON w.id = t.warehouse_id
 		LEFT JOIN inv_warehouse wf ON wf.id = t.from_warehouse_id
-		LEFT JOIN inv_warehouse wt ON wt.id = t.to_warehouse_id
-		%s
-		ORDER BY t.created_at DESC
-		LIMIT $%d OFFSET $%d`, where, idx, idx+1), args...)
+		LEFT JOIN inv_warehouse wt ON wt.id = t.to_warehouse_id`, where, idx, idx+1), args...)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
@@ -148,14 +150,14 @@ func GetStockTransaction(ctx context.Context, id string) (*StockTransaction, err
 	if err != nil {
 		return nil, err
 	}
+	if err := ensureInventoryModuleSchema(ctx, u.TenantSchema); err != nil {
+		return nil, err
+	}
 	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer conn.Close()
-	if err := ensureInventoryModuleReady(ctx, conn); err != nil {
-		return nil, err
-	}
 	return loadStockTransaction(ctx, conn, id)
 }
 

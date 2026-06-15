@@ -361,6 +361,13 @@ func ListMovements(ctx context.Context, p *ListMovementsParams) (*ListMovementsR
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer conn.Close()
+	if err := ensureInventoryModuleReady(ctx, conn); err != nil {
+		return nil, err
+	}
+
+	if err := validateListMovementsParams(p); err != nil {
+		return nil, err
+	}
 
 	page, pageSize := p.Page, p.PageSize
 	if page < 1 {
@@ -370,34 +377,7 @@ func ListMovements(ctx context.Context, p *ListMovementsParams) (*ListMovementsR
 		pageSize = 50
 	}
 
-	where := "WHERE 1=1"
-	args := []any{}
-	idx := 1
-	if strings.TrimSpace(p.CatalogItemID) != "" {
-		where += fmt.Sprintf(" AND m.catalog_item_id = $%d", idx)
-		args = append(args, p.CatalogItemID)
-		idx++
-	}
-	if strings.TrimSpace(p.WarehouseID) != "" {
-		where += fmt.Sprintf(" AND m.warehouse_id = $%d", idx)
-		args = append(args, p.WarehouseID)
-		idx++
-	}
-	if strings.TrimSpace(p.Type) != "" {
-		where += fmt.Sprintf(" AND m.movement_type = $%d", idx)
-		args = append(args, strings.TrimSpace(p.Type))
-		idx++
-	}
-	if q := strings.TrimSpace(p.Q); q != "" {
-		where += fmt.Sprintf(` AND (
-			COALESCE(ci.name,'') ILIKE $%d OR
-			EXISTS (SELECT 1 FROM pur_bill b WHERE b.id = m.ref_id AND m.ref_type = 'bill' AND b.bill_no ILIKE $%d) OR
-			EXISTS (SELECT 1 FROM inv_stock_transaction t WHERE t.id = m.ref_id AND t.doc_no ILIKE $%d) OR
-			EXISTS (SELECT 1 FROM inv_sales_return r WHERE r.id = m.ref_id AND m.ref_type = 'sales_return' AND r.return_no ILIKE $%d)
-		)`, idx, idx, idx, idx)
-		args = append(args, "%"+q+"%")
-		idx++
-	}
+	where, args, idx := buildMovementListWhere(p)
 
 	var total int
 	if err := conn.QueryRowContext(ctx, fmt.Sprintf(
@@ -419,9 +399,15 @@ func ListMovements(ctx context.Context, p *ListMovementsParams) (*ListMovementsR
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer rows.Close()
 
-	out := make([]MovementRow, 0)
+	type movementRef struct {
+		refType string
+		refID   string
+	}
+	scanned := make([]struct {
+		row MovementRow
+		ref *movementRef
+	}, 0)
 	for rows.Next() {
 		var m MovementRow
 		var batch, refType, refID, note sql.NullString
@@ -434,13 +420,30 @@ func ListMovements(ctx context.Context, p *ListMovementsParams) (*ListMovementsR
 		m.RefType = nullStrPtr(refType)
 		m.RefID = nullStrPtr(refID)
 		m.Note = nullStrPtr(note)
+		entry := struct {
+			row MovementRow
+			ref *movementRef
+		}{row: m}
 		if refType.Valid && refID.Valid {
-			docNo := resolveRefDocNo(ctx, conn, refType.String, refID.String)
-			if docNo != "" {
+			entry.ref = &movementRef{refType: refType.String, refID: refID.String}
+		}
+		scanned = append(scanned, entry)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	if err := rows.Close(); err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+
+	out := make([]MovementRow, 0, len(scanned))
+	for _, entry := range scanned {
+		m := entry.row
+		if entry.ref != nil {
+			if docNo := resolveRefDocNo(ctx, conn, entry.ref.refType, entry.ref.refID); docNo != "" {
 				m.RefDocNo = &docNo
 			}
-			lbl := refTypeLabel(refType.String)
-			if lbl != "" {
+			if lbl := refTypeLabel(entry.ref.refType); lbl != "" {
 				m.RefKind = &lbl
 			}
 		}

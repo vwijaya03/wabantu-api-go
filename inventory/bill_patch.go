@@ -152,20 +152,47 @@ func revertPOReceiptsForBill(ctx context.Context, tx *sql.Tx, billID string) err
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var lineID string
-		var qty float64
-		if err := rows.Scan(&lineID, &qty); err != nil {
-			return appErrs.Internal(err.Error())
-		}
+	type poRevLine struct {
+		lineID string
+		qty    float64
+	}
+	revs, err := scanPOReceiptReverts(rows)
+	if err != nil {
+		return err
+	}
+	for _, r := range revs {
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE pur_purchase_order_line SET qty_received = GREATEST(0, qty_received - $2) WHERE id = $1`,
-			lineID, qty); err != nil {
+			r.lineID, r.qty); err != nil {
 			return appErrs.Internal(err.Error())
 		}
 	}
-	return rows.Err()
+	return nil
+}
+
+func scanPOReceiptReverts(rows *sql.Rows) ([]struct {
+	lineID string
+	qty    float64
+}, error) {
+	defer rows.Close()
+	revs := make([]struct {
+		lineID string
+		qty    float64
+	}, 0)
+	for rows.Next() {
+		var r struct {
+			lineID string
+			qty    float64
+		}
+		if err := rows.Scan(&r.lineID, &r.qty); err != nil {
+			return nil, appErrs.Internal(err.Error())
+		}
+		revs = append(revs, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	return revs, nil
 }
 
 func refreshPOStatusTx(ctx context.Context, tx *sql.Tx, poID string) error {
