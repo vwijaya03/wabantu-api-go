@@ -181,6 +181,9 @@ func CreateAdjustment(ctx context.Context, p *AdjustmentParams) (*StockOpResult,
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer conn.Close()
+	if err := ensureInventoryModuleReady(ctx, conn); err != nil {
+		return nil, err
+	}
 
 	if err := validateCatalogItem(ctx, conn, p.CatalogItemID); err != nil {
 		return nil, err
@@ -280,6 +283,9 @@ func CreateTransfer(ctx context.Context, p *TransferParams) (*StockOpResult, err
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer conn.Close()
+	if err := ensureInventoryModuleReady(ctx, conn); err != nil {
+		return nil, err
+	}
 
 	if err := validateCatalogItem(ctx, conn, p.CatalogItemID); err != nil {
 		return nil, err
@@ -401,6 +407,9 @@ func CreateOpeningBalance(ctx context.Context, p *OpeningBalanceParams) (*Openin
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer conn.Close()
+	if err := ensureInventoryModuleReady(ctx, conn); err != nil {
+		return nil, err
+	}
 
 	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
@@ -510,6 +519,9 @@ func CreateRevaluation(ctx context.Context, p *RevaluationParams) (*StockOpResul
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer conn.Close()
+	if err := ensureInventoryModuleReady(ctx, conn); err != nil {
+		return nil, err
+	}
 
 	if err := validateCatalogItem(ctx, conn, p.CatalogItemID); err != nil {
 		return nil, err

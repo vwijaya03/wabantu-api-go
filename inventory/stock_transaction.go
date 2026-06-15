@@ -79,6 +79,9 @@ func ListStockTransactions(ctx context.Context, p *ListStockTransactionsParams) 
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer conn.Close()
+	if err := ensureInventoryModuleReady(ctx, conn); err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
 	if err := ensureStockTxnBackfill(ctx, conn); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
@@ -150,6 +153,9 @@ func GetStockTransaction(ctx context.Context, id string) (*StockTransaction, err
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer conn.Close()
+	if err := ensureInventoryModuleReady(ctx, conn); err != nil {
+		return nil, err
+	}
 	return loadStockTransaction(ctx, conn, id)
 }
 
@@ -167,6 +173,9 @@ func DeleteStockTransaction(ctx context.Context, id string) error {
 		return appErrs.Internal(err.Error())
 	}
 	defer conn.Close()
+	if err := ensureInventoryModuleReady(ctx, conn); err != nil {
+		return err
+	}
 
 	txn, err := loadStockTransaction(ctx, conn, id)
 	if err != nil {
