@@ -168,76 +168,8 @@ func CreateBill(ctx context.Context, p *CreateBillParams) (*Bill, error) {
 		return nil, appErrs.Internal(err.Error())
 	}
 
-	for _, l := range p.Lines {
-		expiry, perr := parseDatePtr(l.ExpiryDate)
-		if perr != nil {
-			return nil, perr
-		}
-		var lineID string
-		if err := tx.QueryRowContext(ctx, `
-			INSERT INTO pur_bill_line
-			  (bill_id, purchase_order_line_id, catalog_item_id, warehouse_id, description, qty, unit_cost, batch_no, expiry_date)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-			RETURNING id`,
-			billID, nullUUID(l.PurchaseOrderLineID), l.CatalogItemID, l.WarehouseID,
-			nullStr(l.Description), round4(l.Qty), round4(l.UnitCost), nullStr(l.BatchNo), nullTime(expiry)).Scan(&lineID); err != nil {
-			return nil, appErrs.Internal(err.Error())
-		}
-		if err := ensureSku(ctx, tx, l.CatalogItemID); err != nil {
-			return nil, appErrs.Internal(err.Error())
-		}
-		cc, cerr := loadCostingContext(ctx, tx, l.CatalogItemID)
-		if cerr != nil {
-			return nil, cerr
-		}
-		res, merr := PostMovement(ctx, tx, MovementInput{
-			CatalogItemID: l.CatalogItemID,
-			WarehouseID:   l.WarehouseID,
-			Type:          MovementPurchaseReceive,
-			Direction:     dirIn,
-			Qty:           round4(l.Qty),
-			UnitCost:      round4(l.UnitCost),
-			CostingMethod: cc.method,
-			BlockNegative: cc.blockNegative,
-			BatchNo:       l.BatchNo,
-			ExpiryDate:    expiry,
-			RefType:       "bill",
-			RefID:         billID,
-			RefLineID:     lineID,
-			Note:          "Penerimaan barang " + billNo,
-			CreatedBy:     u.AccountID,
-		})
-		if merr != nil {
-			return nil, merr
-		}
-		if _, err := tx.ExecContext(ctx,
-			`UPDATE pur_bill_line SET movement_id = $2 WHERE id = $1`, lineID, res.MovementID); err != nil {
-			return nil, appErrs.Internal(err.Error())
-		}
-		if strings.TrimSpace(l.PurchaseOrderLineID) != "" {
-			if _, err := tx.ExecContext(ctx,
-				`UPDATE pur_purchase_order_line SET qty_received = qty_received + $2 WHERE id = $1`,
-				l.PurchaseOrderLineID, round4(l.Qty)); err != nil {
-				return nil, appErrs.Internal(err.Error())
-			}
-		}
-	}
-
-	// Recompute linked PO status from receipts.
-	if strings.TrimSpace(p.PurchaseOrderID) != "" {
-		var ordered, received float64
-		if err := tx.QueryRowContext(ctx, `
-			SELECT COALESCE(SUM(qty_ordered),0), COALESCE(SUM(qty_received),0)
-			FROM pur_purchase_order_line WHERE purchase_order_id = $1`,
-			p.PurchaseOrderID).Scan(&ordered, &received); err != nil {
-			return nil, appErrs.Internal(err.Error())
-		}
-		if _, err := tx.ExecContext(ctx, `
-			UPDATE pur_purchase_order SET status = $2, updated_at = now()
-			WHERE id = $1 AND status IN ('open','partial')`,
-			p.PurchaseOrderID, poStatusFromReceipts(ordered, received)); err != nil {
-			return nil, appErrs.Internal(err.Error())
-		}
+	if err := postBillLinesTx(ctx, tx, billID, billNo, p.PurchaseOrderID, u.AccountID, p.Lines); err != nil {
+		return nil, err
 	}
 
 	if err := tx.Commit(); err != nil {

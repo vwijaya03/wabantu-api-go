@@ -235,16 +235,20 @@ type ListStockResponse struct {
 }
 
 type ListStockParams struct {
-	WarehouseID string `query:"warehouseId"`
-	Q           string `query:"q"`
-	Page        int    `query:"page"`
-	PageSize    int    `query:"pageSize"`
+	WarehouseID   string `query:"warehouseId"`
+	CatalogItemID string `query:"catalogItemId"`
+	Q             string `query:"q"`
+	Page          int    `query:"page"`
+	PageSize      int    `query:"pageSize"`
 }
 
 //encore:api auth method=GET path=/api/v1/inventory/stock
 func ListStock(ctx context.Context, p *ListStockParams) (*ListStockResponse, error) {
 	u, err := getUser()
 	if err != nil {
+		return nil, err
+	}
+	if err := ensureInventoryModuleSchema(ctx, u.TenantSchema); err != nil {
 		return nil, err
 	}
 	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
@@ -267,6 +271,11 @@ func ListStock(ctx context.Context, p *ListStockParams) (*ListStockResponse, err
 	if strings.TrimSpace(p.WarehouseID) != "" {
 		where += fmt.Sprintf(" AND b.warehouse_id = $%d", idx)
 		args = append(args, p.WarehouseID)
+		idx++
+	}
+	if strings.TrimSpace(p.CatalogItemID) != "" {
+		where += fmt.Sprintf(" AND b.catalog_item_id = $%d", idx)
+		args = append(args, p.CatalogItemID)
 		idx++
 	}
 	if q := strings.TrimSpace(p.Q); q != "" {
@@ -328,6 +337,8 @@ type MovementRow struct {
 	BatchNo       *string   `json:"batchNo,omitempty"`
 	RefType       *string   `json:"refType,omitempty"`
 	RefID         *string   `json:"refId,omitempty"`
+	RefDocNo      *string   `json:"refDocNo,omitempty"`
+	RefKind       *string   `json:"refKind,omitempty"`
 	Note          *string   `json:"note,omitempty"`
 	CreatedAt     time.Time `json:"createdAt"`
 }
@@ -343,6 +354,7 @@ type ListMovementsParams struct {
 	CatalogItemID string `query:"catalogItemId"`
 	WarehouseID   string `query:"warehouseId"`
 	Type          string `query:"type"`
+	Q             string `query:"q"`
 	Page          int    `query:"page"`
 	PageSize      int    `query:"pageSize"`
 }
@@ -358,6 +370,13 @@ func ListMovements(ctx context.Context, p *ListMovementsParams) (*ListMovementsR
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer conn.Close()
+	if err := ensureInventoryModuleReady(ctx, conn); err != nil {
+		return nil, err
+	}
+
+	if err := validateListMovementsParams(p); err != nil {
+		return nil, err
+	}
 
 	page, pageSize := p.Page, p.PageSize
 	if page < 1 {
@@ -367,24 +386,7 @@ func ListMovements(ctx context.Context, p *ListMovementsParams) (*ListMovementsR
 		pageSize = 50
 	}
 
-	where := "WHERE 1=1"
-	args := []any{}
-	idx := 1
-	if strings.TrimSpace(p.CatalogItemID) != "" {
-		where += fmt.Sprintf(" AND m.catalog_item_id = $%d", idx)
-		args = append(args, p.CatalogItemID)
-		idx++
-	}
-	if strings.TrimSpace(p.WarehouseID) != "" {
-		where += fmt.Sprintf(" AND m.warehouse_id = $%d", idx)
-		args = append(args, p.WarehouseID)
-		idx++
-	}
-	if strings.TrimSpace(p.Type) != "" {
-		where += fmt.Sprintf(" AND m.movement_type = $%d", idx)
-		args = append(args, strings.TrimSpace(p.Type))
-		idx++
-	}
+	where, args, idx := buildMovementListWhere(p)
 
 	var total int
 	if err := conn.QueryRowContext(ctx, fmt.Sprintf(
@@ -406,9 +408,16 @@ func ListMovements(ctx context.Context, p *ListMovementsParams) (*ListMovementsR
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer rows.Close()
 
-	out := make([]MovementRow, 0)
+	type movementRef struct {
+		refType string
+		refID   string
+	}
+	scanned := make([]struct {
+		row MovementRow
+		ref *movementRef
+	}, 0)
+	refKeys := make([]refDocKey, 0)
 	for rows.Next() {
 		var m MovementRow
 		var batch, refType, refID, note sql.NullString
@@ -421,6 +430,35 @@ func ListMovements(ctx context.Context, p *ListMovementsParams) (*ListMovementsR
 		m.RefType = nullStrPtr(refType)
 		m.RefID = nullStrPtr(refID)
 		m.Note = nullStrPtr(note)
+		entry := struct {
+			row MovementRow
+			ref *movementRef
+		}{row: m}
+		if refType.Valid && refID.Valid {
+			entry.ref = &movementRef{refType: refType.String, refID: refID.String}
+			refKeys = append(refKeys, refDocKey{refType: refType.String, refID: refID.String})
+		}
+		scanned = append(scanned, entry)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	if err := rows.Close(); err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+
+	refDocs := batchResolveRefDocNos(ctx, conn, refKeys)
+	out := make([]MovementRow, 0, len(scanned))
+	for _, entry := range scanned {
+		m := entry.row
+		if entry.ref != nil {
+			if docNo := resolveRefDocNoFromMap(refDocs, entry.ref.refType, entry.ref.refID); docNo != "" {
+				m.RefDocNo = &docNo
+			}
+			if lbl := refTypeLabel(entry.ref.refType); lbl != "" {
+				m.RefKind = &lbl
+			}
+		}
 		out = append(out, m)
 	}
 	return &ListMovementsResponse{Movements: out, Total: total, Page: page, PageSize: pageSize}, nil

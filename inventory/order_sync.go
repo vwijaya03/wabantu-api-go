@@ -211,29 +211,51 @@ func analyzeOrderStockShortageConn(ctx context.Context, conn *sql.Conn, orderID 
 	if err != nil {
 		return nil, err
 	}
+
+	needOnHand := make([]reqKey, 0)
+	for k, req := range required {
+		delta := round4(req - netIssued[k].qty)
+		if delta > epsilon {
+			needOnHand = append(needOnHand, k)
+		}
+	}
+	batch := &singleOrderBatch{
+		conn:             conn,
+		defaultWarehouse: defaultWarehouse,
+		onHand:           map[reqKey]float64{},
+		itemNames:        map[string]string{},
+		warehouseNames:   map[string]string{},
+	}
+	onHandByKey, err := batch.onHandFor(ctx, needOnHand)
+	if err != nil {
+		return nil, err
+	}
+
 	var shortages []StockShortageLine
 	for k, req := range required {
 		delta := round4(req - netIssued[k].qty)
 		if delta <= epsilon {
 			continue
 		}
-		var onHand float64
-		err := conn.QueryRowContext(ctx,
-			`SELECT COALESCE(on_hand,0) FROM inv_stock_balance WHERE catalog_item_id=$1 AND warehouse_id=$2`,
-			k.item, k.warehouse).Scan(&onHand)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return nil, appErrs.Internal(err.Error())
-		}
+		onHand := onHandByKey[k]
 		if delta > onHand+epsilon {
 			whID := k.warehouse
 			if whID == "" {
 				whID = defaultWarehouse
 			}
+			itemName, nerr := batch.nameForItem(ctx, k.item)
+			if nerr != nil {
+				return nil, nerr
+			}
+			whName, nerr := batch.nameForWarehouse(ctx, whID)
+			if nerr != nil {
+				return nil, nerr
+			}
 			shortages = append(shortages, StockShortageLine{
 				CatalogItemID: k.item,
-				ItemName:      itemName(ctx, conn, k.item),
+				ItemName:      itemName,
 				WarehouseID:   whID,
-				WarehouseName: warehouseName(ctx, conn, whID),
+				WarehouseName: whName,
 				QtyRequired:   delta,
 				QtyAvailable:  onHand,
 				QtyShort:      round4(delta - onHand),
@@ -272,45 +294,12 @@ func defaultWarehouseID(ctx context.Context, conn *sql.Conn) (string, error) {
 	return id.String, nil
 }
 
-func resolveOrderRequirements(ctx context.Context, conn *sql.Conn, items []OrderStockItem, defaultWarehouse string) (map[reqKey]float64, error) {
-	out := map[reqKey]float64{}
-	for _, it := range items {
-		if strings.TrimSpace(it.CatalogItemID) == "" || it.Qty <= epsilon {
-			continue
-		}
-		wh := strings.TrimSpace(it.WarehouseID)
-		if wh == "" {
-			wh = defaultWarehouse
-		}
-		if wh == "" {
-			continue
-		}
-		var trackStock, isBundle sql.NullBool
-		err := conn.QueryRowContext(ctx,
-			`SELECT track_stock, is_bundle FROM inv_sku WHERE catalog_item_id=$1`, it.CatalogItemID).
-			Scan(&trackStock, &isBundle)
-		if errors.Is(err, sql.ErrNoRows) {
-			continue // item not tracked -> no stock effect
-		}
-		if err != nil {
-			return nil, appErrs.Internal(err.Error())
-		}
-		if isBundle.Valid && isBundle.Bool {
-			comps, berr := loadBundleComponents(ctx, conn, it.CatalogItemID)
-			if berr != nil {
-				return nil, appErrs.Internal(berr.Error())
-			}
-			for _, c := range comps {
-				out[reqKey{c.ChildCatalogItemID, wh}] += round4(c.Qty * it.Qty)
-			}
-			continue
-		}
-		if !(trackStock.Valid && trackStock.Bool) {
-			continue
-		}
-		out[reqKey{it.CatalogItemID, wh}] += it.Qty
+func resolveOrderRequirements(ctx context.Context, q rowsQuerier, items []OrderStockItem, defaultWarehouse string) (map[reqKey]float64, error) {
+	cache := newSkuBundleCache(q)
+	if err := cache.preload(ctx, collectCatalogIDsFromOrders(items)); err != nil {
+		return nil, err
 	}
-	return out, nil
+	return resolveOrderRequirementsWithCache(cache, items, defaultWarehouse), nil
 }
 
 func orderNetIssued(ctx context.Context, conn *sql.Conn, orderID string) (map[reqKey]netEntry, error) {

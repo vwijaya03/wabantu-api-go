@@ -7,10 +7,14 @@ import (
 
 // Document number prefixes (WABantu-style).
 const (
-	DocPO     = "WPO"
-	DocBill   = "WBIL"
+	DocPO      = "WPO"
+	DocBill    = "WBIL"
 	DocInvoice = "WINV"
-	DocReturn = "WRET"
+	DocReturn  = "WRET"
+	DocAdjust  = "WADJ"
+	DocTransfer = "WXFR"
+	DocOpening = "WOPN"
+	DocRevalue = "WREV"
 )
 
 // formatDocNumber renders a zero-padded document number, e.g. ("WPO", 42) -> "WPO-000042".

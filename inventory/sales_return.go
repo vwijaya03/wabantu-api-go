@@ -55,8 +55,9 @@ type SalesReturn struct {
 }
 
 type ListSalesReturnsParams struct {
-	Page     int `query:"page"`
-	PageSize int `query:"pageSize"`
+	Q        string `query:"q"`
+	Page     int    `query:"page"`
+	PageSize int    `query:"pageSize"`
 }
 
 type ListSalesReturnsResponse struct {
@@ -205,15 +206,24 @@ func ListSalesReturns(ctx context.Context, p *ListSalesReturnsParams) (*ListSale
 	if pageSize < 1 || pageSize > 100 {
 		pageSize = 20
 	}
+	where := "WHERE deleted_at IS NULL"
+	args := []any{}
+	idx := 1
+	if q := strings.TrimSpace(p.Q); q != "" {
+		where += fmt.Sprintf(" AND return_no ILIKE $%d", idx)
+		args = append(args, "%"+q+"%")
+		idx++
+	}
 	var total int
 	if err := conn.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM inv_sales_return WHERE deleted_at IS NULL`).Scan(&total); err != nil {
+		fmt.Sprintf(`SELECT COUNT(*) FROM inv_sales_return %s`, where), args...).Scan(&total); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	rows, err := conn.QueryContext(ctx, `
+	args = append(args, pageSize, (page-1)*pageSize)
+	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
 		SELECT id, return_no, order_id::text, status, transaction_date::text, COALESCE(note,''), total_cost, created_at
-		FROM inv_sales_return WHERE deleted_at IS NULL
-		ORDER BY created_at DESC LIMIT $1 OFFSET $2`, pageSize, (page-1)*pageSize)
+		FROM inv_sales_return %s
+		ORDER BY created_at DESC LIMIT $%d OFFSET $%d`, where, idx, idx+1), args...)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}

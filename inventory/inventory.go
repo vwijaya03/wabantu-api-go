@@ -9,6 +9,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -46,6 +47,7 @@ type Warehouse struct {
 	Address            *string   `json:"address,omitempty"`
 	Note               *string   `json:"note,omitempty"`
 	DisplayOrder       int       `json:"displayOrder"`
+	IsDeleted          bool      `json:"isDeleted,omitempty"`
 	CreatedAt          time.Time `json:"createdAt"`
 	UpdatedAt          time.Time `json:"updatedAt"`
 }
@@ -60,8 +62,18 @@ type InventorySetting struct {
 	WizardInterviewCompleted  bool       `json:"wizardInterviewCompleted"`
 }
 
+type ListWarehousesParams struct {
+	Q        string `query:"q"`
+	Page     int    `query:"page"`
+	PageSize int    `query:"pageSize"`
+	All      bool   `query:"all"` // true = semua baris (dropdown); tanpa page = default all
+}
+
 type ListWarehousesResponse struct {
 	Warehouses []Warehouse `json:"warehouses"`
+	Total      int         `json:"total"`
+	Page       int         `json:"page"`
+	PageSize   int         `json:"pageSize"`
 }
 
 type WarehouseInput struct {
@@ -240,7 +252,7 @@ func loadSetting(ctx context.Context, conn *sql.Conn) (*InventorySetting, error)
 // ---------- warehouse endpoints ----------
 
 //encore:api auth method=GET path=/api/v1/inventory/warehouses
-func ListWarehouses(ctx context.Context) (*ListWarehousesResponse, error) {
+func ListWarehouses(ctx context.Context, p *ListWarehousesParams) (*ListWarehousesResponse, error) {
 	u, err := getUser()
 	if err != nil {
 		return nil, err
@@ -251,12 +263,51 @@ func ListWarehouses(ctx context.Context) (*ListWarehousesResponse, error) {
 	}
 	defer conn.Close()
 
-	rows, err := conn.QueryContext(ctx, `
-		SELECT id, code, name, external_location_id, is_default, is_active,
-		       address, note, display_order, created_at, updated_at
-		FROM inv_warehouse
-		WHERE deleted_at IS NULL
-		ORDER BY is_default DESC, display_order, name`)
+	if p == nil {
+		p = &ListWarehousesParams{}
+	}
+	paginate := !p.All && (p.Page > 0 || p.PageSize > 0)
+	page, pageSize := p.Page, p.PageSize
+	if paginate {
+		if page < 1 {
+			page = 1
+		}
+		if pageSize < 1 || pageSize > 100 {
+			pageSize = 25
+		}
+	}
+
+	where := "WHERE 1=1"
+	args := []any{}
+	idx := 1
+	if q := strings.TrimSpace(p.Q); q != "" {
+		where += fmt.Sprintf(` AND (
+			w.name ILIKE $%d OR w.code ILIKE $%d
+			OR COALESCE(w.address,'') ILIKE $%d OR COALESCE(w.note,'') ILIKE $%d
+		)`, idx, idx, idx, idx)
+		args = append(args, "%"+q+"%")
+		idx++
+	}
+
+	var total int
+	if err := conn.QueryRowContext(ctx,
+		fmt.Sprintf(`SELECT COUNT(*) FROM inv_warehouse w %s`, where), args...).Scan(&total); err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+
+	query := fmt.Sprintf(`
+		SELECT w.id, w.code, w.name, w.external_location_id, w.is_default, w.is_active,
+		       w.address, w.note, w.display_order, w.created_at, w.updated_at,
+		       w.deleted_at IS NOT NULL AS is_deleted
+		FROM inv_warehouse w
+		%s
+		ORDER BY w.is_default DESC, w.display_order, w.name`, where)
+	if paginate {
+		args = append(args, pageSize, (page-1)*pageSize)
+		query += fmt.Sprintf(" LIMIT $%d OFFSET $%d", idx, idx+1)
+	}
+
+	rows, err := conn.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
@@ -264,13 +315,43 @@ func ListWarehouses(ctx context.Context) (*ListWarehousesResponse, error) {
 
 	out := make([]Warehouse, 0)
 	for rows.Next() {
-		w, err := scanWarehouse(rows.Scan)
-		if err != nil {
+		var w Warehouse
+		var extLoc sql.NullInt64
+		var address, note sql.NullString
+		if err := rows.Scan(
+			&w.ID, &w.Code, &w.Name, &extLoc, &w.IsDefault, &w.IsActive,
+			&address, &note, &w.DisplayOrder, &w.CreatedAt, &w.UpdatedAt, &w.IsDeleted,
+		); err != nil {
 			return nil, appErrs.Internal(err.Error())
+		}
+		if extLoc.Valid {
+			v := int(extLoc.Int64)
+			w.ExternalLocationID = &v
+		}
+		if address.Valid && strings.TrimSpace(address.String) != "" {
+			w.Address = &address.String
+		}
+		if note.Valid && strings.TrimSpace(note.String) != "" {
+			w.Note = &note.String
 		}
 		out = append(out, w)
 	}
-	return &ListWarehousesResponse{Warehouses: out}, nil
+	if err := rows.Err(); err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+
+	resp := &ListWarehousesResponse{
+		Warehouses: out,
+		Total:      total,
+	}
+	if paginate {
+		resp.Page = page
+		resp.PageSize = pageSize
+	} else {
+		resp.Page = 1
+		resp.PageSize = total
+	}
+	return resp, nil
 }
 
 //encore:api auth method=POST path=/api/v1/inventory/warehouses
@@ -403,12 +484,48 @@ func DeleteWarehouse(ctx context.Context, id string) error {
 	if isDefault {
 		return appErrs.BadRequest("gudang default tidak bisa dihapus")
 	}
-	if _, err := conn.ExecContext(ctx,
-		`UPDATE inv_warehouse SET deleted_at = now(), deleted_by = $2, updated_at = now() WHERE id = $1`,
-		id, nullUUID(u.AccountID)); err != nil {
+	usage, err := loadWarehouseUsage(ctx, conn, id)
+	if err != nil {
+		return err
+	}
+	if usage.inUse() {
+		return appErrs.BadRequest(usage.message() + " — nonaktifkan saja atau pastikan tidak ada referensi")
+	}
+	if _, err := conn.ExecContext(ctx, `DELETE FROM inv_warehouse WHERE id = $1`, id); err != nil {
 		return appErrs.Internal(err.Error())
 	}
 	return nil
+}
+
+//encore:api auth method=POST path=/api/v1/inventory/warehouses/:id/reactivate
+func ReactivateWarehouse(ctx context.Context, id string) (*Warehouse, error) {
+	u, err := getUser()
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOwner(u); err != nil {
+		return nil, err
+	}
+	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	if err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	defer conn.Close()
+
+	row := conn.QueryRowContext(ctx, `
+		UPDATE inv_warehouse
+		SET deleted_at = NULL, deleted_by = NULL, is_active = true, updated_at = now()
+		WHERE id = $1
+		RETURNING id, code, name, external_location_id, is_default, is_active,
+		          address, note, display_order, created_at, updated_at`, id)
+	w, err := scanWarehouse(row.Scan)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, appErrs.NotFound("gudang tidak ditemukan")
+	}
+	if err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	return &w, nil
 }
 
 // ---------- helpers ----------
@@ -452,4 +569,8 @@ func nullUUID(s string) any {
 		return nil
 	}
 	return s
+}
+
+func nullFloat(v float64) any {
+	return v
 }

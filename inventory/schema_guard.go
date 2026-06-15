@@ -8,7 +8,26 @@ import (
 
 	appErrs "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/tenantschema"
+	"encore.app/wabantu/tenant"
 )
+
+// ensureInventoryModuleSchema verifies inventory DDL on a dedicated connection.
+// Use before read-heavy handlers so runtime DDL does not share a conn with list queries.
+func ensureInventoryModuleSchema(ctx context.Context, schemaName string) error {
+	if isInventorySchemaReadyCached(schemaName) {
+		return nil
+	}
+	conn, err := tenant.TenantConn(ctx, schemaName)
+	if err != nil {
+		return appErrs.Internal(err.Error())
+	}
+	defer conn.Close()
+	if err := ensureInventoryModuleReady(ctx, conn); err != nil {
+		return err
+	}
+	markInventorySchemaReady(schemaName)
+	return nil
+}
 
 // ensureInventoryModuleReady verifies inventory DDL is complete before reads/writes.
 // On Encore Cloud, ALTER on admin-owned inv_* tables must be applied via

@@ -3,6 +3,7 @@ package finance
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strings"
 
 	appErrs "encore.app/wabantu/shared/errs"
@@ -87,8 +88,13 @@ func RecordInventoryEntry(ctx context.Context, tenantSchema, createdBy, referenc
 // RemoveInventoryEntry deletes inventory finance rows by reference (used when an
 // inventory event is reversed). Safe no-op when nothing matches.
 func RemoveInventoryEntry(ctx context.Context, tenantSchema, referenceNo string) error {
-	referenceNo = strings.TrimSpace(referenceNo)
-	if referenceNo == "" {
+	return RemoveInventoryEntries(ctx, tenantSchema, []string{referenceNo})
+}
+
+// RemoveInventoryEntries deletes finance rows for many references in one connection.
+func RemoveInventoryEntries(ctx context.Context, tenantSchema string, referenceNos []string) error {
+	refs := uniqueReferenceNos(referenceNos)
+	if len(refs) == 0 {
 		return nil
 	}
 	conn, err := tenant.TenantConn(ctx, tenantSchema)
@@ -97,8 +103,47 @@ func RemoveInventoryEntry(ctx context.Context, tenantSchema, referenceNo string)
 	}
 	defer conn.Close()
 
-	rows, err := conn.QueryContext(ctx,
-		`SELECT DISTINCT wallet_id::text FROM fin_transaction WHERE reference_no = $1`, referenceNo)
+	const chunk = 200
+	for i := 0; i < len(refs); i += chunk {
+		end := i + chunk
+		if end > len(refs) {
+			end = len(refs)
+		}
+		if err := removeInventoryEntriesChunk(ctx, conn, refs[i:end]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func uniqueReferenceNos(referenceNos []string) []string {
+	seen := make(map[string]struct{}, len(referenceNos))
+	out := make([]string, 0, len(referenceNos))
+	for _, r := range referenceNos {
+		r = strings.TrimSpace(r)
+		if r == "" {
+			continue
+		}
+		if _, ok := seen[r]; ok {
+			continue
+		}
+		seen[r] = struct{}{}
+		out = append(out, r)
+	}
+	return out
+}
+
+func removeInventoryEntriesChunk(ctx context.Context, conn *sql.Conn, refs []string) error {
+	if len(refs) == 0 {
+		return nil
+	}
+	clause, args := inClause(1, len(refs))
+	for i, r := range refs {
+		args[i] = r
+	}
+
+	rows, err := conn.QueryContext(ctx, fmt.Sprintf(
+		`SELECT DISTINCT wallet_id::text FROM fin_transaction WHERE reference_no IN (%s)`, clause), args...)
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
@@ -111,13 +156,25 @@ func RemoveInventoryEntry(ctx context.Context, tenantSchema, referenceNo string)
 		}
 		wallets = append(wallets, w)
 	}
+	if err := rows.Err(); err != nil {
+		return appErrs.Internal(err.Error())
+	}
 
-	if _, err := conn.ExecContext(ctx,
-		`DELETE FROM fin_transaction WHERE reference_no = $1`, referenceNo); err != nil {
+	if _, err := conn.ExecContext(ctx, fmt.Sprintf(
+		`DELETE FROM fin_transaction WHERE reference_no IN (%s)`, clause), args...); err != nil {
 		return appErrs.Internal(err.Error())
 	}
 	for _, w := range wallets {
 		refreshWallets(ctx, conn, w, nil)
 	}
 	return nil
+}
+
+func inClause(startIdx int, n int) (string, []any) {
+	parts := make([]string, n)
+	args := make([]any, n)
+	for i := 0; i < n; i++ {
+		parts[i] = fmt.Sprintf("$%d", startIdx+i)
+	}
+	return strings.Join(parts, ","), args
 }

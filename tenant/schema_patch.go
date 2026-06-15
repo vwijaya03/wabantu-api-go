@@ -215,7 +215,10 @@ func runAlwaysApplyPatches(ctx context.Context, conn *sql.Conn) error {
 	if err := alwaysApplyOrderIncomePatch(ctx, conn); err != nil {
 		return err
 	}
-	return alwaysApplyInventorySettingPatch(ctx, conn)
+	if err := alwaysApplyInventorySettingPatch(ctx, conn); err != nil {
+		return err
+	}
+	return alwaysApplyInventoryIndexPatch(ctx, conn)
 }
 
 func alwaysApplyOrderIncomePatch(ctx context.Context, conn *sql.Conn) error {
