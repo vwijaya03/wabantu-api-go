@@ -45,6 +45,11 @@ type StockTransaction struct {
 	SignedQty       *float64               `json:"signedQty,omitempty"`
 	UnitCost        *float64               `json:"unitCost,omitempty"`
 	NewUnitCost     *float64               `json:"newUnitCost,omitempty"`
+	ItemName        string                 `json:"itemName,omitempty"`
+	WarehouseName   string                 `json:"warehouseName,omitempty"`
+	FromWarehouseName string               `json:"fromWarehouseName,omitempty"`
+	ToWarehouseName string                 `json:"toWarehouseName,omitempty"`
+	LineCount       int                    `json:"lineCount,omitempty"`
 	Lines           []StockTransactionLine `json:"lines,omitempty"`
 	CreatedAt       time.Time              `json:"createdAt"`
 }
@@ -108,8 +113,14 @@ func ListStockTransactions(ctx context.Context, p *ListStockTransactionsParams) 
 		SELECT t.id, t.doc_no, t.kind, t.transaction_date::text, COALESCE(t.note,''),
 		       COALESCE(t.catalog_item_id::text,''), COALESCE(t.warehouse_id::text,''),
 		       COALESCE(t.from_warehouse_id::text,''), COALESCE(t.to_warehouse_id::text,''),
-		       t.signed_qty, t.unit_cost, t.new_unit_cost, t.created_at
+		       t.signed_qty, t.unit_cost, t.new_unit_cost, t.created_at,
+		       COALESCE(ci.name,''), COALESCE(w.name,''), COALESCE(wf.name,''), COALESCE(wt.name,''),
+		       (SELECT COUNT(*)::int FROM inv_stock_transaction_line l WHERE l.transaction_id = t.id)
 		FROM inv_stock_transaction t
+		LEFT JOIN business_catalog_item ci ON ci.id = t.catalog_item_id
+		LEFT JOIN inv_warehouse w ON w.id = t.warehouse_id
+		LEFT JOIN inv_warehouse wf ON wf.id = t.from_warehouse_id
+		LEFT JOIN inv_warehouse wt ON wt.id = t.to_warehouse_id
 		%s
 		ORDER BY t.created_at DESC
 		LIMIT $%d OFFSET $%d`, where, idx, idx+1), args...)
@@ -119,7 +130,7 @@ func ListStockTransactions(ctx context.Context, p *ListStockTransactionsParams) 
 	defer rows.Close()
 	out := make([]StockTransaction, 0)
 	for rows.Next() {
-		txn, serr := scanStockTxnHeader(rows.Scan)
+		txn, serr := scanStockTxnListRow(rows.Scan)
 		if serr != nil {
 			return nil, appErrs.Internal(serr.Error())
 		}
@@ -272,6 +283,30 @@ func loadStockTransaction(ctx context.Context, conn *sql.Conn, id string) (*Stoc
 		txn.Lines = append(txn.Lines, l)
 	}
 	return &txn, nil
+}
+
+func scanStockTxnListRow(scan func(dest ...any) error) (StockTransaction, error) {
+	var t StockTransaction
+	var signed, unit, newUnit sql.NullFloat64
+	if err := scan(&t.ID, &t.DocNo, &t.Kind, &t.TransactionDate, &t.Note,
+		&t.CatalogItemID, &t.WarehouseID, &t.FromWarehouseID, &t.ToWarehouseID,
+		&signed, &unit, &newUnit, &t.CreatedAt,
+		&t.ItemName, &t.WarehouseName, &t.FromWarehouseName, &t.ToWarehouseName, &t.LineCount); err != nil {
+		return t, err
+	}
+	if signed.Valid {
+		v := signed.Float64
+		t.SignedQty = &v
+	}
+	if unit.Valid {
+		v := unit.Float64
+		t.UnitCost = &v
+	}
+	if newUnit.Valid {
+		v := newUnit.Float64
+		t.NewUnitCost = &v
+	}
+	return t, nil
 }
 
 func scanStockTxnHeader(scan func(dest ...any) error) (StockTransaction, error) {
