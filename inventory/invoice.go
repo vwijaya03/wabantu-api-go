@@ -72,68 +72,7 @@ func CreateInvoiceFromOrder(ctx context.Context, orderID string) (*Invoice, erro
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer conn.Close()
-
-	// Idempotent: one invoice per order.
-	var existingID string
-	err = conn.QueryRowContext(ctx,
-		`SELECT id::text FROM inv_invoice WHERE order_id=$1::uuid AND deleted_at IS NULL LIMIT 1`, orderID).Scan(&existingID)
-	if err == nil {
-		return getInvoice(ctx, conn, existingID)
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return nil, appErrs.Internal(err.Error())
-	}
-
-	contactID, lines, subtotal, _, err := loadOrderForInvoice(ctx, conn, orderID)
-	if err != nil {
-		return nil, err
-	}
-	costByItem, err := orderItemSaleCost(ctx, conn, orderID)
-	if err != nil {
-		return nil, err
-	}
-
-	tx, err := conn.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, appErrs.Internal(err.Error())
-	}
-	defer tx.Rollback()
-
-	invoiceNo, err := nextDocNumber(ctx, tx, DocInvoice, DocInvoice)
-	if err != nil {
-		return nil, appErrs.Internal(err.Error())
-	}
-
-	var invoiceID string
-	if err := tx.QueryRowContext(ctx, `
-		INSERT INTO inv_invoice (invoice_no, order_id, contact_id, status, subtotal, total_cogs, created_by)
-		VALUES ($1,$2,$3,'issued',$4,0,$5)
-		RETURNING id`,
-		invoiceNo, orderID, nullUUID(contactID), round4(subtotal), nullUUID(u.AccountID)).Scan(&invoiceID); err != nil {
-		return nil, appErrs.Internal(err.Error())
-	}
-
-	var totalCogs float64
-	for _, l := range lines {
-		cogs := round4(weightedItemCost(costByItem, l.CatalogItemID) * l.Qty)
-		totalCogs += cogs
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO inv_invoice_line
-			  (invoice_id, catalog_item_id, order_line_id, description, qty, unit_price, cogs, warehouse_id)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-			invoiceID, nullUUID(l.CatalogItemID), nullUUID(l.LineID), nullStr(l.Name),
-			round4(l.Qty), round4(l.UnitPrice), cogs, nullUUID(l.WarehouseID)); err != nil {
-			return nil, appErrs.Internal(err.Error())
-		}
-	}
-	if _, err := tx.ExecContext(ctx,
-		`UPDATE inv_invoice SET total_cogs=$2, updated_at=now() WHERE id=$1`, invoiceID, round4(totalCogs)); err != nil {
-		return nil, appErrs.Internal(err.Error())
-	}
-	if err := tx.Commit(); err != nil {
-		return nil, appErrs.Internal(err.Error())
-	}
-	return getInvoice(ctx, conn, invoiceID)
+	return createInvoiceFromOrderConn(ctx, conn, u.AccountID, orderID, false)
 }
 
 //encore:api auth method=GET path=/api/v1/inventory/invoices
