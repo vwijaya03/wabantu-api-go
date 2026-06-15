@@ -47,3 +47,19 @@ func TestAbsHelper(t *testing.T) {
 		t.Fatal("abs broken")
 	}
 }
+
+func TestValidateOpeningBalanceEntryPairs(t *testing.T) {
+	err := validateOpeningBalanceEntryPairs([]OpeningEntry{
+		{CatalogItemID: "a", WarehouseID: "w1", Qty: 1, UnitCost: 1},
+		{CatalogItemID: "a", WarehouseID: "w1", Qty: 2, UnitCost: 1},
+	})
+	if err == nil {
+		t.Fatal("expected duplicate error")
+	}
+	if err := validateOpeningBalanceEntryPairs([]OpeningEntry{
+		{CatalogItemID: "a", WarehouseID: "w1", Qty: 1, UnitCost: 1},
+		{CatalogItemID: "a", WarehouseID: "w2", Qty: 1, UnitCost: 1},
+	}); err != nil {
+		t.Fatalf("different warehouse should pass: %v", err)
+	}
+}

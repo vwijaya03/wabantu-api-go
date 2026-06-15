@@ -2,6 +2,8 @@ package inventory
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -106,4 +108,93 @@ func validateWarehousesBatch(ctx context.Context, q querier, ids []string) error
 		}
 	}
 	return nil
+}
+
+type openingBalanceKey struct {
+	catalogItemID string
+	warehouseID   string
+}
+
+// validateOpeningBalanceEntryPairs rejects duplicate SKU+gudang within one submit.
+func validateOpeningBalanceEntryPairs(entries []OpeningEntry) error {
+	seen := map[openingBalanceKey]int{}
+	for i, e := range entries {
+		itemID := strings.TrimSpace(e.CatalogItemID)
+		whID := strings.TrimSpace(e.WarehouseID)
+		if itemID == "" || whID == "" {
+			continue
+		}
+		k := openingBalanceKey{itemID, whID}
+		if prev, ok := seen[k]; ok {
+			return appErrs.BadRequest(fmt.Sprintf(
+				"baris %d dan %d: kombinasi produk+gudang duplikat dalam form",
+				prev+1, i+1,
+			))
+		}
+		seen[k] = i
+	}
+	return nil
+}
+
+func uniqueOpeningBalanceKeys(entries []OpeningEntry) []openingBalanceKey {
+	seen := map[openingBalanceKey]struct{}{}
+	out := make([]openingBalanceKey, 0, len(entries))
+	for _, e := range entries {
+		itemID := strings.TrimSpace(e.CatalogItemID)
+		whID := strings.TrimSpace(e.WarehouseID)
+		if itemID == "" || whID == "" {
+			continue
+		}
+		k := openingBalanceKey{itemID, whID}
+		if _, ok := seen[k]; ok {
+			continue
+		}
+		seen[k] = struct{}{}
+		out = append(out, k)
+	}
+	return out
+}
+
+// validateOpeningBalanceNotRegistered blocks saldo awal when SKU+gudang already has opening txn.
+func validateOpeningBalanceNotRegistered(ctx context.Context, q querier, entries []OpeningEntry) error {
+	keys := uniqueOpeningBalanceKeys(entries)
+	if len(keys) == 0 {
+		return nil
+	}
+	tupleParts := make([]string, len(keys))
+	args := make([]any, 0, 1+len(keys)*2)
+	args = append(args, TxnKindOpeningBalance)
+	idx := 2
+	for i, k := range keys {
+		tupleParts[i] = fmt.Sprintf("($%d::uuid,$%d::uuid)", idx, idx+1)
+		args = append(args, k.catalogItemID, k.warehouseID)
+		idx += 2
+	}
+	query := fmt.Sprintf(`
+		SELECT COALESCE(ci.name, ''), COALESCE(w.name, '')
+		FROM inv_stock_transaction_line l
+		JOIN inv_stock_transaction t ON t.id = l.transaction_id
+		LEFT JOIN business_catalog_item ci ON ci.id = l.catalog_item_id
+		LEFT JOIN inv_warehouse w ON w.id = l.warehouse_id
+		WHERE t.kind = $1
+		  AND (l.catalog_item_id, l.warehouse_id) IN (%s)
+		LIMIT 1`, strings.Join(tupleParts, ","))
+	row := q.QueryRowContext(ctx, query, args...)
+	var itemName, whName string
+	if err := row.Scan(&itemName, &whName); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return appErrs.Internal(err.Error())
+	}
+	if strings.TrimSpace(itemName) == "" {
+		itemName = "produk"
+	}
+	if strings.TrimSpace(whName) == "" {
+		whName = "gudang"
+	}
+	return appErrs.BadRequest(fmt.Sprintf(
+		"%s di %s sudah punya saldo awal — gunakan Penyesuaian Stok untuk menambah atau mengurangi stok",
+		itemName, whName,
+	))
 }

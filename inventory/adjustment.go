@@ -434,6 +434,12 @@ func CreateOpeningBalance(ctx context.Context, p *OpeningBalanceParams) (*Openin
 	if err := validateWarehousesBatch(ctx, tx, warehouseIDs); err != nil {
 		return nil, err
 	}
+	if err := validateOpeningBalanceEntryPairs(p.Entries); err != nil {
+		return nil, err
+	}
+	if err := validateOpeningBalanceNotRegistered(ctx, tx, p.Entries); err != nil {
+		return nil, err
+	}
 	ccl := newCostingContextLoader()
 
 	ids := make([]string, 0, len(p.Entries))

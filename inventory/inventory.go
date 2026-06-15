@@ -9,6 +9,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -61,8 +62,18 @@ type InventorySetting struct {
 	WizardInterviewCompleted  bool       `json:"wizardInterviewCompleted"`
 }
 
+type ListWarehousesParams struct {
+	Q        string `query:"q"`
+	Page     int    `query:"page"`
+	PageSize int    `query:"pageSize"`
+	All      bool   `query:"all"` // true = semua baris (dropdown); tanpa page = default all
+}
+
 type ListWarehousesResponse struct {
 	Warehouses []Warehouse `json:"warehouses"`
+	Total      int         `json:"total"`
+	Page       int         `json:"page"`
+	PageSize   int         `json:"pageSize"`
 }
 
 type WarehouseInput struct {
@@ -241,7 +252,7 @@ func loadSetting(ctx context.Context, conn *sql.Conn) (*InventorySetting, error)
 // ---------- warehouse endpoints ----------
 
 //encore:api auth method=GET path=/api/v1/inventory/warehouses
-func ListWarehouses(ctx context.Context) (*ListWarehousesResponse, error) {
+func ListWarehouses(ctx context.Context, p *ListWarehousesParams) (*ListWarehousesResponse, error) {
 	u, err := getUser()
 	if err != nil {
 		return nil, err
@@ -252,12 +263,51 @@ func ListWarehouses(ctx context.Context) (*ListWarehousesResponse, error) {
 	}
 	defer conn.Close()
 
-	rows, err := conn.QueryContext(ctx, `
-		SELECT id, code, name, external_location_id, is_default, is_active,
-		       address, note, display_order, created_at, updated_at,
-		       deleted_at IS NOT NULL AS is_deleted
-		FROM inv_warehouse
-		ORDER BY is_default DESC, display_order, name`)
+	if p == nil {
+		p = &ListWarehousesParams{}
+	}
+	paginate := !p.All && (p.Page > 0 || p.PageSize > 0)
+	page, pageSize := p.Page, p.PageSize
+	if paginate {
+		if page < 1 {
+			page = 1
+		}
+		if pageSize < 1 || pageSize > 100 {
+			pageSize = 25
+		}
+	}
+
+	where := "WHERE 1=1"
+	args := []any{}
+	idx := 1
+	if q := strings.TrimSpace(p.Q); q != "" {
+		where += fmt.Sprintf(` AND (
+			w.name ILIKE $%d OR w.code ILIKE $%d
+			OR COALESCE(w.address,'') ILIKE $%d OR COALESCE(w.note,'') ILIKE $%d
+		)`, idx, idx, idx, idx)
+		args = append(args, "%"+q+"%")
+		idx++
+	}
+
+	var total int
+	if err := conn.QueryRowContext(ctx,
+		fmt.Sprintf(`SELECT COUNT(*) FROM inv_warehouse w %s`, where), args...).Scan(&total); err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+
+	query := fmt.Sprintf(`
+		SELECT w.id, w.code, w.name, w.external_location_id, w.is_default, w.is_active,
+		       w.address, w.note, w.display_order, w.created_at, w.updated_at,
+		       w.deleted_at IS NOT NULL AS is_deleted
+		FROM inv_warehouse w
+		%s
+		ORDER BY w.is_default DESC, w.display_order, w.name`, where)
+	if paginate {
+		args = append(args, pageSize, (page-1)*pageSize)
+		query += fmt.Sprintf(" LIMIT $%d OFFSET $%d", idx, idx+1)
+	}
+
+	rows, err := conn.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
@@ -286,7 +336,22 @@ func ListWarehouses(ctx context.Context) (*ListWarehousesResponse, error) {
 		}
 		out = append(out, w)
 	}
-	return &ListWarehousesResponse{Warehouses: out}, nil
+	if err := rows.Err(); err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+
+	resp := &ListWarehousesResponse{
+		Warehouses: out,
+		Total:      total,
+	}
+	if paginate {
+		resp.Page = page
+		resp.PageSize = pageSize
+	} else {
+		resp.Page = 1
+		resp.PageSize = total
+	}
+	return resp, nil
 }
 
 //encore:api auth method=POST path=/api/v1/inventory/warehouses
