@@ -2,6 +2,7 @@ package inventory
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -89,14 +90,15 @@ func BackfillOrders(ctx context.Context, p *BackfillOrdersParams) (*BackfillOrde
 	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
 		SELECT o.id::text, o.status, COALESCE(o.items, '[]')
 		FROM "order" o
-		WHERE o.deleted_at IS NULL AND o.status IN (%s)
-		  AND NOT EXISTS (
-		    SELECT 1 FROM inv_stock_movement m
-		    WHERE m.ref_type='order' AND m.ref_id = o.id AND m.movement_type='sale_issue'
-		  )
+		WHERE o.deleted_at IS NULL
+		  AND LOWER(TRIM(o.status)) IN (%s)
 		ORDER BY o.created_at`, strings.Join(placeholders, ",")), args...)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
+	}
+	defaultWarehouse, err := defaultWarehouseID(ctx, conn)
+	if err != nil {
+		return nil, err
 	}
 	type pendingOrder struct {
 		id, status string
@@ -120,6 +122,14 @@ func BackfillOrders(ctx context.Context, p *BackfillOrdersParams) (*BackfillOrde
 				continue
 			}
 			items = append(items, OrderStockItem{LineID: l.LineID, CatalogItemID: l.CatalogItemID, WarehouseID: l.WarehouseID, Qty: l.Qty})
+		}
+		needs, nerr := orderNeedsStockSync(ctx, conn, id, status, items, defaultWarehouse)
+		if nerr != nil {
+			rows.Close()
+			return nil, nerr
+		}
+		if !needs {
+			continue
 		}
 		pending = append(pending, pendingOrder{id: id, status: status, items: items})
 	}
@@ -198,6 +208,40 @@ func shortageSummary(shortages []StockShortageLine) string {
 			s.ItemName, s.WarehouseName, s.QtyRequired, s.QtyAvailable, s.QtyShort))
 	}
 	return strings.Join(parts, "; ")
+}
+
+// orderStockSyncDelta reports whether stock sync still needs to run (pure).
+func orderStockSyncDelta(required map[reqKey]float64, netIssued map[reqKey]netEntry) bool {
+	keys := map[reqKey]struct{}{}
+	for k := range required {
+		keys[k] = struct{}{}
+	}
+	for k := range netIssued {
+		keys[k] = struct{}{}
+	}
+	for k := range keys {
+		delta := round4(required[k] - netIssued[k].qty)
+		if delta > epsilon || delta < -epsilon {
+			return true
+		}
+	}
+	return false
+}
+
+func orderNeedsStockSync(ctx context.Context, conn *sql.Conn, orderID, status string, items []OrderStockItem, defaultWarehouse string) (bool, error) {
+	required := map[reqKey]float64{}
+	if IsCommittedOrderStatus(status) {
+		var err error
+		required, err = resolveOrderRequirements(ctx, conn, items, defaultWarehouse)
+		if err != nil {
+			return false, err
+		}
+	}
+	netIssued, err := orderNetIssued(ctx, conn, orderID)
+	if err != nil {
+		return false, err
+	}
+	return orderStockSyncDelta(required, netIssued), nil
 }
 
 func formatOrderRef(orderID string) string {

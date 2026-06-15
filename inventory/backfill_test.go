@@ -27,6 +27,69 @@ func TestFormatOrderRef(t *testing.T) {
 	}
 }
 
+func TestCommittedStatusesIncludeOpsFlow(t *testing.T) {
+	for _, s := range []string{"processing", "shipped", "completed"} {
+		found := false
+		for _, got := range committedStatusesForSQL() {
+			if got == s {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("committedStatusesForSQL missing %q", s)
+		}
+	}
+}
+
+func TestOrderStockSyncDelta(t *testing.T) {
+	item := reqKey{item: "a", warehouse: "w1"}
+	cases := []struct {
+		name     string
+		required map[reqKey]float64
+		net      map[reqKey]netEntry
+		want     bool
+	}{
+		{
+			name:     "belum ada issue",
+			required: map[reqKey]float64{item: 3},
+			net:      map[reqKey]netEntry{},
+			want:     true,
+		},
+		{
+			name:     "sudah sinkron",
+			required: map[reqKey]float64{item: 3},
+			net:      map[reqKey]netEntry{item: {qty: 3}},
+			want:     false,
+		},
+		{
+			name:     "ada sale_issue tapi belum cukup",
+			required: map[reqKey]float64{item: 5},
+			net:      map[reqKey]netEntry{item: {qty: 2}},
+			want:     true,
+		},
+		{
+			name:     "pernah restore stok net nol",
+			required: map[reqKey]float64{item: 2},
+			net:      map[reqKey]netEntry{item: {qty: 0}},
+			want:     true,
+		},
+		{
+			name:     "tanpa item terlacak",
+			required: map[reqKey]float64{},
+			net:      map[reqKey]netEntry{},
+			want:     false,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := orderStockSyncDelta(c.required, c.net); got != c.want {
+				t.Fatalf("orderStockSyncDelta() = %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
 func TestAggregateSuggestedOpening(t *testing.T) {
 	issues := []BackfillOrderIssue{
 		{
