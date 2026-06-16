@@ -72,7 +72,7 @@ func ListEligibleInvoiceOrders(ctx context.Context, p *ListEligibleInvoiceOrders
 		where += fmt.Sprintf(` AND (
 			o.id::text ILIKE $%d
 			OR COALESCE(c.display_name,'') ILIKE $%d
-			OR COALESCE(c.phone,'') ILIKE $%d
+			OR COALESCE(c.phone_number,'') ILIKE $%d
 		)`, idx, idx, idx)
 		args = append(args, "%"+q+"%")
 		idx++
@@ -87,7 +87,7 @@ func ListEligibleInvoiceOrders(ctx context.Context, p *ListEligibleInvoiceOrders
 	args = append(args, pageSize, (page-1)*pageSize)
 	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
 		SELECT o.id::text, o.status, o.subtotal,
-		       COALESCE(c.display_name,''), COALESCE(c.phone,'')
+		       COALESCE(c.display_name,''), COALESCE(c.phone_number,'')
 		FROM "order" o
 		LEFT JOIN contact c ON c.id = o.contact_id
 		%s
