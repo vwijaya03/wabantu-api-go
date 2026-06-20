@@ -87,15 +87,16 @@ type UpdateConversationResponse struct {
 // ---- Messages ----
 
 type MessageItem struct {
-	ID             string    `json:"id"`
-	ConversationID string    `json:"conversationId"`
-	ExternalID     *string   `json:"externalId"`
-	Direction      string    `json:"direction"`
-	Author         string    `json:"author"`
-	Type           string    `json:"type"`
-	Body           *string   `json:"body"`
-	Status         string    `json:"status"`
-	CreatedAt      time.Time `json:"createdAt"`
+	ID             string            `json:"id"`
+	ConversationID string            `json:"conversationId"`
+	ExternalID     *string           `json:"externalId"`
+	Direction      string            `json:"direction"`
+	Author         string            `json:"author"`
+	Type           string            `json:"type"`
+	Body           *string           `json:"body"`
+	Media          *MessageMediaInfo `json:"media,omitempty"`
+	Status         string            `json:"status"`
+	CreatedAt      time.Time         `json:"createdAt"`
 }
 
 type GetMessagesParams struct {
@@ -521,7 +522,7 @@ func GetMessages(ctx context.Context, id string, p *GetMessagesParams) (*GetMess
 			return nil, apperr.BadRequest("Cursor pesan tidak valid.")
 		}
 		rows, queryErr = conn.QueryContext(ctx,
-			`SELECT id, conversation_id, external_id, direction, author, type, body, status, created_at
+			`SELECT id, conversation_id, external_id, direction, author, type, body, status, created_at, metadata
 			 FROM message
 			 WHERE conversation_id = $1
 			   AND ((created_at < $2) OR (created_at = $2 AND id < $3::uuid))
@@ -536,7 +537,7 @@ func GetMessages(ctx context.Context, id string, p *GetMessagesParams) (*GetMess
 			}
 		}
 		rows, queryErr = conn.QueryContext(ctx,
-			`SELECT id, conversation_id, external_id, direction, author, type, body, status, created_at
+			`SELECT id, conversation_id, external_id, direction, author, type, body, status, created_at, metadata
 			 FROM message
 			 WHERE conversation_id = $1
 			 ORDER BY created_at DESC, id DESC
@@ -552,10 +553,12 @@ func GetMessages(ctx context.Context, id string, p *GetMessagesParams) (*GetMess
 	var msgs []MessageItem
 	for rows.Next() {
 		var m MessageItem
+		var meta []byte
 		if err := rows.Scan(&m.ID, &m.ConversationID, &m.ExternalID,
-			&m.Direction, &m.Author, &m.Type, &m.Body, &m.Status, &m.CreatedAt); err != nil {
+			&m.Direction, &m.Author, &m.Type, &m.Body, &m.Status, &m.CreatedAt, &meta); err != nil {
 			continue
 		}
+		enrichMessageMedia(&m, json.RawMessage(meta))
 		msgs = append(msgs, m)
 	}
 

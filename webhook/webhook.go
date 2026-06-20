@@ -174,10 +174,7 @@ func ingestMessage(ctx context.Context, msg whatsapp.InboundMessage) error {
 		return fmt.Errorf("insert message: %w", err)
 	}
 
-	preview := msg.Body
-	if preview == "" {
-		preview = msg.Type
-	}
+	preview := whatsapp.InboundMessagePreview(msg.Type, msg.Body)
 	preview = strutil.TruncateUTF8(preview, 280)
 	if _, err := conn.ExecContext(ctx,
 		`UPDATE conversation
