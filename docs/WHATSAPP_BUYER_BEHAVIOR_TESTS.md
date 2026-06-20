@@ -4,13 +4,16 @@ Dokumen ini merangkum perilaku pembeli via WhatsApp yang di-handle bot Omah Appa
 
 ## Cara menjalankan
 
+**Encore Cloud build** menjalankan `encore test ./...` **tanpa** `WABANTU_AI_INTEGRATION=1` (suite 3000+ skenario di-skip agar deploy lebih cepat).
+
 ```bash
 cd api-go
 ./scripts/fix-encore-test-db.sh   # jika encore-migrator error
-./scripts/run-ai-unit-tests.sh
-# atau subset:
-encore test ./ai/ -run TestBuyerBehavior1000 -count=1
-encore test ./ai/ -run TestWABuyerCases2000 -count=1
+./scripts/run-ai-unit-tests.sh    # smoke + unit AI (setara cloud build)
+./scripts/run-ai-integration-tests.sh   # 1000 + 2000 + suite bulk lainnya
+# atau subset integration:
+WABANTU_AI_INTEGRATION=1 encore test ./ai/ -run TestBuyerBehavior1000 -count=1
+WABANTU_AI_INTEGRATION=1 encore test ./ai/ -run TestWABuyerCases2000 -count=1
 ```
 
 ---
