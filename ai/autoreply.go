@@ -216,8 +216,13 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		rlog.Warn("AI job: inbound not a contact inbound")
 		return false, nil
 	}
-	if inbound.Type != "text" {
-		rlog.Warn("AI job: inbound type not supported", "type", inbound.Type)
+	userText, processable := inboundTextForAutoReply(inbound.Type, inbound.Body)
+	if !processable {
+		if isMediaTypeWithOptionalCaption(inbound.Type) {
+			rlog.Info("AI job: media inbound without caption, skip", "type", inbound.Type)
+		} else {
+			rlog.Warn("AI job: inbound type not supported", "type", inbound.Type)
+		}
 		return false, nil
 	}
 
@@ -264,8 +269,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return err == nil, err
 	}
 
-	userText := SanitizeForPrompt(inbound.Body)
-	rlog.Info("AI job: inbound text", "lenUserText", len(userText))
+	rlog.Info("AI job: inbound text", "lenUserText", len(userText), "sourceType", inbound.Type)
 
 	// Status inquiry sebelum greeting — "halo min punya pesanan aktif?" bukan sapaan murni.
 	if IsOrderStatusInquiry(userText) {
