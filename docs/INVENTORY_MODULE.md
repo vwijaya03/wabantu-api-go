@@ -368,7 +368,7 @@ Memenuhi syarat "owner/superadmin pasti bisa". ACL granular per-staff = enhancem
 
 ## 13. AI WhatsApp stok real + backfill order lama (PR-A10)
 
-**AI stok real**: `enrichCatalogStock` menambahkan stok tersedia (`SUM(on_hand)` per
+**AI stok real**: `enrichCatalogStock` menambahkan stok tersedia (`SUM(GREATEST(on_hand - reserved, 0))` per
 item yang `track_stock`) ke katalog yang dipakai balasan AI — **gated** `setup_completed`
 dan best-effort (error/tabel belum ada → tanpa stok). Balasan produk
 (`buildCatalogItemReply`) menambah baris "Stok tersedia: N" (atau "habis").

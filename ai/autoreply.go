@@ -847,6 +847,10 @@ func (s *AutoReplyService) handleOrderFlow(
 			}
 			inferVariantFromProductName(&st)
 			if st.variantComplete() && st.Qty > 0 {
+				if st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty"); blocked {
+					s.setOrderState(ctx, tenantID, convo.ID, st)
+					return send(reply)
+				}
 				st.Step = "ask_recipient"
 				s.setOrderState(ctx, tenantID, convo.ID, st)
 				return sendWithConfirm(st, tmpl.AskRecipient)
@@ -875,6 +879,10 @@ func (s *AutoReplyService) handleOrderFlow(
 			}
 			if st.variantComplete() {
 				if st.Qty > 0 {
+					if st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty"); blocked {
+						s.setOrderState(ctx, tenantID, convo.ID, st)
+						return send(reply)
+					}
 					st.Step = "ask_recipient"
 					s.setOrderState(ctx, tenantID, convo.ID, st)
 					return sendWithConfirm(st, tmpl.AskRecipient)
@@ -945,6 +953,10 @@ func (s *AutoReplyService) handleOrderFlow(
 			s.setOrderState(ctx, tenantID, convo.ID, st)
 			return sendWithConfirm(st, tmpl.AskQty)
 		}
+		if st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty"); blocked {
+			s.setOrderState(ctx, tenantID, convo.ID, st)
+			return send(reply)
+		}
 		st.Step = "ask_recipient"
 		s.setOrderState(ctx, tenantID, convo.ID, st)
 		return sendWithConfirm(st, tmpl.AskRecipient)
@@ -968,6 +980,10 @@ func (s *AutoReplyService) handleOrderFlow(
 				s.setOrderState(ctx, tenantID, convo.ID, st)
 				return sendWithConfirm(st, tmpl.AskQty)
 			}
+			if st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty"); blocked {
+				s.setOrderState(ctx, tenantID, convo.ID, st)
+				return send(reply)
+			}
 			st.Step = "ask_recipient"
 			s.setOrderState(ctx, tenantID, convo.ID, st)
 			return sendWithConfirm(st, tmpl.AskRecipient)
@@ -980,6 +996,10 @@ func (s *AutoReplyService) handleOrderFlow(
 			st.Color = cl
 		}
 		if st.variantComplete() && st.Qty > 0 {
+			if st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty"); blocked {
+				s.setOrderState(ctx, tenantID, convo.ID, st)
+				return send(reply)
+			}
 			st.Step = "ask_recipient"
 			s.setOrderState(ctx, tenantID, convo.ID, st)
 			return sendWithConfirm(st, tmpl.AskRecipient)
@@ -1008,6 +1028,10 @@ func (s *AutoReplyService) handleOrderFlow(
 			s.setOrderState(ctx, tenantID, convo.ID, st)
 			return sendWithConfirm(st, tmpl.AskQty)
 		}
+		if st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty"); blocked {
+			s.setOrderState(ctx, tenantID, convo.ID, st)
+			return send(reply)
+		}
 		st.Step = "ask_recipient"
 		s.setOrderState(ctx, tenantID, convo.ID, st)
 		return sendWithConfirm(st, tmpl.AskRecipient)
@@ -1024,6 +1048,10 @@ func (s *AutoReplyService) handleOrderFlow(
 			return send(tmpl.ClarifyQty)
 		}
 		st.Qty = qty
+		if st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty"); blocked {
+			s.setOrderState(ctx, tenantID, convo.ID, st)
+			return send(reply)
+		}
 		st.Step = "ask_recipient"
 		s.setOrderState(ctx, tenantID, convo.ID, st)
 		return send(tmpl.AskRecipient)
@@ -1031,6 +1059,10 @@ func (s *AutoReplyService) handleOrderFlow(
 	case "ask_recipient":
 		st := copyBase(stateNorm)
 		if tryApplyQtyRevision(&st, userText) {
+			if st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty"); blocked {
+				s.setOrderState(ctx, tenantID, convo.ID, st)
+				return send(reply)
+			}
 			s.setOrderState(ctx, tenantID, convo.ID, st)
 			return sendWithConfirm(st, tmpl.AskRecipient)
 		}
@@ -1055,6 +1087,10 @@ func (s *AutoReplyService) handleOrderFlow(
 				s.setOrderState(ctx, tenantID, convo.ID, st)
 				return sendWithConfirm(st, missing)
 			}
+			if st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty"); blocked {
+				s.setOrderState(ctx, tenantID, convo.ID, st)
+				return send(reply)
+			}
 			orderID, err := persistDraftOrder(ctx, q, tenantSchema, convo.ID, convo.ContactID, st)
 			if err != nil {
 				rlog.Warn("AI order: persist draft failed", "err", err, "convoId", convo.ID)
@@ -1071,6 +1107,10 @@ func (s *AutoReplyService) handleOrderFlow(
 	case "ask_address", "ask_address_full":
 		st := copyBase(stateNorm)
 		if tryApplyQtyRevision(&st, userText) {
+			if st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty"); blocked {
+				s.setOrderState(ctx, tenantID, convo.ID, st)
+				return send(reply)
+			}
 			s.setOrderState(ctx, tenantID, convo.ID, st)
 			return sendWithConfirm(st, tmpl.AskRecipient)
 		}
@@ -1082,6 +1122,10 @@ func (s *AutoReplyService) handleOrderFlow(
 		if missing := missingOrderDataPrompt(st, tmpl); missing != "" {
 			s.setOrderState(ctx, tenantID, convo.ID, st)
 			return sendWithConfirm(st, missing)
+		}
+		if st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty"); blocked {
+			s.setOrderState(ctx, tenantID, convo.ID, st)
+			return send(reply)
 		}
 		orderID, err := persistDraftOrder(ctx, q, tenantSchema, convo.ID, convo.ContactID, st)
 		if err != nil {

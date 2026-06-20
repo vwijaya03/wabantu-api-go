@@ -33,7 +33,7 @@ func enrichCatalogStock(ctx context.Context, q tenantQuerier, catalog []dbCatalo
 		return
 	}
 	rows, err := q.QueryContext(ctx, `
-		SELECT s.catalog_item_id::text, COALESCE(SUM(b.on_hand), 0)
+		SELECT s.catalog_item_id::text, COALESCE(SUM(GREATEST(b.on_hand - b.reserved, 0)), 0)
 		FROM inv_sku s
 		LEFT JOIN inv_stock_balance b ON b.catalog_item_id = s.catalog_item_id
 		WHERE s.track_stock = true AND s.is_bundle = false

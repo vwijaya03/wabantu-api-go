@@ -135,9 +135,9 @@ AI jawab stok akurat; order flow tidak membuat draft jika qty > stok.
 
 ### Perubahan
 
-- [ ] `enrichCatalogStock`: gunakan **available** (`on_hand - reserved`), bukan hanya `on_hand`
-- [ ] `order_flow.go` step qty: jika `qty > StockAvailable` → balas tolak + minta kurangi ( **tanpa** alternatif produk )
-- [ ] Sebelum `persistDraftOrder`: precheck stok ringan (reuse `inventory.PrecheckOrderStock` atau helper per item)
+- [x] `enrichCatalogStock`: gunakan **available** (`on_hand - reserved`), bukan hanya `on_hand`
+- [x] `order_flow.go` step qty: jika `qty > StockAvailable` → balas tolak + minta kurangi ( **tanpa** alternatif produk )
+- [x] Sebelum `persistDraftOrder`: precheck stok ringan (reuse `inventory.PrecheckOrderStock` atau helper per item)
 - [ ] Wording: gunakan `formatStockLabel` existing (`habis` jika ≤ 0)
 
 ### Test
