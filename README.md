@@ -210,15 +210,16 @@ encore run
 # Cek error schema/API tanpa full run
 encore check
 
-# Unit test Encore
+# Unit test Encore (default — dipakai Encore Cloud build)
 # Pakai Encore runtime karena beberapa package mendeklarasikan sqldb/cache/pubsub.
 encore test ./...
 # Atau paket tertentu:
 encore test ./ai ./usage
-# AI buyer behavior (1000 + 2000 skenario WA) — lihat docs/WHATSAPP_BUYER_BEHAVIOR_TESTS.md
-./scripts/fix-encore-test-db.sh   # jika role encore-migrator hilang
+# AI smoke + unit (tanpa suite 3000+ skenario — lebih cepat)
 ./scripts/run-ai-unit-tests.sh
-encore test ./ai/ -run 'TestBuyerBehavior1000|TestWABuyerCases2000' -count=1
+# Suite berat 1000/2000+ skenario WA — jalankan manual sebelum merge besar AI
+./scripts/run-ai-integration-tests.sh
+# Lihat docs/WHATSAPP_BUYER_BEHAVIOR_TESTS.md
 
 # Shell ke database system / tenant (lokal)
 encore db shell system

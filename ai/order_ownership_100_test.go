@@ -6,6 +6,7 @@ import (
 )
 
 func TestOrderOwnership100(t *testing.T) {
+	skipUnlessIntegrationTests(t)
 	cases := allOrderOwnershipCases()
 	if len(cases) != 100 {
 		t.Fatalf("expected 100 cases, got %d", len(cases))

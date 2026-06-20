@@ -6,6 +6,7 @@ import (
 )
 
 func TestChaosBuyer100(t *testing.T) {
+	skipUnlessIntegrationTests(t)
 	cases := allChaosBuyerCases()
 	if len(cases) != 100 {
 		t.Fatalf("expected 100 chaos cases, got %d", len(cases))

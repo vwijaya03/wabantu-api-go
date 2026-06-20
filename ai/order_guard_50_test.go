@@ -6,6 +6,7 @@ import (
 )
 
 func TestOrderGuard50(t *testing.T) {
+	skipUnlessIntegrationTests(t)
 	cases := allOrderGuardCases()
 	if len(cases) != 50 {
 		t.Fatalf("expected 50 order guard cases, got %d", len(cases))

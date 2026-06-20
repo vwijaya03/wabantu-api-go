@@ -6,6 +6,7 @@ import (
 )
 
 func TestWABuyerCases2000(t *testing.T) {
+	skipUnlessIntegrationTests(t)
 	cases := generateAllWABuyerCases()
 	if len(cases) < 2000 {
 		t.Fatalf("expected >= 2000 cases, got %d", len(cases))
@@ -30,6 +31,7 @@ func TestWABuyerCases2000(t *testing.T) {
 }
 
 func TestWABuyerCaseCount(t *testing.T) {
+	skipUnlessIntegrationTests(t)
 	n := len(generateAllWABuyerCases())
 	if n < 2000 {
 		t.Fatalf("generator returned %d, need 2000+", n)

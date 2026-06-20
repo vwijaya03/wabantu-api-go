@@ -6,6 +6,7 @@ import (
 )
 
 func TestOrderStatusBuyer30(t *testing.T) {
+	skipUnlessIntegrationTests(t)
 	cases := allOrderStatusBuyerCases()
 	if len(cases) != 30 {
 		t.Fatalf("expected 30 cases, got %d", len(cases))
