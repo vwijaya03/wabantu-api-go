@@ -8,6 +8,8 @@ Perbandingan endpoint vs NestJS / kompatibilitas frontend: **[ENDPOINT_COMPATIBI
 
 Dokumentasi teknis lengkap (arsitektur, API, DB, **platform admin**): **[DEVELOPER_DOCUMENTATION.md](./DEVELOPER_DOCUMENTATION.md)** — untuk akun operator internal WABantu langsung ke **[Bagian 8.1](./DEVELOPER_DOCUMENTATION.md#81-platform-admin-internal-operator-wabantu-owner)**.
 
+**Fitur yang sudah rilis (bukan roadmap):** **[shipped/](./shipped/)** — catatan implementasi per PR.
+
 ---
 
 ## Untuk developer baru — checklist sebelum coding
