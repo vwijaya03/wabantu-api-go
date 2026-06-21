@@ -46,9 +46,17 @@ func IsRecommendationRequest(userText string) bool {
 	if text == "" {
 		return false
 	}
+	if IsExplicitNewOrderStart(userText) || IsStructuredOrderList(userText) {
+		return false
+	}
+	if hasPurchaseIntent(userText, nil) || mentionsOrderQty(userText) {
+		return false
+	}
 	signals := []string{
 		"rekomend", "rekomendas", "sarankan", "saranin", "saran dong",
-		"recommend", "suggestion", "paling laris", "best seller", "paling recommended",
+		"recommend", "suggestion", "paling laris", "paling recommended",
+		"rekomendasi best seller", "minta best seller", "yang best seller",
+		"produk best seller", "ada best seller",
 	}
 	for _, s := range signals {
 		if strings.Contains(text, s) {

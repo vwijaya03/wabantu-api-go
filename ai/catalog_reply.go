@@ -56,6 +56,7 @@ func IsCatalogListQuestion(userText string) bool {
 		"menu apa saja", "menu apa aja", "show catalog", "show katalog",
 		"katalog apa", "koleksi apa", "jenis produk", "macam produk", "macam barang",
 		"minta list", "kasih list", "berikan list", "kirim list", "list dong",
+		"listkan", "listkan semua", "semua jualan", "semua jualan kamu",
 		"ada produk apa", "tersedia apa", "tersedia jualan", "menjual apa",
 	}
 	for _, p := range phrases {
@@ -416,6 +417,10 @@ func replyFromBusinessCatalog(
 
 	if isGenericVisualProductInquiry(userText, catalog) {
 		return buildGenericVisualProductInquiryReply(formal, bizName, catalog, profile), true
+	}
+
+	if IsExplicitNewOrderStart(userText) || IsStructuredOrderList(userText) {
+		return "", false
 	}
 
 	if IsCatalogBrowsingIntent(userText) || isGeneralStoreCatalogQuestion(userText) ||

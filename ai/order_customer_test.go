@@ -123,10 +123,29 @@ func TestIsCancelClarificationQuestion(t *testing.T) {
 	}
 }
 
+func TestIsExplicitNewOrderStart(t *testing.T) {
+	for _, msg := range []string{
+		"mau buat pesanan baru bisa ?",
+		"loh, saya mau buat pesanan baru oi",
+		"saya mau buat pesanan baru",
+	} {
+		if !IsExplicitNewOrderStart(msg) {
+			t.Fatalf("IsExplicitNewOrderStart(%q) want true", msg)
+		}
+		if !IsNewPurchaseIntentQuestion(msg) {
+			t.Fatalf("IsNewPurchaseIntentQuestion(%q) want true for new order start", msg)
+		}
+		if IsOrderStatusInquiry(msg) {
+			t.Fatalf("IsOrderStatusInquiry(%q) want false for new order start", msg)
+		}
+	}
+}
+
 func TestIsNewPurchaseIntentQuestion(t *testing.T) {
 	for _, msg := range []string{
 		"mau order boxer mono spot 10 paket bisa ?",
 		"loh saya mau order barang woi",
+		"loh, saya mau buat pesanan baru oi",
 		"bisa order de wasa 3 paket?",
 		"mau pesan abon 2 biji boleh?",
 	} {
