@@ -514,6 +514,9 @@ func (st orderState) shippingComplete() bool {
 }
 
 func (st orderState) productComplete() bool {
+	if st.hasMultiItems() {
+		return st.structuredLinesReady()
+	}
 	return strings.TrimSpace(st.ProductName) != "" || strings.TrimSpace(st.CatalogItemID) != ""
 }
 
@@ -582,14 +585,20 @@ func catalogConfirmLine(st orderState) string {
 
 func missingOrderDataPrompt(st orderState, tmpl orderFlowTemplates) string {
 	st = normalizeOrderState(st)
-	if !st.productComplete() {
-		return tmpl.AskProduct
-	}
-	if !st.variantComplete() {
-		return tmpl.AskVariant
-	}
-	if st.Qty < 1 {
-		return tmpl.AskQty
+	if st.hasMultiItems() {
+		if !st.structuredLinesReady() {
+			return tmpl.AskVariant
+		}
+	} else {
+		if !st.productComplete() {
+			return tmpl.AskProduct
+		}
+		if !st.variantComplete() {
+			return tmpl.AskVariant
+		}
+		if st.Qty < 1 {
+			return tmpl.AskQty
+		}
 	}
 	if strings.TrimSpace(st.RecipientName) == "" || strings.TrimSpace(st.RecipientPhone) == "" {
 		return tmpl.AskRecipient

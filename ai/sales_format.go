@@ -239,6 +239,9 @@ func IsOrderTotalRequest(userText string) bool {
 
 func formatOrderSummary(st orderState) string {
 	st = normalizeOrderState(st)
+	if st.hasMultiItems() {
+		return formatMultiOrderSummary(st)
+	}
 	if !st.productComplete() {
 		return ""
 	}
@@ -273,6 +276,43 @@ func formatOrderSummary(st orderState) string {
 		}
 	}
 	if st.UnitPrice > 0 {
+		b.WriteString("Subtotal:\n")
+		b.WriteString(formatMoney(subtotal))
+		b.WriteString("\n\nBelum termasuk ongkir.")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func formatMultiOrderSummary(st orderState) string {
+	if !st.structuredLinesReady() {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("🛒 Ringkasan Pesanan\n\n")
+	var subtotal float64
+	for i, ln := range st.Items {
+		qty := ln.Qty
+		if qty < 1 {
+			qty = 1
+		}
+		unit := ln.SellUnit
+		if unit == "" {
+			unit = "pcs"
+		}
+		b.WriteString(fmt.Sprintf("%d. %s\n", i+1, ln.ProductName))
+		b.WriteString(fmt.Sprintf("   Qty: %d", qty))
+		if variant := buildVariantLabel(ln.Size, ln.Color); variant != "" {
+			b.WriteString(" · " + variant)
+		}
+		b.WriteString("\n")
+		if ln.UnitPrice > 0 {
+			lineSub := float64(qty) * ln.UnitPrice
+			subtotal += lineSub
+			b.WriteString(fmt.Sprintf("   %s/%s → %s\n", formatMoney(ln.UnitPrice), unit, formatMoney(lineSub)))
+		}
+		b.WriteString("\n")
+	}
+	if subtotal > 0 {
 		b.WriteString("Subtotal:\n")
 		b.WriteString(formatMoney(subtotal))
 		b.WriteString("\n\nBelum termasuk ongkir.")

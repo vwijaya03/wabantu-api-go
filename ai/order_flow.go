@@ -561,6 +561,9 @@ func normalizeOrderState(st orderState) orderState {
 		st.Step = "ask_address_full"
 	}
 	inferVariantFromProductName(&st)
+	if len(st.Items) > 0 && strings.TrimSpace(st.ProductName) == "" {
+		applyLineToOrderState(&st, st.Items[0])
+	}
 	return st
 }
 
@@ -580,6 +583,9 @@ func persistDraftOrder(
 	st orderState,
 ) (orderID string, err error) {
 	st = normalizeOrderState(st)
+	if st.hasMultiItems() {
+		return persistDraftOrderMulti(ctx, tq, tenantSchema, convoID, contactID, st)
+	}
 	if !st.productComplete() || strings.TrimSpace(st.CatalogItemID) == "" || !st.variantComplete() || st.Qty < 1 ||
 		strings.TrimSpace(st.RecipientName) == "" || strings.TrimSpace(st.RecipientPhone) == "" ||
 		!st.shippingComplete() {
@@ -659,6 +665,97 @@ func persistDraftOrder(
 		"convoId", convoID,
 		"product", previewText(st.ProductName, 60),
 		"qty", qty,
+		"postalCode", st.PostalCode,
+	)
+	return orderID, nil
+}
+
+func persistDraftOrderMulti(
+	ctx context.Context,
+	tq tenantQuerier,
+	tenantSchema string,
+	convoID, contactID string,
+	st orderState,
+) (orderID string, err error) {
+	st = normalizeOrderState(st)
+	if !st.readyToPersist() {
+		return "", fmt.Errorf("order data incomplete")
+	}
+	var orderItems []order.OrderItem
+	var subtotal float64
+	for i, ln := range st.Items {
+		lineSt := orderStateFromLine(ln)
+		reject, _, whID := ensureDraftOrderStock(ctx, tq, lineSt)
+		if reject {
+			return "", fmt.Errorf("order qty exceeds available stock for line %d", i+1)
+		}
+		if whID != "" {
+			st.Items[i].WarehouseID = whID
+			ln.WarehouseID = whID
+		}
+		qty := ln.Qty
+		if qty < 1 {
+			qty = 1
+		}
+		variant := buildVariantLabel(ln.Size, ln.Color)
+		item := order.OrderItem{
+			CatalogItemID: ln.CatalogItemID,
+			ExternalCode:  ln.ExternalCode,
+			Name:          ln.ProductName,
+			Variant:       variant,
+			Size:          ln.Size,
+			Color:         ln.Color,
+			Qty:           float64(qty),
+			UnitPrice:     ln.UnitPrice,
+			SellUnit:      ln.SellUnit,
+			WarehouseID:   strings.TrimSpace(ln.WarehouseID),
+		}
+		orderItems = append(orderItems, item)
+		subtotal += float64(qty) * ln.UnitPrice
+	}
+	addr := order.ShippingAddress{
+		Name:       st.RecipientName,
+		Phone:      st.RecipientPhone,
+		Street:     st.Street,
+		RT:         st.RT,
+		RW:         st.RW,
+		Kelurahan:  st.Kelurahan,
+		Kecamatan:  st.Kecamatan,
+		City:       st.City,
+		Province:   st.Province,
+		PostalCode: st.PostalCode,
+		Country:    st.Country,
+	}
+	if addr.Country == "" {
+		addr.Country = "Indonesia"
+	}
+	itemsJSON, _ := json.Marshal(orderItems)
+	addrJSON, _ := json.Marshal(addr)
+
+	var convArg, contactArg any
+	if strings.TrimSpace(convoID) != "" {
+		convArg = convoID
+	}
+	if strings.TrimSpace(contactID) != "" {
+		contactArg = contactID
+	}
+
+	insertQ := fmt.Sprintf(`
+		INSERT INTO "%s"."order"
+			(conversation_id, contact_id, items, shipping_address, notes,
+			 status, subtotal, shipping_cost, total)
+		VALUES ($1, $2, $3, $4, '', 'draft', $5, 0, $5)
+		RETURNING id::text`, tenantSchema)
+
+	err = tq.QueryRowContext(ctx, insertQ, convArg, contactArg, itemsJSON, addrJSON, subtotal).Scan(&orderID)
+	if err != nil {
+		return "", err
+	}
+	syncContactDisplayNameFromOrder(ctx, tq, contactID, st.RecipientName)
+	rlog.Info("AI order: multi-item draft persisted",
+		"orderId", orderID,
+		"convoId", convoID,
+		"itemCount", len(orderItems),
 		"postalCode", st.PostalCode,
 	)
 	return orderID, nil

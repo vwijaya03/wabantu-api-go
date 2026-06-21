@@ -150,7 +150,9 @@ flowchart TD
   status2 -->|no| redisOrder{Redis order flow aktif?}
   redisOrder -->|lanjut checkout| orderFlow[path order_flow]
   redisOrder -->|break intent| classifier[Scope + ResolveSalesIntent]
-  classifier --> catalogEarly{replyFromBusinessCatalog inScope?}
+  classifier --> orderEarly{order_intent atau structured list?}
+  orderEarly -->|yes| orderFlow
+  orderEarly -->|no| catalogEarly{replyFromBusinessCatalog inScope?}
   catalogEarly -->|yes| catDB[path catalog_db]
   classifier --> sensitive{sensitive_escalate?}
   sensitive -->|yes| escalate[path sensitive_escalate]
@@ -177,7 +179,9 @@ flowchart TD
 2. **Order status** (`IsOrderStatusInquiry`, `IsSelfBuyerOrderLookup`) dicek **sebelum** greeting agar `"halo, punya pesanan aktif?"` tidak dianggap sapaan murni.
 3. Pesan dengan **`wantsOrderContextFromHistory`** (`pesanan tadi`, `yang barusan`) **tidak** di-route early — butuh history chat untuk parse `WB-` dari outbound.
 4. Guard order lookup diulang **sebelum FAQ cache** agar FAQ tidak hijack intent order.
-5. **Katalog DB** (`catalog_reply.go`) diprioritaskan sebelum classifier out-of-scope untuk pertanyaan list/harga produk.
+5. **`order_intent` dan pesan structured multi-baris** (`IsStructuredOrderList`) dicek **sebelum** `replyFromBusinessCatalog` agar nama produk seperti "LOL Best Seller" tidak memicu daftar katalog.
+6. **Katalog DB** (`catalog_reply.go`) diprioritaskan sebelum classifier out-of-scope untuk pertanyaan list/harga produk — kecuali pesan order terstruktur atau `IsExplicitNewOrderStart`.
+7. **`IsRecommendationRequest`** tidak lagi memakai substring `"best seller"` mentah; hanya frasa intent (mis. `rekomendasi best seller`) dan di-guard jika ada qty / baris bernomor.
 
 ---
 
@@ -193,10 +197,12 @@ flowchart TD
 | `IsGreetingLike` | `ai/greeting.go` | `halo`, `selamat pagi` | `greeting` | Tidak |
 | `IsGreetingFeedback` | `ai/greeting.go` | `makasih min` setelah sapaan | `greeting` | Tidak |
 | `IsPromptInjectionLikely` | `ai/safety.go` | Upaya manipulasi sistem | `injection_guard` | Tidak |
-| `replyFromBusinessCatalog` | `ai/catalog_reply.go` | `list produk`, `harga kaos L`, caption foto produk | `catalog_db` | Tidak |
+| `replyFromBusinessCatalog` | `ai/catalog_reply.go` | `list produk`, `listkan semua jualan`, `harga kaos L`, caption foto produk | `catalog_db` | Tidak |
+| `IsStructuredOrderList` | `ai/order_structured.go` | `mau buat pesanan baru` + baris `1. Produk qty ukuran` | `order_flow` | Tidak |
+| `IsExplicitNewOrderStart` | `ai/order_customer.go` | `buat pesanan baru`, `pesanan baru` | `order_flow` (via intent) | Tidak |
 | `ResolveSalesIntent` | `ai/sales_intent.go` | Menggabungkan sinyal → `SalesState` / topic | Mempengaruhi classifier label | — |
 | `classifyMessage` | `ai/autoreply.go` | Keyword sensitif, out-of-scope | `sensitive_escalate`, `out_of_scope`, dll. | Tidak |
-| `handleOrderFlow` | `ai/order_flow.go` | Lanjut checkout Redis (qty, alamat, dll.) | `order_flow` | Sebagian (konsultasi) |
+| `handleOrderFlow` | `ai/order_flow.go` | Lanjut checkout Redis (qty, alamat, multi-item) | `order_flow` | Sebagian (konsultasi) |
 | `tryFAQDirectAnswer` | `ai/classifier_routing.go` | Match KB kuat; **skip** order lookup | `faq_direct` | Tidak |
 | FAQ cache Redis | `ai/autoreply.go` | Pertanyaan pernah dijawab | `faq_cache` | Tidak |
 | Anthropic + routing | `ai/routing.go`, `ai/classifier_routing.go` | Pertanyaan in-scope tanpa jawaban deterministik | `llm`, `llm_tools`, `llm_grounded` | Ya |
@@ -307,7 +313,8 @@ encore test ./ai/ -run 'BuyerLookup|OrderStatus|Greeting' -count=1
 | `ai/inbound_jobs.go` | Pub/Sub queue |
 | `ai/autoreply.go` | Orchestrator utama |
 | `ai/order_customer.go` | Intent order status/cancel/lookup |
-| `ai/order_flow.go` | Checkout state machine (Redis) |
+| `ai/order_flow.go` | Checkout state machine (Redis), persist multi-item |
+| `ai/order_structured.go` | Parse pesanan multi-baris, stock guard per baris |
 | `ai/catalog_reply.go` | Jawaban katalog DB |
 | `ai/greeting.go` | Sapaan |
 | `ai/safety.go` | Injection & scope sensitif |
@@ -338,4 +345,5 @@ encore test ./ai/ -run 'BuyerLookup|OrderStatus|Greeting' -count=1
 
 | Tanggal | Perubahan |
 |---------|-----------|
+| 2026-06-14 | Structured multi-line order + guard catalog hijack (`best seller` false positive) |
 | 2026-06-14 | Dokumen kanonik routing webhook → AI |
