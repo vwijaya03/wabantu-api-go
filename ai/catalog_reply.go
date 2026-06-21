@@ -1,11 +1,14 @@
 package ai
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var (
@@ -115,7 +118,10 @@ func IsCatalogProductInquiry(userText string) bool {
 	if isGeneralStoreCatalogQuestion(userText) {
 		return false
 	}
-	hints := []string{"harga", "harg", "stok", "stock", "ready", "berapa", "brp", "rp ", "rp.", "price"}
+	if isGenericVisualProductInquiry(userText, nil) {
+		return false
+	}
+	hints := []string{"harga", "harg", "stok", "stock", "ready", "berapa", "brp", "rp ", "rp.", "price", "masih ada"}
 	// "tersedia" hanya inquiry produk jika tidak tanya umum (mis. "stok jeans ready?").
 	if strings.Contains(text, "tersedia") && !strings.Contains(text, "apa") {
 		hints = append(hints, "tersedia")
@@ -161,13 +167,72 @@ func IsPricingUnitClarification(userText string) bool {
 	return false
 }
 
-func isCatalogContextualReference(userText string) bool {
+func isAvailabilityQuestion(text string) bool {
+	signals := []string{
+		"masih ada", "ada ga", "ada gak", "ada nggak", "ada tidak",
+		"ready", "stok", "stock", "tersedia", "habis", "kosong",
+	}
+	for _, s := range signals {
+		if strings.Contains(text, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// isGenericVisualProductInquiry — caption/foto tanpa nama produk jelas (vision WA belum dipakai).
+func isGenericVisualProductInquiry(userText string, catalog []dbCatalogItem) bool {
 	text := strings.ToLower(strings.TrimSpace(userText))
-	prefixes := []string{"itu ", "ini ", "yang tadi", "yang barusan", "produk itu", "harga itu", "yang ini"}
+	if text == "" || !isAvailabilityQuestion(text) {
+		return false
+	}
+	visualSignals := []string{
+		"produk ini", "barang ini", "item ini",
+		"di foto", "di gambar", "foto ini", "gambar ini",
+		"foto tadi", "gambar tadi", "yang di foto", "yang di gambar",
+	}
+	generic := false
+	for _, s := range visualSignals {
+		if strings.Contains(text, s) {
+			generic = true
+			break
+		}
+	}
+	if !generic && (strings.Contains(text, "produk ini") || strings.Contains(text, "barang ini")) {
+		generic = true
+	}
+	if !generic {
+		return false
+	}
+	if match := matchCatalogItem(userText, catalog); match != nil {
+		nameLower := strings.ToLower(match.Name)
+		userToks := tokenize(text)
+		if overlapScore(userToks, tokenize(nameLower)) >= 0.2 {
+			return false
+		}
+		for _, tok := range userToks {
+			if len(tok) >= 4 && strings.Contains(nameLower, tok) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func isCatalogContextualReference(userText string) bool {
+	if isGenericVisualProductInquiry(userText, nil) {
+		return false
+	}
+	text := strings.ToLower(strings.TrimSpace(userText))
+	prefixes := []string{"itu ", "yang tadi", "yang barusan", "produk itu", "harga itu", "yang ini"}
 	for _, p := range prefixes {
 		if strings.HasPrefix(text, p) || strings.Contains(text, " "+strings.TrimSpace(p)) {
 			return true
 		}
+	}
+	// "ini harga ..." follow-up — bukan "produk ini masih ada"
+	if strings.Contains(text, " ini ") && strings.Contains(text, "harga") {
+		return true
 	}
 	return false
 }
@@ -190,6 +255,17 @@ func matchCatalogFromRecentOutbound(history []dbMessage, catalog []dbCatalogItem
 }
 
 func resolveCatalogMatch(userText string, history []dbMessage, catalog []dbCatalogItem) *dbCatalogItem {
+	// #region agent log
+	debugCatalogLog("H1", "catalog_reply.go:resolveCatalogMatch", "resolve catalog match", map[string]any{
+		"userPreview": previewText(userText, 80),
+		"genericVisual": isGenericVisualProductInquiry(userText, catalog),
+		"contextualRef": isCatalogContextualReference(userText),
+		"historyOut":    countOutboundHistory(history),
+	})
+	// #endregion
+	if isGenericVisualProductInquiry(userText, catalog) {
+		return nil
+	}
 	if match := matchCatalogItem(userText, catalog); match != nil {
 		return match
 	}
@@ -199,6 +275,40 @@ func resolveCatalogMatch(userText string, history []dbMessage, catalog []dbCatal
 	}
 	return nil
 }
+
+func countOutboundHistory(history []dbMessage) int {
+	n := 0
+	for _, m := range history {
+		if m.Direction == "out" {
+			n++
+		}
+	}
+	return n
+}
+
+// #region agent log
+func debugCatalogLog(hypothesisID, location, message string, data map[string]any) {
+	payload := map[string]any{
+		"sessionId":    "b379a9",
+		"hypothesisId": hypothesisID,
+		"location":     location,
+		"message":      message,
+		"data":         data,
+		"timestamp":    time.Now().UnixMilli(),
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+	f, err := os.OpenFile("/Users/viko/Documents/WABantu/.cursor/debug-b379a9.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	_, _ = f.Write(append(b, '\n'))
+	_ = f.Close()
+}
+
+// #endregion
 
 func extractPackCountFromName(name string) int {
 	if n := bracketPackCount(name); n > 1 {
@@ -349,6 +459,15 @@ func replyFromBusinessCatalog(
 	formal := strOrEmpty(profile.Tone) == "formal"
 	bizName := strings.TrimSpace(profile.BusinessName)
 
+	if isGenericVisualProductInquiry(userText, catalog) {
+		// #region agent log
+		debugCatalogLog("H2", "catalog_reply.go:replyFromBusinessCatalog", "generic visual inquiry reply", map[string]any{
+			"userPreview": previewText(userText, 80),
+		})
+		// #endregion
+		return buildGenericVisualProductInquiryReply(formal, bizName, catalog, profile), true
+	}
+
 	if IsCatalogBrowsingIntent(userText) || isGeneralStoreCatalogQuestion(userText) ||
 		IsRecommendationRequest(userText) {
 		return buildCatalogListReply(formal, bizName, catalog, profile), true
@@ -405,6 +524,21 @@ func replyFromBusinessCatalog(
 		}
 	}
 	return "", false
+}
+
+func buildGenericVisualProductInquiryReply(formal bool, bizName string, catalog []dbCatalogItem, profile *dbBusinessProfile) string {
+	var head string
+	if formal {
+		head = "Mohon maaf, saat ini kami belum bisa mengenali produk langsung dari foto di chat WhatsApp.\n\nSilakan sebut nama produknya (misalnya dari label kemasan), nanti kami cek stok dan harganya."
+	} else {
+		head = "Maaf kak, saya belum bisa baca produk langsung dari foto di chat ini 🙏\n\nTolong sebut nama produknya ya kak (misalnya Abon Sapi), nanti saya cek stok & harganya."
+	}
+	if len(catalog) == 0 {
+		return strings.TrimSpace(head + catalogExternalFooter(profile, true))
+	}
+	body := "\n\nContoh produk di katalog kami:\n\n" + formatCatalogListBody(catalog, 5)
+	footer := catalogExternalFooter(profile, false)
+	return strings.TrimSpace(head + body + footer)
 }
 
 func buildCatalogListReply(formal bool, bizName string, catalog []dbCatalogItem, profile *dbBusinessProfile) string {
