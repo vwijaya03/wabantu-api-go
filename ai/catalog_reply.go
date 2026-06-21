@@ -1,14 +1,11 @@
 package ai
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 )
 
 var (
@@ -255,14 +252,6 @@ func matchCatalogFromRecentOutbound(history []dbMessage, catalog []dbCatalogItem
 }
 
 func resolveCatalogMatch(userText string, history []dbMessage, catalog []dbCatalogItem) *dbCatalogItem {
-	// #region agent log
-	debugCatalogLog("H1", "catalog_reply.go:resolveCatalogMatch", "resolve catalog match", map[string]any{
-		"userPreview": previewText(userText, 80),
-		"genericVisual": isGenericVisualProductInquiry(userText, catalog),
-		"contextualRef": isCatalogContextualReference(userText),
-		"historyOut":    countOutboundHistory(history),
-	})
-	// #endregion
 	if isGenericVisualProductInquiry(userText, catalog) {
 		return nil
 	}
@@ -275,40 +264,6 @@ func resolveCatalogMatch(userText string, history []dbMessage, catalog []dbCatal
 	}
 	return nil
 }
-
-func countOutboundHistory(history []dbMessage) int {
-	n := 0
-	for _, m := range history {
-		if m.Direction == "out" {
-			n++
-		}
-	}
-	return n
-}
-
-// #region agent log
-func debugCatalogLog(hypothesisID, location, message string, data map[string]any) {
-	payload := map[string]any{
-		"sessionId":    "b379a9",
-		"hypothesisId": hypothesisID,
-		"location":     location,
-		"message":      message,
-		"data":         data,
-		"timestamp":    time.Now().UnixMilli(),
-	}
-	b, err := json.Marshal(payload)
-	if err != nil {
-		return
-	}
-	f, err := os.OpenFile("/Users/viko/Documents/WABantu/.cursor/debug-b379a9.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return
-	}
-	_, _ = f.Write(append(b, '\n'))
-	_ = f.Close()
-}
-
-// #endregion
 
 func extractPackCountFromName(name string) int {
 	if n := bracketPackCount(name); n > 1 {
@@ -460,11 +415,6 @@ func replyFromBusinessCatalog(
 	bizName := strings.TrimSpace(profile.BusinessName)
 
 	if isGenericVisualProductInquiry(userText, catalog) {
-		// #region agent log
-		debugCatalogLog("H2", "catalog_reply.go:replyFromBusinessCatalog", "generic visual inquiry reply", map[string]any{
-			"userPreview": previewText(userText, 80),
-		})
-		// #endregion
 		return buildGenericVisualProductInquiryReply(formal, bizName, catalog, profile), true
 	}
 
