@@ -4,6 +4,8 @@ Backend WABantu ditulis ulang dengan [Encore.go](https://encore.dev). Kode NestJ
 
 Dokumentasi alur lengkap (mirip `api/APP_FLOW_GUIDE.md`): **[APP_FLOW_GUIDE.md](./APP_FLOW_GUIDE.md)**.
 
+**Routing WhatsApp & AI (webhook → deteksi intent → path metadata):** **[docs/WHATSAPP_AI_ROUTING.md](./docs/WHATSAPP_AI_ROUTING.md)** · **Indeks semua docs:** **[docs/README.md](./docs/README.md)**
+
 Perbandingan endpoint vs NestJS / kompatibilitas frontend: **[ENDPOINT_COMPATIBILITY.md](./ENDPOINT_COMPATIBILITY.md)**.
 
 Dokumentasi teknis lengkap (arsitektur, API, DB, **platform admin**): **[DEVELOPER_DOCUMENTATION.md](./DEVELOPER_DOCUMENTATION.md)** — untuk akun operator internal WABantu langsung ke **[Bagian 8.1](./DEVELOPER_DOCUMENTATION.md#81-platform-admin-internal-operator-wabantu-owner)**.
