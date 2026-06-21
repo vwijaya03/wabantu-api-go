@@ -140,6 +140,7 @@ type orderState struct {
 	Color         string  `json:"color,omitempty"`
 	Variant       string  `json:"variant,omitempty"`
 	Qty           int     `json:"qty,omitempty"`
+	WarehouseID   string  `json:"warehouseId,omitempty"`
 	UnitPrice     float64 `json:"unitPrice,omitempty"`
 	SellUnit      string  `json:"sellUnit,omitempty"`
 
@@ -806,6 +807,9 @@ func (s *AutoReplyService) handleOrderFlow(
 			if st.Qty > 0 {
 				base.Qty = st.Qty
 			}
+			if st.WarehouseID != "" {
+				base.WarehouseID = st.WarehouseID
+			}
 			if st.UnitPrice > 0 {
 				base.UnitPrice = st.UnitPrice
 			}
@@ -847,7 +851,8 @@ func (s *AutoReplyService) handleOrderFlow(
 			}
 			inferVariantFromProductName(&st)
 			if st.variantComplete() && st.Qty > 0 {
-				if st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty"); blocked {
+				st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
+				if blocked {
 					s.setOrderState(ctx, tenantID, convo.ID, st)
 					return send(reply)
 				}
@@ -879,7 +884,8 @@ func (s *AutoReplyService) handleOrderFlow(
 			}
 			if st.variantComplete() {
 				if st.Qty > 0 {
-					if st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty"); blocked {
+					st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
+				if blocked {
 						s.setOrderState(ctx, tenantID, convo.ID, st)
 						return send(reply)
 					}
@@ -953,7 +959,8 @@ func (s *AutoReplyService) handleOrderFlow(
 			s.setOrderState(ctx, tenantID, convo.ID, st)
 			return sendWithConfirm(st, tmpl.AskQty)
 		}
-		if st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty"); blocked {
+		st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
+				if blocked {
 			s.setOrderState(ctx, tenantID, convo.ID, st)
 			return send(reply)
 		}
@@ -980,7 +987,8 @@ func (s *AutoReplyService) handleOrderFlow(
 				s.setOrderState(ctx, tenantID, convo.ID, st)
 				return sendWithConfirm(st, tmpl.AskQty)
 			}
-			if st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty"); blocked {
+			st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
+				if blocked {
 				s.setOrderState(ctx, tenantID, convo.ID, st)
 				return send(reply)
 			}
@@ -996,7 +1004,8 @@ func (s *AutoReplyService) handleOrderFlow(
 			st.Color = cl
 		}
 		if st.variantComplete() && st.Qty > 0 {
-			if st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty"); blocked {
+			st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
+				if blocked {
 				s.setOrderState(ctx, tenantID, convo.ID, st)
 				return send(reply)
 			}
@@ -1028,7 +1037,8 @@ func (s *AutoReplyService) handleOrderFlow(
 			s.setOrderState(ctx, tenantID, convo.ID, st)
 			return sendWithConfirm(st, tmpl.AskQty)
 		}
-		if st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty"); blocked {
+		st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
+				if blocked {
 			s.setOrderState(ctx, tenantID, convo.ID, st)
 			return send(reply)
 		}
@@ -1048,7 +1058,8 @@ func (s *AutoReplyService) handleOrderFlow(
 			return send(tmpl.ClarifyQty)
 		}
 		st.Qty = qty
-		if st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty"); blocked {
+		st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
+				if blocked {
 			s.setOrderState(ctx, tenantID, convo.ID, st)
 			return send(reply)
 		}
@@ -1059,7 +1070,8 @@ func (s *AutoReplyService) handleOrderFlow(
 	case "ask_recipient":
 		st := copyBase(stateNorm)
 		if tryApplyQtyRevision(&st, userText) {
-			if st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty"); blocked {
+			st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
+				if blocked {
 				s.setOrderState(ctx, tenantID, convo.ID, st)
 				return send(reply)
 			}
@@ -1087,7 +1099,8 @@ func (s *AutoReplyService) handleOrderFlow(
 				s.setOrderState(ctx, tenantID, convo.ID, st)
 				return sendWithConfirm(st, missing)
 			}
-			if st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty"); blocked {
+			st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
+				if blocked {
 				s.setOrderState(ctx, tenantID, convo.ID, st)
 				return send(reply)
 			}
@@ -1107,7 +1120,8 @@ func (s *AutoReplyService) handleOrderFlow(
 	case "ask_address", "ask_address_full":
 		st := copyBase(stateNorm)
 		if tryApplyQtyRevision(&st, userText) {
-			if st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty"); blocked {
+			st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
+				if blocked {
 				s.setOrderState(ctx, tenantID, convo.ID, st)
 				return send(reply)
 			}
@@ -1123,7 +1137,8 @@ func (s *AutoReplyService) handleOrderFlow(
 			s.setOrderState(ctx, tenantID, convo.ID, st)
 			return sendWithConfirm(st, missing)
 		}
-		if st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty"); blocked {
+		st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
+				if blocked {
 			s.setOrderState(ctx, tenantID, convo.ID, st)
 			return send(reply)
 		}

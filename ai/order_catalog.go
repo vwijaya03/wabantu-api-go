@@ -7,6 +7,15 @@ import (
 	"strings"
 )
 
+type catalogStockLine struct {
+	WarehouseID   string
+	WarehouseName string
+	CustomerLabel string
+	IsDefault     bool
+	DisplayOrder  int
+	Available     float64
+}
+
 type dbCatalogItem struct {
 	ID           string
 	ExternalCode string
@@ -16,13 +25,20 @@ type dbCatalogItem struct {
 	// Stock fields populated by enrichCatalogStock when the inventory module is
 	// set up for the tenant. Default zero values keep non-inventory tenants and
 	// unit tests (which build items directly) unaffected.
-	StockTracked   bool
-	StockAvailable float64
+	StockTracked     bool
+	StockAvailable   float64
+	StockByWarehouse []catalogStockLine
 }
 
-// enrichCatalogStock annotates catalog items with real available stock when the
-// inventory module is active for the tenant. Best-effort: any error (e.g. tables
-// absent on an un-migrated tenant, setup not completed) leaves the catalog as-is.
+func warehouseBuyerLabel(customerLabel, warehouseName string) string {
+	if s := strings.TrimSpace(customerLabel); s != "" {
+		return s
+	}
+	return strings.TrimSpace(warehouseName)
+}
+
+// enrichCatalogStock annotates catalog items with per-warehouse available stock when the
+// inventory module is active for the tenant. Best-effort: any error leaves the catalog as-is.
 func enrichCatalogStock(ctx context.Context, q tenantQuerier, catalog []dbCatalogItem) {
 	if len(catalog) == 0 {
 		return
@@ -33,28 +49,52 @@ func enrichCatalogStock(ctx context.Context, q tenantQuerier, catalog []dbCatalo
 		return
 	}
 	rows, err := q.QueryContext(ctx, `
-		SELECT s.catalog_item_id::text, COALESCE(SUM(GREATEST(b.on_hand - b.reserved, 0)), 0)
+		SELECT s.catalog_item_id::text, w.id::text, COALESCE(w.customer_label, ''), w.name,
+		       w.is_default, w.display_order,
+		       COALESCE(GREATEST(b.on_hand - b.reserved, 0), 0)
 		FROM inv_sku s
-		LEFT JOIN inv_stock_balance b ON b.catalog_item_id = s.catalog_item_id
+		INNER JOIN inv_stock_balance b ON b.catalog_item_id = s.catalog_item_id
+		INNER JOIN inv_warehouse w ON w.id = b.warehouse_id
 		WHERE s.track_stock = true AND s.is_bundle = false
-		GROUP BY s.catalog_item_id`)
+		  AND w.deleted_at IS NULL AND w.is_active = true
+		ORDER BY s.catalog_item_id, w.is_default DESC, w.display_order, w.name`)
 	if err != nil {
 		return
 	}
 	defer rows.Close()
-	avail := map[string]float64{}
+	byItem := map[string][]catalogStockLine{}
 	for rows.Next() {
-		var id string
-		var qty float64
-		if rows.Scan(&id, &qty) == nil {
-			avail[id] = qty
+		var itemID, whID, customerLabel, whName string
+		var isDefault bool
+		var displayOrder int
+		var avail float64
+		if rows.Scan(&itemID, &whID, &customerLabel, &whName, &isDefault, &displayOrder, &avail) != nil {
+			continue
 		}
+		if avail <= 0 {
+			continue
+		}
+		byItem[itemID] = append(byItem[itemID], catalogStockLine{
+			WarehouseID:   whID,
+			WarehouseName: whName,
+			CustomerLabel: customerLabel,
+			IsDefault:     isDefault,
+			DisplayOrder:  displayOrder,
+			Available:     avail,
+		})
 	}
 	for i := range catalog {
-		if qty, ok := avail[catalog[i].ID]; ok {
-			catalog[i].StockTracked = true
-			catalog[i].StockAvailable = qty
+		lines, ok := byItem[catalog[i].ID]
+		if !ok {
+			continue
 		}
+		catalog[i].StockTracked = true
+		catalog[i].StockByWarehouse = lines
+		var total float64
+		for _, ln := range lines {
+			total += ln.Available
+		}
+		catalog[i].StockAvailable = total
 	}
 }
 

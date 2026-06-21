@@ -131,24 +131,27 @@ Staff/owner melihat gambar yang dikirim pelanggan di Inbox.
 
 ### Tujuan
 
-AI jawab stok akurat; order flow tidak membuat draft jika qty > stok.
+AI jawab stok akurat **per gudang**; order flow tidak membuat draft jika qty melebihi stok **satu gudang mana pun** (bukan total gabungan).
 
 ### Perubahan
 
-- [x] `enrichCatalogStock`: gunakan **available** (`on_hand - reserved`), bukan hanya `on_hand`
-- [x] `order_flow.go` step qty: jika `qty > StockAvailable` → balas tolak + minta kurangi ( **tanpa** alternatif produk )
-- [x] Sebelum `persistDraftOrder`: precheck stok ringan (reuse `inventory.PrecheckOrderStock` atau helper per item)
-- [ ] Wording: gunakan `formatStockLabel` existing (`habis` jika ≤ 0)
+- [x] `enrichCatalogStock`: **available** (`on_hand - reserved`) per gudang
+- [x] Inquiry stok: breakdown per gudang + total (jika >1 gudang)
+- [x] Label gudang ke pembeli: `customer_label` jika diisi, else `name` gudang (bukan `code`, bukan label generik)
+- [x] `order_flow` step qty: tolak jika tidak ada gudang tunggal yang cukup; auto-assign gudang default lalu `display_order`
+- [x] `persistDraftOrder`: set `items[].warehouseId` + precheck DB
+- [x] Kolom `inv_warehouse.customer_label` + form gudang di web-frontend
 
 ### Test
 
-- [ ] `catalog_reply_test.go` — habis / tersedia
-- [ ] `order_flow` — qty 5, stok 2 → tidak persist draft
-- [ ] Tenant tanpa inventory → perilaku lama (tanpa stok)
+- [x] `order_stock_guard_test.go` — multi-gudang, customer_label, breakdown
+- [x] `order_flow` sim — qty dalam stok gudang default → `warehouseId` terisi
+- [x] Tenant tanpa inventory → perilaku lama (tanpa stok)
 
 ### PR
 
-- Dominan `api-go/ai/` + `inventory/`; FE opsional (badge stok di order jika precheck gagal saat ubah status).
+- `api-go`: `ai/`, `inventory/`, migration tenant
+- `web-frontend`: field label pelanggan di halaman Gudang
 
 ---
 

@@ -459,7 +459,11 @@ func buildCatalogItemReply(formal bool, it *dbCatalogItem, qty int) string {
 	lines = append(lines, formatCatalogPrice(it))
 	if it.StockTracked {
 		lines = append(lines, "")
-		lines = append(lines, "Stok tersedia: "+formatStockLabel(it.StockAvailable))
+		if len(it.StockByWarehouse) > 0 {
+			lines = append(lines, formatStockBreakdownBlock(it.StockByWarehouse))
+		} else {
+			lines = append(lines, "Stok tersedia: "+formatStockLabel(it.StockAvailable))
+		}
 	}
 	if size != "" && catalogItemNeedsVariant(it) {
 		lines = append(lines, "")

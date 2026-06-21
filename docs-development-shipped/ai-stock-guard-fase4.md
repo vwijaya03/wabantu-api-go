@@ -1,4 +1,4 @@
-# Shipped: Stok guard AI (Fase 4)
+# Shipped: Stok guard AI per gudang (Fase 4)
 
 **Status:** Siap merge  
 **Branch:** `feat/ai-stock-guard`  
@@ -9,7 +9,18 @@
 
 ## Apa yang di-ship
 
-AI WhatsApp memakai **stok available** (`on_hand - reserved`) dan **menolak qty melebihi stok** saat order flow — tanpa menawarkan produk alternatif (v1).
+AI WhatsApp menampilkan **stok available per gudang** (`on_hand - reserved`), menolak qty jika **tidak ada satu gudang** yang cukup, dan menyimpan `warehouseId` pada draft order.
+
+---
+
+## Label gudang ke pembeli
+
+| Prioritas | Sumber |
+|-----------|--------|
+| 1 | `inv_warehouse.customer_label` (opsional, diisi owner di halaman Gudang) |
+| 2 | `inv_warehouse.name` apa adanya |
+
+Tidak pernah menampilkan `code` internal.
 
 ---
 
@@ -17,11 +28,10 @@ AI WhatsApp memakai **stok available** (`on_hand - reserved`) dan **menolak qty 
 
 | Situasi | Perilaku |
 |---------|----------|
-| Tanya stok produk | `buildCatalogItemReply` pakai `StockAvailable` (available, bukan on_hand mentah) |
-| Order qty > stok | Tolak, tetap di step `ask_qty`, minta kurangi |
-| Stok habis (≤ 0) | Tolak lanjut pesan untuk produk tersebut |
-| Tenant tanpa inventory / item tidak tracked | Perilaku lama (tanpa guard stok) |
-| Sebelum `persistDraftOrder` | Precheck DB `lookupCatalogStockAvailable` (defense in depth) |
+| Tanya stok | Breakdown per gudang + total (jika >1 gudang) |
+| Order qty | Auto-assign gudang default dulu, lalu gudang lain by `display_order` |
+| Qty > stok satu gudang | Tolak + tampilkan breakdown per gudang |
+| `persistDraftOrder` | Set `items[].warehouseId` + precheck DB |
 
 ---
 
@@ -29,11 +39,13 @@ AI WhatsApp memakai **stok available** (`on_hand - reserved`) dan **menolak qty 
 
 | File | Peran |
 |------|--------|
-| `ai/order_catalog.go` | `enrichCatalogStock` — `SUM(GREATEST(on_hand - reserved, 0))` |
-| `ai/order_stock_guard.go` | Helper validasi qty vs stok, pesan tolak |
-| `ai/order_flow_sim.go` | Guard di `AdvanceOrderFlow` (sim + test) |
-| `ai/autoreply.go` | Guard di order flow production |
-| `ai/order_flow.go` | `persistDraftOrder` precheck stok |
+| `shared/tenantschema/inventory_schema_sql.go` | Kolom `customer_label` |
+| `tenant/schema_patch_inventory.go` | Patch kolom |
+| `inventory/inventory.go` | API warehouse CRUD |
+| `ai/order_catalog.go` | `enrichCatalogStock` per gudang |
+| `ai/order_stock_guard.go` | Guard + resolve warehouse |
+| `ai/catalog_reply.go` | Format breakdown |
+| `ai/order_flow.go` | `warehouseId` pada draft |
 
 ---
 
@@ -41,12 +53,12 @@ AI WhatsApp memakai **stok available** (`on_hand - reserved`) dan **menolak qty 
 
 ```bash
 cd api-go
-encore test ./ai/ -run 'Stock|AdvanceOrderFlow_rejectsQty' -count=1
+encore test ./ai/ -run 'Stock|Warehouse|AdvanceOrderFlow' -count=1
 ```
 
 ---
 
-## Sengaja belum
+## Backlog
 
-- Bundle (`is_bundle = true`) belum di-enrich stok — guard tidak berlaku untuk bundle di v1
-- Rekomendasi produk alternatif saat habis (keputusan produk: tidak di v1)
+- Opsi E: pilih gudang by alamat pengiriman (heuristik)
+- Bundle stock (`is_bundle = true`)
