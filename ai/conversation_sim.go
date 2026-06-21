@@ -41,8 +41,17 @@ func (s *ConversationSimulator) appendHistory(in, out string) {
 func (s *ConversationSimulator) Turn(userText string) TurnOutcome {
 	out := TurnOutcome{}
 
+	// Match autoreply.go: third-party buyer lookup denied before other routing.
+	if IsThirdPartyBuyerLookup(userText) {
+		out.Path = PathOrderLookupDenied
+		out.Intent = SalesIntent{State: SalesStateOutOfScope, Topic: SalesTopicOrderStatus, Confidence: 0.95}
+		out.Reply = thirdPartyBuyerLookupDeniedReply()
+		s.appendHistory(userText, out.Reply)
+		return out
+	}
+
 	// Match autoreply.go: status inquiry before greeting and cancel.
-	if IsOrderStatusInquiry(userText) {
+	if IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) {
 		out.Path = PathOrderStatus
 		out.Intent = SalesIntent{State: SalesStateConsulting, Topic: SalesTopicOrderStatus, Confidence: 0.9}
 		s.appendHistory(userText, "")

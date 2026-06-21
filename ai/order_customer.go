@@ -43,6 +43,10 @@ var orderCancelWordRe = regexp.MustCompile(`(?i)\b(batal(?:kan)?|cancel)\b`)
 // Nomor pesanan singkat dari chat pembeli (WB-A1B2C3D4).
 var orderRefInMessageRe = regexp.MustCompile(`(?i)\bWB-([A-F0-9]{6,8})\b`)
 
+// Inline Nama:/HP: pada satu baris chat (mis. "... ada? Nama: supriyanto").
+var recipientNameInlineRe = regexp.MustCompile(`(?i)\bnama\s*:\s*([^?\n,;]+)`)
+var recipientPhoneInlineRe = regexp.MustCompile(`(?i)\b(?:hp|no\.?\s*hp|telp)\s*:\s*(\+?[\d\s-]{8,})`)
+
 func isRevisionNotCancel(userText string) bool {
 	text := strings.ToLower(strings.TrimSpace(userText))
 	return orderRevisionSignals(text, userText)
@@ -190,6 +194,22 @@ var orderStatusInquiryPhrases = []string{
 	"status pesanan", "nomor pesanan", "no pesanan", "cek pesanan", "lihat pesanan",
 	"pesanan yang", "pesanan atas nama", "orderan saya", "pesanan mana",
 	"apakah saya punya", "saya punya pesanan", "masih punya pesanan",
+	"pembeli atas nama saya", "pembeli saya", "pembeli atas nama ini",
+}
+
+var selfBuyerLookupPhrases = []string{
+	"pembeli atas nama saya", "pembeli saya ada", "pembeli atas nama ini",
+	"pembeli saya", "atas nama saya ada", "pembeli ini ada",
+}
+
+var thirdPartyBuyerLookupPhrases = []string{
+	"pembeli dengan nama", "customer dengan nama", "data pembeli",
+	"pelanggan dengan nama", "pembeli atas nama ", "customer atas nama",
+}
+
+var orderHistoryContextPhrases = []string{
+	"pesanan tadi", "order tadi", "yang barusan", "yang tadi", "nomor tadi",
+	"pesanan yang barusan", "yang kamu kirim", "pesanan yang dikirim",
 }
 
 // WantsActiveOrderOnly — tanya pesanan aktif/pending, bukan riwayat dibatalkan.
@@ -243,6 +263,135 @@ func IsOrderStatusInquiry(userText string) bool {
 		(strings.Contains(text, "?") || strings.Contains(text, "ada") ||
 			strings.Contains(text, "berapa") || strings.Contains(text, "cek") ||
 			strings.Contains(text, "status") || strings.Contains(text, "nomor"))
+}
+
+// parseRecipientHintFromMessage extracts Nama:/HP: blocks from buyer chat text.
+func parseRecipientHintFromMessage(userText string) (name, phone string) {
+	if m := recipientNameInlineRe.FindStringSubmatch(userText); len(m) > 1 {
+		name = strings.TrimSpace(m[1])
+	}
+	if m := recipientPhoneInlineRe.FindStringSubmatch(userText); len(m) > 1 {
+		phone = normalizePhoneID(m[1])
+	}
+	if name != "" || phone != "" {
+		return name, phone
+	}
+	return parseRecipientLine(userText)
+}
+
+func hasRecipientHintInMessage(userText string) bool {
+	name, phone := parseRecipientHintFromMessage(userText)
+	text := strings.ToLower(strings.TrimSpace(userText))
+	if phone != "" {
+		return true
+	}
+	if name != "" && (strings.Contains(text, "nama:") || strings.Contains(text, "nama :") ||
+		strings.Contains(text, "pembeli atas nama")) {
+		return true
+	}
+	return false
+}
+
+func isSelfBuyerReference(text string) bool {
+	for _, p := range selfBuyerLookupPhrases {
+		if strings.Contains(text, p) {
+			return true
+		}
+	}
+	if strings.Contains(text, "pembeli") && strings.Contains(text, "nama saya") {
+		return true
+	}
+	return false
+}
+
+// IsSelfBuyerOrderLookup — cek pesanan milik chat ini (termasuk frasa "pembeli atas nama saya/ini").
+func IsSelfBuyerOrderLookup(userText string) bool {
+	text := strings.ToLower(strings.TrimSpace(userText))
+	if text == "" || IsNewPurchaseIntentQuestion(userText) || IsOrderCancelRequest(userText) {
+		return false
+	}
+	if parseOrderRefFromMessage(userText) != "" {
+		return false
+	}
+	if isSelfBuyerReference(text) {
+		return true
+	}
+	if hasRecipientHintInMessage(userText) && strings.Contains(text, "pembeli") {
+		return true
+	}
+	if strings.Contains(text, "pembeli") &&
+		(strings.Contains(text, "saya") || strings.Contains(text, "aku") || strings.Contains(text, " ini")) &&
+		(strings.Contains(text, "?") || strings.Contains(text, "ada")) {
+		return true
+	}
+	return false
+}
+
+// IsThirdPartyBuyerLookup — cari data pembeli/pesanan orang lain (bukan scoped ke chat ini).
+func IsThirdPartyBuyerLookup(userText string) bool {
+	text := strings.ToLower(strings.TrimSpace(userText))
+	if text == "" {
+		return false
+	}
+	if parseOrderRefFromMessage(userText) != "" || IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) {
+		return false
+	}
+	if isSelfBuyerReference(text) || hasRecipientHintInMessage(userText) {
+		return false
+	}
+	for _, p := range thirdPartyBuyerLookupPhrases {
+		if !strings.Contains(text, p) {
+			continue
+		}
+		if p == "pembeli atas nama " || p == "customer atas nama" {
+			rest := text[strings.Index(text, p)+len(p):]
+			rest = strings.TrimSpace(rest)
+			if strings.HasPrefix(rest, "saya") || strings.HasPrefix(rest, "aku") ||
+				strings.HasPrefix(rest, "ini") || strings.HasPrefix(rest, "saya ") {
+				continue
+			}
+		}
+		return true
+	}
+	if strings.Contains(text, "pembeli") && strings.Contains(text, "dengan nama") {
+		return true
+	}
+	return false
+}
+
+func wantsOrderContextFromHistory(userText string) bool {
+	text := strings.ToLower(strings.TrimSpace(userText))
+	for _, p := range orderHistoryContextPhrases {
+		if strings.Contains(text, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func parseOrderRefFromHistory(history []dbMessage) string {
+	if len(history) == 0 {
+		return ""
+	}
+	seen := 0
+	for i := len(history) - 1; i >= 0 && seen < 8; i-- {
+		if history[i].Direction != "out" && history[i].Direction != "system" {
+			continue
+		}
+		seen++
+		if ref := parseOrderRefFromMessage(history[i].Body); ref != "" {
+			return ref
+		}
+	}
+	return ""
+}
+
+func thirdPartyBuyerLookupDeniedReply() string {
+	return "Maaf kak, saya hanya bisa bantu pesanan dari nomor WhatsApp ini. Untuk cek data pembeli lain, silakan hubungi tim toko ya."
+}
+
+func orderRecipientHintNotFoundReply() string {
+	return "Tidak ada pesanan atas nama itu di chat ini ya kak. Sebut nomor pesanan (contoh WB-A1B2C3D4) atau tanya pesanan aktif Anda."
 }
 
 func parseOrderRefFromMessage(userText string) string {
@@ -384,17 +533,77 @@ func loadActiveOrdersForContact(ctx context.Context, q tenantQuerier, tenantSche
 }
 
 type persistedOrderResolve struct {
-	Order        *persistedOrder
-	NeedPick     bool
-	NotFound     bool
-	AccessDenied bool
-	ActiveOnly   bool
-	List         []persistedOrder
+	Order                 *persistedOrder
+	NeedPick              bool
+	NotFound              bool
+	AccessDenied          bool
+	ActiveOnly            bool
+	RecipientHintNotFound bool
+	List                  []persistedOrder
 }
 
-func resolvePersistedOrderStatus(ctx context.Context, q tenantQuerier, tenantSchema string, scope orderAccessScope, userText string) (persistedOrderResolve, error) {
-	activeOnly := WantsActiveOrderOnly(userText)
+func resolveOrderRefFromUserOrHistory(userText string, history []dbMessage) string {
 	if ref := parseOrderRefFromMessage(userText); ref != "" {
+		return ref
+	}
+	if wantsOrderContextFromHistory(userText) {
+		return parseOrderRefFromHistory(history)
+	}
+	return ""
+}
+
+func loadOrderByRecipientHintForContact(ctx context.Context, q tenantQuerier, tenantSchema string, scope orderAccessScope, name, phone string) (*persistedOrder, error) {
+	if !scope.valid() {
+		return nil, nil
+	}
+	name = strings.TrimSpace(name)
+	phone = strings.TrimSpace(phone)
+	if name == "" && phone == "" {
+		return nil, nil
+	}
+	owner := sqlOrderOwnerFilter(1, 2)
+	rows, err := q.QueryContext(ctx, fmt.Sprintf(`
+		SELECT %s
+		FROM "%s"."order"
+		WHERE conversation_id = $1::uuid AND deleted_at IS NULL%s
+		ORDER BY created_at DESC
+		LIMIT 20`, persistedOrderSelectCols, tenantSchema, owner), scope.ConversationID, scope.ContactID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	nameLower := strings.ToLower(name)
+	phoneNorm := normalizePhoneID(phone)
+	for rows.Next() {
+		o, err := scanPersistedOrderRow(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		var ship order.ShippingAddress
+		if len(o.ShippingJSON) > 0 {
+			_ = json.Unmarshal(o.ShippingJSON, &ship)
+		}
+		shipName := strings.ToLower(strings.TrimSpace(ship.Name))
+		shipPhone := normalizePhoneID(strings.TrimSpace(ship.Phone))
+		nameOK := nameLower == "" || shipName == "" ||
+			strings.Contains(shipName, nameLower) || strings.Contains(nameLower, shipName)
+		phoneOK := phoneNorm == "" || shipPhone == "" || shipPhone == phoneNorm
+		if nameLower != "" && shipName != "" && nameOK {
+			if phoneNorm == "" || phoneOK {
+				return o, nil
+			}
+		}
+		if phoneNorm != "" && shipPhone != "" && phoneOK && nameLower == "" {
+			return o, nil
+		}
+	}
+	return nil, rows.Err()
+}
+
+func resolvePersistedOrderStatus(ctx context.Context, q tenantQuerier, tenantSchema string, scope orderAccessScope, userText string, history []dbMessage) (persistedOrderResolve, error) {
+	activeOnly := WantsActiveOrderOnly(userText)
+	if ref := resolveOrderRefFromUserOrHistory(userText, history); ref != "" {
 		o, denied, err := loadOrderByRefForContact(ctx, q, tenantSchema, scope, ref)
 		if err != nil {
 			return persistedOrderResolve{}, err
@@ -404,6 +613,20 @@ func resolvePersistedOrderStatus(ctx context.Context, q tenantQuerier, tenantSch
 		}
 		if o == nil {
 			return persistedOrderResolve{NotFound: true}, nil
+		}
+		if activeOnly && strings.EqualFold(o.Status, "cancelled") {
+			return persistedOrderResolve{ActiveOnly: true}, nil
+		}
+		return persistedOrderResolve{Order: o}, nil
+	}
+	if hasRecipientHintInMessage(userText) {
+		name, phone := parseRecipientHintFromMessage(userText)
+		o, err := loadOrderByRecipientHintForContact(ctx, q, tenantSchema, scope, name, phone)
+		if err != nil {
+			return persistedOrderResolve{}, err
+		}
+		if o == nil {
+			return persistedOrderResolve{RecipientHintNotFound: true}, nil
 		}
 		if activeOnly && strings.EqualFold(o.Status, "cancelled") {
 			return persistedOrderResolve{ActiveOnly: true}, nil
@@ -504,7 +727,7 @@ func loadOrderByRefForContact(ctx context.Context, q tenantQuerier, tenantSchema
 }
 
 func resolvePersistedOrderAction(ctx context.Context, q tenantQuerier, tenantSchema string, scope orderAccessScope, userText string) (*persistedOrder, bool, error) {
-	res, err := resolvePersistedOrderStatus(ctx, q, tenantSchema, scope, userText)
+	res, err := resolvePersistedOrderStatus(ctx, q, tenantSchema, scope, userText, nil)
 	if err != nil {
 		return nil, false, err
 	}

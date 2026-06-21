@@ -272,9 +272,13 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 
 	rlog.Info("AI job: inbound text", "lenUserText", len(userText), "sourceType", inbound.Type)
 
+	if IsThirdPartyBuyerLookup(userText) {
+		return s.handleThirdPartyBuyerLookupDenied(ctx, conn, payload, convo, channel, contact)
+	}
+
 	// Status inquiry sebelum greeting — "halo min punya pesanan aktif?" bukan sapaan murni.
-	if IsOrderStatusInquiry(userText) {
-		return s.handleCustomerOrderStatus(ctx, conn, payload.TenantSchema, payload, convo, channel, contact, userText)
+	if (IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText)) && !wantsOrderContextFromHistory(userText) {
+		return s.handleCustomerOrderStatus(ctx, conn, payload.TenantSchema, payload, convo, channel, contact, userText, nil)
 	}
 
 	if IsGreetingLike(userText) {
@@ -333,8 +337,8 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 			return err == nil, err
 		}
 		// Tanpa draft aktif: "ga jadi beli + ada nomor pesanan?" → jawab status, jangan cancel order lama.
-		if IsOrderStatusInquiry(userText) {
-			return s.handleCustomerOrderStatus(ctx, conn, payload.TenantSchema, payload, convo, channel, contact, userText)
+		if IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) {
+			return s.handleCustomerOrderStatus(ctx, conn, payload.TenantSchema, payload, convo, channel, contact, userText, history)
 		}
 		if ShouldCancelPersistedOrder(userText) {
 			return s.handleCustomerOrderCancel(ctx, conn, payload.TenantSchema, payload, convo, channel, contact, profile, userText)
@@ -346,8 +350,11 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 			orderNoneToCancelReply(), "system", out)
 		return err == nil, err
 	}
-	if IsOrderStatusInquiry(userText) {
-		return s.handleCustomerOrderStatus(ctx, conn, payload.TenantSchema, payload, convo, channel, contact, userText)
+	if IsThirdPartyBuyerLookup(userText) {
+		return s.handleThirdPartyBuyerLookupDenied(ctx, conn, payload, convo, channel, contact)
+	}
+	if IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) {
+		return s.handleCustomerOrderStatus(ctx, conn, payload.TenantSchema, payload, convo, channel, contact, userText, history)
 	}
 
 	clearedOrderForCorrection := false
@@ -543,6 +550,13 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 
 	// ── In-scope question → LLM path ────────────────────────────────────
 	s.resetScopeCounters(ctx, payload.TenantID, convo.ID)
+
+	if IsThirdPartyBuyerLookup(userText) {
+		return s.handleThirdPartyBuyerLookupDenied(ctx, conn, payload, convo, channel, contact)
+	}
+	if IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) {
+		return s.handleCustomerOrderStatus(ctx, conn, payload.TenantSchema, payload, convo, channel, contact, userText, history)
+	}
 
 	cached, _ := s.getCachedAnswer(ctx, payload.TenantID, userText)
 	if cached != "" {
@@ -1236,6 +1250,21 @@ func (s *AutoReplyService) handleCustomerOrderCancel(
 	return send(orderCancelCustomerReply(tone, ref), meta)
 }
 
+func (s *AutoReplyService) handleThirdPartyBuyerLookupDenied(
+	ctx context.Context,
+	conn tenantQuerier,
+	payload AiReplyJobPayload,
+	convo *dbConversation,
+	channel *dbChannel,
+	contact *dbContact,
+) (bool, error) {
+	meta := metaNoLLM(reasonOutOfScope, PathOrderLookupDenied)
+	meta.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
+	err := s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact,
+		thirdPartyBuyerLookupDeniedReply(), "system", meta)
+	return err == nil, err
+}
+
 func (s *AutoReplyService) handleCustomerOrderStatus(
 	ctx context.Context,
 	conn tenantQuerier,
@@ -1245,9 +1274,10 @@ func (s *AutoReplyService) handleCustomerOrderStatus(
 	channel *dbChannel,
 	contact *dbContact,
 	userText string,
+	history []dbMessage,
 ) (bool, error) {
 	scope := orderAccessScope{ConversationID: convo.ID, ContactID: convo.ContactID}
-	res, err := resolvePersistedOrderStatus(ctx, conn, tenantSchema, scope, userText)
+	res, err := resolvePersistedOrderStatus(ctx, conn, tenantSchema, scope, userText, history)
 	if err != nil {
 		return false, err
 	}
@@ -1263,6 +1293,9 @@ func (s *AutoReplyService) handleCustomerOrderStatus(
 	}
 	if res.NotFound {
 		return send(orderRefNotFoundReply(parseOrderRefFromMessage(userText)))
+	}
+	if res.RecipientHintNotFound {
+		return send(orderRecipientHintNotFoundReply())
 	}
 	if res.ActiveOnly && res.Order == nil {
 		return send(orderNoActiveOrdersReply())

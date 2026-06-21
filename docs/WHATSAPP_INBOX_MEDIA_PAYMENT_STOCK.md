@@ -155,6 +155,35 @@ AI jawab stok akurat **per gudang**; order flow tidak membuat draft jika qty mel
 
 ---
 
+## Fase 4b — Order status dari history chat (ownership)
+
+### Tujuan
+
+Pembeli bisa cek pesanan milik chat mereka (termasuk dari history outbound & hint penerima), sambil memblokir lookup pembeli/pesanan orang lain.
+
+### Perubahan
+
+- [x] Early routing `pembeli` / third-party deny → `path: order_lookup_denied`
+- [x] Scoped recipient hint (nama/HP penerima di `shipping_address`)
+- [x] Parse `WB-` dari history outbound (6–8 pesan terakhir)
+- [x] FAQ/LLM bypass untuk intent order lookup (`tryFAQDirectAnswer` skip)
+- [x] Ownership filter tetap lewat `orderAccessScope` + `loadOrderByRefForContact`
+
+### Test
+
+- [x] `order_buyer_lookup_test.go` — Lavana Snack deny, supriyanto hint, pesanan aktif, FAQ skip
+- [x] Regression: `order_ownership_100_test.go`, `order_customer_test.go`
+
+### Test plan manual
+
+- [ ] `saya masih punya pesanan aktif nggak ?` → `order_status`
+- [ ] `pembeli dengan nama Lavana Snack ada ?` → `order_lookup_denied`, tanpa LLM
+- [ ] `pembeli atas nama saya ada ?` → `order_status`
+- [ ] `pembeli atas nama ini ada? Nama: supriyanto` + order scoped penerima supriyanto → `order_status` WB-...
+- [ ] Nama supriyanto tanpa order di scope → tidak ada pesanan di chat ini (tanpa bocor data orang lain)
+
+---
+
 ## Fase 2 — Bukti transfer + flag order
 
 ### Tujuan
