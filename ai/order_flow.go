@@ -585,10 +585,12 @@ func persistDraftOrder(
 		!st.shippingComplete() {
 		return "", fmt.Errorf("order data incomplete")
 	}
-	if reject, _, wh := ensureDraftOrderStock(ctx, tq, st); reject {
+	reject, _, whID := ensureDraftOrderStock(ctx, tq, st)
+	if reject {
 		return "", fmt.Errorf("order qty exceeds available stock")
-	} else if wh != "" {
-		st.WarehouseID = wh
+	}
+	if whID != "" {
+		st.WarehouseID = whID
 	}
 	qty := st.Qty
 	if qty < 1 {
