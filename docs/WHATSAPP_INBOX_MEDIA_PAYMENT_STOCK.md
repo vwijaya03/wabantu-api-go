@@ -306,7 +306,10 @@ AI tidak diam untuk semua gambar non-bukti.
 - [ ] Manual QA: kirim gambar WA → tampil inbox
 - [ ] Manual QA: bukti transfer → flag order → verify manual → processing
 - [ ] Manual QA: auto_verify + FAQ rekening → processing tanpa klik
-- [ ] Manual QA: stok 2, order 5 → AI tolak
+- [ ] Manual QA (Fase 4): 2 gudang (stok 2 + 3) → tanya stok → breakdown + total 5
+- [ ] Manual QA (Fase 4): order qty 5 ditolak (tidak ada gudang tunggal cukup); qty 2 lolos + `warehouseId`
+- [ ] Manual QA (Fase 4): `customer_label` tampil di chat; kosong → pakai `name` gudang
+- [ ] Manual QA (Fase 4): halaman Gudang — tambah/edit label pelanggan tersimpan
 - [ ] `npm run build` / `tsc` web-frontend
 
 ---

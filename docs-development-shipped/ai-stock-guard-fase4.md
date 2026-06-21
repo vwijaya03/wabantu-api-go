@@ -51,10 +51,23 @@ Tidak pernah menampilkan `code` internal.
 
 ## Test
 
+### Otomatis
+
 ```bash
 cd api-go
 encore test ./ai/ -run 'Stock|Warehouse|AdvanceOrderFlow' -count=1
 ```
+
+- [x] `order_stock_guard_test.go` — multi-gudang, `customer_label`, breakdown
+- [x] `order_flow` sim — qty dalam stok gudang default → `warehouseId` terisi
+- [x] Tenant tanpa inventory → perilaku lama (tanpa stok)
+
+### Manual QA
+
+- [ ] Setup 2 gudang (mis. default stok 2 pcs, cabang stok 3 pcs) → tanya stok di WA → breakdown per gudang + total 5
+- [ ] `customer_label` diisi (mis. "Surabaya") → label itu tampil di chat; kosong → pakai `name` gudang
+- [ ] Order qty 5 → ditolak (meski total 5); qty 2 → lolos, draft punya `warehouseId` gudang default
+- [ ] Halaman Gudang (FE): tambah/edit label pelanggan → tersimpan dan dipakai di chat
 
 ---
 
