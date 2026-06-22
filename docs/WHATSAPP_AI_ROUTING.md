@@ -182,6 +182,8 @@ flowchart TD
 5. **`order_intent` dan pesan structured multi-baris** (`IsStructuredOrderList`) dicek **sebelum** `replyFromBusinessCatalog` agar nama produk seperti "LOL Best Seller" tidak memicu daftar katalog.
 6. **Katalog DB** (`catalog_reply.go`) diprioritaskan sebelum classifier out-of-scope untuk pertanyaan list/harga produk — kecuali pesan order terstruktur atau `IsExplicitNewOrderStart`.
 7. **`IsRecommendationRequest`** tidak lagi memakai substring `"best seller"` mentah; hanya frasa intent (mis. `rekomendasi best seller`) dan di-guard jika ada qty / baris bernomor.
+8. **Redis order continuity:** jika `orderState` aktif di `ask_product`/`ask_variant`/`ask_qty` dan pesan menyebut produk katalog (`mau beli abon ...`), `ShouldBreakOrderFlow` **tidak** clear state — lanjut `handleOrderFlow`. Consulting tanpa nama produk (`boleh beli 1 pcs?`) tetap `catalog_db` retail policy.
+9. **Follow-up stok** (`stoknya ready?`) memakai `matchCatalogFromFocusedHistory` — skip outbound list katalog, ambil produk tunggal terakhir.
 
 ---
 
@@ -345,5 +347,6 @@ encore test ./ai/ -run 'BuyerLookup|OrderStatus|Greeting' -count=1
 
 | Tanggal | Perubahan |
 |---------|-----------|
+| 2026-06-22 | Order flow continuity: jangan clear Redis saat produk disebut; follow-up stok dari history |
 | 2026-06-14 | Structured multi-line order + guard catalog hijack (`best seller` false positive) |
 | 2026-06-14 | Dokumen kanonik routing webhook → AI |

@@ -61,7 +61,7 @@ func TestIsStoreLocationQuestion(t *testing.T) {
 		if !IsStoreLocationQuestion(m) {
 			t.Fatalf("expected store location question: %q", m)
 		}
-		if !ShouldBreakOrderFlow(m, "ask_product") {
+		if !ShouldBreakOrderFlow(m, "ask_product", nil) {
 			t.Fatalf("should break order flow: %q", m)
 		}
 	}

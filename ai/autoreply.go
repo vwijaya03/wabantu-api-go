@@ -326,6 +326,12 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return false, err
 	}
 
+	catalog, catLoadErr := loadActiveCatalog(ctx, conn, 50)
+	if catLoadErr != nil {
+		rlog.Warn("AI job: catalog load failed", "err", catLoadErr)
+	}
+	enrichCatalogStock(ctx, conn, catalog)
+
 	if IsOrderCancelRequest(userText) {
 		orderSt, _ := s.getOrderState(ctx, payload.TenantID, convo.ID)
 		s.clearOrderState(ctx, payload.TenantID, convo.ID)
@@ -364,7 +370,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	// Active order flow — only when message is really continuing checkout (not greeting/harga/batal).
 	if orderSt, _ := s.getOrderState(ctx, payload.TenantID, convo.ID); orderSt != nil {
 		tone := strOrEmpty(profile.Tone)
-		if ShouldBreakOrderFlow(userText, orderSt.Step) {
+		if ShouldBreakOrderFlow(userText, orderSt.Step, catalog) {
 			clearedOrderForCorrection = IsUserSalesCorrection(userText)
 			s.clearOrderState(ctx, payload.TenantID, convo.ID)
 			rlog.Info("AI job: order flow cleared for new intent", "prevStep", orderSt.Step, "correction", clearedOrderForCorrection)
@@ -402,12 +408,6 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	if !inScope && (IsActiveCheckoutFromHistory(history, userText) || IsAcknowledgmentLike(userText)) {
 		inScope = true
 	}
-
-	catalog, catLoadErr := loadActiveCatalog(ctx, conn, 50)
-	if catLoadErr != nil {
-		rlog.Warn("AI job: catalog load failed", "err", catLoadErr)
-	}
-	enrichCatalogStock(ctx, conn, catalog)
 
 	orderActiveNow, _ := s.getOrderState(ctx, payload.TenantID, convo.ID)
 	intent := ResolveSalesIntent(userText, history, orderActiveNow != nil, inScope, profile, catalog)

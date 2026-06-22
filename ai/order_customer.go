@@ -109,7 +109,7 @@ func IsNewPurchaseIntentQuestion(userText string) bool {
 			return false
 		}
 	}
-	if IsConsultingPurchaseQuestion(userText) {
+	if IsConsultingPurchaseQuestion(userText, nil) {
 		return true
 	}
 	wants := strings.Contains(text, "mau") || hasOrderIntentText(userText)
