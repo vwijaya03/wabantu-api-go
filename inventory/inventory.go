@@ -41,6 +41,7 @@ type Warehouse struct {
 	ID                 string    `json:"id"`
 	Code               string    `json:"code"`
 	Name               string    `json:"name"`
+	CustomerLabel      *string   `json:"customerLabel,omitempty"`
 	ExternalLocationID *int      `json:"externalLocationId,omitempty"`
 	IsDefault          bool      `json:"isDefault"`
 	IsActive           bool      `json:"isActive"`
@@ -77,9 +78,10 @@ type ListWarehousesResponse struct {
 }
 
 type WarehouseInput struct {
-	Code         string  `json:"code"`
-	Name         string  `json:"name"`
-	Address      *string `json:"address"`
+	Code          string  `json:"code"`
+	Name          string  `json:"name"`
+	CustomerLabel *string `json:"customerLabel"`
+	Address       *string `json:"address"`
 	Note         *string `json:"note"`
 	IsActive     *bool   `json:"isActive"`
 	DisplayOrder *int    `json:"displayOrder"`
@@ -296,7 +298,7 @@ func ListWarehouses(ctx context.Context, p *ListWarehousesParams) (*ListWarehous
 	}
 
 	query := fmt.Sprintf(`
-		SELECT w.id, w.code, w.name, w.external_location_id, w.is_default, w.is_active,
+		SELECT w.id, w.code, w.name, w.customer_label, w.external_location_id, w.is_default, w.is_active,
 		       w.address, w.note, w.display_order, w.created_at, w.updated_at,
 		       w.deleted_at IS NOT NULL AS is_deleted
 		FROM inv_warehouse w
@@ -317,9 +319,9 @@ func ListWarehouses(ctx context.Context, p *ListWarehousesParams) (*ListWarehous
 	for rows.Next() {
 		var w Warehouse
 		var extLoc sql.NullInt64
-		var address, note sql.NullString
+		var customerLabel, address, note sql.NullString
 		if err := rows.Scan(
-			&w.ID, &w.Code, &w.Name, &extLoc, &w.IsDefault, &w.IsActive,
+			&w.ID, &w.Code, &w.Name, &customerLabel, &extLoc, &w.IsDefault, &w.IsActive,
 			&address, &note, &w.DisplayOrder, &w.CreatedAt, &w.UpdatedAt, &w.IsDeleted,
 		); err != nil {
 			return nil, appErrs.Internal(err.Error())
@@ -327,6 +329,10 @@ func ListWarehouses(ctx context.Context, p *ListWarehousesParams) (*ListWarehous
 		if extLoc.Valid {
 			v := int(extLoc.Int64)
 			w.ExternalLocationID = &v
+		}
+		if customerLabel.Valid && strings.TrimSpace(customerLabel.String) != "" {
+			v := customerLabel.String
+			w.CustomerLabel = &v
 		}
 		if address.Valid && strings.TrimSpace(address.String) != "" {
 			w.Address = &address.String
@@ -399,11 +405,11 @@ func CreateWarehouse(ctx context.Context, p *WarehouseInput) (*Warehouse, error)
 	}
 
 	row := conn.QueryRowContext(ctx, `
-		INSERT INTO inv_warehouse (code, name, is_active, address, note, display_order, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		RETURNING id, code, name, external_location_id, is_default, is_active,
+		INSERT INTO inv_warehouse (code, name, customer_label, is_active, address, note, display_order, created_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING id, code, name, customer_label, external_location_id, is_default, is_active,
 		          address, note, display_order, created_at, updated_at`,
-		code, name, isActive, trimPtr(p.Address), trimPtr(p.Note), displayOrder, nullUUID(u.AccountID))
+		code, name, trimPtr(p.CustomerLabel), isActive, trimPtr(p.Address), trimPtr(p.Note), displayOrder, nullUUID(u.AccountID))
 	w, err := scanWarehouse(row.Scan)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
@@ -438,15 +444,16 @@ func UpdateWarehouse(ctx context.Context, id string, p *WarehouseInput) (*Wareho
 	row := conn.QueryRowContext(ctx, `
 		UPDATE inv_warehouse
 		SET name = $2,
-		    address = $3,
-		    note = $4,
-		    is_active = $5,
-		    display_order = COALESCE($6, display_order),
+		    customer_label = $3,
+		    address = $4,
+		    note = $5,
+		    is_active = $6,
+		    display_order = COALESCE($7, display_order),
 		    updated_at = now()
 		WHERE id = $1 AND deleted_at IS NULL
-		RETURNING id, code, name, external_location_id, is_default, is_active,
+		RETURNING id, code, name, customer_label, external_location_id, is_default, is_active,
 		          address, note, display_order, created_at, updated_at`,
-		id, name, trimPtr(p.Address), trimPtr(p.Note), isActive, p.DisplayOrder)
+		id, name, trimPtr(p.CustomerLabel), trimPtr(p.Address), trimPtr(p.Note), isActive, p.DisplayOrder)
 	w, err := scanWarehouse(row.Scan)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, appErrs.NotFound("gudang tidak ditemukan")
@@ -516,7 +523,7 @@ func ReactivateWarehouse(ctx context.Context, id string) (*Warehouse, error) {
 		UPDATE inv_warehouse
 		SET deleted_at = NULL, deleted_by = NULL, is_active = true, updated_at = now()
 		WHERE id = $1
-		RETURNING id, code, name, external_location_id, is_default, is_active,
+		RETURNING id, code, name, customer_label, external_location_id, is_default, is_active,
 		          address, note, display_order, created_at, updated_at`, id)
 	w, err := scanWarehouse(row.Scan)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -533,9 +540,9 @@ func ReactivateWarehouse(ctx context.Context, id string) (*Warehouse, error) {
 func scanWarehouse(scan func(dest ...any) error) (Warehouse, error) {
 	var w Warehouse
 	var extLoc sql.NullInt64
-	var address, note sql.NullString
+	var customerLabel, address, note sql.NullString
 	if err := scan(
-		&w.ID, &w.Code, &w.Name, &extLoc, &w.IsDefault, &w.IsActive,
+		&w.ID, &w.Code, &w.Name, &customerLabel, &extLoc, &w.IsDefault, &w.IsActive,
 		&address, &note, &w.DisplayOrder, &w.CreatedAt, &w.UpdatedAt,
 	); err != nil {
 		return w, err
@@ -543,6 +550,10 @@ func scanWarehouse(scan func(dest ...any) error) (Warehouse, error) {
 	if extLoc.Valid {
 		v := int(extLoc.Int64)
 		w.ExternalLocationID = &v
+	}
+	if customerLabel.Valid && strings.TrimSpace(customerLabel.String) != "" {
+		v := customerLabel.String
+		w.CustomerLabel = &v
 	}
 	if address.Valid && strings.TrimSpace(address.String) != "" {
 		w.Address = &address.String

@@ -131,24 +131,56 @@ Staff/owner melihat gambar yang dikirim pelanggan di Inbox.
 
 ### Tujuan
 
-AI jawab stok akurat; order flow tidak membuat draft jika qty > stok.
+AI jawab stok akurat **per gudang**; order flow tidak membuat draft jika qty melebihi stok **satu gudang mana pun** (bukan total gabungan).
 
 ### Perubahan
 
-- [ ] `enrichCatalogStock`: gunakan **available** (`on_hand - reserved`), bukan hanya `on_hand`
-- [ ] `order_flow.go` step qty: jika `qty > StockAvailable` → balas tolak + minta kurangi ( **tanpa** alternatif produk )
-- [ ] Sebelum `persistDraftOrder`: precheck stok ringan (reuse `inventory.PrecheckOrderStock` atau helper per item)
-- [ ] Wording: gunakan `formatStockLabel` existing (`habis` jika ≤ 0)
+- [x] `enrichCatalogStock`: **available** (`on_hand - reserved`) per gudang
+- [x] Inquiry stok: breakdown per gudang + total (jika >1 gudang)
+- [x] Label gudang ke pembeli: `customer_label` jika diisi, else `name` gudang (bukan `code`, bukan label generik)
+- [x] `order_flow` step qty: tolak jika tidak ada gudang tunggal yang cukup; auto-assign gudang default lalu `display_order`
+- [x] `persistDraftOrder`: set `items[].warehouseId` + precheck DB
+- [x] Kolom `inv_warehouse.customer_label` + form gudang di web-frontend
 
 ### Test
 
-- [ ] `catalog_reply_test.go` — habis / tersedia
-- [ ] `order_flow` — qty 5, stok 2 → tidak persist draft
-- [ ] Tenant tanpa inventory → perilaku lama (tanpa stok)
+- [x] `order_stock_guard_test.go` — multi-gudang, customer_label, breakdown
+- [x] `order_flow` sim — qty dalam stok gudang default → `warehouseId` terisi
+- [x] Tenant tanpa inventory → perilaku lama (tanpa stok)
 
 ### PR
 
-- Dominan `api-go/ai/` + `inventory/`; FE opsional (badge stok di order jika precheck gagal saat ubah status).
+- `api-go`: `ai/`, `inventory/`, migration tenant
+- `web-frontend`: field label pelanggan di halaman Gudang
+
+---
+
+## Fase 4b — Order status dari history chat (ownership)
+
+### Tujuan
+
+Pembeli bisa cek pesanan milik chat mereka (termasuk dari history outbound & hint penerima), sambil memblokir lookup pembeli/pesanan orang lain.
+
+### Perubahan
+
+- [x] Early routing `pembeli` / third-party deny → `path: order_lookup_denied`
+- [x] Scoped recipient hint (nama/HP penerima di `shipping_address`)
+- [x] Parse `WB-` dari history outbound (6–8 pesan terakhir)
+- [x] FAQ/LLM bypass untuk intent order lookup (`tryFAQDirectAnswer` skip)
+- [x] Ownership filter tetap lewat `orderAccessScope` + `loadOrderByRefForContact`
+
+### Test
+
+- [x] `order_buyer_lookup_test.go` — Lavana Snack deny, supriyanto hint, pesanan aktif, FAQ skip
+- [x] Regression: `order_ownership_100_test.go`, `order_customer_test.go`
+
+### Test plan manual
+
+- [ ] `saya masih punya pesanan aktif nggak ?` → `order_status`
+- [ ] `pembeli dengan nama Lavana Snack ada ?` → `order_lookup_denied`, tanpa LLM
+- [ ] `pembeli atas nama saya ada ?` → `order_status`
+- [ ] `pembeli atas nama ini ada? Nama: supriyanto` + order scoped penerima supriyanto → `order_status` WB-...
+- [ ] Nama supriyanto tanpa order di scope → tidak ada pesanan di chat ini (tanpa bocor data orang lain)
 
 ---
 
@@ -303,7 +335,10 @@ AI tidak diam untuk semua gambar non-bukti.
 - [ ] Manual QA: kirim gambar WA → tampil inbox
 - [ ] Manual QA: bukti transfer → flag order → verify manual → processing
 - [ ] Manual QA: auto_verify + FAQ rekening → processing tanpa klik
-- [ ] Manual QA: stok 2, order 5 → AI tolak
+- [ ] Manual QA (Fase 4): 2 gudang (stok 2 + 3) → tanya stok → breakdown + total 5
+- [ ] Manual QA (Fase 4): order qty 5 ditolak (tidak ada gudang tunggal cukup); qty 2 lolos + `warehouseId`
+- [ ] Manual QA (Fase 4): `customer_label` tampil di chat; kosong → pakai `name` gudang
+- [ ] Manual QA (Fase 4): halaman Gudang — tambah/edit label pelanggan tersimpan
 - [ ] `npm run build` / `tsc` web-frontend
 
 ---

@@ -2,7 +2,7 @@
 
 > **Audience:** Senior full-stack developers from Node.js/TypeScript (Express, NestJS, Prisma/TypeORM) learning **Go** and **Encore**.  
 > **Codebase:** `api-go/` — Encore rewrite of NestJS `api/`.  
-> **Companion docs:** [README.md](./README.md) · [APP_FLOW_GUIDE.md](./APP_FLOW_GUIDE.md) · [ENDPOINT_COMPATIBILITY.md](./ENDPOINT_COMPATIBILITY.md) · **[LIMITS_AND_QUOTAS.md](./LIMITS_AND_QUOTAS.md)** (rate limit, trial/paid kuota, billing checkout) · **[docs/FINANCE_MODULE.md](./docs/FINANCE_MODULE.md)** (modul keuangan) · **[docs/ORDER_CUSTOMER_CHAT.md](./docs/ORDER_CUSTOMER_CHAT.md)** (nomor pesanan, cancel & status via chat)
+> **Companion docs:** [README.md](./README.md) · [APP_FLOW_GUIDE.md](./APP_FLOW_GUIDE.md) · [ENDPOINT_COMPATIBILITY.md](./ENDPOINT_COMPATIBILITY.md) · **[docs/README.md](./docs/README.md)** (indeks docs) · **[docs/WHATSAPP_AI_ROUTING.md](./docs/WHATSAPP_AI_ROUTING.md)** (webhook → AI routing) · **[LIMITS_AND_QUOTAS.md](./LIMITS_AND_QUOTAS.md)** (rate limit, trial/paid kuota, billing checkout) · **[docs/FINANCE_MODULE.md](./docs/FINANCE_MODULE.md)** (modul keuangan) · **[docs/ORDER_CUSTOMER_CHAT.md](./docs/ORDER_CUSTOMER_CHAT.md)** (nomor pesanan, cancel & status via chat)
 
 **Baru belajar Go?** Langsung ke **[Bagian 18 Go untuk developer Node.js](#18-go-language-guide-for-nodejs-developers-with-wabantu-examples)** — penjelasan pointer, error, context, interface, dll. dengan contoh nyata dari repo ini.
 
@@ -927,6 +927,8 @@ Defined in `tenantDDL` — e.g. `idx_message_conv_created`, `idx_wa_channel_phon
 **Penting:** Beberapa tenant **tidak boleh** menyimpan `meta_phone_number_id` / nomor Meta yang **sama**. Meta mengirim webhook hanya dengan `phone_number_id`; jika duplikat di DB, pesan masuk ke tenant pertama yang kebetulan ter-scan (bug lama) atau error **ambiguous** (perilaku baru). Satu nomor WA Cloud API = satu tenant di WABantu.
 
 ## 7.3 Inbound webhook → AI reply
+
+**Dokumen kanonik (decision tree, tabel deteksi, debug):** [docs/WHATSAPP_AI_ROUTING.md](./docs/WHATSAPP_AI_ROUTING.md).
 
 See sequence in Bagian 5. Key branches:
 

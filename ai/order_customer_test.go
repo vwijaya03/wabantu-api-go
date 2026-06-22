@@ -89,6 +89,9 @@ func TestIsOrderStatusInquiry(t *testing.T) {
 		want bool
 	}{
 		{"pesanan yang atas nama saya ada kah ?", true},
+		{"pembeli atas nama saya ada ?", true},
+		{"saya masih punya pesanan aktif nggak ?", true},
+		{"pembeli dengan nama Lavana Snack ada ?", false},
 		{"status pesanan saya", true},
 		{"order mana yang kamu batalkan ?", true},
 		{"mau saya batalkan ya", false},

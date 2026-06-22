@@ -73,6 +73,9 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 			if st.Qty > 0 {
 				base.Qty = st.Qty
 			}
+			if st.WarehouseID != "" {
+				base.WarehouseID = st.WarehouseID
+			}
 			if st.UnitPrice > 0 {
 				base.UnitPrice = st.UnitPrice
 			}
@@ -133,6 +136,10 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 			}
 			inferVariantFromProductName(&st)
 			if st.variantComplete() && st.Qty > 0 {
+				st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
+				if blocked {
+					return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
+				}
 				st.Step = "ask_recipient"
 				return OrderFlowResult{
 					State: &st, Path: PathOrderFlow,
@@ -165,6 +172,10 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 			}
 			if st.variantComplete() {
 				if st.Qty > 0 {
+					st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
+				if blocked {
+						return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
+					}
 					st.Step = "ask_recipient"
 					return OrderFlowResult{
 						State: &st, Path: PathOrderFlow,
@@ -239,6 +250,10 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 				Reply: buildOrderFlowReply(st, tmpl.AskQty, catalog),
 			}
 		}
+		st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
+				if blocked {
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
+		}
 		st.Step = "ask_recipient"
 		return OrderFlowResult{
 			State: &st, Path: PathOrderFlow,
@@ -266,6 +281,10 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 					Reply: buildOrderFlowReply(st, tmpl.AskQty, catalog),
 				}
 			}
+			st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
+				if blocked {
+				return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
+			}
 			st.Step = "ask_recipient"
 			return OrderFlowResult{
 				State: &st, Path: PathOrderFlow,
@@ -280,6 +299,10 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 			st.Color = cl
 		}
 		if st.variantComplete() && st.Qty > 0 {
+			st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
+				if blocked {
+				return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
+			}
 			st.Step = "ask_recipient"
 			return OrderFlowResult{
 				State: &st, Path: PathOrderFlow,
@@ -307,6 +330,10 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 				Reply: buildOrderFlowReply(st, tmpl.AskQty, catalog),
 			}
 		}
+		st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
+				if blocked {
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
+		}
 		st.Step = "ask_recipient"
 		return OrderFlowResult{
 			State: &st, Path: PathOrderFlow,
@@ -325,12 +352,20 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: tmpl.ClarifyQty}
 		}
 		st.Qty = qty
+		st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
+				if blocked {
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
+		}
 		st.Step = "ask_recipient"
 		return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: tmpl.AskRecipient}
 
 	case "ask_recipient":
 		st := copyBase(stateNorm)
 		if tryApplyQtyRevision(&st, userText) {
+			st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
+				if blocked {
+				return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
+			}
 			return OrderFlowResult{
 				State: &st, Path: PathOrderFlow,
 				Reply: buildOrderFlowReply(st, tmpl.AskRecipient, catalog),
@@ -360,6 +395,10 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 					Reply: buildOrderFlowReply(st, missing, catalog),
 				}
 			}
+			st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
+				if blocked {
+				return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
+			}
 			if persist != nil {
 				orderID, err := persist(st)
 				if err != nil {
@@ -384,6 +423,10 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 	case "ask_address", "ask_address_full":
 		st := copyBase(stateNorm)
 		if tryApplyQtyRevision(&st, userText) {
+			st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
+				if blocked {
+				return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
+			}
 			return OrderFlowResult{
 				State: &st, Path: PathOrderFlow,
 				Reply: buildOrderFlowReply(st, tmpl.AskRecipient, catalog),
@@ -398,6 +441,10 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 				State: &st, Path: PathOrderFlow,
 				Reply: buildOrderFlowReply(st, missing, catalog),
 			}
+		}
+		st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
+				if blocked {
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
 		}
 		if persist != nil {
 			orderID, err := persist(st)

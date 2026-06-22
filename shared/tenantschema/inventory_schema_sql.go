@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS inv_warehouse (
     id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     code                 VARCHAR(40)  NOT NULL,
     name                 VARCHAR(120) NOT NULL,
+    customer_label       VARCHAR(80),
     external_location_id INT,
     is_default           BOOLEAN      NOT NULL DEFAULT false,
     is_active            BOOLEAN      NOT NULL DEFAULT true,

@@ -442,6 +442,8 @@ pubsub AIJobs.Publish (topic "ai-jobs")
 
 File: `webhook/webhook.go`, `whatsapp/whatsapp.go`.
 
+**Detail lengkap** (workflow intercept, Pub/Sub, side effects): **[docs/WHATSAPP_AI_ROUTING.md](./docs/WHATSAPP_AI_ROUTING.md)** §Fase 1.
+
 **OAuth / connect channel:** service `whatsappapi/` — init + callback; kirim pesan memakai library `whatsapp/`.
 
 ---
@@ -451,7 +453,7 @@ File: `webhook/webhook.go`, `whatsapp/whatsapp.go`.
 1. Webhook simpan pesan masuk → `ai.PublishInboundJob` → topic Pub/Sub **`ai-jobs`**.
 2. Subscriber **`ai-auto-reply`** (`ai/inbound_jobs.go`) jalan **di proses yang sama** dengan `encore run` (bukan proses Node terpisah).
 3. Retry Encore + counter Redis; gagal berulang → fallback internal.
-4. `ai/autoreply.go` — orchestrator: greeting, order flow (Redis + katalog DB), **catalog_reply** (list/harga dari DB), scope/classifier, FAQ, routing model (Haiku/Sonnet), Anthropic, kirim WhatsApp. Modul: `order_flow.go`, `order_catalog.go`, `catalog_reply.go`, `greeting.go`, `product_scope.go`, `safety.go`, `classifier_routing.go`.
+4. `ai/autoreply.go` — orchestrator utama. **Decision tree, tabel deteksi intent, dan semua path metadata:** **[docs/WHATSAPP_AI_ROUTING.md](./docs/WHATSAPP_AI_ROUTING.md)**.
 5. **Workflow** (`workflow/`) bisa intercept sebelum AI (keyword → balasan / handoff). CRUD: `GET/POST/PATCH/DELETE /api/v1/workflows` (PATCH/DELETE owner).
 6. Log AI (super_admin): `GET /api/v1/admin/tenant/:id/ai-activity` (+ summary); FE `/dashboard/admin/ai-activity`.
 

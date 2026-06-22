@@ -65,7 +65,7 @@ inv_warehouse (gudang)  ──────────┐                       
 | Tabel | Keterangan |
 |-------|------------|
 | `inv_setting` | Singleton per tenant: `setup_completed`, `default_costing_method` (fifo/lifo/average), `block_negative_stock`, `wizard_answers`, `wizard_recommendation` |
-| `inv_warehouse` | Gudang. `is_default` (unik), `external_location_id` (−1 untuk default), `code` (unik, soft-delete aware) |
+| `inv_warehouse` | Gudang. `is_default` (unik), `external_location_id` (−1 untuk default), `code` (unik, soft-delete aware), `customer_label` (opsional — label ke pembeli di chat WhatsApp; fallback `name`) |
 | `inv_sku` | Config inventory per `catalog_item_id`: `track_stock`, `is_bundle`, `costing_method` (override, nullable=inherit), `track_batch/serial/expiry`, `base_uom` |
 | `inv_cost_layer` | (A2) Layer biaya FIFO/LIFO: `qty_remaining`, `unit_cost`, `batch_no`, `expiry_date`, `source_movement_id` |
 | `inv_stock_balance` | (A2) Snapshot per (item, gudang): `on_hand`, `reserved`, `avg_unit_cost`, `total_value` |
@@ -368,7 +368,7 @@ Memenuhi syarat "owner/superadmin pasti bisa". ACL granular per-staff = enhancem
 
 ## 13. AI WhatsApp stok real + backfill order lama (PR-A10)
 
-**AI stok real**: `enrichCatalogStock` menambahkan stok tersedia (`SUM(on_hand)` per
+**AI stok real**: `enrichCatalogStock` menambahkan stok tersedia (`SUM(GREATEST(on_hand - reserved, 0))` per
 item yang `track_stock`) ke katalog yang dipakai balasan AI — **gated** `setup_completed`
 dan best-effort (error/tabel belum ada → tanpa stok). Balasan produk
 (`buildCatalogItemReply`) menambah baris "Stok tersedia: N" (atau "habis").

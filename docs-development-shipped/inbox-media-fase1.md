@@ -57,7 +57,7 @@ Tipe yang bisa di-proxy: `image`, `video`, `audio`, `document`, `sticker`.
 
 ## Frontend (repo terpisah)
 
-UI: PR [web-frontend #25](https://github.com/vwijaya03/wabantu-web-frontend/pull/25) — lihat [`web-frontend/shipped/inbox-media-fase1.md`](../../web-frontend/shipped/inbox-media-fase1.md).
+UI: PR [web-frontend #25](https://github.com/vwijaya03/wabantu-web-frontend/pull/25) — lihat [`web-frontend/docs-development-shipped/inbox-media-fase1.md`](../../web-frontend/docs-development-shipped/inbox-media-fase1.md).
 
 ---
 

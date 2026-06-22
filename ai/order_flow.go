@@ -585,6 +585,13 @@ func persistDraftOrder(
 		!st.shippingComplete() {
 		return "", fmt.Errorf("order data incomplete")
 	}
+	reject, _, whID := ensureDraftOrderStock(ctx, tq, st)
+	if reject {
+		return "", fmt.Errorf("order qty exceeds available stock")
+	}
+	if whID != "" {
+		st.WarehouseID = whID
+	}
 	qty := st.Qty
 	if qty < 1 {
 		qty = 1
@@ -604,6 +611,7 @@ func persistDraftOrder(
 		Qty:           float64(qty),
 		UnitPrice:     unitPrice,
 		SellUnit:      st.SellUnit,
+		WarehouseID:   strings.TrimSpace(st.WarehouseID),
 	}
 	subtotal := float64(qty) * unitPrice
 	addr := order.ShippingAddress{
