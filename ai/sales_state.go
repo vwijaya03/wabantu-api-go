@@ -43,6 +43,21 @@ func hasExplicitCartReadyPhrase(text string) bool {
 	return false
 }
 
+// isHistoryBackedPurchaseIntent — "mau beli 2 lusin" tanpa nama produk, produk jelas dari outbound terakhir.
+func isHistoryBackedPurchaseIntent(userText string, history []dbMessage, catalog []dbCatalogItem) bool {
+	if !mentionsOrderQty(userText) {
+		return false
+	}
+	text := strings.ToLower(strings.TrimSpace(userText))
+	if !(strings.Contains(text, "mau beli") || hasOrderIntentText(userText)) {
+		return false
+	}
+	if matchCatalogItem(userText, catalog) != nil {
+		return false
+	}
+	return matchCatalogFromFocusedHistory(history, catalog) != nil
+}
+
 // IsConsultingPurchaseQuestion — "boleh beli 1 pcs?", "kalau order satu bisa?" (CONSULTING, bukan CART_READY).
 func IsConsultingPurchaseQuestion(userText string, catalog []dbCatalogItem) bool {
 	text := strings.ToLower(strings.TrimSpace(userText))

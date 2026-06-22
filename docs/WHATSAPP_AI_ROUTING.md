@@ -183,7 +183,9 @@ flowchart TD
 6. **Katalog DB** (`catalog_reply.go`) diprioritaskan sebelum classifier out-of-scope untuk pertanyaan list/harga produk — kecuali pesan order terstruktur atau `IsExplicitNewOrderStart`.
 7. **`IsRecommendationRequest`** tidak lagi memakai substring `"best seller"` mentah; hanya frasa intent (mis. `rekomendasi best seller`) dan di-guard jika ada qty / baris bernomor.
 8. **Redis order continuity:** jika `orderState` aktif di `ask_product`/`ask_variant`/`ask_qty` dan pesan menyebut produk katalog (`mau beli abon ...`), `ShouldBreakOrderFlow` **tidak** clear state — lanjut `handleOrderFlow`. Consulting tanpa nama produk (`boleh beli 1 pcs?`) tetap `catalog_db` retail policy.
-9. **Follow-up stok** (`stoknya ready?`) memakai `matchCatalogFromFocusedHistory` — skip outbound list katalog, ambil produk tunggal terakhir.
+9. **History-backed purchase:** `mau beli 2 lusin` + stok? tanpa nama produk di pesan, tapi outbound terakhir menyebut satu produk (mis. Abon) → `order_intent` / `order_flow`, bukan retail policy.
+10. **Sell inquiry:** `jual abon sapi?` → `catalog_db` (`IsProductSellInquiry`), bukan LLM.
+11. **Stock follow-up:** `stoknya ada?` / `ada ga?` pendek → resolve produk dari `matchCatalogFromFocusedHistory` — skip outbound list katalog.
 
 ---
 
@@ -200,6 +202,8 @@ flowchart TD
 | `IsGreetingFeedback` | `ai/greeting.go` | `makasih min` setelah sapaan | `greeting` | Tidak |
 | `IsPromptInjectionLikely` | `ai/safety.go` | Upaya manipulasi sistem | `injection_guard` | Tidak |
 | `replyFromBusinessCatalog` | `ai/catalog_reply.go` | `list produk`, `listkan semua jualan`, `harga kaos L`, caption foto produk | `catalog_db` | Tidak |
+| `IsProductSellInquiry` | `ai/catalog_reply.go` | `jual abon sapi?`, `kalian jualan abon?` | `catalog_db` | Tidak |
+| `isHistoryBackedPurchaseIntent` | `ai/sales_state.go` | `mau beli 2 lusin` + produk dari outbound terakhir | `order_flow` (via intent) | Tidak |
 | `IsStructuredOrderList` | `ai/order_structured.go` | `mau buat pesanan baru` + baris `1. Produk qty ukuran` | `order_flow` | Tidak |
 | `IsExplicitNewOrderStart` | `ai/order_customer.go` | `buat pesanan baru`, `pesanan baru` | `order_flow` (via intent) | Tidak |
 | `ResolveSalesIntent` | `ai/sales_intent.go` | Menggabungkan sinyal → `SalesState` / topic | Mempengaruhi classifier label | — |
@@ -347,6 +351,7 @@ encore test ./ai/ -run 'BuyerLookup|OrderStatus|Greeting' -count=1
 
 | Tanggal | Perubahan |
 |---------|-----------|
+| 2026-06-22 | History-backed purchase: `mau beli N lusin` + produk dari outbound → `order_flow`; `jual [produk]?` → `catalog_db`; follow-up `stoknya ada` |
 | 2026-06-22 | Order flow continuity: jangan clear Redis saat produk disebut; follow-up stok dari history |
 | 2026-06-14 | Structured multi-line order + guard catalog hijack (`best seller` false positive) |
 | 2026-06-14 | Dokumen kanonik routing webhook → AI |

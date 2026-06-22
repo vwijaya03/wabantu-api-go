@@ -104,6 +104,25 @@ func isGeneralStoreCatalogQuestion(userText string) bool {
 	return false
 }
 
+// IsProductSellInquiry — "jual abon sapi?" (produk tertentu dijual atau tidak).
+func IsProductSellInquiry(userText string, catalog []dbCatalogItem) bool {
+	if HasPurchaseIntent(userText) || IsConsultingPurchaseQuestion(userText, catalog) {
+		return false
+	}
+	text := strings.ToLower(strings.TrimSpace(userText))
+	if text == "" || !IsQuestionLike(userText) {
+		return false
+	}
+	if isGeneralStoreCatalogQuestion(userText) {
+		return false
+	}
+	hasSell := strings.Contains(text, "jual") || strings.Contains(text, "jualan") || strings.Contains(text, "menjual")
+	if !hasSell {
+		return false
+	}
+	return matchCatalogItem(userText, catalog) != nil
+}
+
 // IsCatalogProductInquiry — tanya harga/stok produk tertentu (bukan checkout).
 func IsCatalogProductInquiry(userText string) bool {
 	if HasPurchaseIntent(userText) || IsConsultingPurchaseQuestion(userText, nil) {
@@ -292,17 +311,23 @@ func isStockOrAvailabilityFollowUp(userText string, catalog []dbCatalogItem) boo
 		return false
 	}
 	signals := []string{
-		"stoknya", "stok nya", "ready ga", "ready gak", "ready nggak",
+		"stoknya", "stok nya", "stoknya ada", "stok ada",
+		"ready ga", "ready gak", "ready nggak",
 		"masih ready", "masih ada", "ready ?", "ready?",
+		"ada ga", "ada gak", "ada nggak",
 	}
 	for _, s := range signals {
 		if strings.Contains(text, s) {
 			return true
 		}
 	}
+	words := strings.Fields(strings.NewReplacer("?", "", "!", "").Replace(text))
+	if len(words) <= 3 && (text == "ada" || strings.HasPrefix(text, "ada ")) &&
+		(strings.Contains(text, "?") || IsQuestionLike(userText)) {
+		return true
+	}
 	if (strings.Contains(text, "stok") || strings.Contains(text, "ready")) &&
 		(strings.Contains(text, "?") || IsQuestionLike(userText)) {
-		words := strings.Fields(strings.NewReplacer("?", "", "!", "").Replace(text))
 		if len(words) <= 4 {
 			return true
 		}
@@ -518,8 +543,23 @@ func replyFromBusinessCatalog(
 		return "", false
 	}
 
+	if isHistoryBackedPurchaseIntent(userText, history, catalog) {
+		return "", false
+	}
+
+	if IsProductSellInquiry(userText, catalog) {
+		if match := resolveCatalogMatch(userText, history, catalog); match != nil {
+			return buildCatalogItemReply(formal, match, 0), true
+		}
+	}
+
 	if IsConsultingPurchaseQuestion(userText, catalog) {
 		if match := resolveCatalogMatch(userText, history, catalog); match != nil {
+			text := strings.ToLower(strings.TrimSpace(userText))
+			if isAvailabilityQuestion(text) || isStockOrAvailabilityFollowUp(userText, catalog) {
+				qty, _ := parseOrderQty(userText)
+				return buildCatalogItemReply(formal, match, qty), true
+			}
 			return buildRetailPolicyReply(formal, match), true
 		}
 	}
