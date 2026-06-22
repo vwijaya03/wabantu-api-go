@@ -12,3 +12,24 @@ func TestFormatOrderNumber(t *testing.T) {
 		t.Fatal("empty id should return empty ref")
 	}
 }
+
+func TestOrderRefUUIDPrefix(t *testing.T) {
+	tests := []struct {
+		q    string
+		want string
+	}{
+		{"WB-58D662BC", "58D662BC"},
+		{"wb-58d662bc", "58D662BC"},
+		{"WB-EB76635C", "EB76635C"},
+		{"58D662BC", ""},
+		{"John Doe", ""},
+		{"WB-", ""},
+		{"WB-XYZ", ""},
+	}
+	for _, tc := range tests {
+		got := OrderRefUUIDPrefix(tc.q)
+		if got != tc.want {
+			t.Fatalf("OrderRefUUIDPrefix(%q) = %q, want %q", tc.q, got, tc.want)
+		}
+	}
+}
