@@ -59,13 +59,28 @@ func ResolveSalesIntent(
 	}
 	if IsUserSalesCorrection(userText) {
 		topic := SalesTopicGeneral
-		if IsConsultingPurchaseQuestion(userText) {
+		if IsConsultingPurchaseQuestion(userText, catalog) {
 			topic = SalesTopicRetailPolicy
 		}
 		return SalesIntent{State: SalesStateCorrection, Topic: topic, Confidence: 0.92}
 	}
 	if IsOrderStatusInquiry(userText) {
 		return SalesIntent{State: SalesStateConsulting, Topic: SalesTopicOrderStatus, Confidence: 0.9}
+	}
+	if IsStructuredOrderList(userText) {
+		return SalesIntent{State: SalesStateCartReady, Topic: SalesTopicProduct, Confidence: 0.95}
+	}
+	if IsExplicitNewOrderStart(userText) {
+		hint := productHintFromHistory(history, catalog)
+		if hint == "" {
+			hint = productHintFromText(userText, catalog)
+		}
+		return SalesIntent{
+			State:       SalesStateCartReady,
+			Topic:       SalesTopicProduct,
+			ProductHint: hint,
+			Confidence:  0.92,
+		}
 	}
 	if IsStoreLocationQuestion(userText) {
 		return SalesIntent{State: SalesStateConsulting, Topic: SalesTopicLocation, Confidence: 0.9}
@@ -94,9 +109,17 @@ func ResolveSalesIntent(
 	if IsOrderRevisionMessage(userText) {
 		return SalesIntent{State: SalesStateCheckout, Topic: SalesTopicProduct, Confidence: 0.92}
 	}
-	if orderActive && !ShouldBreakOrderFlow(userText, "ask_variant") &&
+	if orderActive && !ShouldBreakOrderFlow(userText, "ask_variant", catalog) &&
 		(IsOrderContinuationMessage(userText) || HasPurchaseIntent(userText)) {
 		return SalesIntent{State: SalesStateCheckout, Topic: SalesTopicGeneral, Confidence: 0.88}
+	}
+	if isNamedProductPurchaseIntent(userText, catalog) {
+		match := matchCatalogItem(userText, catalog)
+		hint := ""
+		if match != nil {
+			hint = shortDisplayName(match.Name)
+		}
+		return SalesIntent{State: SalesStateCartReady, Topic: SalesTopicProduct, ProductHint: hint, Confidence: 0.92}
 	}
 	if hasPurchaseIntent(userText, catalog) {
 		if IsOffBusinessProductRequest(userText, businessScopeKeywords(profile)) {
@@ -108,7 +131,7 @@ func ResolveSalesIntent(
 	if IsCatalogBrowsingIntent(userText) || isGeneralStoreCatalogQuestion(userText) {
 		return SalesIntent{State: SalesStateBrowsing, Topic: SalesTopicList, Confidence: 0.88}
 	}
-	if IsConsultingPurchaseQuestion(userText) {
+	if IsConsultingPurchaseQuestion(userText, catalog) {
 		hint := productHintFromHistory(history, catalog)
 		if hint == "" {
 			hint = productHintFromText(userText, catalog)
@@ -152,7 +175,7 @@ func productHintFromText(userText string, catalog []dbCatalogItem) string {
 }
 
 func productHintFromHistory(history []dbMessage, catalog []dbCatalogItem) string {
-	if match := matchCatalogFromRecentOutbound(history, catalog); match != nil {
+	if match := matchCatalogFromFocusedHistory(history, catalog); match != nil {
 		return shortDisplayName(match.Name)
 	}
 	return ""

@@ -11,7 +11,7 @@ func TestIsConsultingPurchaseQuestion(t *testing.T) {
 		"boleh eceran ga",
 	}
 	for _, m := range consulting {
-		if !IsConsultingPurchaseQuestion(m) {
+		if !IsConsultingPurchaseQuestion(m, nil) {
 			t.Fatalf("expected consulting: %q", m)
 		}
 		if HasPurchaseIntent(m) {
@@ -39,7 +39,7 @@ func TestIsUserSalesCorrection(t *testing.T) {
 		if !IsUserSalesCorrection(m) {
 			t.Fatalf("expected correction: %q", m)
 		}
-		if !ShouldBreakOrderFlow(m, "ask_variant") {
+		if !ShouldBreakOrderFlow(m, "ask_variant", nil) {
 			t.Fatalf("should break order flow: %q", m)
 		}
 	}

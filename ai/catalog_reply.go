@@ -56,6 +56,7 @@ func IsCatalogListQuestion(userText string) bool {
 		"menu apa saja", "menu apa aja", "show catalog", "show katalog",
 		"katalog apa", "koleksi apa", "jenis produk", "macam produk", "macam barang",
 		"minta list", "kasih list", "berikan list", "kirim list", "list dong",
+		"listkan", "listkan semua", "semua jualan", "semua jualan kamu",
 		"ada produk apa", "tersedia apa", "tersedia jualan", "menjual apa",
 	}
 	for _, p := range phrases {
@@ -105,7 +106,7 @@ func isGeneralStoreCatalogQuestion(userText string) bool {
 
 // IsCatalogProductInquiry — tanya harga/stok produk tertentu (bukan checkout).
 func IsCatalogProductInquiry(userText string) bool {
-	if HasPurchaseIntent(userText) || IsConsultingPurchaseQuestion(userText) {
+	if HasPurchaseIntent(userText) || IsConsultingPurchaseQuestion(userText, nil) {
 		return false
 	}
 	text := strings.ToLower(strings.TrimSpace(userText))
@@ -234,6 +235,81 @@ func isCatalogContextualReference(userText string) bool {
 	return false
 }
 
+func isCatalogListOutbound(body string) bool {
+	text := strings.ToLower(body)
+	if strings.Contains(text, "produk pilihan") || strings.Contains(text, "ini katalog") ||
+		strings.Contains(text, "belum ketemu") || strings.Contains(text, "belum kami temukan") ||
+		strings.Contains(text, "contoh produk") {
+		return true
+	}
+	return false
+}
+
+func countCatalogMatchesInText(body string, catalog []dbCatalogItem) int {
+	n := 0
+	seen := make(map[string]struct{})
+	for _, it := range catalog {
+		if it.ID == "" {
+			continue
+		}
+		if matchCatalogItem(body, []dbCatalogItem{it}) != nil {
+			if _, ok := seen[it.ID]; !ok {
+				seen[it.ID] = struct{}{}
+				n++
+			}
+		}
+	}
+	return n
+}
+
+func matchCatalogFromFocusedHistory(history []dbMessage, catalog []dbCatalogItem) *dbCatalogItem {
+	if len(history) == 0 || len(catalog) == 0 {
+		return nil
+	}
+	seen := 0
+	for i := len(history) - 1; i >= 0 && seen < 8; i-- {
+		if history[i].Direction != "out" {
+			continue
+		}
+		seen++
+		body := history[i].Body
+		if isCatalogListOutbound(body) || countCatalogMatchesInText(body, catalog) > 1 {
+			continue
+		}
+		if match := matchCatalogItem(body, catalog); match != nil {
+			return match
+		}
+	}
+	return nil
+}
+
+func isStockOrAvailabilityFollowUp(userText string, catalog []dbCatalogItem) bool {
+	if messageNamesCatalogProduct(userText, catalog) {
+		return false
+	}
+	text := strings.ToLower(strings.TrimSpace(userText))
+	if text == "" {
+		return false
+	}
+	signals := []string{
+		"stoknya", "stok nya", "ready ga", "ready gak", "ready nggak",
+		"masih ready", "masih ada", "ready ?", "ready?",
+	}
+	for _, s := range signals {
+		if strings.Contains(text, s) {
+			return true
+		}
+	}
+	if (strings.Contains(text, "stok") || strings.Contains(text, "ready")) &&
+		(strings.Contains(text, "?") || IsQuestionLike(userText)) {
+		words := strings.Fields(strings.NewReplacer("?", "", "!", "").Replace(text))
+		if len(words) <= 4 {
+			return true
+		}
+	}
+	return false
+}
+
 func matchCatalogFromRecentOutbound(history []dbMessage, catalog []dbCatalogItem) *dbCatalogItem {
 	if len(history) == 0 || len(catalog) == 0 {
 		return nil
@@ -256,10 +332,15 @@ func resolveCatalogMatch(userText string, history []dbMessage, catalog []dbCatal
 		return nil
 	}
 	if match := matchCatalogItem(userText, catalog); match != nil {
-		return match
+		if !IsConsultingPurchaseQuestion(userText, catalog) || catalogProductExplicitlyNamed(userText, match) {
+			return match
+		}
 	}
 	if isCatalogContextualReference(userText) || IsPricingUnitClarification(userText) ||
-		IsConsultingPurchaseQuestion(userText) {
+		IsConsultingPurchaseQuestion(userText, catalog) || isStockOrAvailabilityFollowUp(userText, catalog) {
+		if match := matchCatalogFromFocusedHistory(history, catalog); match != nil {
+			return match
+		}
 		return matchCatalogFromRecentOutbound(history, catalog)
 	}
 	return nil
@@ -418,6 +499,10 @@ func replyFromBusinessCatalog(
 		return buildGenericVisualProductInquiryReply(formal, bizName, catalog, profile), true
 	}
 
+	if IsExplicitNewOrderStart(userText) || IsStructuredOrderList(userText) {
+		return "", false
+	}
+
 	if IsCatalogBrowsingIntent(userText) || isGeneralStoreCatalogQuestion(userText) ||
 		IsRecommendationRequest(userText) {
 		return buildCatalogListReply(formal, bizName, catalog, profile), true
@@ -433,7 +518,7 @@ func replyFromBusinessCatalog(
 		return "", false
 	}
 
-	if IsConsultingPurchaseQuestion(userText) {
+	if IsConsultingPurchaseQuestion(userText, catalog) {
 		if match := resolveCatalogMatch(userText, history, catalog); match != nil {
 			return buildRetailPolicyReply(formal, match), true
 		}

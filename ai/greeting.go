@@ -145,7 +145,7 @@ func isCommerceDominant(text string) bool {
 		IsComplaintLike(text) || IsHumanEscalationRequest(text) ||
 		IsOrderStatusInquiry(text) || IsStoreLocationQuestion(text) ||
 		IsShippingQuoteQuestion(text) || hasOrderIntentText(text) ||
-		IsConsultingPurchaseQuestion(text) || hasPurchaseIntent(text, nil) {
+		IsConsultingPurchaseQuestion(text, nil) || hasPurchaseIntent(text, nil) {
 		return true
 	}
 	for _, kw := range retailIntentKeywords {

@@ -26,6 +26,23 @@ func TestResolveSalesIntent_cartReady(t *testing.T) {
 	}
 }
 
+func TestResolveSalesIntent_explicitNewOrderStart(t *testing.T) {
+	profile := &dbBusinessProfile{BusinessName: "Omah Apparel"}
+	catalog := []dbCatalogItem{{
+		Name: "[3 PCS] CELANA DALAM L XL PRIA COWOK DE WASA", SellPrice: 42200,
+	}}
+	history := []dbMessage{{Direction: "out", Body: "DE WASA harga Rp42200/paket"}}
+	for _, msg := range []string{
+		"mau buat pesanan baru bisa ?",
+		"loh, saya mau buat pesanan baru oi",
+	} {
+		intent := ResolveSalesIntent(msg, history, false, true, profile, catalog)
+		if intent.State != SalesStateCartReady {
+			t.Fatalf("ResolveSalesIntent(%q) state=%s want cart_ready", msg, intent.State)
+		}
+	}
+}
+
 func TestResolveSalesIntent_browsing(t *testing.T) {
 	profile := &dbBusinessProfile{BusinessName: "Toko"}
 	intent := ResolveSalesIntent("di toko ini tersedia jualan apa saja ya ?", nil, false, true, profile, nil)

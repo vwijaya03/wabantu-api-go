@@ -3,13 +3,13 @@ package ai
 import "testing"
 
 func TestShouldBreakOrderFlowPriceQuestion(t *testing.T) {
-	if !ShouldBreakOrderFlow("mau tanya jeans jiniso XL berapa harganya ?", "ask_address") {
+	if !ShouldBreakOrderFlow("mau tanya jeans jiniso XL berapa harganya ?", "ask_address", nil) {
 		t.Fatal("price question should exit order flow")
 	}
 }
 
 func TestShouldBreakOrderFlowGreeting(t *testing.T) {
-	if !ShouldBreakOrderFlow("malam gan", "ask_qty") {
+	if !ShouldBreakOrderFlow("malam gan", "ask_qty", nil) {
 		t.Fatal("greeting should exit order flow")
 	}
 }
@@ -21,7 +21,7 @@ func TestOrderFlowCancelled(t *testing.T) {
 }
 
 func TestShouldNotBreakOrderFlowQty(t *testing.T) {
-	if ShouldBreakOrderFlow("1 pcs saja", "ask_qty") {
+	if ShouldBreakOrderFlow("1 pcs saja", "ask_qty", nil) {
 		t.Fatal("qty reply should stay in order flow")
 	}
 }
@@ -34,7 +34,7 @@ func TestShouldBreakOrderFlowCatalogList(t *testing.T) {
 		"kamu jualan apa",
 	}
 	for _, m := range msgs {
-		if !ShouldBreakOrderFlow(m, "ask_variant") {
+		if !ShouldBreakOrderFlow(m, "ask_variant", nil) {
 			t.Fatalf("catalog list should break order flow: %q", m)
 		}
 	}

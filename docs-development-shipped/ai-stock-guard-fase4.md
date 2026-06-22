@@ -33,6 +33,8 @@ Tidak pernah menampilkan `code` internal.
 | Qty > stok satu gudang | Tolak + tampilkan breakdown per gudang |
 | `persistDraftOrder` | Set `items[].warehouseId` + precheck DB |
 
+**Prasyarat continuity:** Redis order flow (`ask_product` / `ask_qty`) tidak boleh di-clear saat pembeli menyebut produk + `mau beli ...` — lihat `ShouldBreakOrderFlow` + `isNamedProductPurchaseIntent`. Tanpa ini, checkout tidak pernah sampai stock guard / `warehouseId`.
+
 ---
 
 ## File kunci
@@ -55,15 +57,18 @@ Tidak pernah menampilkan `code` internal.
 
 ```bash
 cd api-go
-encore test ./ai/ -run 'Stock|Warehouse|AdvanceOrderFlow' -count=1
+encore test ./ai/ -run 'Stock|Warehouse|AdvanceOrderFlow|Continuity' -count=1
 ```
 
 - [x] `order_stock_guard_test.go` — multi-gudang, `customer_label`, breakdown
 - [x] `order_flow` sim — qty dalam stok gudang default → `warehouseId` terisi
+- [x] `order_flow_continuity_test.go` — transcript new order + abon; qty 5 reject / qty 2 warehouse
 - [x] Tenant tanpa inventory → perilaku lama (tanpa stok)
 
 ### Manual QA
 
+- [ ] `saya mau buat pesanan baru` → `order_flow`; lalu `mau beli abon ... stok ready?` → **tetap** `order_flow` (bukan `catalog_db`)
+- [ ] `stoknya ready?` setelah bahas Abon → jawab stok Abon, bukan list generik
 - [ ] Setup 2 gudang (mis. default stok 2 pcs, cabang stok 3 pcs) → tanya stok di WA → breakdown per gudang + total 5
 - [ ] `customer_label` diisi (mis. "Surabaya") → label itu tampil di chat; kosong → pakai `name` gudang
 - [ ] Order qty 5 → ditolak (meski total 5); qty 2 → lolos, draft punya `warehouseId` gudang default
