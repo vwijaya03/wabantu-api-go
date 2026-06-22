@@ -262,7 +262,7 @@ var OrderIntentKeywords = []string{
 	"jadi ambil", "jadi beli", "nyesan",
 }
 
-var orderIntentWordRe = regexp.MustCompile(`(?i)\b(order|pesan|pesen|pesin|beli|checkout|nyesan)\b`)
+var orderIntentWordRe = regexp.MustCompile(`(?i)\b(order|pesan|pesanan|pesen|pesin|beli|checkout|nyesan)\b`)
 
 func hasOrderIntentText(userText string) bool {
 	text := strings.ToLower(userText)

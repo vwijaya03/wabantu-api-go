@@ -28,6 +28,8 @@ func TestIsCatalogListQuestion(t *testing.T) {
 		"katalog",
 		"list dong",
 		"mau liat beberapa list SKU nya dong",
+		"bisa listkan semua jualan kamu ?",
+		"listkan semua jualan",
 	}
 	for _, c := range cases {
 		if !IsCatalogListQuestion(c) {
@@ -205,5 +207,35 @@ func TestTryFAQSkipsCatalogList(t *testing.T) {
 	kb := []dbKBEntry{{Question: "list produk", Answer: "Cek IG kami @toko"}}
 	if _, ok := tryFAQDirectAnswer("minta list produk", kb); ok {
 		t.Fatal("FAQ must not hijack catalog list")
+	}
+}
+
+func TestReplyFromBusinessCatalog_structuredOrderNotHijacked(t *testing.T) {
+	profile := &dbBusinessProfile{BusinessName: "Toko", Tone: strPtr("casual")}
+	catalog := []dbCatalogItem{{
+		ID: "lol-1", ExternalCode: "LOL", Name: "LOL Best Seller", SellPrice: 50000, SellUnit: "pcs",
+	}}
+	userText := `mau buat pesanan baru
+barang yang dibeli
+1. LOL Best Seller 1 lusin ya ukuran L
+2. LOL Best Seller 1 lusin ya ukuran XL
+3. LOL Best Seller 1 lusin ya ukuran XXL`
+	reply, ok := replyFromBusinessCatalog(userText, profile, catalog, nil)
+	if ok {
+		t.Fatalf("structured order must not trigger catalog reply, got: %s", reply)
+	}
+}
+
+func TestReplyFromBusinessCatalog_listkanSemuaJualan(t *testing.T) {
+	profile := &dbBusinessProfile{BusinessName: "Toko", Tone: strPtr("casual")}
+	catalog := []dbCatalogItem{{
+		ExternalCode: "A1", Name: "Abon Sapi 500G", SellPrice: 35000, SellUnit: "pcs",
+	}}
+	reply, ok := replyFromBusinessCatalog("bisa listkan semua jualan kamu ?", profile, catalog, nil)
+	if !ok {
+		t.Fatal("expected catalog list reply for listkan semua jualan")
+	}
+	if !strings.Contains(reply, "Abon Sapi") {
+		t.Fatalf("expected product in list: %s", reply)
 	}
 }

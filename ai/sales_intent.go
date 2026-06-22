@@ -67,6 +67,21 @@ func ResolveSalesIntent(
 	if IsOrderStatusInquiry(userText) {
 		return SalesIntent{State: SalesStateConsulting, Topic: SalesTopicOrderStatus, Confidence: 0.9}
 	}
+	if IsStructuredOrderList(userText) {
+		return SalesIntent{State: SalesStateCartReady, Topic: SalesTopicProduct, Confidence: 0.95}
+	}
+	if IsExplicitNewOrderStart(userText) {
+		hint := productHintFromHistory(history, catalog)
+		if hint == "" {
+			hint = productHintFromText(userText, catalog)
+		}
+		return SalesIntent{
+			State:       SalesStateCartReady,
+			Topic:       SalesTopicProduct,
+			ProductHint: hint,
+			Confidence:  0.92,
+		}
+	}
 	if IsStoreLocationQuestion(userText) {
 		return SalesIntent{State: SalesStateConsulting, Topic: SalesTopicLocation, Confidence: 0.9}
 	}

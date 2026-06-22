@@ -79,6 +79,22 @@ func IsCancelClarificationQuestion(userText string) bool {
 		(strings.Contains(text, "order") || strings.Contains(text, "pesanan"))
 }
 
+// IsExplicitNewOrderStart — "mau buat pesanan baru", bukan cek status pesanan lama.
+func IsExplicitNewOrderStart(userText string) bool {
+	text := normalizeBuyerTextForRules(userText)
+	if text == "" {
+		return false
+	}
+	for _, p := range []string{
+		"pesanan baru", "buat pesanan", "order baru", "pesan baru", "buat order",
+	} {
+		if strings.Contains(text, p) {
+			return true
+		}
+	}
+	return false
+}
+
 // IsNewPurchaseIntentQuestion — "mau order X bisa?" bukan tanya status pesanan lama.
 func IsNewPurchaseIntentQuestion(userText string) bool {
 	if IsCancelClarificationQuestion(userText) {
@@ -100,7 +116,7 @@ func IsNewPurchaseIntentQuestion(userText string) bool {
 	if !wants {
 		return false
 	}
-	if strings.Contains(text, "order baru") || strings.Contains(text, "pesan baru") ||
+	if IsExplicitNewOrderStart(userText) ||
 		strings.Contains(text, "order barang") || strings.Contains(text, "pesan barang") ||
 		strings.Contains(text, "beli barang") {
 		return true

@@ -444,6 +444,13 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		"salesState", intent.State,
 	)
 
+	// ── Order flow — prioritas sebelum katalog statis ─────────────────────
+	if inScope && (classifier.Label == "order_intent" || IsStructuredOrderList(userText)) {
+		sent, oErr := s.handleOrderFlow(ctx, conn, payload.TenantSchema, payload.TenantID, convo, channel, contact,
+			userText, profile, kbEntries, history, payload.InboundMessageID)
+		return sent, oErr
+	}
+
 	// ── Katalog WABantu (business_catalog_item) — prioritas sebelum FAQ/LLM ──
 	if inScope {
 		if catReply, ok := replyFromBusinessCatalog(userText, profile, catalog, history); ok {
