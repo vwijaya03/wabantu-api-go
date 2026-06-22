@@ -75,15 +75,86 @@ func TestReplyFromBusinessCatalog_consultingQtyAbonNotBoxer(t *testing.T) {
 		Direction: "out",
 		Body:      "Produk:\nAbon Sapi 500G\n\nStok tersedia:\n• Gudang Utama: 20",
 	}}
-	reply, ok := replyFromBusinessCatalog("mau beli 30 pcs bisa ?", profile, catalog, history)
+	// Tanpa history-backed purchase, consulting qty + stok → catalog item reply (bukan retail policy).
+	reply, ok := replyFromBusinessCatalog("mau beli 30 pcs bisa ? stoknya ready ?", profile, catalog, history)
 	if !ok {
-		t.Fatal("expected retail policy reply")
+		t.Fatal("expected catalog reply")
 	}
 	if strings.Contains(reply, "eceran") || strings.Contains(reply, "paket isi 3") {
-		t.Fatalf("should be Abon per-pcs policy, not boxer pack: %s", reply)
+		t.Fatalf("should be Abon stock reply, not boxer pack: %s", reply)
 	}
-	if !strings.Contains(reply, "Abon") && !strings.Contains(reply, "per pcs") {
-		t.Fatalf("expected Abon retail reply: %s", reply)
+	if !strings.Contains(reply, "Abon") {
+		t.Fatalf("expected Abon reply: %s", reply)
+	}
+}
+
+func TestIsProductSellInquiry_jualAbon(t *testing.T) {
+	catalog := abonCatalog()
+	if !IsProductSellInquiry("jual abon sapi ?", catalog) {
+		t.Fatal("expected sell inquiry for named product")
+	}
+	if IsProductSellInquiry("jual apa aja di toko ?", catalog) {
+		t.Fatal("store list should not be sell inquiry")
+	}
+}
+
+func TestReplyFromBusinessCatalog_jualAbonSapi(t *testing.T) {
+	profile := &dbBusinessProfile{BusinessName: "Omah Apparel", Tone: strPtr("casual")}
+	catalog := abonCatalog()
+	reply, ok := replyFromBusinessCatalog("jual abon sapi ?", profile, catalog, nil)
+	if !ok {
+		t.Fatal("expected catalog reply")
+	}
+	if !strings.Contains(reply, "Abon") || !strings.Contains(reply, "35000") {
+		t.Fatalf("expected Abon price in reply: %s", reply)
+	}
+}
+
+func TestResolveSalesIntent_historyBackedPurchase_cartReady(t *testing.T) {
+	profile := &dbBusinessProfile{BusinessName: "Omah Apparel"}
+	catalog := abonCatalog()
+	history := []dbMessage{{
+		Direction: "out",
+		Body:      "Iya kak, kami jual Abon Sapi 500G dengan harga Rp35.000/pcs. Stok tersedia 30 pcs.",
+	}}
+	msg := "mau beli 2 lusin bisa ? stoknya ready ?"
+	intent := ResolveSalesIntent(msg, history, false, true, profile, catalog)
+	if intent.State != SalesStateCartReady {
+		t.Fatalf("want cart_ready, got %+v", intent)
+	}
+	if !strings.Contains(intent.ProductHint, "Abon") {
+		t.Fatalf("want Abon hint, got %q", intent.ProductHint)
+	}
+}
+
+func TestResolveCatalogMatch_stockFollowUp_stoknyaAda(t *testing.T) {
+	catalog := abonCatalog()
+	history := []dbMessage{{
+		Direction: "out",
+		Body:      "Bisa kak, Abon Sapi 500G bisa beli per pcs.\nHarganya Rp35000/pcs.",
+	}}
+	match := resolveCatalogMatch("stoknya ada ?", history, catalog)
+	if match == nil || match.Name != "Abon Sapi 500G" {
+		t.Fatalf("want Abon from history, got %v", match)
+	}
+}
+
+func TestReplyFromBusinessCatalog_stockFollowUpNotCatalogList(t *testing.T) {
+	profile := &dbBusinessProfile{BusinessName: "Omah Apparel", Tone: strPtr("casual")}
+	catalog := mixedCatalog()
+	history := []dbMessage{{
+		Direction: "out",
+		Body:      "Bisa kak, Abon Sapi 500G bisa beli per pcs.\nHarganya Rp35000/pcs.",
+	}}
+	reply, ok := replyFromBusinessCatalog("stoknya ada ?", profile, catalog, history)
+	if !ok {
+		t.Fatal("expected catalog reply")
+	}
+	if strings.Contains(reply, "belum ketemu") || strings.Contains(reply, "Produk Pilihan") {
+		t.Fatalf("should not list catalog: %s", reply)
+	}
+	if !strings.Contains(reply, "Abon") {
+		t.Fatalf("expected Abon stock reply: %s", reply)
 	}
 }
 

@@ -93,7 +93,7 @@ func tryFAQDirectAnswer(query string, kb []dbKBEntry) (answer string, ok bool) {
 		return "", false
 	}
 	// Katalog produk harus dari business_catalog_item, bukan FAQ yang mengarah ke IG/website.
-	if IsCatalogListQuestion(query) || IsCatalogProductInquiry(query) {
+	if IsCatalogListQuestion(query) || IsCatalogProductInquiry(query) || IsProductSellInquiry(query, nil) {
 		return "", false
 	}
 	if len(kb) == 0 {

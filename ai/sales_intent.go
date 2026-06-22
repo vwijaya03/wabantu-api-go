@@ -121,6 +121,14 @@ func ResolveSalesIntent(
 		}
 		return SalesIntent{State: SalesStateCartReady, Topic: SalesTopicProduct, ProductHint: hint, Confidence: 0.92}
 	}
+	if isHistoryBackedPurchaseIntent(userText, history, catalog) {
+		match := matchCatalogFromFocusedHistory(history, catalog)
+		hint := ""
+		if match != nil {
+			hint = shortDisplayName(match.Name)
+		}
+		return SalesIntent{State: SalesStateCartReady, Topic: SalesTopicProduct, ProductHint: hint, Confidence: 0.92}
+	}
 	if hasPurchaseIntent(userText, catalog) {
 		if IsOffBusinessProductRequest(userText, businessScopeKeywords(profile)) {
 			return SalesIntent{State: SalesStateOutOfScope, Confidence: 0.92}
@@ -141,6 +149,10 @@ func ResolveSalesIntent(
 	if IsPricingUnitClarification(userText) || isCatalogContextualReference(userText) {
 		hint := productHintFromHistory(history, catalog)
 		return SalesIntent{State: SalesStateConsulting, Topic: SalesTopicPrice, ProductHint: hint, Confidence: 0.88}
+	}
+	if IsProductSellInquiry(userText, catalog) {
+		hint := productHintFromText(userText, catalog)
+		return SalesIntent{State: SalesStateConsulting, Topic: SalesTopicProduct, ProductHint: hint, Confidence: 0.88}
 	}
 	if IsCatalogProductInquiry(userText) {
 		hint := productHintFromText(userText, catalog)

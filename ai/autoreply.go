@@ -869,7 +869,7 @@ func (s *AutoReplyService) handleOrderFlow(
 	}
 
 	if state == nil && (IsOrderRevisionMessage(userText) || mentionsOrderQty(userText)) {
-		if match := matchCatalogFromRecentOutbound(history, catalog); match != nil {
+		if match := matchCatalogFromFocusedHistory(history, catalog); match != nil {
 			st := orderState{Step: "ask_variant"}
 			applyCatalogMatch(&st, match)
 			if q, ok := parseOrderQty(userText); ok {
