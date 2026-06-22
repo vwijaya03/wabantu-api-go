@@ -264,7 +264,7 @@ func allBuyerBehaviorCases() []buyerCase {
 			add("break_flow", fmt.Sprintf("%s_%s_%d", step, msg, i), func(sim *ConversationSimulator) []TurnOutcome {
 				return nil
 			}, func(_ buyerCase, _ []TurnOutcome) error {
-				got := ShouldBreakOrderFlow(msg, step)
+				got := ShouldBreakOrderFlow(msg, step, nil)
 				if got != want {
 					return fmt.Errorf("break=%v want %v", got, want)
 				}

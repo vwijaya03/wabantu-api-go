@@ -283,7 +283,7 @@ func HasPurchaseIntent(userText string) bool {
 }
 
 func hasPurchaseIntent(userText string, catalog []dbCatalogItem) bool {
-	if IsConsultingPurchaseQuestion(userText) {
+	if IsConsultingPurchaseQuestion(userText, catalog) {
 		return false
 	}
 	text := strings.ToLower(strings.TrimSpace(userText))
@@ -472,14 +472,17 @@ func IsActiveCheckoutFromHistory(history []dbMessage, userText string) bool {
 var orderAddrHintRe = regexp.MustCompile(`(?i)(jalan|\bjl\.?\b|rt|rw|kel\.|kec\.|kota|kab\.|kode pos|taman|setiabudi)`)
 
 // ShouldBreakOrderFlow — new intent (greeting, harga, tanya produk) while Redis order state is active.
-func ShouldBreakOrderFlow(userText, step string) bool {
+func ShouldBreakOrderFlow(userText, step string, catalog []dbCatalogItem) bool {
 	if IsOrderRevisionMessage(userText) {
 		return false
 	}
 	if IsUserSalesCorrection(userText) {
 		return true
 	}
-	if IsConsultingPurchaseQuestion(userText) {
+	if isOrderProductContinuationStep(step) && messageNamesCatalogProduct(userText, catalog) {
+		return false
+	}
+	if IsConsultingPurchaseQuestion(userText, catalog) {
 		return true
 	}
 	if IsCatalogBrowsingIntent(userText) || isGeneralStoreCatalogQuestion(userText) {
@@ -508,6 +511,9 @@ func ShouldBreakOrderFlow(userText, step string) bool {
 		strings.Contains(text, "stok") || strings.Contains(text, "ongkir") ||
 		strings.Contains(text, "ready")) &&
 		(IsQuestionLike(userText) || strings.Contains(text, "?") || strings.Contains(text, "tanya")) {
+		if messageNamesCatalogProduct(userText, catalog) {
+			return false
+		}
 		if !mentionsOrderQty(text) || strings.Contains(text, "berapa") || strings.Contains(text, "harga") {
 			return true
 		}

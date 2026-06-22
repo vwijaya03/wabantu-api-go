@@ -93,7 +93,7 @@ func (s *ConversationSimulator) Turn(userText string) TurnOutcome {
 
 	if orderActive {
 		step := s.Order.Step
-		if ShouldBreakOrderFlow(userText, step) {
+		if ShouldBreakOrderFlow(userText, step, nil) {
 			s.Order = nil
 			out.BrokeFlow = true
 			orderActive = false

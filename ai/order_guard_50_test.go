@@ -39,7 +39,7 @@ func TestProductionThreadRegression(t *testing.T) {
 	if IsOrderStatusInquiry(msg) {
 		t.Fatal("must not treat new purchase as order status")
 	}
-	if !IsConsultingPurchaseQuestion(msg) {
+	if !IsConsultingPurchaseQuestion(msg, nil) {
 		t.Fatal("must be consulting purchase question")
 	}
 	clarify := "order mana yang kamu batalkan ?"

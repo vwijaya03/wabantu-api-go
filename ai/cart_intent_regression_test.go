@@ -4,7 +4,7 @@ import "testing"
 
 func TestOrderAbon3BijiNotConsultingOnly(t *testing.T) {
 	msg := "order abon 3 biji"
-	if IsConsultingPurchaseQuestion(msg) {
+	if IsConsultingPurchaseQuestion(msg, nil) {
 		t.Fatalf("explicit order line should not be consulting-only: %q", msg)
 	}
 	if !hasPurchaseIntent(msg, omahCatalog()) {
@@ -14,7 +14,7 @@ func TestOrderAbon3BijiNotConsultingOnly(t *testing.T) {
 
 func TestMau1BijiAbonCartReady(t *testing.T) {
 	msg := "mau 1 biji abon"
-	if IsConsultingPurchaseQuestion(msg) {
+	if IsConsultingPurchaseQuestion(msg, nil) {
 		t.Fatalf("explicit qty order should not be MOQ consult: %q", msg)
 	}
 	if !hasPurchaseIntent(msg, omahCatalog()) {

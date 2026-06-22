@@ -44,9 +44,12 @@ func hasExplicitCartReadyPhrase(text string) bool {
 }
 
 // IsConsultingPurchaseQuestion — "boleh beli 1 pcs?", "kalau order satu bisa?" (CONSULTING, bukan CART_READY).
-func IsConsultingPurchaseQuestion(userText string) bool {
+func IsConsultingPurchaseQuestion(userText string, catalog []dbCatalogItem) bool {
 	text := strings.ToLower(strings.TrimSpace(userText))
 	if text == "" {
+		return false
+	}
+	if isNamedProductPurchaseIntent(userText, catalog) {
 		return false
 	}
 	for _, p := range orderStatusInquiryPhrases {
@@ -76,6 +79,49 @@ func IsConsultingPurchaseQuestion(userText string) bool {
 		}
 	}
 	return false
+}
+
+// isNamedProductPurchaseIntent — "mau beli abon sapi ..." dengan produk disebut eksplisit di pesan.
+func isNamedProductPurchaseIntent(userText string, catalog []dbCatalogItem) bool {
+	match := matchCatalogItem(userText, catalog)
+	if match == nil || !catalogProductExplicitlyNamed(userText, match) {
+		return false
+	}
+	text := strings.ToLower(strings.TrimSpace(userText))
+	if strings.Contains(text, "mau beli") {
+		return true
+	}
+	if hasOrderIntentText(userText) && !hasConsultingPurchasePrefix(text) {
+		return true
+	}
+	return false
+}
+
+func catalogProductExplicitlyNamed(userText string, it *dbCatalogItem) bool {
+	if it == nil {
+		return false
+	}
+	text := strings.ToLower(userText)
+	stop := map[string]bool{"pcs": true, "paket": true, "pc": true, "lusin": true}
+	named := 0
+	for _, tok := range tokenize(it.Name) {
+		t := strings.ToLower(tok)
+		if len(t) < 3 || stop[t] {
+			continue
+		}
+		if strings.Contains(text, t) {
+			named++
+		}
+	}
+	return named >= 1
+}
+
+func isOrderProductContinuationStep(step string) bool {
+	return step == "ask_product" || step == "ask_variant" || step == "ask_qty"
+}
+
+func messageNamesCatalogProduct(userText string, catalog []dbCatalogItem) bool {
+	return len(catalog) > 0 && matchCatalogItem(userText, catalog) != nil
 }
 
 func hasConsultingPurchasePrefix(text string) bool {

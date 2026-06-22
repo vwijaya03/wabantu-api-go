@@ -241,7 +241,7 @@ func TestMatrix_ShouldBreakOrderFlow(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.step+"|"+tc.msg, func(t *testing.T) {
-			got := ShouldBreakOrderFlow(tc.msg, tc.step)
+			got := ShouldBreakOrderFlow(tc.msg, tc.step, nil)
 			if got != tc.break_ {
 				t.Fatalf("break=%v want %v", got, tc.break_)
 			}
@@ -261,7 +261,7 @@ func TestMatrix_PurchaseVsConsulting(t *testing.T) {
 	}
 	for _, m := range consulting {
 		t.Run("consult_"+m, func(t *testing.T) {
-			if !IsConsultingPurchaseQuestion(m) {
+			if !IsConsultingPurchaseQuestion(m, nil) {
 				t.Fatal("expected consulting")
 			}
 			if HasPurchaseIntent(m) {

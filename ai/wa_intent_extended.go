@@ -140,7 +140,7 @@ func IsAbandonedCartSignal(userText string) bool {
 
 // IsAmbiguousPurchaseSignal — bisa konsultasi bisa checkout.
 func IsAmbiguousPurchaseSignal(userText string) bool {
-	if IsConsultingPurchaseQuestion(userText) {
+	if IsConsultingPurchaseQuestion(userText, nil) {
 		return true
 	}
 	text := strings.ToLower(strings.TrimSpace(userText))
