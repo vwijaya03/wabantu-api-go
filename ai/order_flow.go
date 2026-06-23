@@ -9,6 +9,7 @@ import (
 
 	"encore.dev/rlog"
 
+	"encore.app/wabantu/inventory"
 	"encore.app/wabantu/order"
 )
 
@@ -667,6 +668,7 @@ func persistDraftOrder(
 		return "", err
 	}
 	syncContactDisplayNameFromOrder(ctx, tq, contactID, st.RecipientName)
+	syncPersistedOrderStock(ctx, tenantSchema, orderID, "draft", []order.OrderItem{item})
 	rlog.Info("AI order: draft persisted",
 		"orderId", orderID,
 		"convoId", convoID,
@@ -759,6 +761,7 @@ func persistDraftOrderMulti(
 		return "", err
 	}
 	syncContactDisplayNameFromOrder(ctx, tq, contactID, st.RecipientName)
+	syncPersistedOrderStock(ctx, tenantSchema, orderID, "draft", orderItems)
 	rlog.Info("AI order: multi-item draft persisted",
 		"orderId", orderID,
 		"convoId", convoID,
@@ -766,4 +769,31 @@ func persistDraftOrderMulti(
 		"postalCode", st.PostalCode,
 	)
 	return orderID, nil
+}
+
+func aiOrderStockItems(items []order.OrderItem) []inventory.OrderStockItem {
+	out := make([]inventory.OrderStockItem, 0, len(items))
+	for _, it := range items {
+		if strings.TrimSpace(it.CatalogItemID) == "" {
+			continue
+		}
+		out = append(out, inventory.OrderStockItem{
+			LineID:        it.LineID,
+			CatalogItemID: it.CatalogItemID,
+			WarehouseID:   it.WarehouseID,
+			Qty:           it.Qty,
+		})
+	}
+	return out
+}
+
+// syncPersistedOrderStock mirrors order.Create stock sync so status changes from draft
+// to processing later reconcile inventory idempotently.
+func syncPersistedOrderStock(ctx context.Context, tenantSchema, orderID, status string, items []order.OrderItem) {
+	if strings.TrimSpace(orderID) == "" || len(items) == 0 {
+		return
+	}
+	if err := inventory.SyncOrderStock(ctx, tenantSchema, orderID, status, aiOrderStockItems(items), "system"); err != nil {
+		rlog.Warn("AI order: stock sync failed", "err", err, "orderId", orderID, "status", status)
+	}
 }
