@@ -894,30 +894,35 @@ func (s *AutoReplyService) handleOrderFlow(
 		}
 	}
 
-	if state == nil && IsStructuredOrderList(userText) {
-		parsed := parseStructuredOrderLines(userText, catalog)
-		if len(parsed.Lines) == 0 {
-			if len(parsed.Unmatched) > 0 {
-				return send(structuredOrderUnmatchedReply(formal, parsed.Unmatched))
+	tryHandleStructuredOrder := func() (bool, error) {
+		outcome := evaluateStructuredOrder(userText, catalog, formal)
+		if !outcome.Matched {
+			return false, nil
+		}
+		if len(outcome.Lines) == 0 {
+			if len(outcome.Unmatched) > 0 {
+				return send(structuredOrderUnmatchedReply(formal, outcome.Unmatched))
 			}
-		} else {
-			st := orderStateFromStructuredLines(parsed.Lines)
-			if !st.structuredLinesReady() {
-				st.Step = "ask_variant"
-				s.setOrderState(ctx, tenantID, convo.ID, st)
-				return sendWithConfirm(st, tmpl.AskVariant)
-			}
-			st, reply, blocked := guardStructuredOrderStock(st, catalog, formal)
-			if blocked {
-				return send(reply)
-			}
-			st.Step = "ask_recipient"
-			s.setOrderState(ctx, tenantID, convo.ID, st)
-			prompt := tmpl.AskRecipient
-			if len(parsed.Unmatched) > 0 {
-				prompt = structuredOrderUnmatchedReply(formal, parsed.Unmatched) + "\n\n" + prompt
-			}
-			return sendWithConfirm(st, prompt)
+			return false, nil
+		}
+		if outcome.NeedVariant {
+			s.setOrderState(ctx, tenantID, convo.ID, outcome.State)
+			return sendWithConfirm(outcome.State, tmpl.AskVariant)
+		}
+		if outcome.Blocked {
+			return send(outcome.BlockReply)
+		}
+		s.setOrderState(ctx, tenantID, convo.ID, outcome.State)
+		prompt := tmpl.AskRecipient
+		if len(outcome.Unmatched) > 0 {
+			prompt = structuredOrderUnmatchedReply(formal, outcome.Unmatched) + "\n\n" + prompt
+		}
+		return sendWithConfirm(outcome.State, prompt)
+	}
+
+	if state == nil {
+		if sent, err := tryHandleStructuredOrder(); sent || err != nil {
+			return sent, err
 		}
 	}
 
@@ -981,6 +986,9 @@ func (s *AutoReplyService) handleOrderFlow(
 			err := s.sendAiMessage(ctx, q, tenantID, convo, channel, contact,
 				outOfScopeReply(profile), "system", out)
 			return err == nil, err
+		}
+		if sent, err := tryHandleStructuredOrder(); sent || err != nil {
+			return sent, err
 		}
 		st := copyBase(orderState{Step: "ask_product"})
 		if match := matchCatalogItem(userText, catalog); match != nil {

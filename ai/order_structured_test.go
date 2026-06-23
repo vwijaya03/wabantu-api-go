@@ -97,3 +97,70 @@ func TestResolveSalesIntent_structuredOrderList(t *testing.T) {
 		t.Fatalf("want cart_ready, got %+v", intent)
 	}
 }
+
+func helloKittyCatalog() []dbCatalogItem {
+	base := "1PCS CELANA DALAM BOXER ANAK PEREMPUAN MOTIF HELLO KITTY BUNGA LEMBUT"
+	return []dbCatalogItem{
+		{ID: "hk-l", ExternalCode: "HK-L", Name: base + " - L", SellPrice: 21500, SellUnit: "pcs"},
+		{ID: "hk-xl", ExternalCode: "HK-XL", Name: base + " - XL", SellPrice: 21500, SellUnit: "pcs"},
+		{ID: "hk-xxl", ExternalCode: "HK-XXL", Name: base + " - XXL", SellPrice: 21500, SellUnit: "pcs"},
+	}
+}
+
+func TestIsStructuredOrderList_unnumberedTranscript(t *testing.T) {
+	msg := `mau order ini ya min
+
+CELANA DALAM BOXER ANAK PEREMPUAN MOTIF HELLO KITTY BUNGA LEMBUT - L 1 lusin
+CELANA DALAM BOXER ANAK PEREMPUAN MOTIF HELLO KITTY BUNGA LEMBUT - XL 2 lusin
+CELANA DALAM BOXER ANAK PEREMPUAN MOTIF HELLO KITTY BUNGA LEMBUT - XXL 3 lusin`
+	if !IsStructuredOrderList(msg) {
+		t.Fatal("expected unnumbered structured order list")
+	}
+}
+
+func TestParseStructuredOrderLines_helloKittyUnnumbered(t *testing.T) {
+	catalog := helloKittyCatalog()
+	msg := `mau order ini ya min
+
+CELANA DALAM BOXER ANAK PEREMPUAN MOTIF HELLO KITTY BUNGA LEMBUT - L 1 lusin
+CELANA DALAM BOXER ANAK PEREMPUAN MOTIF HELLO KITTY BUNGA LEMBUT - XL 2 lusin
+CELANA DALAM BOXER ANAK PEREMPUAN MOTIF HELLO KITTY BUNGA LEMBUT - XXL 3 lusin`
+	parsed := parseStructuredOrderLines(msg, catalog)
+	if len(parsed.Lines) != 3 {
+		t.Fatalf("want 3 lines, got %d unmatched=%v", len(parsed.Lines), parsed.Unmatched)
+	}
+	want := []struct {
+		id  string
+		qty int
+	}{
+		{"hk-l", 12},
+		{"hk-xl", 24},
+		{"hk-xxl", 36},
+	}
+	for i, ln := range parsed.Lines {
+		if ln.CatalogItemID != want[i].id {
+			t.Fatalf("line %d catalog want %s, got %s (%q)", i+1, want[i].id, ln.CatalogItemID, ln.ProductName)
+		}
+		if ln.Qty != want[i].qty {
+			t.Fatalf("line %d qty want %d, got %d", i+1, want[i].qty, ln.Qty)
+		}
+	}
+}
+
+func TestFormatMultiOrderSummary_helloKittyThreeSKUs(t *testing.T) {
+	catalog := helloKittyCatalog()
+	msg := `mau order ini ya min
+
+CELANA DALAM BOXER ANAK PEREMPUAN MOTIF HELLO KITTY BUNGA LEMBUT - L 1 lusin
+CELANA DALAM BOXER ANAK PEREMPUAN MOTIF HELLO KITTY BUNGA LEMBUT - XL 2 lusin
+CELANA DALAM BOXER ANAK PEREMPUAN MOTIF HELLO KITTY BUNGA LEMBUT - XXL 3 lusin`
+	parsed := parseStructuredOrderLines(msg, catalog)
+	st := orderStateFromStructuredLines(parsed.Lines)
+	summary := formatOrderSummary(st)
+	if !strings.Contains(summary, "1. ") || !strings.Contains(summary, "2. ") || !strings.Contains(summary, "3. ") {
+		t.Fatalf("expected three numbered items: %s", summary)
+	}
+	if strings.Count(summary, "Qty:") != 3 {
+		t.Fatalf("expected three separate qty lines, got: %s", summary)
+	}
+}

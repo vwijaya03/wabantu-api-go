@@ -1,6 +1,6 @@
 # Structured multi-line order (checkout AI)
 
-Catatan rilis: pembeli bisa mengirim daftar barang bernomor dalam satu pesan; bot mem-parse qty (termasuk lusin), ukuran, dan lanjut ke `order_flow` — bukan daftar katalog generik.
+Catatan rilis: pembeli bisa mengirim daftar barang bernomor **atau multi-baris tanpa nomor** dalam satu pesan; bot mem-parse qty (termasuk lusin), ukuran, dan lanjut ke `order_flow` — bukan daftar katalog generik.
 
 **Routing lengkap:** [docs/WHATSAPP_AI_ROUTING.md](../docs/WHATSAPP_AI_ROUTING.md)
 
@@ -11,14 +11,16 @@ Catatan rilis: pembeli bisa mengirim daftar barang bernomor dalam satu pesan; bo
 | Pesan pembeli | Path metadata | LLM? |
 |---------------|---------------|------|
 | `mau buat pesanan baru` + `1. LOL Best Seller 1 lusin ukuran L` | `order_flow` | Tidak |
+| `mau order ini` + 3 baris produk (tanpa nomor, masing-masing qty lusin) | `order_flow` | Tidak |
 | `bisa listkan semua jualan kamu ?` | `catalog_db` | Tidak |
 | `minta rekomendasi best seller` (tanpa qty) | `catalog_db` | Tidak |
 | Produk bernama "LOL Best Seller" dalam pesan order | `order_flow` (bukan recommendation) | Tidak |
 
 ### Format pesan yang dikenali
 
-- Header: `mau buat pesanan baru`, `barang yang dibeli`, atau kombinasi keduanya
-- Baris: `1. <nama produk> <qty> [lusin] [ukuran L/XL/...]`
+- Header: `mau buat pesanan baru`, `mau order ini`, `barang yang dibeli`, atau kombinasi
+- Baris bernomor: `1. <nama produk> <qty> [lusin] [ukuran L/XL/...]`
+- Baris tanpa nomor: minimal **2 baris** masing-masing berisi qty (`1 lusin`, `2 lusin`, dll.) — diparse saat state `ask_product` maupun cold start
 - `1 lusin` → 12 pcs (reuse `parseOrderQty`)
 
 ### Alur checkout
