@@ -115,6 +115,11 @@ dan menerapkannya ke semua schema `t_*` dengan role admin.
 
 **Wajib** jalankan script ini di cloud **sebelum** `POST /api/v1/admin/migrate-tenant-schemas`
 bila migrasi gagal dengan pesan *patch inventory belum diterapkan di cloud*.
+
+- Patch penuh (tabel baru + kolom): `./scripts/apply-inventory-schema-cloud.sh staging`
+- Hanya kolom/index yang dicek migrasi (lebih cepat, untuk satu tenant yang timeout):
+  `./scripts/apply-inventory-column-patch-cloud.sh staging t_omah_apparel`
+
 Setelah deploy kode baru (kolom `customer_label`), jalankan ulang script lalu migrasi lagi.
 
 ---

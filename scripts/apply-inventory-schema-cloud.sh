@@ -28,11 +28,26 @@ if [[ -z "$schemas" ]]; then
 fi
 
 fail=0
+apply_schema() {
+  local schema="$1"
+  local attempt
+  local retries="${RETRIES:-3}"
+  for ((attempt = 1; attempt <= retries; attempt++)); do
+    if psql "$ADMIN_URI" -v ON_ERROR_STOP=1 -c "SET search_path TO \"$schema\", public;" -c "$PATCH_SQL"; then
+      return 0
+    fi
+    echo "  retry $attempt/$retries for $schema..." >&2
+    sleep "$((attempt * 2))"
+  done
+  return 1
+}
+
 while IFS= read -r schema; do
   [[ -z "$schema" ]] && continue
   echo "  -> $schema"
-  if ! psql "$ADMIN_URI" -v ON_ERROR_STOP=1 -c "SET search_path TO \"$schema\", public;" -c "$PATCH_SQL"; then
+  if ! apply_schema "$schema"; then
     echo "  ERROR: inventory patch failed for $schema" >&2
+    echo "  Hint: ./scripts/apply-inventory-column-patch-cloud.sh $ENV_NAME $schema" >&2
     fail=1
   fi
 done <<< "$schemas"
