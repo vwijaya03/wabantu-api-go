@@ -55,6 +55,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_inv_warehouse_code
     ON inv_warehouse(code) WHERE deleted_at IS NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_inv_warehouse_default
     ON inv_warehouse(is_default) WHERE is_default = true AND deleted_at IS NULL;
+ALTER TABLE inv_warehouse ADD COLUMN IF NOT EXISTS customer_label VARCHAR(80);
 
 -- inv_sku: per-catalog-item inventory configuration (1 row per tracked item).
 -- Kept separate from business_catalog_item so no ALTER is needed on the core table.

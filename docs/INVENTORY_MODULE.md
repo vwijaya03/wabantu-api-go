@@ -113,6 +113,10 @@ Lokal otomatis. Untuk cloud, jalankan (admin) bila perlu:
 Script men-dump `InventorySchemaSQL` (`scripts/cmd/cloud-inventory-patch-sql`)
 dan menerapkannya ke semua schema `t_*` dengan role admin.
 
+**Wajib** jalankan script ini di cloud **sebelum** `POST /api/v1/admin/migrate-tenant-schemas`
+bila migrasi gagal dengan pesan *patch inventory belum diterapkan di cloud*.
+Setelah deploy kode baru (kolom `customer_label`), jalankan ulang script lalu migrasi lagi.
+
 ---
 
 ## 4. Endpoint (PR-A1)
