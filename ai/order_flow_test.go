@@ -1,6 +1,10 @@
 package ai
 
-import "testing"
+import (
+	"testing"
+
+	"encore.app/wabantu/order"
+)
 
 func TestIsOrderContinuationMessagePcs(t *testing.T) {
 	if !IsOrderContinuationMessage("1 pcs saja") {
@@ -93,5 +97,23 @@ func TestAcknowledgmentInScope(t *testing.T) {
 	scope := ExtractScopeKeywords("Omah Apparel jeans")
 	if !IsWithinBusinessScope("oke terima kasih", scope, nil) {
 		t.Fatal("thanks should stay in business scope")
+	}
+}
+
+func TestAiOrderStockItems_mapsWarehouseAndQty(t *testing.T) {
+	items := []order.OrderItem{
+		{CatalogItemID: "cat-1", WarehouseID: "wh-1", Qty: 12, LineID: "line-1"},
+		{CatalogItemID: "", WarehouseID: "wh-2", Qty: 1},
+		{CatalogItemID: "cat-2", WarehouseID: "wh-2", Qty: 24},
+	}
+	got := aiOrderStockItems(items)
+	if len(got) != 2 {
+		t.Fatalf("want 2 stock lines, got %d", len(got))
+	}
+	if got[0].CatalogItemID != "cat-1" || got[0].WarehouseID != "wh-1" || got[0].Qty != 12 {
+		t.Fatalf("line 0: %+v", got[0])
+	}
+	if got[1].CatalogItemID != "cat-2" || got[1].WarehouseID != "wh-2" || got[1].Qty != 24 {
+		t.Fatalf("line 1: %+v", got[1])
 	}
 }
