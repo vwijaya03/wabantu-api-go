@@ -21,7 +21,8 @@ var (
 	orderQtyOneLusinRe = regexp.MustCompile(`(?i)(?:^|\s)1\s*lusin\b|satu\s*lusin`)
 	orderQtyIndoWordRe = regexp.MustCompile(`(?i)\b(satu|dua|tiga|empat|lima|enam|tujuh|delapan|sembilan|sepuluh)\s*(pcs|pc|biji|buah|piece|pieces|lusin)?\b`)
 	gluedCatalogQtyRe  = regexp.MustCompile(`(?i)\d+pcs`)
-	orderSizeLineRe    = regexp.MustCompile(`(?i)\b(xs|s|m|l|xl|xxl|xxxl|3xl|4xl|5xl|\d{2})\b`)
+	// Longest-first so XXL is not parsed as XL and XL is not parsed as L.
+	orderSizeLineRe = regexp.MustCompile(`(?i)\b(xxxl|3xl|xxl|xl|4xl|5xl|xs|m|l|s|\d{2})\b`)
 )
 
 // orderFlowTemplates — default WA copy; overridden by knowledge_base_entry when matched.

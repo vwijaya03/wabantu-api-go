@@ -21,7 +21,7 @@ type orderLineState struct {
 	WarehouseID   string  `json:"warehouseId,omitempty"`
 }
 
-// IsStructuredOrderList — pesan berisi daftar barang bernomor atau header order terstruktur.
+// IsStructuredOrderList — pesan berisi daftar barang bernomor, multi-baris tanpa nomor, atau header order terstruktur.
 func IsStructuredOrderList(userText string) bool {
 	text := strings.ToLower(strings.TrimSpace(userText))
 	if text == "" {
@@ -36,7 +36,64 @@ func IsStructuredOrderList(userText string) bool {
 	if structuredOrderNumberedLineRe.MatchString(userText) && mentionsOrderQty(userText) {
 		return true
 	}
+	if countOrderCandidateLines(userText) >= 2 {
+		return true
+	}
 	return false
+}
+
+func isOrderListHeaderLine(line string) bool {
+	lower := strings.ToLower(strings.TrimSpace(line))
+	if lower == "" {
+		return true
+	}
+	if mentionsOrderQty(line) {
+		return false
+	}
+	for _, p := range []string{
+		"mau order", "mau buat", "buat pesanan", "order baru", "pesanan baru",
+		"barang yang dibeli", "order ini", "pesan ini", "mau pesan", "pesan baru",
+	} {
+		if strings.Contains(lower, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func countOrderCandidateLines(userText string) int {
+	n := 0
+	for _, line := range strings.Split(userText, "\n") {
+		line = strings.TrimSpace(line)
+		if isOrderListHeaderLine(line) {
+			continue
+		}
+		if mentionsOrderQty(line) {
+			n++
+		}
+	}
+	return n
+}
+
+func extractUnnumberedOrderLines(userText string) []string {
+	var out []string
+	for _, line := range strings.Split(userText, "\n") {
+		line = strings.TrimSpace(line)
+		if isOrderListHeaderLine(line) {
+			continue
+		}
+		if mentionsOrderQty(line) {
+			out = append(out, line)
+		}
+	}
+	return out
+}
+
+func extractStructuredOrderLines(userText string) []string {
+	if numbered := extractNumberedOrderLines(userText); len(numbered) > 0 {
+		return numbered
+	}
+	return extractUnnumberedOrderLines(userText)
 }
 
 func extractNumberedOrderLines(userText string) []string {
@@ -66,7 +123,7 @@ func parseStructuredOrderLines(userText string, catalog []dbCatalogItem) structu
 	if !IsStructuredOrderList(userText) {
 		return res
 	}
-	rawLines := extractNumberedOrderLines(userText)
+	rawLines := extractStructuredOrderLines(userText)
 	if len(rawLines) == 0 {
 		return res
 	}
@@ -228,4 +285,45 @@ func guardOrderStateQty(st orderState, catalog []dbCatalogItem, formal bool, qty
 		return guardStructuredOrderStock(st, catalog, formal)
 	}
 	return guardOrderQtyStep(st, catalog, formal, qtyStep)
+}
+
+// structuredOrderFlowOutcome — hasil evaluasi pesan multi-baris untuk order_flow.
+type structuredOrderFlowOutcome struct {
+	Matched    bool
+	Lines      []orderLineState
+	Unmatched  []string
+	State      orderState
+	Blocked    bool
+	BlockReply string
+	NeedVariant bool
+}
+
+func evaluateStructuredOrder(userText string, catalog []dbCatalogItem, formal bool) structuredOrderFlowOutcome {
+	var out structuredOrderFlowOutcome
+	if !IsStructuredOrderList(userText) {
+		return out
+	}
+	out.Matched = true
+	parsed := parseStructuredOrderLines(userText, catalog)
+	out.Unmatched = parsed.Unmatched
+	out.Lines = parsed.Lines
+	if len(parsed.Lines) == 0 {
+		return out
+	}
+	st := orderStateFromStructuredLines(parsed.Lines)
+	if !st.structuredLinesReady() {
+		st.Step = "ask_variant"
+		out.State = st
+		out.NeedVariant = true
+		return out
+	}
+	st, reply, blocked := guardStructuredOrderStock(st, catalog, formal)
+	if blocked {
+		out.Blocked = true
+		out.BlockReply = reply
+		return out
+	}
+	st.Step = "ask_recipient"
+	out.State = st
+	return out
 }
