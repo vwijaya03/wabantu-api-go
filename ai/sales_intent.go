@@ -25,6 +25,7 @@ const (
 	SalesTopicOrderStatus  = "order_status"
 	SalesTopicShipping     = "shipping"
 	SalesTopicLocation     = "location"
+	SalesTopicRecipient    = "recipient_policy"
 )
 
 // SalesIntent — structured intent (poin 3): menggantikan scatter of Is* di router utama.
@@ -99,6 +100,9 @@ func ResolveSalesIntent(
 	}
 	if IsMinimumOrderQuestion(userText) {
 		return SalesIntent{State: SalesStateConsulting, Topic: SalesTopicRetailPolicy, Confidence: 0.88}
+	}
+	if IsRecipientPolicyQuestion(userText) {
+		return SalesIntent{State: SalesStateConsulting, Topic: SalesTopicRecipient, Confidence: 0.92}
 	}
 	if IsProductComparisonQuestion(userText) {
 		return SalesIntent{State: SalesStateConsulting, Topic: SalesTopicProduct, Confidence: 0.88}

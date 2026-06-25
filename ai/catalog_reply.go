@@ -356,6 +356,9 @@ func resolveCatalogMatch(userText string, history []dbMessage, catalog []dbCatal
 	if isGenericVisualProductInquiry(userText, catalog) {
 		return nil
 	}
+	if IsRecipientPolicyQuestion(userText) {
+		return nil
+	}
 	if match := matchCatalogItem(userText, catalog); match != nil {
 		if !IsConsultingPurchaseQuestion(userText, catalog) || catalogProductExplicitlyNamed(userText, match) {
 			return match

@@ -184,6 +184,14 @@ func (s *ConversationSimulator) Turn(userText string) TurnOutcome {
 		return out
 	}
 
+	if IsRecipientPolicyQuestion(userText) {
+		formal := strOrEmpty(s.Profile.Tone) == "formal"
+		out.Path = PathRecipientPolicy
+		out.Reply = replyRecipientPolicyQuestion(userText, nil, formal)
+		s.appendHistory(userText, out.Reply)
+		return out
+	}
+
 	if catReply, ok := replyFromBusinessCatalog(userText, s.Profile, s.Catalog, s.History); ok {
 		out.Path = PathCatalogDB
 		out.Reply = catReply

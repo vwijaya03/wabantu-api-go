@@ -17,4 +17,5 @@ Setiap file `*.md` di folder ini = satu entri rilis.
 | [ai-image-caption.md](./ai-image-caption.md) | AI memproses caption gambar/video/dokumen |
 | [ai-stock-guard-fase4.md](./ai-stock-guard-fase4.md) | Stok tersedia & penjagaan qty di order flow AI |
 | [ai-order-chat-lookup.md](./ai-order-chat-lookup.md) | Order lookup scoped via chat + deny third-party |
+| [ai-recipient-policy.md](./ai-recipient-policy.md) | Jawaban kebijakan pesan atas nama orang lain |
 | [ai-structured-order.md](./ai-structured-order.md) | Pesanan multi-baris + guard catalog hijack |

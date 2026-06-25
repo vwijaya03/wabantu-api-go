@@ -30,6 +30,7 @@ const (
 	PathOrderCancel       = "order_cancel"
 	PathOrderStatus       = "order_status"
 	PathOrderLookupDenied = "order_lookup_denied"
+	PathRecipientPolicy   = "recipient_policy"
 	PathCatalogDB         = "catalog_db"
 	PathConsulting        = "consulting"
 	PathFAQCache          = "faq_cache"

@@ -453,6 +453,16 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return sent, oErr
 	}
 
+	// ── Kebijakan pesan atas nama penerima lain — sebelum katalog (hindari hijack Abon dll.) ──
+	if inScope && IsRecipientPolicyQuestion(userText) {
+		formal := strOrEmpty(profile.Tone) == "formal"
+		finalReply := applyOutputPolicy(replyRecipientPolicyQuestion(userText, kbEntries, formal))
+		out := metaNoLLM(reasonAIGenerated, PathRecipientPolicy)
+		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
+		err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
+		return err == nil, err
+	}
+
 	// ── Katalog WABantu (business_catalog_item) — prioritas sebelum FAQ/LLM ──
 	if inScope {
 		if catReply, ok := replyFromBusinessCatalog(userText, profile, catalog, history); ok {
