@@ -203,12 +203,7 @@ func ingestMessage(ctx context.Context, msg whatsapp.InboundMessage) error {
 	}
 
 	if ok, sErr := ai.ShouldTriggerSummary(ctx, schema, convoID); sErr == nil && ok {
-		if _, pubErr := ai.SummarizeTopic.Publish(ctx, ai.SummarizeRequest{
-			TenantSchema:   schema,
-			ConversationID: convoID,
-		}); pubErr != nil {
-			rlog.Warn("publish summarize job failed", "err", pubErr)
-		}
+		ai.TryPublishSummarize(ctx, schema, convoID)
 	}
 
 	if tenantID, tErr := tenant.TenantIDBySchema(ctx, schema); tErr == nil && tenantID != "" {

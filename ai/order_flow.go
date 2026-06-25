@@ -481,6 +481,9 @@ func ShouldBreakOrderFlow(userText, step string, catalog []dbCatalogItem) bool {
 	if IsUserSalesCorrection(userText) {
 		return true
 	}
+	if IsStructuredOrderList(userText) || IsExplicitNewOrderStart(userText) {
+		return true
+	}
 	if isOrderProductContinuationStep(step) && messageNamesCatalogProduct(userText, catalog) {
 		return false
 	}

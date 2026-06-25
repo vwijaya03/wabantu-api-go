@@ -13,6 +13,13 @@ import (
 	"encore.app/wabantu/usage"
 )
 
+const (
+	summarizeInflightKeyPrefix = "ai:summarize:inflight:"
+	summarizeInflightTTL       = 2 * time.Minute
+	summarizeFailCountPrefix   = "ai:summarize:fail:"
+	summarizeHandlerTimeout    = 45 * time.Second
+)
+
 // SummarizeRequest is published after every 20 messages in a conversation.
 type SummarizeRequest struct {
 	TenantSchema   string `json:"tenantSchema"`
@@ -30,8 +37,80 @@ var _ = pubsub.NewSubscription(SummarizeTopic, "summarizer", pubsub.Subscription
 })
 
 func handleSummarize(ctx context.Context, req SummarizeRequest) error {
+	if !acquireSummarizeInflight(ctx, req.ConversationID) {
+		rlog.Info("summarize skipped: already inflight", "conversationId", req.ConversationID)
+		return nil
+	}
+	defer releaseSummarizeInflight(ctx, req.ConversationID)
+
 	rlog.Info("summarize triggered", "schema", req.TenantSchema, "conversationId", req.ConversationID)
-	return SummarizeConversation(ctx, req.TenantSchema, req.ConversationID)
+
+	runCtx, cancel := context.WithTimeout(ctx, summarizeHandlerTimeout)
+	defer cancel()
+
+	err := SummarizeConversation(runCtx, req.TenantSchema, req.ConversationID)
+	if err == nil {
+		return nil
+	}
+	if IsAnthropicRetryable(err) {
+		return err
+	}
+	recordSummarizeFailure(ctx, req.TenantSchema, req.ConversationID, err)
+	rlog.Warn("summarize degraded (acked)",
+		"schema", req.TenantSchema,
+		"conversationId", req.ConversationID,
+		"retryable", IsAnthropicRetryable(err),
+		"permanent", IsAnthropicPermanent(err),
+		"err", err,
+	)
+	return nil
+}
+
+// TryPublishSummarize enqueues background summarization with inflight dedupe.
+func TryPublishSummarize(ctx context.Context, tenantSchema, convoID string) {
+	if tenantSchema == "" || convoID == "" {
+		return
+	}
+	if !acquireSummarizeInflight(ctx, convoID) {
+		rlog.Info("summarize publish skipped: inflight", "conversationId", convoID)
+		return
+	}
+	if _, err := SummarizeTopic.Publish(ctx, SummarizeRequest{
+		TenantSchema:   tenantSchema,
+		ConversationID: convoID,
+	}); err != nil {
+		releaseSummarizeInflight(ctx, convoID)
+		rlog.Warn("publish summarize job failed", "err", err, "conversationId", convoID)
+	}
+}
+
+func acquireSummarizeInflight(ctx context.Context, convoID string) bool {
+	if svc == nil || svc.rdb == nil || convoID == "" {
+		return true
+	}
+	ok, err := svc.rdb.SetNX(ctx, summarizeInflightKeyPrefix+convoID, "1", summarizeInflightTTL).Result()
+	return err == nil && ok
+}
+
+func releaseSummarizeInflight(ctx context.Context, convoID string) {
+	if svc == nil || svc.rdb == nil || convoID == "" {
+		return
+	}
+	_ = svc.rdb.Del(ctx, summarizeInflightKeyPrefix+convoID).Err()
+}
+
+func recordSummarizeFailure(ctx context.Context, tenantSchema, convoID string, err error) {
+	if svc == nil || svc.rdb == nil {
+		return
+	}
+	key := summarizeFailCountPrefix + tenantSchema
+	_ = svc.rdb.Incr(ctx, key).Err()
+	_ = svc.rdb.Expire(ctx, key, 30*24*time.Hour).Err()
+	rlog.Warn("summarize failure recorded",
+		"schema", tenantSchema,
+		"conversationId", convoID,
+		"err", err,
+	)
 }
 
 // SummarizeConversation loads messages since the last summary, calls Anthropic

@@ -163,12 +163,27 @@ func IsUserSalesCorrection(userText string) bool {
 	}
 	if idx := strings.Index(text, ","); idx >= 0 {
 		tail := strings.TrimSpace(text[idx+1:])
-		if tail != "" && (matchesSalesCorrectionPhrases(tail) || isConfusionOnly(tail)) {
+		if tail != "" && (matchesSalesCorrectionPhrases(tail) || isConfusionOnly(tail) || isProductDenialCorrection(tail)) {
 			return true
 		}
 	}
-	if matchesSalesCorrectionPhrases(text) || isConfusionOnly(text) {
+	if matchesSalesCorrectionPhrases(text) || isConfusionOnly(text) || isProductDenialCorrection(text) {
 		return true
+	}
+	return false
+}
+
+func isProductDenialCorrection(text string) bool {
+	if !strings.Contains(text, "bukan") {
+		return false
+	}
+	for _, p := range []string{
+		"bukan abon", "bukan api", "bukan sapi", "bukan itu produk", "bukan produk",
+		"salah produk", "bukan yang ini", "bukan barang",
+	} {
+		if strings.Contains(text, p) {
+			return true
+		}
 	}
 	return false
 }

@@ -868,32 +868,6 @@ func (s *AutoReplyService) handleOrderFlow(
 		return st
 	}
 
-	if state == nil && (IsOrderRevisionMessage(userText) || mentionsOrderQty(userText)) {
-		if match := matchCatalogFromFocusedHistory(history, catalog); match != nil {
-			st := orderState{Step: "ask_variant"}
-			applyCatalogMatch(&st, match)
-			if q, ok := parseOrderQty(userText); ok {
-				st.Qty = q
-			}
-			inferVariantFromProductName(&st)
-			if st.variantComplete() && st.Qty > 0 {
-				st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
-				if blocked {
-					s.setOrderState(ctx, tenantID, convo.ID, st)
-					return send(reply)
-				}
-				st.Step = "ask_recipient"
-				s.setOrderState(ctx, tenantID, convo.ID, st)
-				return sendWithConfirm(st, tmpl.AskRecipient)
-			}
-			if st.Qty > 0 {
-				st.Step = "ask_qty"
-				s.setOrderState(ctx, tenantID, convo.ID, st)
-				return sendWithConfirm(st, tmpl.AskQty)
-			}
-		}
-	}
-
 	tryHandleStructuredOrder := func() (bool, error) {
 		outcome := evaluateStructuredOrder(userText, catalog, formal)
 		if !outcome.Matched {
@@ -920,9 +894,40 @@ func (s *AutoReplyService) handleOrderFlow(
 		return sendWithConfirm(outcome.State, prompt)
 	}
 
-	if state == nil {
+	if IsStructuredOrderList(userText) {
+		if state != nil {
+			s.clearOrderState(ctx, tenantID, convo.ID)
+			state = nil
+		}
 		if sent, err := tryHandleStructuredOrder(); sent || err != nil {
 			return sent, err
+		}
+	}
+
+	if state == nil && (IsOrderRevisionMessage(userText) || mentionsOrderQty(userText)) &&
+		!IsStructuredOrderList(userText) && matchCatalogItem(userText, catalog) == nil {
+		if match := matchCatalogFromFocusedHistory(history, catalog); match != nil {
+			st := orderState{Step: "ask_variant"}
+			applyCatalogMatch(&st, match)
+			if q, ok := parseOrderQty(userText); ok {
+				st.Qty = q
+			}
+			inferVariantFromProductName(&st)
+			if st.variantComplete() && st.Qty > 0 {
+				st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
+				if blocked {
+					s.setOrderState(ctx, tenantID, convo.ID, st)
+					return send(reply)
+				}
+				st.Step = "ask_recipient"
+				s.setOrderState(ctx, tenantID, convo.ID, st)
+				return sendWithConfirm(st, tmpl.AskRecipient)
+			}
+			if st.Qty > 0 {
+				st.Step = "ask_qty"
+				s.setOrderState(ctx, tenantID, convo.ID, st)
+				return sendWithConfirm(st, tmpl.AskQty)
+			}
 		}
 	}
 
