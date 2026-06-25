@@ -6,6 +6,7 @@ require (
 	encore.dev v1.44.6
 	github.com/anthropics/anthropic-sdk-go v1.43.0
 	github.com/getsentry/sentry-go v0.31.1
+	github.com/jackc/pgx/v5 v5.4.3
 	github.com/lvillar/gofpdf v1.1.0
 	github.com/redis/go-redis/v9 v9.19.0
 	github.com/xuri/excelize/v2 v2.9.0
@@ -15,7 +16,6 @@ require (
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20221227161230-091c0ba34f0a // indirect
-	github.com/jackc/pgx/v5 v5.4.3 // indirect
 	github.com/jackc/puddle/v2 v2.2.1 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 // indirect
