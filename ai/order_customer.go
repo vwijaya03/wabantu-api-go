@@ -97,6 +97,9 @@ func IsExplicitNewOrderStart(userText string) bool {
 
 // IsNewPurchaseIntentQuestion — "mau order X bisa?" bukan tanya status pesanan lama.
 func IsNewPurchaseIntentQuestion(userText string) bool {
+	if IsPaymentStatusInquiry(userText) {
+		return false
+	}
 	if IsCancelClarificationQuestion(userText) {
 		return false
 	}
@@ -252,8 +255,35 @@ func WantsActiveOrderOnly(userText string) bool {
 	return false
 }
 
+// IsPaymentStatusInquiry — buyer asks whether payment/proof was received or which order is paid.
+func IsPaymentStatusInquiry(userText string) bool {
+	text := strings.ToLower(strings.TrimSpace(userText))
+	if text == "" {
+		return false
+	}
+	for _, p := range []string{
+		"sudah bayar", "sudah dibayar", "sudah transfer", "sudah tf",
+		"bukti bayar", "bukti transfer", "bukti pembayaran",
+		"status bayar", "status pembayaran", "pembayaran sudah",
+		"yang sudah bayar", "sudah lunas", "sudah kirim bukti",
+	} {
+		if strings.Contains(text, p) {
+			return true
+		}
+	}
+	if parseOrderRefFromMessage(userText) != "" &&
+		(strings.Contains(text, "bayar") || strings.Contains(text, "transfer") ||
+			strings.Contains(text, "bukti") || strings.Contains(text, "tf")) {
+		return true
+	}
+	return false
+}
+
 // IsOrderStatusInquiry — customer asks about their existing order.
 func IsOrderStatusInquiry(userText string) bool {
+	if IsPaymentStatusInquiry(userText) {
+		return true
+	}
 	text := strings.ToLower(strings.TrimSpace(userText))
 	if text == "" {
 		return false
@@ -423,6 +453,7 @@ type persistedOrder struct {
 	ContactID       string
 	ConversationID  string
 	Status          string
+	PaymentStatus   string
 	ItemsJSON       []byte
 	ShippingJSON    []byte
 	Subtotal        float64
@@ -764,7 +795,7 @@ func orderShortLabel(o persistedOrder) string {
 			name = name[:40] + "…"
 		}
 	}
-	return fmt.Sprintf("%s — %s (%s)", ref, name, orderStatusLabelID(o.Status))
+	return fmt.Sprintf("%s — %s (%s · %s)", ref, name, orderStatusLabelID(o.Status), paymentStatusLabelID(o.PaymentStatus))
 }
 
 func formatOrderPickListReply(intro string, orders []persistedOrder, actionHint string) string {
@@ -838,7 +869,8 @@ func formatPersistedOrderSummary(o *persistedOrder) string {
 
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("Nomor pesanan: %s\n", ref))
-	b.WriteString(fmt.Sprintf("Status: %s\n\n", orderStatusLabelID(o.Status)))
+	b.WriteString(fmt.Sprintf("Status pesanan: %s\n", orderStatusLabelID(o.Status)))
+	b.WriteString(fmt.Sprintf("Pembayaran: %s\n\n", paymentStatusLabelID(o.PaymentStatus)))
 
 	if len(items) > 0 {
 		b.WriteString("Produk:\n")
@@ -879,6 +911,21 @@ func formatQtyLabel(qty float64) string {
 		return fmt.Sprintf("%d", int64(qty))
 	}
 	return fmt.Sprintf("%g", qty)
+}
+
+func paymentStatusLabelID(status string) string {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "proof_submitted":
+		return "bukti transfer perlu dicek"
+	case "verified":
+		return "pembayaran sudah diverifikasi"
+	case "rejected":
+		return "bukti transfer ditolak"
+	case "unpaid", "":
+		return "belum ada bukti transfer"
+	default:
+		return status
+	}
 }
 
 func orderStatusLabelID(status string) string {

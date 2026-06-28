@@ -40,9 +40,11 @@ type ProfileResponse struct {
 	GreetingTemplate  *string   `json:"greetingTemplate"`
 	Tone              *string   `json:"tone"`
 	AIEnabled         bool      `json:"aiEnabled"`
-	ReportingTimezone string    `json:"reportingTimezone"`
-	CatalogWebsiteURL *string   `json:"catalogWebsiteUrl"`
-	CreatedAt         time.Time `json:"createdAt"`
+	ReportingTimezone             string    `json:"reportingTimezone"`
+	CatalogWebsiteURL             *string   `json:"catalogWebsiteUrl"`
+	PaymentVerificationMode       string    `json:"paymentVerificationMode"`
+	PaymentAutoVerifyMinConfidence float64  `json:"paymentAutoVerifyMinConfidence"`
+	CreatedAt                     time.Time `json:"createdAt"`
 	UpdatedAt         time.Time `json:"updatedAt"`
 }
 
@@ -61,8 +63,10 @@ type UpdateProfileRequest struct {
 	GreetingTemplate  *string `json:"greetingTemplate"`
 	Tone              *string `json:"tone"`
 	AIEnabled         *bool   `json:"aiEnabled"`
-	ReportingTimezone *string `json:"reportingTimezone"`
-	CatalogWebsiteURL *string `json:"catalogWebsiteUrl"`
+	ReportingTimezone              *string  `json:"reportingTimezone"`
+	CatalogWebsiteURL              *string  `json:"catalogWebsiteUrl"`
+	PaymentVerificationMode        *string  `json:"paymentVerificationMode"`
+	PaymentAutoVerifyMinConfidence *float64 `json:"paymentAutoVerifyMinConfidence"`
 }
 
 type UpdateProfileResponse struct {
@@ -100,7 +104,9 @@ type ImportFieldSet struct {
 
 const profileCols = `id, business_name, description, address, opening_hours,
 	products_services, base_pricing, delivery_area, greeting_template, tone,
-	ai_enabled, reporting_timezone, catalog_website_url, created_at, updated_at`
+	ai_enabled, reporting_timezone, catalog_website_url,
+	payment_verification_mode, payment_auto_verify_min_confidence,
+	created_at, updated_at`
 
 const profileTable = "business_profile"
 
@@ -127,6 +133,7 @@ func scanProfile(scanner interface{ Scan(...any) error }) (ProfileResponse, erro
 		&p.OpeningHours, &p.ProductsServices, &p.BasePricing,
 		&p.DeliveryArea, &p.GreetingTemplate, &p.Tone,
 		&p.AIEnabled, &p.ReportingTimezone, &p.CatalogWebsiteURL,
+		&p.PaymentVerificationMode, &p.PaymentAutoVerifyMinConfidence,
 		&p.CreatedAt, &p.UpdatedAt,
 	)
 	return p, err
@@ -221,6 +228,25 @@ func UpdateProfile(ctx context.Context, req *UpdateProfileRequest) (*UpdateProfi
 	addStr("greeting_template", req.GreetingTemplate)
 	addStr("tone", req.Tone)
 	addStr("catalog_website_url", req.CatalogWebsiteURL)
+
+	if req.PaymentVerificationMode != nil {
+		mode := strings.ToLower(strings.TrimSpace(*req.PaymentVerificationMode))
+		if mode != "manual" && mode != "auto_verify" {
+			return nil, apperr.BadRequest("paymentVerificationMode harus manual atau auto_verify")
+		}
+		sets = append(sets, fmt.Sprintf("payment_verification_mode = $%d", idx))
+		args = append(args, mode)
+		idx++
+	}
+	if req.PaymentAutoVerifyMinConfidence != nil {
+		conf := *req.PaymentAutoVerifyMinConfidence
+		if conf < 0 || conf > 1 {
+			return nil, apperr.BadRequest("paymentAutoVerifyMinConfidence harus antara 0 dan 1")
+		}
+		sets = append(sets, fmt.Sprintf("payment_auto_verify_min_confidence = $%d", idx))
+		args = append(args, conf)
+		idx++
+	}
 
 	if req.AIEnabled != nil {
 		sets = append(sets, fmt.Sprintf("ai_enabled = $%d", idx))

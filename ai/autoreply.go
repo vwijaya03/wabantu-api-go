@@ -228,6 +228,10 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		}
 		return false, nil
 	}
+	if IsPaymentProofInbound(inbound.Type, userText) {
+		rlog.Info("AI job: payment proof inbound, skip autoreply", "type", inbound.Type)
+		return false, nil
+	}
 
 	profile, err := loadBusinessProfile(ctx, conn)
 	if err != nil {

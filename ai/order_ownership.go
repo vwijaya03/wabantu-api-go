@@ -73,7 +73,8 @@ func orderAccessDeniedReply() string {
 const persistedOrderSelectCols = `id::text,
 		COALESCE(contact_id::text, ''),
 		COALESCE(conversation_id::text, ''),
-		status, items, shipping_address, subtotal, total, created_at`
+		status, items, shipping_address, subtotal, total, created_at,
+		COALESCE(payment_status, 'unpaid')`
 
 func scanPersistedOrderRow(scan func(dest ...any) error) (*persistedOrder, error) {
 	var o persistedOrder
@@ -81,6 +82,7 @@ func scanPersistedOrderRow(scan func(dest ...any) error) (*persistedOrder, error
 		&o.ID, &o.ContactID, &o.ConversationID,
 		&o.Status, &o.ItemsJSON, &o.ShippingJSON,
 		&o.Subtotal, &o.Total, &o.CreatedAt,
+		&o.PaymentStatus,
 	)
 	if err != nil {
 		return nil, err

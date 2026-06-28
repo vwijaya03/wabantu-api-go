@@ -64,6 +64,9 @@ func IsConsultingPurchaseQuestion(userText string, catalog []dbCatalogItem) bool
 	if text == "" {
 		return false
 	}
+	if IsPaymentStatusInquiry(userText) {
+		return false
+	}
 	if IsRecipientPolicyQuestion(userText) {
 		return false
 	}

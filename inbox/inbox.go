@@ -95,6 +95,7 @@ type MessageItem struct {
 	Type           string            `json:"type"`
 	Body           *string           `json:"body"`
 	Media          *MessageMediaInfo `json:"media,omitempty"`
+	LinkedOrderID  *string           `json:"linkedOrderId,omitempty"`
 	Status         string            `json:"status"`
 	CreatedAt      time.Time         `json:"createdAt"`
 }
@@ -522,11 +523,12 @@ func GetMessages(ctx context.Context, id string, p *GetMessagesParams) (*GetMess
 			return nil, apperr.BadRequest("Cursor pesan tidak valid.")
 		}
 		rows, queryErr = conn.QueryContext(ctx,
-			`SELECT id, conversation_id, external_id, direction, author, type, body, status, created_at, metadata
-			 FROM message
-			 WHERE conversation_id = $1
-			   AND ((created_at < $2) OR (created_at = $2 AND id < $3::uuid))
-			 ORDER BY created_at DESC, id DESC
+			`SELECT m.id, m.conversation_id, m.external_id, m.direction, m.author, m.type, m.body, m.status, m.created_at, m.metadata,
+			        (SELECT o.id::text FROM "order" o WHERE o.payment_proof_message_id = m.id AND o.deleted_at IS NULL LIMIT 1)
+			 FROM message m
+			 WHERE m.conversation_id = $1
+			   AND ((m.created_at < $2) OR (m.created_at = $2 AND m.id < $3::uuid))
+			 ORDER BY m.created_at DESC, m.id DESC
 			 LIMIT $4`,
 			id, cursorAt, cur.ID, take+1)
 	} else {
@@ -537,10 +539,11 @@ func GetMessages(ctx context.Context, id string, p *GetMessagesParams) (*GetMess
 			}
 		}
 		rows, queryErr = conn.QueryContext(ctx,
-			`SELECT id, conversation_id, external_id, direction, author, type, body, status, created_at, metadata
-			 FROM message
-			 WHERE conversation_id = $1
-			 ORDER BY created_at DESC, id DESC
+			`SELECT m.id, m.conversation_id, m.external_id, m.direction, m.author, m.type, m.body, m.status, m.created_at, m.metadata,
+			        (SELECT o.id::text FROM "order" o WHERE o.payment_proof_message_id = m.id AND o.deleted_at IS NULL LIMIT 1)
+			 FROM message m
+			 WHERE m.conversation_id = $1
+			 ORDER BY m.created_at DESC, m.id DESC
 			 LIMIT $2 OFFSET $3`,
 			id, take+1, offset)
 	}
@@ -554,9 +557,14 @@ func GetMessages(ctx context.Context, id string, p *GetMessagesParams) (*GetMess
 	for rows.Next() {
 		var m MessageItem
 		var meta []byte
+		var linkedOrder sql.NullString
 		if err := rows.Scan(&m.ID, &m.ConversationID, &m.ExternalID,
-			&m.Direction, &m.Author, &m.Type, &m.Body, &m.Status, &m.CreatedAt, &meta); err != nil {
+			&m.Direction, &m.Author, &m.Type, &m.Body, &m.Status, &m.CreatedAt, &meta, &linkedOrder); err != nil {
 			continue
+		}
+		if linkedOrder.Valid && strings.TrimSpace(linkedOrder.String) != "" {
+			v := linkedOrder.String
+			m.LinkedOrderID = &v
 		}
 		enrichMessageMedia(&m, json.RawMessage(meta))
 		msgs = append(msgs, m)

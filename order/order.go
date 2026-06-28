@@ -69,6 +69,18 @@ type ShippingAddress struct {
 	Country    string `json:"country,omitempty"`
 }
 
+type PaymentProofMeta struct {
+	Amount        *float64 `json:"amount,omitempty"`
+	Bank          string   `json:"bank,omitempty"`
+	AccountNumber string   `json:"accountNumber,omitempty"`
+	AccountName   string   `json:"accountName,omitempty"`
+	Date          string   `json:"date,omitempty"`
+	Confidence    float64  `json:"confidence,omitempty"`
+	Flags         []string `json:"flags,omitempty"`
+	RejectReason  string   `json:"rejectReason,omitempty"`
+	FileHash      string   `json:"fileHash,omitempty"`
+}
+
 type Order struct {
 	ID                   string           `json:"id"`
 	OrderNumber          string           `json:"orderNumber"`
@@ -82,8 +94,14 @@ type Order struct {
 	Status               string           `json:"status"`
 	TrackingNumber       string           `json:"trackingNumber"`
 	Courier              string           `json:"courier"`
-	PaymentTransactionID string           `json:"paymentTransactionId"`
-	Subtotal             float64          `json:"subtotal"`
+	PaymentTransactionID       string            `json:"paymentTransactionId"`
+	PaymentStatus              string            `json:"paymentStatus"`
+	PaymentProofMessageID      string            `json:"paymentProofMessageId,omitempty"`
+	PaymentProofSubmittedAt    *time.Time        `json:"paymentProofSubmittedAt,omitempty"`
+	PaymentProofVerifiedAt     *time.Time        `json:"paymentProofVerifiedAt,omitempty"`
+	PaymentProofVerifiedBy     string            `json:"paymentProofVerifiedBy,omitempty"`
+	PaymentProofMeta           *PaymentProofMeta `json:"paymentProofMeta,omitempty"`
+	Subtotal                   float64           `json:"subtotal"`
 	ShippingCost         float64          `json:"shippingCost"`
 	Total                float64          `json:"total"`
 	IncomeWalletID       string           `json:"incomeWalletId,omitempty"`
@@ -149,6 +167,13 @@ type BatchDeleteResponse struct {
 	Deleted int `json:"deleted"`
 }
 
+var validPaymentStatuses = map[string]bool{
+	"unpaid":          true,
+	"proof_submitted": true,
+	"verified":        true,
+	"rejected":        true,
+}
+
 func orderSelectCols(prefix string) string {
 	col := func(name string) string {
 		if prefix == "" {
@@ -161,13 +186,23 @@ func orderSelectCols(prefix string) string {
 		COALESCE(%s::text, ''), COALESCE(%s::text, ''), %s,
 		COALESCE(%s, '{}'), COALESCE(%s, ''), %s,
 		COALESCE(%s, ''), COALESCE(%s, ''),
-		COALESCE(%s::text, ''), %s, %s, %s,
+		COALESCE(%s::text, ''), %s,
+		COALESCE(%s::text, ''), %s, %s,
+		COALESCE(%s::text, ''), COALESCE(%s, '{}'),
+		%s, %s, %s,
 		COALESCE(%s::text, ''), COALESCE(%s::text, ''), %s, %s`,
 		col("id"),
 		col("conversation_id"), col("contact_id"), col("items"),
 		col("shipping_address"), col("notes"), col("status"),
 		col("tracking_number"), col("courier"),
-		col("payment_transaction_id"), col("subtotal"), col("shipping_cost"), col("total"),
+		col("payment_transaction_id"),
+		col("payment_status"),
+		col("payment_proof_message_id"),
+		col("payment_proof_submitted_at"),
+		col("payment_proof_verified_at"),
+		col("payment_proof_verified_by"),
+		col("payment_proof_meta"),
+		col("subtotal"), col("shipping_cost"), col("total"),
 		col("income_wallet_id"), col("created_by"), col("created_at"), col("updated_at"))
 }
 
@@ -941,12 +976,16 @@ func createCatalogOrderItem(ctx context.Context, schema, code, name string, pric
 
 func scanOrder(scan func(dest ...any) error) (Order, error) {
 	var o Order
-	var itemsRaw, addrRaw []byte
+	var itemsRaw, addrRaw, paymentMetaRaw []byte
 	if err := scan(
 		&o.ID, &o.ConversationID, &o.ContactID, &itemsRaw,
 		&addrRaw, &o.Notes, &o.Status,
 		&o.TrackingNumber, &o.Courier,
-		&o.PaymentTransactionID, &o.Subtotal, &o.ShippingCost, &o.Total,
+		&o.PaymentTransactionID, &o.PaymentStatus,
+		&o.PaymentProofMessageID,
+		&o.PaymentProofSubmittedAt, &o.PaymentProofVerifiedAt, &o.PaymentProofVerifiedBy,
+		&paymentMetaRaw,
+		&o.Subtotal, &o.ShippingCost, &o.Total,
 		&o.IncomeWalletID, &o.CreatedBy, &o.CreatedAt, &o.UpdatedAt,
 	); err != nil {
 		return o, err
@@ -964,7 +1003,18 @@ func scanOrder(scan func(dest ...any) error) (Order, error) {
 			o.ShippingAddress = &addr
 		}
 	}
+	applyPaymentProofMeta(&o, paymentMetaRaw)
 	return o, nil
+}
+
+func applyPaymentProofMeta(o *Order, raw []byte) {
+	if o == nil || len(raw) <= 2 {
+		return
+	}
+	var meta PaymentProofMeta
+	if json.Unmarshal(raw, &meta) == nil {
+		o.PaymentProofMeta = &meta
+	}
 }
 
 // nullUUIDArg maps "" to SQL NULL for optional UUID columns.

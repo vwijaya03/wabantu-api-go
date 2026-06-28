@@ -12,6 +12,8 @@ import (
 // tenantSchemaPatchSQL brings older tenant schemas in line with application code.
 const tenantSchemaPatchSQL = `
 ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS outbound_webhook_url TEXT;
+ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS payment_verification_mode VARCHAR(20) NOT NULL DEFAULT 'manual';
+ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS payment_auto_verify_min_confidence NUMERIC(5,2) NOT NULL DEFAULT 0.95;
 
 ALTER TABLE usage_aggregate ADD COLUMN IF NOT EXISTS period VARCHAR(7);
 ALTER TABLE usage_aggregate ADD COLUMN IF NOT EXISTS quantity BIGINT NOT NULL DEFAULT 0;
@@ -50,6 +52,16 @@ ALTER TABLE "order" ADD COLUMN IF NOT EXISTS shipping_cost DECIMAL(15,4) NOT NUL
 ALTER TABLE "order" ADD COLUMN IF NOT EXISTS total DECIMAL(15,4) NOT NULL DEFAULT 0;
 ALTER TABLE "order" ADD COLUMN IF NOT EXISTS created_by UUID;
 ALTER TABLE "order" ADD COLUMN IF NOT EXISTS income_wallet_id UUID;
+
+ALTER TABLE "order" ADD COLUMN IF NOT EXISTS payment_status VARCHAR(20) NOT NULL DEFAULT 'unpaid';
+ALTER TABLE "order" ADD COLUMN IF NOT EXISTS payment_proof_message_id UUID;
+ALTER TABLE "order" ADD COLUMN IF NOT EXISTS payment_proof_submitted_at TIMESTAMPTZ;
+ALTER TABLE "order" ADD COLUMN IF NOT EXISTS payment_proof_verified_at TIMESTAMPTZ;
+ALTER TABLE "order" ADD COLUMN IF NOT EXISTS payment_proof_verified_by UUID;
+ALTER TABLE "order" ADD COLUMN IF NOT EXISTS payment_proof_meta JSONB NOT NULL DEFAULT '{}';
+CREATE INDEX IF NOT EXISTS idx_order_payment_status
+    ON "order"(payment_status, created_at DESC)
+    WHERE deleted_at IS NULL;
 
 ALTER TABLE conversation_summary ADD COLUMN IF NOT EXISTS message_count INTEGER NOT NULL DEFAULT 0;
 
@@ -215,6 +227,9 @@ func runAlwaysApplyPatches(ctx context.Context, conn *sql.Conn) error {
 	if err := alwaysApplyOrderIncomePatch(ctx, conn); err != nil {
 		return err
 	}
+	if err := alwaysApplyPaymentProofPatch(ctx, conn); err != nil {
+		return err
+	}
 	if err := alwaysApplyInventorySettingPatch(ctx, conn); err != nil {
 		return err
 	}
@@ -256,6 +271,38 @@ func alwaysApplyOrderIncomePatch(ctx context.Context, conn *sql.Conn) error {
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_fin_txn_order_income_ref
 			ON fin_transaction (reference_no)
 			WHERE type = 'income' AND reference_no IS NOT NULL AND deleted_at IS NULL`)
+	return err
+}
+
+const orderPaymentProofPatchSQL = `
+ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS payment_verification_mode VARCHAR(20) NOT NULL DEFAULT 'manual';
+ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS payment_auto_verify_min_confidence NUMERIC(5,2) NOT NULL DEFAULT 0.95;
+ALTER TABLE "order" ADD COLUMN IF NOT EXISTS payment_status VARCHAR(20) NOT NULL DEFAULT 'unpaid';
+ALTER TABLE "order" ADD COLUMN IF NOT EXISTS payment_proof_message_id UUID;
+ALTER TABLE "order" ADD COLUMN IF NOT EXISTS payment_proof_submitted_at TIMESTAMPTZ;
+ALTER TABLE "order" ADD COLUMN IF NOT EXISTS payment_proof_verified_at TIMESTAMPTZ;
+ALTER TABLE "order" ADD COLUMN IF NOT EXISTS payment_proof_verified_by UUID;
+ALTER TABLE "order" ADD COLUMN IF NOT EXISTS payment_proof_meta JSONB NOT NULL DEFAULT '{}';
+CREATE INDEX IF NOT EXISTS idx_order_payment_status
+    ON "order"(payment_status, created_at DESC)
+    WHERE deleted_at IS NULL;
+`
+
+func alwaysApplyPaymentProofPatch(ctx context.Context, conn *sql.Conn) error {
+	ready, err := tenantschema.OrderPaymentProofPatchReady(ctx, conn)
+	if err != nil {
+		return err
+	}
+	if ready {
+		return nil
+	}
+	if encore.Meta().Environment.Cloud != encore.CloudLocal {
+		return fmt.Errorf(
+			"patch payment proof belum diterapkan di cloud: jalankan ./scripts/apply-tenant-schema-cloud.sh %s",
+			encore.Meta().Environment.Name,
+		)
+	}
+	_, err = conn.ExecContext(ctx, orderPaymentProofPatchSQL)
 	return err
 }
 

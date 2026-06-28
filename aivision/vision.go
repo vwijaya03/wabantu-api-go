@@ -5,6 +5,7 @@ package aivision
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -107,6 +108,42 @@ func ExtractEventPatientsFromScreenshot(ctx context.Context, apiKey string, imag
 
 func ExtractEventTherapiesFromScreenshot(ctx context.Context, apiKey string, imageBytes []byte, mediaType string) (string, Usage, error) {
 	return visionExtract(ctx, apiKey, imageBytes, mediaType, eventTherapyVisionSystem, eventTherapyVisionUser)
+}
+
+// PaymentProofExtract is OCR output for a bank transfer screenshot.
+type PaymentProofExtract struct {
+	Amount        float64 `json:"amount"`
+	Bank          string  `json:"bank"`
+	AccountNumber string  `json:"account_number"`
+	AccountName   string  `json:"account_name"`
+	Date          string  `json:"date"`
+	Confidence    float64 `json:"confidence"`
+}
+
+const paymentProofVisionSystem = `Kamu mengekstrak data bukti transfer bank / e-wallet dari screenshot.
+Jawab HANYA SATU objek JSON valid, tanpa markdown.
+- amount: nominal transfer IDR tanpa "Rp", tanpa titik ribuan (contoh 150000 untuk Rp150.000).
+- bank: nama bank atau e-wallet (BCA, Mandiri, BRI, BNI, Jenius, GoPay, dll).
+- account_number: nomor rekening/VA penerima jika terlihat.
+- account_name: atas nama penerima jika terlihat.
+- date: tanggal transfer YYYY-MM-DD jika terlihat; kosongkan "" jika tidak jelas.
+- confidence: 0.0–1.0 seberapa yakin data benar.
+Jangan mengarang angka yang tidak terlihat di gambar.`
+
+const paymentProofVisionUser = `Ekstrak bukti transfer dari gambar ini. Format JSON:
+{"amount":0,"bank":"","account_number":"","account_name":"","date":"","confidence":0}`
+
+// ExtractPaymentProofFromImage calls Claude vision for payment proof OCR.
+func ExtractPaymentProofFromImage(ctx context.Context, apiKey string, imageBytes []byte, mediaType string) (PaymentProofExtract, Usage, error) {
+	raw, usage, err := visionExtract(ctx, apiKey, imageBytes, mediaType, paymentProofVisionSystem, paymentProofVisionUser)
+	var out PaymentProofExtract
+	if err != nil {
+		return out, usage, err
+	}
+	if uerr := json.Unmarshal([]byte(raw), &out); uerr != nil {
+		return out, usage, fmt.Errorf("parse payment proof JSON: %w", uerr)
+	}
+	return out, usage, nil
 }
 
 // SanitizeVisionJSON strips markdown fences from model output.

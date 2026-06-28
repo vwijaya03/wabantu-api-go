@@ -345,6 +345,8 @@ CREATE TABLE IF NOT EXISTS business_profile (
     reporting_timezone  VARCHAR(100) NOT NULL DEFAULT 'Asia/Jakarta',
     catalog_website_url TEXT,
     outbound_webhook_url TEXT,
+    payment_verification_mode VARCHAR(20) NOT NULL DEFAULT 'manual',
+    payment_auto_verify_min_confidence NUMERIC(5,2) NOT NULL DEFAULT 0.95,
     created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
@@ -627,6 +629,12 @@ CREATE TABLE IF NOT EXISTS "order" (
     shipping_cost          DECIMAL(15,4) NOT NULL DEFAULT 0,
     total                  DECIMAL(15,4) NOT NULL DEFAULT 0,
     income_wallet_id       UUID,
+    payment_status         VARCHAR(20)  NOT NULL DEFAULT 'unpaid',
+    payment_proof_message_id UUID,
+    payment_proof_submitted_at TIMESTAMPTZ,
+    payment_proof_verified_at TIMESTAMPTZ,
+    payment_proof_verified_by UUID,
+    payment_proof_meta     JSONB        NOT NULL DEFAULT '{}',
     created_by             UUID,
     created_at             TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at             TIMESTAMPTZ  NOT NULL DEFAULT now(),
@@ -638,6 +646,9 @@ CREATE INDEX IF NOT EXISTS idx_order_status_created
     WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_order_contact_created
     ON "order"(contact_id, created_at DESC)
+    WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_order_payment_status
+    ON "order"(payment_status, created_at DESC)
     WHERE deleted_at IS NULL;
 
 -- conversation_summary

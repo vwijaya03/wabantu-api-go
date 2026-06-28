@@ -122,6 +122,19 @@ func TenantPatchReady(ctx context.Context, conn *sql.Conn) (bool, error) {
 	return IndexExists(ctx, conn, "idx_catalog_source_code")
 }
 
+// OrderPaymentProofPatchReady — Fase 2 payment proof columns on order + business_profile.
+func OrderPaymentProofPatchReady(ctx context.Context, conn *sql.Conn) (bool, error) {
+	ok, err := columnExists(ctx, conn, "order", "payment_status")
+	if err != nil || !ok {
+		return false, err
+	}
+	ok, err = columnExists(ctx, conn, "business_profile", "payment_verification_mode")
+	if err != nil || !ok {
+		return false, err
+	}
+	return IndexExists(ctx, conn, "idx_order_payment_status")
+}
+
 // OrderIncomePatchReady — order income wallet column (+ dedup index when finance exists).
 func OrderIncomePatchReady(ctx context.Context, conn *sql.Conn) (bool, error) {
 	ok, err := columnExists(ctx, conn, "order", "income_wallet_id")
@@ -185,6 +198,7 @@ func CloudTenantReady(ctx context.Context, conn *sql.Conn) (bool, error) {
 		EventsModuleReady,
 		PIIReady,
 		OrderIncomePatchReady,
+		OrderPaymentProofPatchReady,
 		InventoryModuleReady,
 	}
 	for _, fn := range checks {
