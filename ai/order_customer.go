@@ -962,6 +962,12 @@ func formatPaymentProofDetail(o *persistedOrder) string {
 	if len(o.PaymentProofMetaJSON) > 2 {
 		_ = json.Unmarshal(o.PaymentProofMetaJSON, &meta)
 	}
+	if order.IsPaymentProofBlocked(meta) {
+		return fmt.Sprintf(
+			"Batas pengiriman bukti (%d/%d penolakan) tercapai. Hubungi admin toko.",
+			meta.RejectionCount, order.PaymentProofMaxRejections,
+		)
+	}
 	if reason := strings.TrimSpace(meta.RejectReason); reason != "" {
 		return "Alasan: " + reason
 	}

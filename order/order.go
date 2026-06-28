@@ -77,8 +77,11 @@ type PaymentProofMeta struct {
 	Date          string   `json:"date,omitempty"`
 	Confidence    float64  `json:"confidence,omitempty"`
 	Flags         []string `json:"flags,omitempty"`
-	RejectReason  string   `json:"rejectReason,omitempty"`
-	FileHash      string   `json:"fileHash,omitempty"`
+	RejectReason    string `json:"rejectReason,omitempty"`
+	FileHash        string `json:"fileHash,omitempty"`
+	RejectionCount  int    `json:"rejectionCount,omitempty"`
+	ProofBlocked    bool   `json:"proofBlocked,omitempty"`
+	BlockedNotified bool   `json:"blockedNotified,omitempty"`
 }
 
 type Order struct {

@@ -1,10 +1,12 @@
 package ai
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"encore.app/wabantu/aivision"
+	"encore.app/wabantu/order"
 )
 
 func TestLoadPaymentAccountsFromKB(t *testing.T) {
@@ -119,6 +121,21 @@ func TestIsPayablePaymentOrder(t *testing.T) {
 	}
 	if isPayablePaymentOrder(&persistedOrder{Status: "processing", PaymentStatus: "verified"}) {
 		t.Fatal("verified should not be payable")
+	}
+	blockedMeta, _ := json.Marshal(order.PaymentProofMeta{RejectionCount: 5, ProofBlocked: true})
+	if isPayablePaymentOrder(&persistedOrder{
+		Status:               "draft",
+		PaymentStatus:        "rejected",
+		PaymentProofMetaJSON: blockedMeta,
+	}) {
+		t.Fatal("blocked order should not be payable")
+	}
+}
+
+func TestIsOrderPaymentProofBlocked(t *testing.T) {
+	meta, _ := json.Marshal(order.PaymentProofMeta{ProofBlocked: true})
+	if !isOrderPaymentProofBlocked(&persistedOrder{PaymentProofMetaJSON: meta}) {
+		t.Fatal("expected blocked")
 	}
 }
 

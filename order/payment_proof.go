@@ -104,13 +104,11 @@ func RejectPaymentProof(ctx context.Context, id string, req *RejectPaymentProofR
 		return nil, appErrs.BadRequest("payment already verified")
 	}
 
-	meta := PaymentProofMeta{}
-	if len(metaRaw) > 2 {
-		_ = json.Unmarshal(metaRaw, &meta)
-	}
+	meta := ParsePaymentProofMeta(metaRaw)
 	if req != nil {
 		meta.RejectReason = strings.TrimSpace(req.Reason)
 	}
+	meta = IncrementPaymentRejection(meta)
 	metaJSON, _ := json.Marshal(meta)
 
 	row := db.QueryRow(ctx, fmt.Sprintf(
@@ -125,6 +123,60 @@ func RejectPaymentProof(ctx context.Context, id string, req *RejectPaymentProofR
 	o, err := scanOrder(row.Scan)
 	if err != nil {
 		return nil, fmt.Errorf("reject payment proof: %w", err)
+	}
+	return &o, nil
+}
+
+//encore:api auth method=POST path=/api/v1/orders/:id/payment-proof/unblock
+func UnblockPaymentProof(ctx context.Context, id string) (*Order, error) {
+	u, err := getUser()
+	if err != nil {
+		return nil, err
+	}
+	if !u.CanPerformOwnerActions() {
+		return nil, appErrs.Forbidden("owner access required")
+	}
+
+	var paymentStatus, conversationID string
+	var metaRaw []byte
+	err = db.QueryRow(ctx, fmt.Sprintf(
+		`SELECT payment_status, COALESCE(payment_proof_meta, '{}'), COALESCE(conversation_id::text, '')
+		 FROM "%s"."order" WHERE id=$1 AND deleted_at IS NULL`,
+		u.TenantSchema), id).Scan(&paymentStatus, &metaRaw, &conversationID)
+	if err != nil {
+		return nil, appErrs.NotFound("order not found")
+	}
+	if paymentStatus == "verified" {
+		return nil, appErrs.BadRequest("payment already verified")
+	}
+
+	meta := ParsePaymentProofMeta(metaRaw)
+	if !IsPaymentProofBlocked(meta) {
+		return nil, appErrs.BadRequest("pesanan tidak dalam status batas bukti transfer")
+	}
+	meta = ResetPaymentProofBlock(meta)
+	metaJSON, _ := json.Marshal(meta)
+
+	row := db.QueryRow(ctx, fmt.Sprintf(
+		`UPDATE "%s"."order" SET
+			payment_proof_meta = $2,
+			updated_at = NOW()
+		 WHERE id = $1 AND deleted_at IS NULL
+		 RETURNING %s`,
+		u.TenantSchema, orderSelectCols("")), id, metaJSON)
+
+	o, err := scanOrder(row.Scan)
+	if err != nil {
+		return nil, fmt.Errorf("unblock payment proof: %w", err)
+	}
+
+	if conversationID != "" {
+		ref := FormatOrderNumber(o.ID)
+		msg := fmt.Sprintf(
+			"Admin sudah membuka batas upload bukti untuk pesanan %s. Silakan kirim bukti transfer yang benar ya kak.",
+			ref,
+		)
+		_ = sendPaymentProofConversationMessage(ctx, u.TenantSchema, conversationID, msg)
 	}
 	return &o, nil
 }

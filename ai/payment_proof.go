@@ -34,17 +34,7 @@ type paymentAccount struct {
 	AccountName   string
 }
 
-type paymentProofMeta struct {
-	Amount        *float64 `json:"amount,omitempty"`
-	Bank          string   `json:"bank,omitempty"`
-	AccountNumber string   `json:"accountNumber,omitempty"`
-	AccountName   string   `json:"accountName,omitempty"`
-	Date          string   `json:"date,omitempty"`
-	Confidence    float64  `json:"confidence,omitempty"`
-	Flags         []string `json:"flags,omitempty"`
-	FileHash      string   `json:"fileHash,omitempty"`
-	RejectReason  string   `json:"rejectReason,omitempty"`
-}
+type paymentProofMeta = order.PaymentProofMeta
 
 type paymentProfileSettings struct {
 	Mode       string
@@ -80,6 +70,12 @@ func processPaymentProofJob(ctx context.Context, job *PaymentProofJob) error {
 	}
 	if target == nil {
 		rlog.Info("payment proof skipped: no target order", "conversationId", job.ConversationID)
+		return nil
+	}
+
+	if handled, err := handleBlockedPaymentProof(ctx, conn, job, target); err != nil {
+		return err
+	} else if handled {
 		return nil
 	}
 
@@ -167,7 +163,7 @@ func resolvePaymentTargetOrder(ctx context.Context, q tenantQuerier, tenantSchem
 		if err != nil {
 			return nil, count, err
 		}
-		if denied || o == nil || !isPayablePaymentOrder(o) {
+		if denied || o == nil || !isResolvableForPaymentProof(o) {
 			return nil, count, nil
 		}
 		return o, count, nil
@@ -201,6 +197,9 @@ func isPayablePaymentOrder(o *persistedOrder) bool {
 	if o.Status == "cancelled" || o.Status == "completed" {
 		return false
 	}
+	if isOrderPaymentProofBlocked(o) {
+		return false
+	}
 	pay := strings.ToLower(strings.TrimSpace(o.PaymentStatus))
 	if pay == "" {
 		pay = "unpaid"
@@ -211,6 +210,68 @@ func isPayablePaymentOrder(o *persistedOrder) bool {
 	default:
 		return false
 	}
+}
+
+func isResolvableForPaymentProof(o *persistedOrder) bool {
+	if o == nil {
+		return false
+	}
+	if o.Status == "cancelled" || o.Status == "completed" {
+		return false
+	}
+	pay := strings.ToLower(strings.TrimSpace(o.PaymentStatus))
+	if pay == "" {
+		pay = "unpaid"
+	}
+	switch pay {
+	case "unpaid", "proof_submitted", "rejected":
+		return true
+	default:
+		return false
+	}
+}
+
+func isOrderPaymentProofBlocked(o *persistedOrder) bool {
+	if o == nil {
+		return false
+	}
+	return order.IsPaymentProofBlocked(order.ParsePaymentProofMeta(o.PaymentProofMetaJSON))
+}
+
+func handleBlockedPaymentProof(ctx context.Context, q tenantQuerier, job *PaymentProofJob, target *persistedOrder) (bool, error) {
+	meta := order.ParsePaymentProofMeta(target.PaymentProofMetaJSON)
+	if !order.IsPaymentProofBlocked(meta) {
+		return false, nil
+	}
+	if meta.BlockedNotified {
+		rlog.Info("payment proof ignored: order blocked", "orderId", target.ID)
+		return true, nil
+	}
+	ref := order.FormatOrderNumber(target.ID)
+	msg := fmt.Sprintf(
+		"Maaf kak, bukti transfer untuk pesanan %s sudah ditolak %d kali. Silakan hubungi admin toko untuk bantuan.",
+		ref, order.PaymentProofMaxRejections,
+	)
+	meta.BlockedNotified = true
+	metaJSON, _ := json.Marshal(meta)
+	_, err := q.ExecContext(ctx, fmt.Sprintf(`
+		UPDATE "%s"."order" SET payment_proof_meta = $2::jsonb, updated_at = NOW()
+		WHERE id = $1::uuid AND deleted_at IS NULL`, job.TenantSchema), target.ID, string(metaJSON))
+	if err != nil {
+		return true, err
+	}
+	if err := sendPaymentProofOutbound(ctx, q, job, msg); err != nil {
+		return true, err
+	}
+	return true, nil
+}
+
+func mergePaymentProofMeta(existing, incoming paymentProofMeta) paymentProofMeta {
+	out := incoming
+	out.RejectionCount = existing.RejectionCount
+	out.ProofBlocked = existing.ProofBlocked
+	out.BlockedNotified = existing.BlockedNotified
+	return out
 }
 
 // IsPaymentProofInbound — image (or caption) that should be handled by payment-proof pipeline only.
@@ -499,6 +560,11 @@ func applyPaymentProofResult(
 	duplicateOtherRef string,
 ) error {
 	prevPaymentStatus := strings.ToLower(strings.TrimSpace(target.PaymentStatus))
+	existing := order.ParsePaymentProofMeta(target.PaymentProofMetaJSON)
+	meta = mergePaymentProofMeta(existing, meta)
+	if paymentStatus == "rejected" {
+		meta = order.IncrementPaymentRejection(meta)
+	}
 	metaJSON, _ := json.Marshal(meta)
 	verifiedAtSQL := "NULL"
 	verifiedBySQL := "NULL"
