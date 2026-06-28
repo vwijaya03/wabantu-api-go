@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"strings"
 	"testing"
 
 	"encore.app/wabantu/aivision"
@@ -87,6 +88,9 @@ func TestIsPaymentProofInbound(t *testing.T) {
 	if !IsPaymentProofInbound("image", "bukti bayar untuk pesanan WB-58D662BC") {
 		t.Fatal("payment proof caption should skip AI")
 	}
+	if !IsPaymentProofInbound("image", "WB-58D662BC") {
+		t.Fatal("image with order ref only should skip AI")
+	}
 	if IsPaymentProofInbound("image", "kamu punya barang ini gak min ?") {
 		t.Fatal("product image caption should not skip AI")
 	}
@@ -95,6 +99,17 @@ func TestIsPaymentProofInbound(t *testing.T) {
 	}
 	if IsPaymentProofInbound("text", "sudah transfer") {
 		t.Fatal("text should not be payment proof inbound")
+	}
+}
+
+func TestPaymentProofBuyerMessage(t *testing.T) {
+	got := paymentProofBuyerMessage("WB-ABC", "proof_submitted", "rejected", "")
+	if !strings.Contains(got, "baru") {
+		t.Fatalf("resubmit message: %q", got)
+	}
+	dup := paymentProofBuyerMessage("WB-ABC", "rejected", "", "WB-XYZ")
+	if !strings.Contains(dup, "WB-XYZ") {
+		t.Fatalf("duplicate message: %q", dup)
 	}
 }
 

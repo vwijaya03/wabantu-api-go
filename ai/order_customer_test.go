@@ -101,6 +101,7 @@ func TestIsOrderStatusInquiry(t *testing.T) {
 		{"bisa order boxer mono spot 5 paket?", false},
 		{"pesanan ini sudah saya bayar belum WB-59505DFE?", true},
 		{"yang sudah bayar yang mana?", true},
+		{"kenapa bukti transfer ditolak ? WB-58D662BC", true},
 	}
 	for _, tc := range cases {
 		if got := IsOrderStatusInquiry(tc.text); got != tc.want {

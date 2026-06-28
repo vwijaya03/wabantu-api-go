@@ -255,8 +255,29 @@ func WantsActiveOrderOnly(userText string) bool {
 	return false
 }
 
+// IsPaymentRejectionInquiry — buyer asks why proof was rejected.
+func IsPaymentRejectionInquiry(userText string) bool {
+	text := strings.ToLower(strings.TrimSpace(userText))
+	if text == "" {
+		return false
+	}
+	for _, p := range []string{
+		"kenapa ditolak", "kok ditolak", "mengapa ditolak",
+		"kenapa bukti", "kok bukti", "bukti ditolak",
+	} {
+		if strings.Contains(text, p) {
+			return true
+		}
+	}
+	return strings.Contains(text, "ditolak") &&
+		(strings.Contains(text, "bukti") || strings.Contains(text, "transfer"))
+}
+
 // IsPaymentStatusInquiry — buyer asks whether payment/proof was received or which order is paid.
 func IsPaymentStatusInquiry(userText string) bool {
+	if IsPaymentRejectionInquiry(userText) {
+		return true
+	}
 	text := strings.ToLower(strings.TrimSpace(userText))
 	if text == "" {
 		return false
@@ -449,16 +470,17 @@ func parseOrderRefFromMessage(userText string) string {
 }
 
 type persistedOrder struct {
-	ID              string
-	ContactID       string
-	ConversationID  string
-	Status          string
-	PaymentStatus   string
-	ItemsJSON       []byte
-	ShippingJSON    []byte
-	Subtotal        float64
-	Total           float64
-	CreatedAt       time.Time
+	ID                   string
+	ContactID            string
+	ConversationID       string
+	Status               string
+	PaymentStatus        string
+	PaymentProofMetaJSON []byte
+	ItemsJSON            []byte
+	ShippingJSON         []byte
+	Subtotal             float64
+	Total                float64
+	CreatedAt            time.Time
 }
 
 var cancellableOrderStatuses = map[string]bool{
@@ -870,7 +892,11 @@ func formatPersistedOrderSummary(o *persistedOrder) string {
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("Nomor pesanan: %s\n", ref))
 	b.WriteString(fmt.Sprintf("Status pesanan: %s\n", orderStatusLabelID(o.Status)))
-	b.WriteString(fmt.Sprintf("Pembayaran: %s\n\n", paymentStatusLabelID(o.PaymentStatus)))
+	b.WriteString(fmt.Sprintf("Pembayaran: %s\n", paymentStatusLabelID(o.PaymentStatus)))
+	if detail := formatPaymentProofDetail(o); detail != "" {
+		b.WriteString(detail + "\n")
+	}
+	b.WriteString("\n")
 
 	if len(items) > 0 {
 		b.WriteString("Produk:\n")
@@ -926,6 +952,34 @@ func paymentStatusLabelID(status string) string {
 	default:
 		return status
 	}
+}
+
+func formatPaymentProofDetail(o *persistedOrder) string {
+	if o == nil || strings.ToLower(strings.TrimSpace(o.PaymentStatus)) != "rejected" {
+		return ""
+	}
+	var meta paymentProofMeta
+	if len(o.PaymentProofMetaJSON) > 2 {
+		_ = json.Unmarshal(o.PaymentProofMetaJSON, &meta)
+	}
+	if reason := strings.TrimSpace(meta.RejectReason); reason != "" {
+		return "Alasan: " + reason
+	}
+	for _, f := range meta.Flags {
+		switch f {
+		case "duplicate_hash":
+			return "Alasan: bukti transfer yang sama sudah dipakai untuk pesanan lain. Kirim bukti yang sesuai pesanan ini."
+		case "mismatch_amount":
+			return "Alasan: nominal transfer tidak sesuai total pesanan."
+		case "kb_empty":
+			return "Alasan: rekening tujuan belum lengkap di FAQ toko — tim akan cek manual."
+		case "ocr_failed":
+			return "Alasan: bukti tidak terbaca otomatis — tim akan cek manual."
+		case "quota_exceeded":
+			return "Alasan: verifikasi otomatis sementara tidak tersedia — tim akan cek manual."
+		}
+	}
+	return "Silakan kirim ulang bukti transfer yang sesuai total dan rekening tujuan."
 }
 
 func orderStatusLabelID(status string) string {
