@@ -10,6 +10,7 @@ import (
 
 	appErrs "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/system"
+	"encore.dev/rlog"
 )
 
 // ---------- schema-name validation ----------
@@ -138,6 +139,9 @@ func CreateTenant(ctx context.Context, p *CreateTenantParams) (*CreateTenantResp
 		system.DB.Exec(ctx, "DELETE FROM tenant WHERE id = $1", t.ID)
 		return nil, appErrs.Internal("bootstrap schema: " + err.Error())
 	}
+	if err := RecordNewTenantSchemaVersion(ctx, t.ID); err != nil {
+		rlog.Warn("record new tenant schema version failed", "tenantId", t.ID, "err", err)
+	}
 
 	return &CreateTenantResponse{Tenant: t, Company: c}, nil
 }
@@ -178,38 +182,11 @@ func GetTenantBySlug(ctx context.Context, slug string) (*TenantRow, error) {
 	return &t, nil
 }
 
-// RunMigrateAllTenantSchemas applies idempotent DDL patches to every tenant schema.
-// Callable from exec scripts, other packages, and the private API wrapper below.
-func RunMigrateAllTenantSchemas(ctx context.Context) (*MigrateSchemasResponse, error) {
-	schemas, err := ListSchemaNames(ctx)
-	if err != nil {
-		return nil, appErrs.Internal(err.Error())
-	}
-
-	var patched, failed int
-	var patchErrors []string
-	for _, schema := range schemas {
-		if err := RunSchemaPatches(ctx, schema); err != nil {
-			failed++
-			patchErrors = append(patchErrors, fmt.Sprintf("%s: %v", schema, err))
-			continue
-		}
-		patched++
-	}
-	return &MigrateSchemasResponse{Patched: patched, Failed: failed, Errors: patchErrors}, nil
-}
-
 // MigrateAllTenantSchemas applies idempotent DDL patches to every tenant schema.
 //
 //encore:api private method=POST path=/api/v1/internal/tenant/migrate-schemas
 func MigrateAllTenantSchemas(ctx context.Context) (*MigrateSchemasResponse, error) {
-	return RunMigrateAllTenantSchemas(ctx)
-}
-
-type MigrateSchemasResponse struct {
-	Patched int      `json:"patched"`
-	Failed  int      `json:"failed"`
-	Errors  []string `json:"errors,omitempty"`
+	return RunMigrateAllTenantSchemas(ctx, "")
 }
 
 // ListTenants returns all active (non-deleted) tenants.
@@ -256,7 +233,16 @@ func TenantConn(ctx context.Context, schemaName string) (*sql.Conn, error) {
 		conn.Close()
 		return nil, fmt.Errorf("set search_path: %w", err)
 	}
+	go maybeLazyMigrateFromSchema(context.Background(), schemaName)
 	return conn, nil
+}
+
+func maybeLazyMigrateFromSchema(ctx context.Context, schemaName string) {
+	tenantID, err := LookupTenantIDBySchema(ctx, schemaName)
+	if err != nil || tenantID == "" {
+		return
+	}
+	PublishLazySchemaMigration(ctx, tenantID, schemaName)
 }
 
 // FindUniqueSlug appends _N (or a timestamp) to base until no tenant row

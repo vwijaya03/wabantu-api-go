@@ -255,6 +255,7 @@ func Register(w http.ResponseWriter, req *http.Request) {
 		)
 	}
 	_ = branch.EnsureDefaultBranch(ctx, schemaName)
+	_ = tenant.RecordNewTenantSchemaVersion(ctx, tenantID)
 
 	completeLogin(w, req, ctx, accountID, emailLower, nullStr(accountName), accountRole,
 		tenantID, tenantSlug, tenantName, schemaName, http.StatusCreated)

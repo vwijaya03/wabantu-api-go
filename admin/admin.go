@@ -25,13 +25,16 @@ var db = sqldb.Named("system")
 // ---------- Types ----------
 
 type Tenant struct {
-	ID          string    `json:"id"`
-	CompanyName string    `json:"companyName"`
-	SchemaName  string    `json:"schemaName"`
-	PlanTier    string    `json:"planTier"`
-	IsActive    bool      `json:"isActive"`
-	CreatedAt   time.Time `json:"createdAt"`
-	OwnerEmail  string    `json:"ownerEmail,omitempty"`
+	ID                 string     `json:"id"`
+	CompanyName        string     `json:"companyName"`
+	SchemaName         string     `json:"schemaName"`
+	PlanTier           string     `json:"planTier"`
+	IsActive           bool       `json:"isActive"`
+	CreatedAt          time.Time  `json:"createdAt"`
+	OwnerEmail         string     `json:"ownerEmail,omitempty"`
+	SchemaMigratedAt   *time.Time `json:"schemaMigratedAt,omitempty"`
+	SchemaPatchVersion int        `json:"schemaPatchVersion"`
+	IsSchemaBehind     bool       `json:"isSchemaBehind"`
 }
 
 type TenantDetail struct {
@@ -86,6 +89,11 @@ type DeleteTenantResponse struct {
 	SchemaName string `json:"schemaName"`
 }
 
+type MigrateTenantSchemasParams struct {
+	TenantIDs []string `json:"tenantIds,omitempty"`
+	Mode      string   `json:"mode,omitempty"` // "behind" | "selected" | ""
+}
+
 // ---------- Endpoints ----------
 
 // ListTenants returns tenants with pagination and search.
@@ -137,7 +145,9 @@ func ListTenants(ctx context.Context, p *ListTenantsParams) (*ListTenantsRespons
 
 	rows, err := db.Query(ctx, fmt.Sprintf(`
 		SELECT t.id, t.name, tc.schema_name, t.status, t.created_at,
-			COALESCE(owner.email, '') AS owner_email
+			COALESCE(owner.email, '') AS owner_email,
+			tc.schema_migrated_at,
+			COALESCE(tc.schema_patch_version, 0)
 		FROM tenant t
 		JOIN tenant_company tc ON tc.tenant_id = t.id
 		LEFT JOIN LATERAL (
@@ -158,9 +168,15 @@ func ListTenants(ctx context.Context, p *ListTenantsParams) (*ListTenantsRespons
 	for rows.Next() {
 		var t Tenant
 		var status string
-		if err := rows.Scan(&t.ID, &t.CompanyName, &t.SchemaName, &status, &t.CreatedAt, &t.OwnerEmail); err != nil {
+		var migratedAt sql.NullTime
+		if err := rows.Scan(&t.ID, &t.CompanyName, &t.SchemaName, &status, &t.CreatedAt, &t.OwnerEmail, &migratedAt, &t.SchemaPatchVersion); err != nil {
 			return nil, &errs.Error{Code: errs.Internal, Message: "scan failed"}
 		}
+		if migratedAt.Valid {
+			ts := migratedAt.Time
+			t.SchemaMigratedAt = &ts
+		}
+		t.IsSchemaBehind = t.SchemaPatchVersion < tenant.CurrentSchemaPatchVersion
 		t.PlanTier = readPlanFromSchema(ctx, t.SchemaName)
 		t.IsActive = status == "active"
 		tenants = append(tenants, t)
@@ -185,20 +201,28 @@ func GetTenant(ctx context.Context, id string) (*TenantDetailResponse, error) {
 
 	var t TenantDetail
 	var status string
+	var migratedAt sql.NullTime
 	err := db.QueryRow(ctx, `
 		SELECT t.id, t.name, tc.schema_name, t.status, t.created_at,
-			COALESCE(ta.email, '') AS owner_email
+			COALESCE(ta.email, '') AS owner_email,
+			tc.schema_migrated_at,
+			COALESCE(tc.schema_patch_version, 0)
 		FROM tenant t
 		JOIN tenant_company tc ON tc.tenant_id = t.id
 		LEFT JOIN tenant_account ta ON ta.tenant_id = t.id AND ta.role = 'owner' AND ta.deleted_at IS NULL
 		WHERE t.id = $1 AND t.deleted_at IS NULL
-	`, id).Scan(&t.ID, &t.CompanyName, &t.SchemaName, &status, &t.CreatedAt, &t.OwnerEmail)
+	`, id).Scan(&t.ID, &t.CompanyName, &t.SchemaName, &status, &t.CreatedAt, &t.OwnerEmail, &migratedAt, &t.SchemaPatchVersion)
 	if err == sql.ErrNoRows {
 		return nil, &errs.Error{Code: errs.NotFound, Message: "tenant not found"}
 	}
 	if err != nil {
 		return nil, &errs.Error{Code: errs.Internal, Message: "query failed"}
 	}
+	if migratedAt.Valid {
+		ts := migratedAt.Time
+		t.SchemaMigratedAt = &ts
+	}
+	t.IsSchemaBehind = t.SchemaPatchVersion < tenant.CurrentSchemaPatchVersion
 	t.PlanTier = readPlanFromSchema(ctx, t.SchemaName)
 	t.IsActive = status == "active"
 
@@ -423,14 +447,39 @@ func DeleteTenant(ctx context.Context, id string, p *DeleteTenantParams) (*Delet
 	return &DeleteTenantResponse{OK: true, TenantID: id, SchemaName: t.SchemaName}, nil
 }
 
-// MigrateTenantSchemas applies idempotent DDL patches (incl. finance tables) to every tenant schema.
+// MigrateTenantSchemas applies idempotent DDL patches (sync ≤3 tenants, else async job).
 //
 //encore:api auth method=POST path=/api/v1/admin/migrate-tenant-schemas tag:super_admin
-func MigrateTenantSchemas(ctx context.Context) (*tenant.MigrateSchemasResponse, error) {
+func MigrateTenantSchemas(ctx context.Context, p *MigrateTenantSchemasParams) (*tenant.MigrateSchemasResponse, error) {
+	user, err := requireSuperAdmin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var req *tenant.MigrateSchemasRequest
+	if p != nil {
+		req = &tenant.MigrateSchemasRequest{
+			TenantIDs: p.TenantIDs,
+			Mode:      p.Mode,
+		}
+	}
+	return tenant.RunMigrateTenantSchemas(ctx, req, user.AccountID)
+}
+
+// GetMigrateTenantSchemasJob returns async migration job progress.
+//
+//encore:api auth method=GET path=/api/v1/admin/migrate-tenant-schemas/jobs/:jobId tag:super_admin
+func GetMigrateTenantSchemasJob(ctx context.Context, jobId string) (*tenant.SchemaMigrationJobSummary, error) {
 	if _, err := requireSuperAdmin(ctx); err != nil {
 		return nil, err
 	}
-	return tenant.RunMigrateAllTenantSchemas(ctx)
+	summary, err := tenant.GetSchemaMigrationJob(ctx, jobId)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return nil, &errs.Error{Code: errs.NotFound, Message: err.Error()}
+		}
+		return nil, &errs.Error{Code: errs.Internal, Message: err.Error()}
+	}
+	return summary, nil
 }
 
 // ---------- Helpers ----------
@@ -470,9 +519,12 @@ func readPlanFromSchema(ctx context.Context, schema string) string {
 func loadTenant(ctx context.Context, id string) (*Tenant, error) {
 	var t Tenant
 	var status string
+	var migratedAt sql.NullTime
 	err := db.QueryRow(ctx, `
 		SELECT t.id, t.name, tc.schema_name, t.status, t.created_at,
-			COALESCE(owner.email, '') AS owner_email
+			COALESCE(owner.email, '') AS owner_email,
+			tc.schema_migrated_at,
+			COALESCE(tc.schema_patch_version, 0)
 		FROM tenant t
 		JOIN tenant_company tc ON tc.tenant_id = t.id
 		LEFT JOIN LATERAL (
@@ -481,13 +533,18 @@ func loadTenant(ctx context.Context, id string) (*Tenant, error) {
 			ORDER BY ta.created_at ASC LIMIT 1
 		) owner ON true
 		WHERE t.id = $1 AND t.deleted_at IS NULL`, id,
-	).Scan(&t.ID, &t.CompanyName, &t.SchemaName, &status, &t.CreatedAt, &t.OwnerEmail)
+	).Scan(&t.ID, &t.CompanyName, &t.SchemaName, &status, &t.CreatedAt, &t.OwnerEmail, &migratedAt, &t.SchemaPatchVersion)
 	if err == sql.ErrNoRows {
 		return nil, &errs.Error{Code: errs.NotFound, Message: "tenant not found"}
 	}
 	if err != nil {
 		return nil, &errs.Error{Code: errs.Internal, Message: "query tenant failed"}
 	}
+	if migratedAt.Valid {
+		ts := migratedAt.Time
+		t.SchemaMigratedAt = &ts
+	}
+	t.IsSchemaBehind = t.SchemaPatchVersion < tenant.CurrentSchemaPatchVersion
 	t.PlanTier = readPlanFromSchema(ctx, t.SchemaName)
 	t.IsActive = status == "active"
 	return &t, nil

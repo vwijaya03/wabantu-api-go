@@ -15,7 +15,7 @@ import (
 )
 
 func main() {
-	resp, err := tenant.RunMigrateAllTenantSchemas(context.Background())
+	resp, err := tenant.RunMigrateAllTenantSchemas(context.Background(), "")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "migrate failed: %v\n", err)
 		os.Exit(1)
