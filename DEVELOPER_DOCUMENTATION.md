@@ -2,7 +2,7 @@
 
 > **Audience:** Senior full-stack developers from Node.js/TypeScript (Express, NestJS, Prisma/TypeORM) learning **Go** and **Encore**.  
 > **Codebase:** `api-go/` — Encore rewrite of NestJS `api/`.  
-> **Companion docs:** [README.md](./README.md) · [APP_FLOW_GUIDE.md](./APP_FLOW_GUIDE.md) · [ENDPOINT_COMPATIBILITY.md](./ENDPOINT_COMPATIBILITY.md) · **[docs/README.md](./docs/README.md)** (indeks docs) · **[docs/WHATSAPP_AI_ROUTING.md](./docs/WHATSAPP_AI_ROUTING.md)** (webhook → AI routing) · **[LIMITS_AND_QUOTAS.md](./LIMITS_AND_QUOTAS.md)** (rate limit, trial/paid kuota, billing checkout) · **[docs/FINANCE_MODULE.md](./docs/FINANCE_MODULE.md)** (modul keuangan) · **[docs/ORDER_CUSTOMER_CHAT.md](./docs/ORDER_CUSTOMER_CHAT.md)** (nomor pesanan, cancel & status via chat)
+> **Companion docs:** [README.md](./README.md) · [APP_FLOW_GUIDE.md](./APP_FLOW_GUIDE.md) · [ENDPOINT_COMPATIBILITY.md](./ENDPOINT_COMPATIBILITY.md) · **[docs/README.md](./docs/README.md)** (indeks docs) · **[docs/WHATSAPP_AI_ROUTING.md](./docs/WHATSAPP_AI_ROUTING.md)** (webhook → AI routing) · **[docs-development-shipped/payment-proof-fase2.md](./docs-development-shipped/payment-proof-fase2.md)** (bukti transfer, limit 5x) · **[LIMITS_AND_QUOTAS.md](./LIMITS_AND_QUOTAS.md)** (rate limit, trial/paid kuota, billing checkout) · **[docs/FINANCE_MODULE.md](./docs/FINANCE_MODULE.md)** (modul keuangan) · **[docs/ORDER_CUSTOMER_CHAT.md](./docs/ORDER_CUSTOMER_CHAT.md)** (nomor pesanan, cancel & status via chat)
 
 **Baru belajar Go?** Langsung ke **[Bagian 18 Go untuk developer Node.js](#18-go-language-guide-for-nodejs-developers-with-wabantu-examples)** — penjelasan pointer, error, context, interface, dll. dengan contoh nyata dari repo ini.
 
@@ -319,6 +319,9 @@ sequenceDiagram
 | `ai/safety.go` | Scope, question-like, retail/payment keywords |
 | `ai/classifier_routing.go` | Haiku vs Sonnet + FAQ direct bypass |
 | `ai/reply_meta.go` | Outbound metadata paths + `LogAndRecord` |
+| `ai/payment_proof.go` | Pipeline bukti transfer, limit 5x penolakan, outbound WA pembeli |
+| `order/payment_proof.go` | API verify / reject / unblock bukti transfer |
+| `order/payment_proof_meta.go` | Helper `rejectionCount`, `proofBlocked`, `PaymentProofMaxRejections` |
 | `usage/ai_activity.go` | Tenant AI activity log API |
 
 **Node comparison:** instead of `src/modules/inbox/inbox.controller.ts` + `.service.ts` + `.module.ts`, you get **one package** with handlers + SQL. Encore replaces `main.ts` bootstrap.

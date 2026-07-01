@@ -190,6 +190,20 @@ func fetchMessageMediaBytes(ctx context.Context, tenantSchema string, row *messa
 	return dl.Data, mime, nil
 }
 
+// FetchMessageMediaBytes downloads WhatsApp media for an inbox message (shared with AI jobs).
+func FetchMessageMediaBytes(ctx context.Context, tenantSchema, messageID string) ([]byte, string, error) {
+	conn, err := tConn(ctx, tenantSchema)
+	if err != nil {
+		return nil, "", apperr.Internal("database connection failed")
+	}
+	defer conn.Close()
+	row, err := loadMessageMediaRow(ctx, conn, messageID)
+	if err != nil {
+		return nil, "", err
+	}
+	return fetchMessageMediaBytes(ctx, tenantSchema, row)
+}
+
 func messageIDFromMediaPath(req *http.Request) string {
 	if v := req.PathValue("messageId"); v != "" {
 		return v

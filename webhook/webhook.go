@@ -202,6 +202,20 @@ func ingestMessage(ctx context.Context, msg whatsapp.InboundMessage) error {
 		}
 	}
 
+	if strings.EqualFold(strings.TrimSpace(msg.Type), "image") {
+		tenantID, _ := tenant.TenantIDBySchema(ctx, schema)
+		if pubErr := ai.PublishPaymentProofJob(ctx, &ai.PaymentProofJob{
+			TenantSchema:     schema,
+			TenantID:         tenantID,
+			ConversationID:   convoID,
+			ContactID:        contactID,
+			MessageID:        messageID,
+			InboundMessageID: messageID,
+		}); pubErr != nil {
+			rlog.Warn("publish payment proof job failed", "err", pubErr, "messageId", messageID)
+		}
+	}
+
 	if ok, sErr := ai.ShouldTriggerSummary(ctx, schema, convoID); sErr == nil && ok {
 		ai.TryPublishSummarize(ctx, schema, convoID)
 	}

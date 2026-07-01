@@ -36,13 +36,17 @@ func applyContactBuyer(o *Order, nameEnc, nameLegacy, phoneEnc, phoneLegacy stri
 
 func scanOrderWithContact(scan func(dest ...any) error) (Order, error) {
 	var o Order
-	var itemsRaw, addrRaw []byte
+	var itemsRaw, addrRaw, paymentMetaRaw []byte
 	var nameEnc, nameLegacy, phoneEnc, phoneLegacy string
 	if err := scan(
 		&o.ID, &o.ConversationID, &o.ContactID, &itemsRaw,
 		&addrRaw, &o.Notes, &o.Status,
 		&o.TrackingNumber, &o.Courier,
-		&o.PaymentTransactionID, &o.Subtotal, &o.ShippingCost, &o.Total,
+		&o.PaymentTransactionID, &o.PaymentStatus,
+		&o.PaymentProofMessageID,
+		&o.PaymentProofSubmittedAt, &o.PaymentProofVerifiedAt, &o.PaymentProofVerifiedBy,
+		&paymentMetaRaw,
+		&o.Subtotal, &o.ShippingCost, &o.Total,
 		&o.IncomeWalletID, &o.CreatedBy, &o.CreatedAt, &o.UpdatedAt,
 		&nameEnc, &nameLegacy, &phoneEnc, &phoneLegacy,
 	); err != nil {
@@ -61,6 +65,7 @@ func scanOrderWithContact(scan func(dest ...any) error) (Order, error) {
 			o.ShippingAddress = &addr
 		}
 	}
+	applyPaymentProofMeta(&o, paymentMetaRaw)
 	applyContactBuyer(&o, nameEnc, nameLegacy, phoneEnc, phoneLegacy)
 	return o, nil
 }

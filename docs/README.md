@@ -23,6 +23,7 @@ Peta navigasi untuk menjawab pertanyaan tentang backend WABantu. Mulai dari sini
 | Tagihan Meta vs kuota WABantu | [META_WHATSAPP_MESSAGING_AND_BILLING.md](./META_WHATSAPP_MESSAGING_AND_BILLING.md) |
 | Kuota trial / paket / routing model AI | [LIMITS_AND_QUOTAS.md](../LIMITS_AND_QUOTAS.md) |
 | Roadmap WA (media, bukti transfer, stok) | [WHATSAPP_INBOX_MEDIA_PAYMENT_STOCK.md](./WHATSAPP_INBOX_MEDIA_PAYMENT_STOCK.md) |
+| Bukti transfer, limit 5x penolakan, unblock | [payment-proof-fase2.md](../docs-development-shipped/payment-proof-fase2.md) |
 | Onboarding developer / arsitektur Encore | [DEVELOPER_DOCUMENTATION.md](../DEVELOPER_DOCUMENTATION.md) |
 | Cheat sheet dev harian | [APP_FLOW_GUIDE.md](../APP_FLOW_GUIDE.md) |
 
@@ -43,6 +44,7 @@ Peta navigasi untuk menjawab pertanyaan tentang backend WABantu. Mulai dari sini
 | File | Isi |
 |------|-----|
 | [ORDER_CUSTOMER_CHAT.md](./ORDER_CUSTOMER_CHAT.md) | Intent order di chat, metadata `orderAction` |
+| [payment-proof-fase2.md](../docs-development-shipped/payment-proof-fase2.md) | Bukti transfer WA, `payment_status`, limit 5x, unblock |
 | [ORDER_OWNERSHIP_RESEARCH.md](./ORDER_OWNERSHIP_RESEARCH.md) | Model ownership `conversation_id` + `contact_id` |
 | [ORDER_STATUS_BUYER_RESEARCH.md](./ORDER_STATUS_BUYER_RESEARCH.md) | Riset frasa buyer tanya status |
 

@@ -147,7 +147,11 @@ func TestOrderSelectColsNoPrefixContainsRequiredFields(t *testing.T) {
 		"id", "conversation_id", "contact_id", "items",
 		"shipping_address", "notes", "status",
 		"tracking_number", "courier",
-		"payment_transaction_id", "subtotal", "shipping_cost", "total",
+		"payment_transaction_id",
+		"payment_status", "payment_proof_message_id",
+		"payment_proof_submitted_at", "payment_proof_verified_at",
+		"payment_proof_verified_by", "payment_proof_meta",
+		"subtotal", "shipping_cost", "total",
 		"income_wallet_id", "created_by", "created_at", "updated_at",
 	}
 	for _, f := range required {

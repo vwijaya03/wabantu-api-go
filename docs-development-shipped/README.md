@@ -19,3 +19,4 @@ Setiap file `*.md` di folder ini = satu entri rilis.
 | [ai-order-chat-lookup.md](./ai-order-chat-lookup.md) | Order lookup scoped via chat + deny third-party |
 | [ai-recipient-policy.md](./ai-recipient-policy.md) | Jawaban kebijakan pesan atas nama orang lain |
 | [ai-structured-order.md](./ai-structured-order.md) | Pesanan multi-baris + guard catalog hijack |
+| [payment-proof-fase2.md](./payment-proof-fase2.md) | Bukti transfer, limit 5x penolakan, unblock owner |

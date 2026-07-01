@@ -203,7 +203,7 @@ Update **kedua** `api-go/tenant/tenant.go` + `api-go/tenant/schema_patch.go`.
 | `payment_proof_submitted_at` | `TIMESTAMPTZ` | NULL | |
 | `payment_proof_verified_at` | `TIMESTAMPTZ` | NULL | |
 | `payment_proof_verified_by` | `UUID` | NULL | NULL jika auto-verify |
-| `payment_proof_meta` | `JSONB` | `{}` | OCR: amount, bank, account_name, confidence, flags |
+| `payment_proof_meta` | `JSONB` | `{}` | OCR: amount, bank, account_name, confidence, flags; plus `rejectionCount`, `proofBlocked`, `blockedNotified` (limit 5x penolakan) |
 
 **Kolom baru di `business_profile` atau `inv_setting` — pilih satu (disarankan `business_profile`):**
 
@@ -240,34 +240,43 @@ Toggle hanya **owner** (`canPerformOwnerActions`).
 ### Pipeline gambar bukti
 
 1. Webhook simpan `message` type `image`
-2. Pub/Sub job (atau inline jika ringan): cek konteks
+2. Pub/Sub job `payment-proof-jobs`: cek konteks
    - Ada order aktif (`draft`/`processing`) untuk `contact_id` / `conversation_id`
    - Atau `IsActiveCheckoutFromHistory`
-3. Download media → `aivision` prompt bukti transfer (nominal, bank, rekening tujuan, tanggal, atas nama)
-4. Match rules:
+   - Caption eksplisit `WB-xxxxxxxx` resolve order meski blocked (untuk pesan batas)
+3. **Early exit jika blocked** (`rejectionCount >= 5` / `proofBlocked`): skip download & OCR; WA batas sekali (`blockedNotified`), lalu silent ignore
+4. Download media → `aivision` prompt bukti transfer (nominal, bank, rekening tujuan, tanggal, atas nama)
+5. Match rules:
    - Nominal ≈ `order.total` (toleransi configurable, default Rp 1.000)
    - Rekening/atas nama cocok entri KB
    - Tanggal tidak di masa depan
    - File hash belum dipakai order lain (anti duplikat)
-5. Branch:
+6. Branch:
    - **manual mode:** selalu `proof_submitted` + isi `payment_proof_meta`
    - **auto mode:** jika semua rule + `confidence >= min` → `verified` + `order.status = processing` + `payment_proof_verified_by = NULL` (system)
    - Jika auto gagal/ragu → `proof_submitted`
+7. Setiap **penolakan** (`rejected`): `rejectionCount++`; jika `>= 5` → `proofBlocked = true`
+8. **Outbound WA** ke pembeli untuk diterima/ditolak/terverifikasi/batas (bukan hanya insert `message` DB)
+
+**Shipped detail:** [`docs-development-shipped/payment-proof-fase2.md`](../docs-development-shipped/payment-proof-fase2.md)
 
 ### API owner
 
 | Method | Path | Aksi |
 |--------|------|------|
 | `POST` | `/api/v1/orders/:id/payment-proof/verify` | `verified` + `processing` |
-| `POST` | `/api/v1/orders/:id/payment-proof/reject` | `rejected` + body `{ reason? }` |
+| `POST` | `/api/v1/orders/:id/payment-proof/reject` | `rejected` + body `{ reason? }` + increment `rejectionCount` |
+| `POST` | `/api/v1/orders/:id/payment-proof/unblock` | Reset counter block; WA ke pembeli; owner only |
 | `PATCH` | `/api/v1/business/profile` | extend dengan `paymentVerificationMode` |
 
 ### Frontend Orders / Inbox
 
-- [ ] Badge list: Belum bayar / Bukti masuk / Terverifikasi / Ditolak
-- [ ] Detail order: thumbnail bukti, hasil OCR, tombol Verifikasi / Tolak
+- [x] Badge list: Belum bayar / Bukti masuk / Terverifikasi / Ditolak
+- [x] Detail order: thumbnail bukti, hasil OCR, tombol Verifikasi / Tolak / Buka batas bukti
 - [ ] Inbox: gambar bukti → link "Lihat order terkait"
-- [ ] System message di thread saat bukti masuk / verified
+- [x] System message + WA outbound saat bukti masuk / verified / ditolak / batas 5x
+
+**UI shipped:** [`web-frontend/docs-development-shipped/payment-proof-fase2.md`](../../web-frontend/docs-development-shipped/payment-proof-fase2.md)
 
 ### Anti-abuse
 
@@ -275,19 +284,22 @@ Toggle hanya **owner** (`canPerformOwnerActions`).
 |--------|----------|
 | Fake screenshot | Default manual; auto hanya jika setting + confidence tinggi |
 | Bukti dipakai ulang | SHA-256 file / perceptual hash → reject duplikat |
-| Spam gambar | Rate limit N bukti/jam/contact |
+| Spam gambar | Rate limit 10 bukti/jam/contact (Redis) |
+| Spam retry pesanan sama | Max **5 penolakan per order** → `proofBlocked`; upload diabaikan; owner **Buka batas bukti** reset counter |
 | Order salah | Satu order aktif per contact; multi-order → AI tanya konfirmasi |
 | Nominal tidak cocok | Flag `mismatch_amount` di meta; tidak auto-verify |
 | Token abuse | Usage meter vision; warning di setting auto |
 
 ### Test
 
-- [ ] Migration patch idempotent
-- [ ] Manual verify → status processing
-- [ ] Auto verify exact match → processing tanpa user id
-- [ ] Auto dengan KB kosong → proof_submitted only
-- [ ] Duplikat hash → ditolak
-- [ ] `encore test ./order/... ./ai/...`
+- [x] Migration patch idempotent
+- [x] Manual verify → status processing
+- [x] Auto verify exact match → processing tanpa user id
+- [x] Auto dengan KB kosong → proof_submitted only
+- [x] Duplikat hash → ditolak
+- [x] Limit 5x penolakan → upload diabaikan + WA batas sekali
+- [x] Unblock owner → counter reset, pipeline terima lagi
+- [x] `encore test ./order/... ./ai/...`
 
 ---
 
