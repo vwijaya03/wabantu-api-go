@@ -97,6 +97,28 @@ SQL
 
 fix_database "system DB (public)" "$SYSTEM_URI" '^public\$' "$SYSTEM_OWNER"
 
+echo "--- system DB explicit table owner → $SYSTEM_OWNER ---"
+psql "$SYSTEM_URI" -v ON_ERROR_STOP=1 <<SQL
+DO \$\$
+DECLARE
+  r record;
+  target_role text := '${SYSTEM_OWNER}';
+BEGIN
+  FOR r IN
+    SELECT tablename FROM pg_tables
+    WHERE schemaname = 'public' AND tableowner IS DISTINCT FROM target_role
+    ORDER BY tablename
+  LOOP
+    BEGIN
+      EXECUTE format('ALTER TABLE public.%I OWNER TO %I', r.tablename, target_role);
+      RAISE NOTICE 'alter owner public.% → %', r.tablename, target_role;
+    EXCEPTION WHEN OTHERS THEN
+      RAISE NOTICE 'skip owner public.%: %', r.tablename, SQLERRM;
+    END;
+  END LOOP;
+END \$\$;
+SQL
+
 registered_schemas="$(psql "$SYSTEM_URI" -tAc "
   SELECT tc.schema_name
   FROM tenant_company tc
