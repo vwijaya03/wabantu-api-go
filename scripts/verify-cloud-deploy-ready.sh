@@ -34,6 +34,18 @@ else
   echo "OK: schema_migrations owner=$sm_owner"
 fi
 
+tc_owner="$(psql "$SYSTEM_URI" -tAc "
+  SELECT tableowner FROM pg_tables
+  WHERE schemaname = 'public' AND tablename = 'tenant_company' LIMIT 1" | tr -d '[:space:]')"
+if [[ -z "$tc_owner" ]]; then
+  echo "WARN: tenant_company not found"
+elif [[ "$tc_owner" != "$SYSTEM_OWNER" ]]; then
+  echo "FAIL: tenant_company owner=$tc_owner (want $SYSTEM_OWNER) — deploy migration 6+ will fail"
+  fail=1
+else
+  echo "OK: tenant_company owner=$tc_owner"
+fi
+
 registered=()
 while IFS= read -r line; do
   line="$(echo "$line" | tr -d '[:space:]')"
@@ -87,7 +99,9 @@ fi
 
 echo
 if [[ "$fail" -ne 0 ]]; then
-  echo "Run: ./scripts/fix-cloud-db-grants.sh $ENV_NAME" >&2
+  echo "Run:" >&2
+  echo "  ./scripts/fix-cloud-db-grants.sh $ENV_NAME" >&2
+  echo "  ./scripts/apply-system-schema-cloud.sh $ENV_NAME   # if deploy fails on system migration 6+" >&2
   exit 1
 fi
 echo "DB ready for Encore deploy."
