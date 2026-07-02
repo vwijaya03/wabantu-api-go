@@ -7,19 +7,26 @@
 # Usage:
 #   ./scripts/apply-system-schema-cloud.sh staging
 #
-# Run before deploy if verify-cloud-deploy-ready.sh reports owner mismatch, or
-# after ./scripts/fix-cloud-db-grants.sh if deploy still fails on migration 6+.
+# Always run before Encore deploy on cloud if verify-cloud-deploy-ready.sh fails.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_NAME="${1:?Usage: $0 <encore-env> (e.g. staging)}"
 cd "$ROOT"
 
+echo "=== Step 1: fix system DB table ownership ==="
+"$ROOT/scripts/fix-cloud-db-grants.sh" "$ENV_NAME"
+
 ADMIN_URI="$(encore db conn-uri system --env="$ENV_NAME" --admin)"
 SYSTEM_OWNER="$(psql "$ADMIN_URI" -tAc "
   SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = current_database()" | tr -d '[:space:]')"
 
-echo "=== Apply system schema migrations ($ENV_NAME) admin owner=$SYSTEM_OWNER ==="
+echo ""
+echo "=== Step 2: apply system schema migrations ($ENV_NAME) owner=$SYSTEM_OWNER ==="
+
+# Clear dirty flags left by failed Encore deploy attempts.
+psql "$ADMIN_URI" -v ON_ERROR_STOP=1 -c "
+  UPDATE schema_migrations SET dirty = false WHERE dirty = true;"
 
 MIGRATIONS=(
   "6:system/migrations/6_tenant_schema_migrated_at.up.sql"
@@ -49,4 +56,5 @@ for entry in "${MIGRATIONS[@]}"; do
     ON CONFLICT (version) DO UPDATE SET dirty = false;"
 done
 
+echo ""
 echo "Done. Verify: ./scripts/verify-cloud-deploy-ready.sh $ENV_NAME"
