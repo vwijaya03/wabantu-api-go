@@ -1,0 +1,52 @@
+name: Deploy Staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_cloud_ddl:
+        description: Run cloud tenant DDL after deploy
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install Encore CLI
+        run: |
+          curl -L https://encore.dev/install.sh | bash
+          echo "$HOME/.encore/bin" >> "$GITHUB_PATH"
+
+      - name: Encore auth
+        env:
+          ENCORE_AUTH_TOKEN: ${{ secrets.ENCORE_AUTH_TOKEN }}
+        run: encore auth login --auth-key="$ENCORE_AUTH_TOKEN"
+
+      - name: Deploy to staging
+        run: encore deploy --env=staging
+
+  cloud-ddl:
+    needs: deploy
+    if: ${{ github.event.inputs.run_cloud_ddl == 'true' }}
+    uses: ./.github/workflows/cloud-tenant-ddl.yml
+    with:
+      environment: staging
+      script: all
+      limit: "1000"
+      cursor: "0"
+      run_all_waves: "true"
+    secrets:
+      ENCORE_AUTH_TOKEN: ${{ secrets.ENCORE_AUTH_TOKEN }}

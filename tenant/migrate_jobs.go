@@ -28,6 +28,8 @@ const (
 
 	migrationEnqueueBatchSize = 500
 	syncMigrationMaxTenants   = 3
+
+	migrationLaneAppPatch = "app_patch"
 )
 
 // TenantSchemaMigrateMessage is one tenant migration unit of work.
@@ -61,6 +63,7 @@ type MigrateSchemasEnqueueResponse struct {
 // SchemaMigrationJobSummary is job progress for admin polling.
 type SchemaMigrationJobSummary struct {
 	JobID        string     `json:"jobId"`
+	Lane         string     `json:"lane,omitempty"`
 	PatchVersion int        `json:"patchVersion"`
 	Status       string     `json:"status"`
 	TotalCount   int        `json:"totalCount"`
@@ -70,6 +73,9 @@ type SchemaMigrationJobSummary struct {
 	CreatedAt    time.Time  `json:"createdAt"`
 	CompletedAt  *time.Time `json:"completedAt,omitempty"`
 	RecentErrors []string   `json:"recentErrors,omitempty"`
+	GithubRunID  int64      `json:"githubRunId,omitempty"`
+	Environment  string     `json:"environment,omitempty"`
+	Script       string     `json:"script,omitempty"`
 }
 
 // EnqueueSchemaMigration creates a background job for tenant schema patches.
@@ -97,10 +103,10 @@ func EnqueueSchemaMigration(ctx context.Context, req *MigrateSchemasRequest, mig
 
 	var jobID string
 	err = system.DB.QueryRow(ctx, `
-		INSERT INTO tenant_schema_migration_job (patch_version, status, total_count, started_by)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO tenant_schema_migration_job (patch_version, status, total_count, started_by, lane)
+		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id::text`,
-		CurrentSchemaPatchVersion, migrationJobStatusPending, len(filtered), startedBy,
+		CurrentSchemaPatchVersion, migrationJobStatusPending, len(filtered), startedBy, migrationLaneAppPatch,
 	).Scan(&jobID)
 	if err != nil {
 		return nil, err
@@ -153,10 +159,10 @@ func EnqueueBehindSchemaMigration(ctx context.Context, migratedBy string) (*Migr
 	}
 
 	err := system.DB.QueryRow(ctx, `
-		INSERT INTO tenant_schema_migration_job (patch_version, status, total_count, started_by)
-		VALUES ($1, $2, 0, $3)
+		INSERT INTO tenant_schema_migration_job (patch_version, status, total_count, started_by, lane)
+		VALUES ($1, $2, 0, $3, $4)
 		RETURNING id::text`,
-		CurrentSchemaPatchVersion, migrationJobStatusPending, startedBy,
+		CurrentSchemaPatchVersion, migrationJobStatusPending, startedBy, migrationLaneAppPatch,
 	).Scan(&jobID)
 	if err != nil {
 		return nil, err
@@ -244,15 +250,21 @@ func GetSchemaMigrationJob(ctx context.Context, jobID string) (*SchemaMigrationJ
 	var summary SchemaMigrationJobSummary
 	var startedBy sql.NullString
 	var completedAt sql.NullTime
+	var githubRunID sql.NullInt64
+	var githubEnv sql.NullString
+	var scriptName sql.NullString
+	var lane sql.NullString
 	err := system.DB.QueryRow(ctx, `
-		SELECT id::text, patch_version, status, total_count, done_count, failed_count,
-		       started_by::text, created_at, completed_at
+		SELECT id::text, COALESCE(lane, 'app_patch'), patch_version, status, total_count, done_count, failed_count,
+		       started_by::text, created_at, completed_at,
+		       github_run_id, github_environment, script_name
 		FROM tenant_schema_migration_job
 		WHERE id = $1::uuid`, jobID,
 	).Scan(
-		&summary.JobID, &summary.PatchVersion, &summary.Status,
+		&summary.JobID, &lane, &summary.PatchVersion, &summary.Status,
 		&summary.TotalCount, &summary.DoneCount, &summary.FailedCount,
 		&startedBy, &summary.CreatedAt, &completedAt,
+		&githubRunID, &githubEnv, &scriptName,
 	)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("migration job not found")
@@ -266,6 +278,18 @@ func GetSchemaMigrationJob(ctx context.Context, jobID string) (*SchemaMigrationJ
 	if completedAt.Valid {
 		t := completedAt.Time
 		summary.CompletedAt = &t
+	}
+	if lane.Valid {
+		summary.Lane = lane.String
+	}
+	if githubRunID.Valid {
+		summary.GithubRunID = githubRunID.Int64
+	}
+	if githubEnv.Valid {
+		summary.Environment = githubEnv.String
+	}
+	if scriptName.Valid {
+		summary.Script = scriptName.String
 	}
 
 	rows, err := system.DB.Query(ctx, `
