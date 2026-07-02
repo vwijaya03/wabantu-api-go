@@ -95,4 +95,17 @@ BEGIN
             WHERE type = 'income' AND reference_no IS NOT NULL AND deleted_at IS NULL;
     END IF;
 END $patch$;
+
+-- Fase 2 payment proof (order + business_profile)
+ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS payment_verification_mode VARCHAR(20) NOT NULL DEFAULT 'manual';
+ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS payment_auto_verify_min_confidence NUMERIC(5,2) NOT NULL DEFAULT 0.95;
+ALTER TABLE "order" ADD COLUMN IF NOT EXISTS payment_status VARCHAR(20) NOT NULL DEFAULT 'unpaid';
+ALTER TABLE "order" ADD COLUMN IF NOT EXISTS payment_proof_message_id UUID;
+ALTER TABLE "order" ADD COLUMN IF NOT EXISTS payment_proof_submitted_at TIMESTAMPTZ;
+ALTER TABLE "order" ADD COLUMN IF NOT EXISTS payment_proof_verified_at TIMESTAMPTZ;
+ALTER TABLE "order" ADD COLUMN IF NOT EXISTS payment_proof_verified_by UUID;
+ALTER TABLE "order" ADD COLUMN IF NOT EXISTS payment_proof_meta JSONB NOT NULL DEFAULT '{}';
+CREATE INDEX IF NOT EXISTS idx_order_payment_status
+    ON "order"(payment_status, created_at DESC)
+    WHERE deleted_at IS NULL;
 `
