@@ -4,8 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-
-	"encore.app/wabantu/shared/tenantschema"
 )
 
 const eventsSchemaPatchSQL = `
@@ -272,14 +270,10 @@ CREATE INDEX IF NOT EXISTS idx_evt_export_job_event ON evt_export_job(event_id, 
 `
 
 func runEventsSchemaAndSeed(ctx context.Context, conn *sql.Conn) error {
-	ready, err := tenantschema.EventsModuleReady(ctx, conn)
-	if err != nil {
+	// Always apply idempotent evt_* DDL so new ALTERs in eventsSchemaPatchSQL
+	// run on tenants that already passed an older EventsModuleReady check.
+	if _, err := conn.ExecContext(ctx, eventsSchemaPatchSQL); err != nil {
 		return err
-	}
-	if !ready {
-		if _, err := conn.ExecContext(ctx, eventsSchemaPatchSQL); err != nil {
-			return err
-		}
 	}
 	return seedEventsMasterData(ctx, conn)
 }

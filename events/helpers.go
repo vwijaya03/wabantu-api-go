@@ -12,6 +12,7 @@ import (
 	"unicode"
 
 	"encore.dev/beta/auth"
+	"encore.dev"
 
 	appcrypto "encore.app/wabantu/shared/crypto"
 	appErrs "encore.app/wabantu/shared/errs"
@@ -110,6 +111,23 @@ func ensureEventsSchema(ctx context.Context, schema string) error {
 	}
 	if patchErr != nil {
 		return patchErr
+	}
+	if exists {
+		hasBreak, colErr := tenantschema.ColumnExists(ctx, conn, "evt_event", "break_start_time")
+		if colErr != nil {
+			return appErrs.Internal(colErr.Error())
+		}
+		if !hasBreak {
+			if encore.Meta().Environment.Cloud != encore.CloudLocal {
+				return fmt.Errorf(
+					"kolom jeda acara belum ada di cloud: jalankan ./scripts/patch-events-break-columns-cloud.sh %s",
+					encore.Meta().Environment.Name,
+				)
+			}
+			if patchErr = tenant.RunEventsSchemaPatches(ctx, schema); patchErr != nil {
+				return patchErr
+			}
+		}
 	}
 	eventsSchemaMu.Lock()
 	eventsSchemaDone[schema] = true

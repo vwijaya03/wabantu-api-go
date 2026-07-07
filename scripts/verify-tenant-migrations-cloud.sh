@@ -98,6 +98,9 @@ while IFS= read -r schema; do
     if [[ "$(col_exists "$schema" evt_event_person full_name_enc)" != "t" ]]; then
       issues+=("events: missing evt_event_person.full_name_enc")
     fi
+    if [[ "$(col_exists "$schema" evt_event break_start_time)" != "t" ]]; then
+      issues+=("events: missing evt_event.break_start_time (run ./scripts/patch-events-break-columns-cloud.sh $ENV_NAME)")
+    fi
   else
     echo "  (events module not provisioned — ok for commerce-only tenant)"
   fi
