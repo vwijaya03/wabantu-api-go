@@ -5,27 +5,31 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
+
+	encoreerrs "encore.dev/beta/errs"
 
 	appErrs "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/pii"
 )
 
 type EventPerson struct {
-	ID               string   `json:"id"`
-	EventID          string   `json:"eventId"`
-	FullName         string   `json:"fullName"`
-	PersonType       string   `json:"personType"`
-	AttendanceStatus string   `json:"attendanceStatus"`
-	ArrivalTime      *string  `json:"arrivalTime,omitempty"`
-	DepartureTime    *string  `json:"departureTime,omitempty"`
-	Notes            string   `json:"notes,omitempty"`
-	TherapyID        *string  `json:"therapyId,omitempty"` // first therapy (compat)
-	TherapyIDs       []string `json:"therapyIds,omitempty"`
-	TherapyNames     []string `json:"therapyNames,omitempty"`
-	VolunteerRoleID  *string  `json:"volunteerRoleId,omitempty"`
-	IsPencatat       bool     `json:"isPencatat"`
-	AvailableFrom    *string  `json:"availableFrom,omitempty"`
-	AvailableUntil   *string  `json:"availableUntil,omitempty"`
+	ID               string    `json:"id"`
+	EventID          string    `json:"eventId"`
+	FullName         string    `json:"fullName"`
+	PersonType       string    `json:"personType"`
+	AttendanceStatus string    `json:"attendanceStatus"`
+	ArrivalTime      *string   `json:"arrivalTime,omitempty"`
+	DepartureTime    *string   `json:"departureTime,omitempty"`
+	Notes            string    `json:"notes,omitempty"`
+	TherapyID        *string   `json:"therapyId,omitempty"` // first therapy (compat)
+	TherapyIDs       []string  `json:"therapyIds,omitempty"`
+	TherapyNames     []string  `json:"therapyNames,omitempty"`
+	VolunteerRoleID  *string   `json:"volunteerRoleId,omitempty"`
+	IsPencatat       bool      `json:"isPencatat"`
+	AvailableFrom    *string   `json:"availableFrom,omitempty"`
+	AvailableUntil   *string   `json:"availableUntil,omitempty"`
+	CreatedAt        time.Time `json:"createdAt"`
 }
 
 type UpsertPersonParams struct {
@@ -94,7 +98,8 @@ func ListEventPeople(ctx context.Context, eventId string, p *ListPeopleParams) (
 		SELECT p.id::text, p.event_id::text,
 		       COALESCE(p.full_name_enc,''), COALESCE(p.full_name,''),
 		       p.person_type, p.attendance_status,
-		       p.arrival_time::text, p.departure_time::text, COALESCE(p.notes,'')
+		       p.arrival_time::text, p.departure_time::text, COALESCE(p.notes,''),
+		       p.created_at
 		FROM evt_event_person p
 		WHERE %s ORDER BY p.person_type, p.created_at LIMIT $%d OFFSET $%d`, where, i, i+1), args...)
 	if err != nil {
@@ -106,7 +111,7 @@ func ListEventPeople(ctx context.Context, eventId string, p *ListPeopleParams) (
 		var arr, dep, notes sql.NullString
 		var nameEnc, nameLegacy sql.NullString
 		if err := rows.Scan(&person.ID, &person.EventID, &nameEnc, &nameLegacy, &person.PersonType,
-			&person.AttendanceStatus, &arr, &dep, &notes); err != nil {
+			&person.AttendanceStatus, &arr, &dep, &notes, &person.CreatedAt); err != nil {
 			return nil, appErrs.Internal(err.Error())
 		}
 		person.FullName, err = decryptPersonName(nameEnc.String, nameLegacy.String)
@@ -340,6 +345,88 @@ func DeleteEventPerson(ctx context.Context, eventId, personId string) error {
 	}
 	auditEvent(ctx, conn, u, "event_person", personId, "delete", nil, nil)
 	return nil
+}
+
+type DeletePeopleParams struct {
+	PersonIDs []string `json:"personIds"`
+}
+
+type DeletePeopleResponse struct {
+	Deleted int      `json:"deleted"`
+	Failed  int      `json:"failed"`
+	Errors  []string `json:"errors,omitempty"`
+}
+
+func deleteEventPersonInTx(ctx context.Context, tx *sql.Tx, eventId, personId string) error {
+	res, err := tx.ExecContext(ctx, `
+		UPDATE evt_event_person SET deleted_at=now(), updated_at=now()
+		WHERE id=$1::uuid AND event_id=$2::uuid AND deleted_at IS NULL`, personId, eventId)
+	if err != nil {
+		return appErrs.Internal(err.Error())
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return appErrs.NotFound("staf tidak ditemukan")
+	}
+	return nil
+}
+
+//encore:api auth method=POST path=/api/v1/events/detail/:eventId/people/delete-bulk tag:owner
+func DeleteEventPeopleBulk(ctx context.Context, eventId string, p *DeletePeopleParams) (*DeletePeopleResponse, error) {
+	u, err := mustUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := assertOwner(u); err != nil {
+		return nil, err
+	}
+	if p == nil || len(p.PersonIDs) == 0 {
+		return nil, appErrs.BadRequest("pilih minimal satu staf")
+	}
+	conn, err := tenantConn(ctx, u.TenantSchema)
+	if err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	defer conn.Close()
+	if err := assertEventMutable(ctx, conn, eventId); err != nil {
+		return nil, err
+	}
+
+	resp := &DeletePeopleResponse{Errors: []string{}}
+	seen := map[string]bool{}
+	for _, rawID := range p.PersonIDs {
+		personID := strings.TrimSpace(rawID)
+		if personID == "" || seen[personID] {
+			continue
+		}
+		seen[personID] = true
+
+		tx, err := conn.BeginTx(ctx, nil)
+		if err != nil {
+			return nil, appErrs.Internal(err.Error())
+		}
+		if err := deleteEventPersonInTx(ctx, tx, eventId, personID); err != nil {
+			_ = tx.Rollback()
+			resp.Failed++
+			if encErr, ok := err.(*encoreerrs.Error); ok && encErr.Code == encoreerrs.NotFound {
+				resp.Errors = append(resp.Errors, personID+": staf tidak ditemukan")
+			} else {
+				resp.Errors = append(resp.Errors, personID+": "+err.Error())
+			}
+			continue
+		}
+		if err := tx.Commit(); err != nil {
+			resp.Failed++
+			resp.Errors = append(resp.Errors, personID+": gagal menghapus")
+			continue
+		}
+		resp.Deleted++
+		auditEvent(ctx, conn, u, "event_person", personID, "delete_bulk_item", map[string]any{"eventId": eventId}, nil)
+	}
+	if len(resp.Errors) == 0 {
+		resp.Errors = nil
+	}
+	return resp, nil
 }
 
 func validatePerson(p *UpsertPersonParams) error {
