@@ -17,7 +17,8 @@ type ListEventTherapySettingsResponse struct {
 }
 
 type GenerateTimeSlotsResponse struct {
-	Created int `json:"created"`
+	Created  int      `json:"created"`
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 type ListTimeSlotsResponse struct {

@@ -43,10 +43,12 @@ func GenerateTimeSlots(ctx context.Context, eventId, therapyId string) (*Generat
 
 	var startDate, endDate string
 	var evtStart, evtEnd string
+	var breakStart, breakEnd sql.NullString
 	if err := conn.QueryRowContext(ctx, `
-		SELECT start_date::text, end_date::text, start_time::text, end_time::text
+		SELECT start_date::text, end_date::text, start_time::text, end_time::text,
+		       break_start_time::text, break_end_time::text
 		FROM evt_event WHERE id=$1::uuid AND deleted_at IS NULL`, eventId,
-	).Scan(&startDate, &endDate, &evtStart, &evtEnd); err != nil {
+	).Scan(&startDate, &endDate, &evtStart, &evtEnd, &breakStart, &breakEnd); err != nil {
 		return nil, appErrs.NotFound("acara tidak ditemukan")
 	}
 
@@ -90,6 +92,16 @@ func GenerateTimeSlots(ctx context.Context, eventId, therapyId string) (*Generat
 	sd, _ := time.Parse("2006-01-02", startDate)
 	ed, _ := time.Parse("2006-01-02", endDate)
 	created := 0
+	var warnings []string
+	var breakStartPtr, breakEndPtr *string
+	if strings.ToUpper(schedMode) == "AUTO" && breakStart.Valid && breakEnd.Valid {
+		bs := strings.TrimSpace(breakStart.String)
+		be := strings.TrimSpace(breakEnd.String)
+		if bs != "" && be != "" {
+			breakStartPtr = &bs
+			breakEndPtr = &be
+		}
+	}
 	for d := sd; !d.After(ed); d = d.AddDate(0, 0, 1) {
 		capacity, err := computeTherapyCapacity(ctx, conn, eventId, therapyId, capMode, maxCap)
 		if err != nil {
@@ -99,7 +111,7 @@ func GenerateTimeSlots(ctx context.Context, eventId, therapyId string) (*Generat
 		if len(templateSlots) > 0 {
 			slots = templateSlots
 		} else {
-			slots, err = buildDaySlots(dayStart, dayEnd, dur)
+			slots, err = buildDaySlotsWithBreak(dayStart, dayEnd, dur, breakStartPtr, breakEndPtr)
 			if err != nil {
 				return nil, err
 			}
@@ -121,8 +133,19 @@ func GenerateTimeSlots(ctx context.Context, eventId, therapyId string) (*Generat
 			created++
 		}
 	}
+	if breakStartPtr != nil && breakEndPtr != nil {
+		if warn, err := cleanupBreakWindowSlots(ctx, conn, eventId, therapyId, *breakStartPtr, *breakEndPtr); err != nil {
+			return nil, err
+		} else if warn != "" {
+			warnings = append(warnings, warn)
+		}
+	}
 	auditEvent(ctx, conn, u, "time_slot", eventId, "generate", nil, map[string]any{"therapyId": therapyId, "created": created})
-	return &GenerateTimeSlotsResponse{Created: created}, nil
+	resp := &GenerateTimeSlotsResponse{Created: created}
+	if len(warnings) > 0 {
+		resp.Warnings = warnings
+	}
+	return resp, nil
 }
 
 type slotRange struct {
@@ -151,6 +174,101 @@ func buildDaySlots(dayStart, dayEnd string, durMin int) ([]slotRange, error) {
 		cur = nxt
 	}
 	return out, nil
+}
+
+func buildDaySlotsWithBreak(dayStart, dayEnd string, durMin int, breakStart, breakEnd *string) ([]slotRange, error) {
+	segments, err := dayScheduleSegments(dayStart, dayEnd, breakStart, breakEnd)
+	if err != nil {
+		return nil, err
+	}
+	var out []slotRange
+	for _, seg := range segments {
+		slots, err := buildDaySlots(seg.start, seg.end, durMin)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, slots...)
+	}
+	return out, nil
+}
+
+type daySegment struct {
+	start string
+	end   string
+}
+
+func dayScheduleSegments(dayStart, dayEnd string, breakStart, breakEnd *string) ([]daySegment, error) {
+	st, err := parseClockTime(dayStart)
+	if err != nil {
+		return nil, err
+	}
+	en, err := parseClockTime(dayEnd)
+	if err != nil {
+		return nil, err
+	}
+	if !st.Before(en) {
+		return nil, appErrs.BadRequest("jam mulai jadwal harus sebelum jam selesai")
+	}
+	if breakStart == nil || breakEnd == nil {
+		return []daySegment{{start: dayStart, end: dayEnd}}, nil
+	}
+	bsRaw := strings.TrimSpace(*breakStart)
+	beRaw := strings.TrimSpace(*breakEnd)
+	if bsRaw == "" || beRaw == "" {
+		return []daySegment{{start: dayStart, end: dayEnd}}, nil
+	}
+	bs, err := parseClockTime(bsRaw)
+	if err != nil {
+		return nil, err
+	}
+	be, err := parseClockTime(beRaw)
+	if err != nil {
+		return nil, err
+	}
+	if !bs.Before(be) {
+		return []daySegment{{start: dayStart, end: dayEnd}}, nil
+	}
+	if !bs.Before(en) || !be.After(st) {
+		return []daySegment{{start: dayStart, end: dayEnd}}, nil
+	}
+	segments := []daySegment{}
+	if bs.After(st) {
+		segments = append(segments, daySegment{start: dayStart, end: bsRaw})
+	}
+	if be.Before(en) {
+		segments = append(segments, daySegment{start: beRaw, end: dayEnd})
+	}
+	if len(segments) == 0 {
+		return []daySegment{{start: dayStart, end: dayEnd}}, nil
+	}
+	return segments, nil
+}
+
+func cleanupBreakWindowSlots(ctx context.Context, conn *sql.Conn, eventID, therapyID, breakStart, breakEnd string) (string, error) {
+	var blocked int
+	if err := conn.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM evt_time_slot
+		WHERE event_id=$1::uuid AND therapy_id=$2::uuid
+		  AND start_time >= $3::time AND start_time < $4::time
+		  AND booked_count > 0`,
+		eventID, therapyID, breakStart, breakEnd,
+	).Scan(&blocked); err != nil {
+		return "", appErrs.Internal(err.Error())
+	}
+	if blocked > 0 {
+		return fmt.Sprintf("%d slot di jendela istirahat masih berisi pasien — pindahkan pasien lalu generate ulang", blocked), nil
+	}
+	_, err := conn.ExecContext(ctx, `
+		DELETE FROM evt_time_slot
+		WHERE event_id=$1::uuid AND therapy_id=$2::uuid
+		  AND start_time >= $3::time AND start_time < $4::time
+		  AND booked_count = 0`,
+		eventID, therapyID, breakStart, breakEnd,
+	)
+	if err != nil {
+		return "", appErrs.Internal(err.Error())
+	}
+	return "", nil
 }
 
 func padTime(t string) string {

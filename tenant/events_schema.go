@@ -52,6 +52,8 @@ CREATE TABLE IF NOT EXISTS evt_event (
     end_date              DATE         NOT NULL,
     start_time            TIME         NOT NULL DEFAULT '09:00',
     end_time              TIME         NOT NULL DEFAULT '17:00',
+    break_start_time      TIME,
+    break_end_time        TIME,
     registration_open_at  TIMESTAMPTZ,
     registration_close_at TIMESTAMPTZ,
     status                VARCHAR(20)  NOT NULL DEFAULT 'DRAFT',
@@ -220,6 +222,9 @@ CREATE TABLE IF NOT EXISTS evt_event_therapy_slot_template (
     UNIQUE (event_therapy_id, start_time)
 );
 ALTER TABLE evt_event_therapy_slot_template ADD COLUMN IF NOT EXISTS capacity INT NOT NULL DEFAULT 1;
+
+ALTER TABLE evt_event ADD COLUMN IF NOT EXISTS break_start_time TIME;
+ALTER TABLE evt_event ADD COLUMN IF NOT EXISTS break_end_time TIME;
 
 CREATE TABLE IF NOT EXISTS evt_staff_roster (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),

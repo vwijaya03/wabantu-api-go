@@ -23,6 +23,8 @@ type Event struct {
 	RegistrationOpenAt  *string `json:"registrationOpenAt,omitempty"`
 	RegistrationCloseAt *string `json:"registrationCloseAt,omitempty"`
 	Status              string  `json:"status"`
+	BreakStartTime      *string `json:"breakStartTime,omitempty"`
+	BreakEndTime        *string `json:"breakEndTime,omitempty"`
 }
 
 type TherapySlotTemplate struct {
@@ -72,15 +74,19 @@ type UpsertEventParams struct {
 	RegistrationCloseAt   *string `json:"registrationCloseAt,omitempty"`
 	Status                string  `json:"status"`
 	ImportStaffFromRoster *bool   `json:"importStaffFromRoster,omitempty"`
+	BreakStartTime        *string `json:"breakStartTime,omitempty"`
+	BreakEndTime          *string `json:"breakEndTime,omitempty"`
 }
 
 func scanEvent(row interface{ Scan(...any) error }) (Event, error) {
 	var e Event
 	var desc, loc sql.NullString
 	var openAt, closeAt sql.NullTime
+	var breakStart, breakEnd sql.NullString
 	err := row.Scan(
 		&e.ID, &e.EventName, &e.EventSlug, &desc, &loc,
 		&e.StartDate, &e.EndDate, &e.StartTime, &e.EndTime,
+		&breakStart, &breakEnd,
 		&openAt, &closeAt, &e.Status,
 	)
 	if err != nil {
@@ -99,6 +105,14 @@ func scanEvent(row interface{ Scan(...any) error }) (Event, error) {
 	if closeAt.Valid {
 		s := closeAt.Time.Format(time.RFC3339)
 		e.RegistrationCloseAt = &s
+	}
+	if breakStart.Valid {
+		s := breakStart.String
+		e.BreakStartTime = &s
+	}
+	if breakEnd.Valid {
+		s := breakEnd.String
+		e.BreakEndTime = &s
 	}
 	return e, nil
 }
@@ -138,6 +152,7 @@ func ListEvents(ctx context.Context, p *ListEventsParams) (*ListEventsResponse, 
 	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
 		SELECT id::text, event_name, event_slug, event_description, location,
 		       start_date::text, end_date::text, start_time::text, end_time::text,
+		       break_start_time::text, break_end_time::text,
 		       registration_open_at, registration_close_at, status
 		FROM evt_event WHERE %s ORDER BY start_date DESC, created_at DESC LIMIT $%d OFFSET $%d`,
 		where, i, i+1), args...)
@@ -173,6 +188,7 @@ func GetEvent(ctx context.Context, eventId string) (*Event, error) {
 	row := conn.QueryRowContext(ctx, `
 		SELECT id::text, event_name, event_slug, event_description, location,
 		       start_date::text, end_date::text, start_time::text, end_time::text,
+		       break_start_time::text, break_end_time::text,
 		       registration_open_at, registration_close_at, status
 		FROM evt_event WHERE id=$1::uuid AND deleted_at IS NULL`, eventId)
 	e, err := scanEvent(row)
@@ -219,11 +235,13 @@ func CreateEvent(ctx context.Context, p *UpsertEventParams) (*Event, error) {
 		INSERT INTO evt_event (
 		  event_name, event_slug, event_description, location,
 		  start_date, end_date, start_time, end_time,
+		  break_start_time, break_end_time,
 		  registration_open_at, registration_close_at, status, created_by
-		) VALUES ($1,$2,$3,$4,$5::date,$6::date,$7::time,$8::time,$9,$10,$11,$12::uuid)
+		) VALUES ($1,$2,$3,$4,$5::date,$6::date,$7::time,$8::time,$9::time,$10::time,$11,$12,$13,$14::uuid)
 		RETURNING id::text`,
 		p.EventName, slug, nullStr(p.EventDescription), nullStr(p.Location),
 		p.StartDate, p.EndDate, p.StartTime, p.EndTime,
+		nullTimeStrPtr(p.BreakStartTime), nullTimeStrPtr(p.BreakEndTime),
 		parseTimePtr(p.RegistrationOpenAt), parseTimePtr(p.RegistrationCloseAt),
 		st, u.AccountID,
 	).Scan(&id)
@@ -285,10 +303,12 @@ func UpdateEvent(ctx context.Context, eventId string, p *UpsertEventParams) (*Ev
 		UPDATE evt_event SET
 		  event_name=$1, event_slug=$2, event_description=$3, location=$4,
 		  start_date=$5::date, end_date=$6::date, start_time=$7::time, end_time=$8::time,
-		  registration_open_at=$9, registration_close_at=$10, status=$11, updated_at=now()
-		WHERE id=$12::uuid AND deleted_at IS NULL`,
+		  break_start_time=$9::time, break_end_time=$10::time,
+		  registration_open_at=$11, registration_close_at=$12, status=$13, updated_at=now()
+		WHERE id=$14::uuid AND deleted_at IS NULL`,
 		p.EventName, slug, nullStr(p.EventDescription), nullStr(p.Location),
 		p.StartDate, p.EndDate, p.StartTime, p.EndTime,
+		nullTimeStrPtr(p.BreakStartTime), nullTimeStrPtr(p.BreakEndTime),
 		parseTimePtr(p.RegistrationOpenAt), parseTimePtr(p.RegistrationCloseAt), st, eventId,
 	)
 	if err != nil {
@@ -365,7 +385,62 @@ func validateEventParams(p *UpsertEventParams) error {
 	if st != "" && !valid[st] {
 		return appErrs.BadRequest("status acara tidak valid")
 	}
+	return validateEventBreakTimes(p.StartTime, p.EndTime, p.BreakStartTime, p.BreakEndTime)
+}
+
+func validateEventBreakTimes(startTime, endTime string, breakStart, breakEnd *string) error {
+	bs := ""
+	be := ""
+	if breakStart != nil {
+		bs = strings.TrimSpace(*breakStart)
+	}
+	if breakEnd != nil {
+		be = strings.TrimSpace(*breakEnd)
+	}
+	if bs == "" && be == "" {
+		return nil
+	}
+	if bs == "" || be == "" {
+		return appErrs.BadRequest("jam mulai dan selesai jeda istirahat wajib diisi bersamaan")
+	}
+	bst, err := parseClockTime(bs)
+	if err != nil {
+		return appErrs.BadRequest("jam mulai jeda tidak valid")
+	}
+	bet, err := parseClockTime(be)
+	if err != nil {
+		return appErrs.BadRequest("jam selesai jeda tidak valid")
+	}
+	if !bst.Before(bet) {
+		return appErrs.BadRequest("jam mulai jeda harus sebelum jam lanjut kegiatan")
+	}
+	dayStart, err := parseClockTime(startTime)
+	if err != nil {
+		return err
+	}
+	dayEnd, err := parseClockTime(endTime)
+	if err != nil {
+		return err
+	}
+	if bst.Before(dayStart) || bet.After(dayEnd) {
+		return appErrs.BadRequest("jeda istirahat harus berada dalam jam acara")
+	}
 	return nil
+}
+
+func parseClockTime(raw string) (time.Time, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}, appErrs.BadRequest("jam tidak valid")
+	}
+	if t, err := time.Parse("15:04:05", padTime(raw)); err == nil {
+		return t, nil
+	}
+	t, err := time.Parse("15:04", raw)
+	if err != nil {
+		return time.Time{}, appErrs.BadRequest("jam tidak valid")
+	}
+	return t, nil
 }
 
 func nullStr(s string) interface{} {

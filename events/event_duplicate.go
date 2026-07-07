@@ -75,10 +75,12 @@ func DuplicateEvent(ctx context.Context, eventId string, p *DuplicateEventParams
 		INSERT INTO evt_event (
 		  event_name, event_slug, event_description, location,
 		  start_date, end_date, start_time, end_time,
+		  break_start_time, break_end_time,
 		  registration_open_at, registration_close_at, status, created_by
 		)
 		SELECT $1,$2,event_description,location,
 		  $3::date,$4::date,start_time,end_time,
+		  break_start_time,break_end_time,
 		  registration_open_at,registration_close_at,'DRAFT',$5::uuid
 		FROM evt_event WHERE id=$6::uuid AND deleted_at IS NULL
 		RETURNING id::text`,
