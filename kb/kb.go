@@ -103,6 +103,9 @@ func currentUser(ctx context.Context) (*types.AuthUser, error) {
 	if !valid {
 		return nil, e.Unauthenticated("invalid auth data")
 	}
+	if !u.HasEffectiveTenantContext() {
+		return nil, e.Forbidden("tenant context required")
+	}
 	return u, nil
 }
 
