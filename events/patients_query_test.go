@@ -5,7 +5,7 @@ import "testing"
 func TestFilterPatientsByNameQuery(t *testing.T) {
 	items := []Patient{
 		{FullName: "Anto Wijaya"},
-		{FullName: "Budi Santoso"},
+		{FullName: "Budi Hartono"},
 		{FullName: "Santoso Anto"},
 	}
 
