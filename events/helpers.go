@@ -13,6 +13,7 @@ import (
 
 	"encore.dev/beta/auth"
 	"encore.dev"
+	"golang.org/x/sync/singleflight"
 
 	appcrypto "encore.app/wabantu/shared/crypto"
 	appErrs "encore.app/wabantu/shared/errs"
@@ -64,8 +65,9 @@ func isOwner(u *types.AuthUser) bool {
 }
 
 var (
-	eventsSchemaMu   sync.Mutex
-	eventsSchemaDone = make(map[string]bool)
+	eventsSchemaMu     sync.Mutex
+	eventsSchemaDone   = make(map[string]bool)
+	eventsSchemaGroup  singleflight.Group
 )
 
 func tenantConn(ctx context.Context, schema string) (*sql.Conn, error) {
@@ -84,6 +86,27 @@ func ensureEventsSchema(ctx context.Context, schema string) error {
 	}
 	eventsSchemaMu.Unlock()
 
+	_, err, _ := eventsSchemaGroup.Do(schema, func() (any, error) {
+		eventsSchemaMu.Lock()
+		if eventsSchemaDone[schema] {
+			eventsSchemaMu.Unlock()
+			return nil, nil
+		}
+		eventsSchemaMu.Unlock()
+
+		if err := applyEventsSchemaPatches(ctx, schema); err != nil {
+			return nil, err
+		}
+
+		eventsSchemaMu.Lock()
+		eventsSchemaDone[schema] = true
+		eventsSchemaMu.Unlock()
+		return nil, nil
+	})
+	return err
+}
+
+func applyEventsSchemaPatches(ctx context.Context, schema string) error {
 	conn, err := tenant.TenantConn(ctx, schema)
 	if err != nil {
 		return err
@@ -129,9 +152,6 @@ func ensureEventsSchema(ctx context.Context, schema string) error {
 			}
 		}
 	}
-	eventsSchemaMu.Lock()
-	eventsSchemaDone[schema] = true
-	eventsSchemaMu.Unlock()
 	return nil
 }
 
