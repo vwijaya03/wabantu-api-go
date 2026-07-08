@@ -53,6 +53,8 @@ type UpsertPersonParams struct {
 type ListPeopleParams struct {
 	Q          string `query:"q"`
 	PersonType string `query:"personType"`
+	SortBy     string `query:"sortBy"`
+	SortDir    string `query:"sortDir"`
 	Page       int    `query:"page"`
 	PageSize   int    `query:"pageSize"`
 }
@@ -73,8 +75,15 @@ func ListEventPeople(ctx context.Context, eventId string, p *ListPeopleParams) (
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer conn.Close()
+	if p == nil {
+		p = &ListPeopleParams{}
+	}
 	page, pageSize := paginate(p.Page, p.PageSize)
 	off, lim := offsetLimit(page, pageSize)
+	orderBy, err := resolvePeopleOrderBy(p.SortBy, p.SortDir)
+	if err != nil {
+		return nil, err
+	}
 	conds := []string{"p.deleted_at IS NULL", "p.event_id = $1::uuid"}
 	args := []any{eventId}
 	i := 2
@@ -89,6 +98,77 @@ func ListEventPeople(ctx context.Context, eventId string, p *ListPeopleParams) (
 		i++
 	}
 	where := strings.Join(conds, " AND ")
+	inMemorySort := peopleSortNeedsInMemory(p.SortBy)
+
+	scanPeopleRows := func(rows *sql.Rows) ([]EventPerson, error) {
+		var items []EventPerson
+		for rows.Next() {
+			var person EventPerson
+			var arr, dep, notes sql.NullString
+			var nameEnc, nameLegacy sql.NullString
+			if err := rows.Scan(&person.ID, &person.EventID, &nameEnc, &nameLegacy, &person.PersonType,
+				&person.AttendanceStatus, &arr, &dep, &notes, &person.CreatedAt); err != nil {
+				return nil, appErrs.Internal(err.Error())
+			}
+			person.FullName, err = decryptPersonName(nameEnc.String, nameLegacy.String)
+			if err != nil {
+				return nil, appErrs.Internal(err.Error())
+			}
+			if arr.Valid {
+				person.ArrivalTime = &arr.String
+			}
+			if dep.Valid {
+				person.DepartureTime = &dep.String
+			}
+			person.Notes = notes.String
+			items = append(items, person)
+		}
+		if err := rows.Err(); err != nil {
+			return nil, appErrs.Internal(err.Error())
+		}
+		for idx := range items {
+			if err := loadPersonExtras(ctx, conn, items[idx].ID, &items[idx]); err != nil {
+				return nil, appErrs.Internal(err.Error())
+			}
+			if len(items[idx].TherapyIDs) > 0 {
+				items[idx].TherapyID = &items[idx].TherapyIDs[0]
+			}
+		}
+		if items == nil {
+			items = []EventPerson{}
+		}
+		return items, nil
+	}
+
+	if inMemorySort {
+		rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
+		SELECT p.id::text, p.event_id::text,
+		       COALESCE(p.full_name_enc,''), COALESCE(p.full_name,''),
+		       p.person_type, p.attendance_status,
+		       p.arrival_time::text, p.departure_time::text, COALESCE(p.notes,''),
+		       p.created_at
+		FROM evt_event_person p
+		WHERE %s %s`, where, orderBy), args...)
+		if err != nil {
+			return nil, appErrs.Internal(err.Error())
+		}
+		defer rows.Close()
+		allItems, err := scanPeopleRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		sortEventPeopleInMemory(allItems, p.SortBy, p.SortDir)
+		total := len(allItems)
+		if off >= total {
+			return &ListPeopleResponse{Items: []EventPerson{}, Total: total}, nil
+		}
+		end := off + lim
+		if end > total {
+			end = total
+		}
+		return &ListPeopleResponse{Items: allItems[off:end], Total: total}, nil
+	}
+
 	var total int
 	if err := conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM evt_event_person p WHERE `+where, args...).Scan(&total); err != nil {
 		return nil, appErrs.Internal(err.Error())
@@ -101,48 +181,14 @@ func ListEventPeople(ctx context.Context, eventId string, p *ListPeopleParams) (
 		       p.arrival_time::text, p.departure_time::text, COALESCE(p.notes,''),
 		       p.created_at
 		FROM evt_event_person p
-		WHERE %s ORDER BY p.person_type, p.created_at LIMIT $%d OFFSET $%d`, where, i, i+1), args...)
+		WHERE %s %s LIMIT $%d OFFSET $%d`, where, orderBy, i, i+1), args...)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	var items []EventPerson
-	for rows.Next() {
-		var person EventPerson
-		var arr, dep, notes sql.NullString
-		var nameEnc, nameLegacy sql.NullString
-		if err := rows.Scan(&person.ID, &person.EventID, &nameEnc, &nameLegacy, &person.PersonType,
-			&person.AttendanceStatus, &arr, &dep, &notes, &person.CreatedAt); err != nil {
-			return nil, appErrs.Internal(err.Error())
-		}
-		person.FullName, err = decryptPersonName(nameEnc.String, nameLegacy.String)
-		if err != nil {
-			return nil, appErrs.Internal(err.Error())
-		}
-		if arr.Valid {
-			person.ArrivalTime = &arr.String
-		}
-		if dep.Valid {
-			person.DepartureTime = &dep.String
-		}
-		person.Notes = notes.String
-		items = append(items, person)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, appErrs.Internal(err.Error())
-	}
-	if err := rows.Close(); err != nil {
-		return nil, appErrs.Internal(err.Error())
-	}
-	for i := range items {
-		if err := loadPersonExtras(ctx, conn, items[i].ID, &items[i]); err != nil {
-			return nil, appErrs.Internal(err.Error())
-		}
-		if len(items[i].TherapyIDs) > 0 {
-			items[i].TherapyID = &items[i].TherapyIDs[0]
-		}
-	}
-	if items == nil {
-		items = []EventPerson{}
+	defer rows.Close()
+	items, err := scanPeopleRows(rows)
+	if err != nil {
+		return nil, err
 	}
 	return &ListPeopleResponse{Items: items, Total: total}, nil
 }
@@ -488,6 +534,8 @@ type UpsertAssignmentParams struct {
 
 type ListAssignmentsParams struct {
 	Q        string `query:"q"`
+	SortBy   string `query:"sortBy"`
+	SortDir  string `query:"sortDir"`
 	Page     int    `query:"page"`
 	PageSize int    `query:"pageSize"`
 }
@@ -508,6 +556,11 @@ func ListAssignments(ctx context.Context, eventId string, p *ListAssignmentsPara
 	}
 	page, pageSize := paginate(p.Page, p.PageSize)
 	off, lim := offsetLimit(page, pageSize)
+	orderBy, err := resolveAssignmentOrderBy(p.SortBy, p.SortDir)
+	if err != nil {
+		return nil, err
+	}
+	inMemorySort := assignmentSortNeedsInMemory(p.SortBy)
 	conds := []string{"a.deleted_at IS NULL", "a.event_id = $1::uuid"}
 	args := []any{eventId}
 	i := 2
@@ -532,6 +585,70 @@ func ListAssignments(ctx context.Context, eventId string, p *ListAssignmentsPara
 	if err := conn.QueryRowContext(ctx, countQ, args...).Scan(&total); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
+
+	scanAssignmentRows := func(rows *sql.Rows) ([]Assignment, error) {
+		var items []Assignment
+		for rows.Next() {
+			var a Assignment
+			var st, en, sn sql.NullString
+			var nameEnc, nameLegacy string
+			if err := rows.Scan(&a.ID, &a.EventID, &a.TaskID, &a.TaskName, &a.PersonID, &nameEnc, &nameLegacy, &st, &en, &sn); err != nil {
+				return nil, appErrs.Internal(err.Error())
+			}
+			if st.Valid {
+				a.StartTime = &st.String
+			}
+			if en.Valid {
+				a.EndTime = &en.String
+			}
+			if sn.Valid {
+				a.SessionName = &sn.String
+			}
+			a.PersonName, err = scanPersonNameFromRow(nameEnc, nameLegacy)
+			if err != nil {
+				return nil, appErrs.Internal(err.Error())
+			}
+			items = append(items, a)
+		}
+		if err := rows.Err(); err != nil {
+			return nil, appErrs.Internal(err.Error())
+		}
+		if items == nil {
+			items = []Assignment{}
+		}
+		return items, nil
+	}
+
+	if inMemorySort {
+		listQ := fmt.Sprintf(`
+		SELECT a.id::text, a.event_id::text, a.task_id::text, tk.task_name,
+		       a.person_id::text, `+personNameEncLegacyColsP+`,
+		       a.start_time::text, a.end_time::text, a.session_name
+		FROM evt_event_assignment a
+		JOIN evt_task tk ON tk.id = a.task_id
+		JOIN evt_event_person p ON p.id = a.person_id
+		WHERE %s %s`, where, orderBy)
+		rows, err := conn.QueryContext(ctx, listQ, args...)
+		if err != nil {
+			return nil, appErrs.Internal(err.Error())
+		}
+		defer rows.Close()
+		allItems, err := scanAssignmentRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		sortAssignmentsInMemory(allItems, p.SortBy, p.SortDir)
+		total = len(allItems)
+		if off >= total {
+			return &ListAssignmentsResponse{Items: []Assignment{}, Total: total}, nil
+		}
+		end := off + lim
+		if end > total {
+			end = total
+		}
+		return &ListAssignmentsResponse{Items: allItems[off:end], Total: total}, nil
+	}
+
 	args = append(args, lim, off)
 	listQ := fmt.Sprintf(`
 		SELECT a.id::text, a.event_id::text, a.task_id::text, tk.task_name,
@@ -541,42 +658,16 @@ func ListAssignments(ctx context.Context, eventId string, p *ListAssignmentsPara
 		JOIN evt_task tk ON tk.id = a.task_id
 		JOIN evt_event_person p ON p.id = a.person_id
 		WHERE %s
-		ORDER BY tk.display_order, a.start_time NULLS LAST, p.created_at
-		LIMIT $%d OFFSET $%d`, where, i, i+1)
+		%s
+		LIMIT $%d OFFSET $%d`, where, orderBy, i, i+1)
 	rows, err := conn.QueryContext(ctx, listQ, args...)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	var items []Assignment
-	for rows.Next() {
-		var a Assignment
-		var st, en, sn sql.NullString
-		var nameEnc, nameLegacy string
-		if err := rows.Scan(&a.ID, &a.EventID, &a.TaskID, &a.TaskName, &a.PersonID, &nameEnc, &nameLegacy, &st, &en, &sn); err != nil {
-			_ = rows.Close()
-			return nil, appErrs.Internal(err.Error())
-		}
-		if st.Valid {
-			a.StartTime = &st.String
-		}
-		if en.Valid {
-			a.EndTime = &en.String
-		}
-		if sn.Valid {
-			a.SessionName = &sn.String
-		}
-		a.PersonName, err = scanPersonNameFromRow(nameEnc, nameLegacy)
-		if err != nil {
-			return nil, appErrs.Internal(err.Error())
-		}
-		items = append(items, a)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, appErrs.Internal(err.Error())
-	}
-	_ = rows.Close()
-	if items == nil {
-		items = []Assignment{}
+	defer rows.Close()
+	items, err := scanAssignmentRows(rows)
+	if err != nil {
+		return nil, err
 	}
 	return &ListAssignmentsResponse{Items: items, Total: total}, nil
 }

@@ -52,6 +52,8 @@ type EventTherapySetting struct {
 type ListEventsParams struct {
 	Q        string `query:"q"`
 	Status   string `query:"status"`
+	SortBy   string `query:"sortBy"`
+	SortDir  string `query:"sortDir"`
 	Page     int    `query:"page"`
 	PageSize int    `query:"pageSize"`
 }
@@ -144,6 +146,13 @@ func ListEvents(ctx context.Context, p *ListEventsParams) (*ListEventsResponse, 
 		i++
 	}
 	where := strings.Join(conds, " AND ")
+	orderBy, err := resolveEventOrderBy("", "")
+	if p != nil {
+		orderBy, err = resolveEventOrderBy(p.SortBy, p.SortDir)
+	}
+	if err != nil {
+		return nil, err
+	}
 	var total int
 	if err := conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM evt_event WHERE `+where, args...).Scan(&total); err != nil {
 		return nil, appErrs.Internal(err.Error())
@@ -154,8 +163,8 @@ func ListEvents(ctx context.Context, p *ListEventsParams) (*ListEventsResponse, 
 		       start_date::text, end_date::text, start_time::text, end_time::text,
 		       break_start_time::text, break_end_time::text,
 		       registration_open_at, registration_close_at, status
-		FROM evt_event WHERE %s ORDER BY start_date DESC, created_at DESC LIMIT $%d OFFSET $%d`,
-		where, i, i+1), args...)
+		FROM evt_event WHERE %s %s LIMIT $%d OFFSET $%d`,
+		where, orderBy, i, i+1), args...)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}

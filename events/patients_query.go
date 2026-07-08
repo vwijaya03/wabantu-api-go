@@ -15,6 +15,8 @@ type patientFilterInput struct {
 	Status    string
 	SlotDate  string
 	HasSlot   string
+	SortBy    string
+	SortDir   string
 }
 
 func buildPatientWhere(eventID string, f patientFilterInput) (string, []any) {
@@ -109,8 +111,24 @@ func filterPatientsByNameQuery(items []Patient, q string) []Patient {
 	return out
 }
 
+func paginatePatientSlice(items []Patient, limit, offset int) ([]Patient, int) {
+	total := len(items)
+	if offset >= total {
+		return []Patient{}, total
+	}
+	end := offset + limit
+	if end > total {
+		end = total
+	}
+	return items[offset:end], total
+}
+
 func queryPatients(ctx context.Context, conn *sql.Conn, eventID string, f patientFilterInput, limit, offset int) ([]Patient, int, error) {
 	if err := validatePatientFilters(f); err != nil {
+		return nil, 0, err
+	}
+	orderBy, err := resolvePatientOrderBy(f.SortBy, f.SortDir)
+	if err != nil {
 		return nil, 0, err
 	}
 	if limit <= 0 {
@@ -124,60 +142,58 @@ func queryPatients(ctx context.Context, conn *sql.Conn, eventID string, f patien
 	}
 	where, args := buildPatientWhere(eventID, f)
 	nameQ := strings.TrimSpace(f.Q)
+	inMemorySort := patientSortNeedsInMemory(f.SortBy)
 
-	if nameQ == "" {
-		var total int
-		countQ := `SELECT COUNT(*) ` + patientFromJoin + ` WHERE ` + where
-		if err := conn.QueryRowContext(ctx, countQ, args...).Scan(&total); err != nil {
-			return nil, 0, err
-		}
-		qArgs := append([]any{}, args...)
-		qArgs = append(qArgs, limit, offset)
-		limIdx := len(args) + 1
-		offIdx := len(args) + 2
+	if nameQ != "" || inMemorySort {
 		rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
 		SELECT pat.id::text, pat.event_id::text, pat.therapy_id::text, t.therapy_name,
 		       pat.full_name_enc, pat.birth_date_enc, COALESCE(pat.complaint,''),
 		       COALESCE(pat.preferred_time,''), pat.reservation_status, pat.slot_id::text,
 		       s.slot_date::text, s.start_time::text, s.end_time::text
-		%s WHERE %s %s LIMIT $%d OFFSET $%d`,
-			patientFromJoin, where, patientOrderBy, limIdx, offIdx), qArgs...)
+		%s WHERE %s %s LIMIT $%d`,
+			patientFromJoin, where, orderBy, len(args)+1),
+			append(append([]any{}, args...), maxPatientExportRows)...)
 		if err != nil {
 			return nil, 0, err
 		}
 		defer rows.Close()
-		items, err := scanPatientRows(rows)
+		allItems, err := scanPatientRows(rows)
 		if err != nil {
 			return nil, 0, err
 		}
-		return items, total, nil
+		if nameQ != "" {
+			allItems = filterPatientsByNameQuery(allItems, nameQ)
+		}
+		if inMemorySort {
+			sortPatientsInMemory(allItems, f.SortBy, f.SortDir)
+		}
+		page, total := paginatePatientSlice(allItems, limit, offset)
+		return page, total, nil
 	}
 
-	// Encrypted names cannot be substring-searched in SQL; fetch candidates then filter in memory.
+	var total int
+	countQ := `SELECT COUNT(*) ` + patientFromJoin + ` WHERE ` + where
+	if err := conn.QueryRowContext(ctx, countQ, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	qArgs := append([]any{}, args...)
+	qArgs = append(qArgs, limit, offset)
+	limIdx := len(args) + 1
+	offIdx := len(args) + 2
 	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
 		SELECT pat.id::text, pat.event_id::text, pat.therapy_id::text, t.therapy_name,
 		       pat.full_name_enc, pat.birth_date_enc, COALESCE(pat.complaint,''),
 		       COALESCE(pat.preferred_time,''), pat.reservation_status, pat.slot_id::text,
 		       s.slot_date::text, s.start_time::text, s.end_time::text
-		%s WHERE %s %s LIMIT $%d`,
-		patientFromJoin, where, patientOrderBy, len(args)+1),
-		append(append([]any{}, args...), maxPatientExportRows)...)
+		%s WHERE %s %s LIMIT $%d OFFSET $%d`,
+		patientFromJoin, where, orderBy, limIdx, offIdx), qArgs...)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer rows.Close()
-	allItems, err := scanPatientRows(rows)
+	items, err := scanPatientRows(rows)
 	if err != nil {
 		return nil, 0, err
 	}
-	filtered := filterPatientsByNameQuery(allItems, nameQ)
-	total := len(filtered)
-	if offset >= total {
-		return []Patient{}, total, nil
-	}
-	end := offset + limit
-	if end > total {
-		end = total
-	}
-	return filtered[offset:end], total, nil
+	return items, total, nil
 }

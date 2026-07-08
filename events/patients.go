@@ -32,6 +32,8 @@ type ListPatientsParams struct {
 	Status    string `query:"status"`
 	SlotDate  string `query:"slotDate"`
 	HasSlot   string `query:"hasSlot"`
+	SortBy    string `query:"sortBy"`
+	SortDir   string `query:"sortDir"`
 	Page      int    `query:"page"`
 	PageSize  int    `query:"pageSize"`
 }
@@ -108,6 +110,7 @@ func ListPatients(ctx context.Context, eventId string, p *ListPatientsParams) (*
 		filters = patientFilterInput{
 			Q: p.Q, TherapyID: p.TherapyID, Status: p.Status,
 			SlotDate: p.SlotDate, HasSlot: p.HasSlot,
+			SortBy: p.SortBy, SortDir: p.SortDir,
 		}
 	}
 	items, total, err := queryPatients(ctx, conn, eventId, filters, lim, off)
