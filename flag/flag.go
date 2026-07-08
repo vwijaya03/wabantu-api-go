@@ -207,6 +207,9 @@ func CheckFlag(ctx context.Context, key string) (*CheckFlagResponse, error) {
 	if u == nil {
 		return nil, appErrs.Unauthenticated("missing auth data")
 	}
+	if !u.HasEffectiveTenantContext() {
+		return nil, appErrs.Forbidden("tenant context required — pantau tenant dari konsol admin")
+	}
 	return &CheckFlagResponse{Enabled: IsEnabled(ctx, key, u.TenantID)}, nil
 }
 

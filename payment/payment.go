@@ -96,10 +96,24 @@ type midtransNotification struct {
 
 // ---------- endpoints ----------
 
+func requireTenantUser() (*types.AuthUser, error) {
+	u, _ := auth.Data().(*types.AuthUser)
+	if u == nil {
+		return nil, appErrs.Unauthenticated("missing auth data")
+	}
+	if !u.HasEffectiveTenantContext() {
+		return nil, appErrs.Forbidden("tenant context required — pantau tenant dari konsol admin")
+	}
+	return u, nil
+}
+
 //encore:api auth method=POST path=/api/v1/payment/create-qris
 func CreateQRIS(ctx context.Context, p *CreateQRISParams) (*QRISResponse, error) {
-	u, _ := auth.Data().(*types.AuthUser)
-	if u == nil || !u.CanPerformOwnerActions() {
+	u, err := requireTenantUser()
+	if err != nil {
+		return nil, err
+	}
+	if !u.CanPerformOwnerActions() {
 		return nil, appErrs.Forbidden("owner access required")
 	}
 	if p.AmountIDR <= 0 {
@@ -111,7 +125,7 @@ func CreateQRIS(ctx context.Context, p *CreateQRISParams) (*QRISResponse, error)
 
 	var invStatus string
 	var invAmount int
-	err := dataDB.QueryRow(ctx, fmt.Sprintf(
+	err = dataDB.QueryRow(ctx, fmt.Sprintf(
 		`SELECT status, amount_idr FROM "%s".invoice WHERE id=$1`, u.TenantSchema), p.InvoiceID,
 	).Scan(&invStatus, &invAmount)
 	if err != nil {
@@ -170,13 +184,13 @@ func CreateQRIS(ctx context.Context, p *CreateQRISParams) (*QRISResponse, error)
 
 //encore:api auth method=GET path=/api/v1/payment/:id/status
 func GetStatus(ctx context.Context, id string) (*PaymentStatus, error) {
-	u, _ := auth.Data().(*types.AuthUser)
-	if u == nil {
-		return nil, appErrs.Unauthenticated("missing auth data")
+	u, err := requireTenantUser()
+	if err != nil {
+		return nil, err
 	}
 
 	var ps PaymentStatus
-	err := dataDB.QueryRow(ctx, fmt.Sprintf(
+	err = dataDB.QueryRow(ctx, fmt.Sprintf(
 		`SELECT id, midtrans_order_id, COALESCE(midtrans_transaction_id,''),
 		        COALESCE(invoice_id,''), amount_idr, status, payment_type,
 		        COALESCE(qr_url,''), expires_at, paid_at, created_at
