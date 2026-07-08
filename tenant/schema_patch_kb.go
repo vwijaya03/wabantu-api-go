@@ -1,0 +1,53 @@
+package tenant
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+
+	"encore.dev"
+
+	"encore.app/wabantu/shared/tenantschema"
+)
+
+const knowledgeBaseEntryPatchSQL = `
+CREATE TABLE IF NOT EXISTS knowledge_base_entry (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    question    VARCHAR(500) NOT NULL,
+    answer      TEXT         NOT NULL,
+    category    VARCHAR(60),
+    is_active   BOOLEAN      NOT NULL DEFAULT true,
+    source      VARCHAR(20)  NOT NULL DEFAULT 'manual',
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    deleted_at  TIMESTAMPTZ,
+    deleted_by  UUID
+);
+CREATE INDEX IF NOT EXISTS idx_kb_entry_category
+    ON knowledge_base_entry(category);
+`
+
+// EnsureKnowledgeBaseSchema creates knowledge_base_entry on older tenant schemas (idempotent).
+func EnsureKnowledgeBaseSchema(ctx context.Context, schemaName string) error {
+	conn, err := TenantConn(ctx, schemaName)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	return alwaysApplyKnowledgeBasePatch(ctx, conn)
+}
+
+func alwaysApplyKnowledgeBasePatch(ctx context.Context, conn *sql.Conn) error {
+	exists, err := tenantschema.TableExists(ctx, conn, "knowledge_base_entry")
+	if err != nil || exists {
+		return err
+	}
+	if encore.Meta().Environment.Cloud != encore.CloudLocal {
+		return fmt.Errorf(
+			"tabel knowledge_base_entry belum ada di cloud: jalankan ./scripts/apply-tenant-schema-cloud.sh %s",
+			encore.Meta().Environment.Name,
+		)
+	}
+	_, err = conn.ExecContext(ctx, knowledgeBaseEntryPatchSQL)
+	return err
+}

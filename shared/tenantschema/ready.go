@@ -103,6 +103,11 @@ func EventsModuleReady(ctx context.Context, conn *sql.Conn) (bool, error) {
 	return columnExists(ctx, conn, "evt_patient", "contact_id")
 }
 
+// KnowledgeBaseReady — Q/A table for AI knowledge base module.
+func KnowledgeBaseReady(ctx context.Context, conn *sql.Conn) (bool, error) {
+	return TableExists(ctx, conn, "knowledge_base_entry")
+}
+
 // TenantPatchReady — schema_patch.go fully applied (branches, workflow, indexes).
 func TenantPatchReady(ctx context.Context, conn *sql.Conn) (bool, error) {
 	for _, t := range []string{"branch", "workflow_rule"} {
@@ -194,6 +199,7 @@ func CloudTenantReady(ctx context.Context, conn *sql.Conn) (bool, error) {
 	checks := []func(context.Context, *sql.Conn) (bool, error){
 		TenantPatchReady,
 		PricingReady,
+		KnowledgeBaseReady,
 		FinanceModuleReady,
 		EventsModuleReady,
 		PIIReady,

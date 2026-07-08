@@ -108,4 +108,19 @@ ALTER TABLE "order" ADD COLUMN IF NOT EXISTS payment_proof_meta JSONB NOT NULL D
 CREATE INDEX IF NOT EXISTS idx_order_payment_status
     ON "order"(payment_status, created_at DESC)
     WHERE deleted_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS knowledge_base_entry (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    question    VARCHAR(500) NOT NULL,
+    answer      TEXT         NOT NULL,
+    category    VARCHAR(60),
+    is_active   BOOLEAN      NOT NULL DEFAULT true,
+    source      VARCHAR(20)  NOT NULL DEFAULT 'manual',
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    deleted_at  TIMESTAMPTZ,
+    deleted_by  UUID
+);
+CREATE INDEX IF NOT EXISTS idx_kb_entry_category
+    ON knowledge_base_entry(category);
 `

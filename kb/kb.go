@@ -12,11 +12,15 @@ import (
 
 	e "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/types"
+	"encore.app/wabantu/tenant"
 )
 
 var db = sqldb.Named("tenant")
 
 func withTenantDB(ctx context.Context, schema string) (*sql.DB, error) {
+	if err := tenant.EnsureKnowledgeBaseSchema(ctx, schema); err != nil {
+		return nil, e.Internal(err.Error())
+	}
 	stdlib := db.Stdlib()
 	_, err := stdlib.ExecContext(ctx, fmt.Sprintf(`SET search_path TO %q`, schema))
 	if err != nil {

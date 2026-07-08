@@ -136,6 +136,22 @@ CREATE INDEX IF NOT EXISTS idx_catalog_name
 CREATE INDEX IF NOT EXISTS idx_catalog_barcode
     ON business_catalog_item(barcode)
     WHERE deleted_at IS NULL AND barcode IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS knowledge_base_entry (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    question    VARCHAR(500) NOT NULL,
+    answer      TEXT         NOT NULL,
+    category    VARCHAR(60),
+    is_active   BOOLEAN      NOT NULL DEFAULT true,
+    source      VARCHAR(20)  NOT NULL DEFAULT 'manual',
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    deleted_at  TIMESTAMPTZ,
+    deleted_by  UUID
+);
+CREATE INDEX IF NOT EXISTS idx_kb_entry_category
+    ON knowledge_base_entry(category);
+
 CREATE INDEX IF NOT EXISTS idx_contact_updated
     ON contact(updated_at DESC, created_at DESC)
     WHERE deleted_at IS NULL;
@@ -231,6 +247,9 @@ func runAlwaysApplyPatches(ctx context.Context, conn *sql.Conn) error {
 		return err
 	}
 	if err := alwaysApplyInventorySettingPatch(ctx, conn); err != nil {
+		return err
+	}
+	if err := alwaysApplyKnowledgeBasePatch(ctx, conn); err != nil {
 		return err
 	}
 	return alwaysApplyInventoryIndexPatch(ctx, conn)
