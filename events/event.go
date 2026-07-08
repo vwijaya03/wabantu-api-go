@@ -189,7 +189,18 @@ func GetEvent(ctx context.Context, eventId string) (*Event, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	run := func() (*Event, error) {
+		return loadEvent(ctx, u.TenantSchema, eventId)
+	}
+	resp, err := run()
+	if isBadConnectionErr(err) {
+		resp, err = run()
+	}
+	return resp, err
+}
+
+func loadEvent(ctx context.Context, tenantSchema, eventId string) (*Event, error) {
+	conn, err := tenantConn(ctx, tenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
