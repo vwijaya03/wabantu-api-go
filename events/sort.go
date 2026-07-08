@@ -41,6 +41,14 @@ func validateSortField(sortBy string, allowed map[string]bool) error {
 	return nil
 }
 
+// sqlOrderExpr builds "col ASC NULLS LAST" (PostgreSQL requires direction before NULLS LAST).
+func sqlOrderExpr(col, dir string, nullsLast bool) string {
+	if nullsLast {
+		return fmt.Sprintf("%s %s NULLS LAST", col, dir)
+	}
+	return fmt.Sprintf("%s %s", col, dir)
+}
+
 var allowedEventSortFields = map[string]bool{
 	"startdate": true, "eventname": true, "createdat": true, "status": true,
 }
@@ -102,9 +110,17 @@ func resolvePatientOrderBy(sortBy, sortDir string) (string, error) {
 	dir := normalizeSortDir(sortDir, false)
 	switch sb {
 	case "slotdate":
-		return fmt.Sprintf("ORDER BY s.slot_date NULLS LAST %s, s.start_time NULLS LAST %s, pat.created_at %s", dir, dir, dir), nil
+		return fmt.Sprintf("ORDER BY %s, %s, %s",
+			sqlOrderExpr("s.slot_date", dir, true),
+			sqlOrderExpr("s.start_time", dir, true),
+			sqlOrderExpr("pat.created_at", dir, false),
+		), nil
 	case "slottime":
-		return fmt.Sprintf("ORDER BY s.start_time NULLS LAST %s, s.slot_date NULLS LAST %s, pat.created_at %s", dir, dir, dir), nil
+		return fmt.Sprintf("ORDER BY %s, %s, %s",
+			sqlOrderExpr("s.start_time", dir, true),
+			sqlOrderExpr("s.slot_date", dir, true),
+			sqlOrderExpr("pat.created_at", dir, false),
+		), nil
 	case "status":
 		return fmt.Sprintf("ORDER BY pat.reservation_status %s, t.display_order ASC, pat.created_at %s", dir, dir), nil
 	case "createdat":
@@ -199,7 +215,10 @@ func resolveAssignmentOrderBy(sortBy, sortDir string) (string, error) {
 			return "ORDER BY tk.display_order, a.start_time NULLS LAST, p.created_at", nil
 		}
 		dir := normalizeSortDir(sortDir, false)
-		return fmt.Sprintf("ORDER BY a.start_time NULLS LAST %s, tk.display_order ASC, p.created_at %s", dir, dir), nil
+		return fmt.Sprintf("ORDER BY %s, tk.display_order ASC, %s",
+			sqlOrderExpr("a.start_time", dir, true),
+			sqlOrderExpr("p.created_at", dir, false),
+		), nil
 	}
 	if err := validateSortField(sortBy, allowedAssignmentSortFields); err != nil {
 		return "", err
@@ -213,7 +232,10 @@ func resolveAssignmentOrderBy(sortBy, sortDir string) (string, error) {
 	dir := normalizeSortDir(sortDir, false)
 	switch sb {
 	case "taskname":
-		return fmt.Sprintf("ORDER BY tk.task_name %s, a.start_time NULLS LAST", dir), nil
+		return fmt.Sprintf("ORDER BY %s, %s",
+			sqlOrderExpr("tk.task_name", dir, false),
+			sqlOrderExpr("a.start_time", "ASC", true),
+		), nil
 	case "createdat":
 		return fmt.Sprintf("ORDER BY p.created_at %s", dir), nil
 	default:

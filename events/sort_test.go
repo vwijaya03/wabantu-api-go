@@ -1,6 +1,9 @@
 package events
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestResolvePatientOrderByDefault(t *testing.T) {
 	got, err := resolvePatientOrderBy("", "")
@@ -41,6 +44,32 @@ func TestResolveEventOrderBy(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got != "ORDER BY event_name ASC, start_date DESC" {
+		t.Fatalf("unexpected: %q", got)
+	}
+}
+
+func TestResolvePatientOrderBySlotDate(t *testing.T) {
+	got, err := resolvePatientOrderBy("slotDate", "asc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got, "NULLS LAST ASC") || strings.Contains(got, "NULLS LAST DESC") {
+		t.Fatalf("invalid NULLS LAST placement: %q", got)
+	}
+	if !strings.Contains(got, "slot_date ASC NULLS LAST") {
+		t.Fatalf("unexpected: %q", got)
+	}
+}
+
+func TestResolveAssignmentOrderByStartTime(t *testing.T) {
+	got, err := resolveAssignmentOrderBy("startTime", "desc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got, "NULLS LAST DESC") {
+		t.Fatalf("invalid SQL: %q", got)
+	}
+	if !strings.Contains(got, "start_time DESC NULLS LAST") {
 		t.Fatalf("unexpected: %q", got)
 	}
 }
