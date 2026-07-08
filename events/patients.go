@@ -245,7 +245,7 @@ func UpdateEventPatient(ctx context.Context, eventId, patientId string, p *Updat
 		  therapy_id=$5::uuid, complaint=$6, preferred_time=$7,
 		  reservation_status=$8, updated_at=now()
 		WHERE id=$9::uuid AND event_id=$10::uuid AND deleted_at IS NULL`,
-		encName, encBirth, patientBlindName(fullName), patientBlindBirth(normBirth),
+		encName, encBirth, patientBlindName(fullName), normBirth,
 		p.TherapyID, nullStr(p.Complaint), nullStr(p.PreferredTime), st, patientId, eventId)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
@@ -505,7 +505,7 @@ func createPatientForEvent(
 		  SELECT 1 FROM evt_patient
 		  WHERE event_id=$1::uuid AND normalized_name=$2 AND normalized_birthdate=$3
 		    AND deleted_at IS NULL AND reservation_status <> 'CANCELLED'
-		)`, eventID, patientBlindName(fullName), patientBlindBirth(normBirth)).Scan(&dup); err != nil {
+		)`, eventID, patientBlindName(fullName), normBirth).Scan(&dup); err != nil {
 		return "", appErrs.Internal(err.Error())
 	}
 	if dup {
@@ -543,7 +543,7 @@ func createPatientForEvent(
 		  reservation_status, slot_id
 		) VALUES ($1::uuid,$2::uuid,$3::uuid,$4,$5,$6,$7,$8,$9,'CONFIRMED',$10)
 		RETURNING id::text`,
-		eventID, therapyID, contactID, encName, encBirth, patientBlindName(fullName), patientBlindBirth(normBirth),
+		eventID, therapyID, contactID, encName, encBirth, patientBlindName(fullName), normBirth,
 		nullStr(complaint), nullStr(preferred), slotID,
 	).Scan(&patientID)
 	if err != nil {

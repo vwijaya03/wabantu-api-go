@@ -31,11 +31,7 @@ func buildPatientWhere(eventID string, f patientFilterInput) (string, []any) {
 		args = append(args, strings.ToUpper(st))
 		i++
 	}
-	if q := strings.TrimSpace(f.Q); q != "" {
-		conds = append(conds, fmt.Sprintf("pat.normalized_name = $%d", i))
-		args = append(args, patientBlindName(q))
-		i++
-	}
+	// Name search (q) is applied after decrypt — see filterPatientsByNameQuery.
 	if sd := strings.TrimSpace(f.SlotDate); sd != "" {
 		conds = append(conds, fmt.Sprintf("s.slot_date = $%d::date", i))
 		args = append(args, sd)
@@ -98,6 +94,21 @@ func scanPatientRows(rows *sql.Rows) ([]Patient, error) {
 	return items, nil
 }
 
+// filterPatientsByNameQuery keeps patients whose decrypted name contains the query (case-insensitive).
+func filterPatientsByNameQuery(items []Patient, q string) []Patient {
+	q = normalizePatientName(q)
+	if q == "" {
+		return items
+	}
+	out := make([]Patient, 0, len(items))
+	for _, p := range items {
+		if strings.Contains(normalizePatientName(p.FullName), q) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 func queryPatients(ctx context.Context, conn *sql.Conn, eventID string, f patientFilterInput, limit, offset int) ([]Patient, int, error) {
 	if err := validatePatientFilters(f); err != nil {
 		return nil, 0, err
@@ -112,29 +123,61 @@ func queryPatients(ctx context.Context, conn *sql.Conn, eventID string, f patien
 		offset = 0
 	}
 	where, args := buildPatientWhere(eventID, f)
-	var total int
-	countQ := `SELECT COUNT(*) ` + patientFromJoin + ` WHERE ` + where
-	if err := conn.QueryRowContext(ctx, countQ, args...).Scan(&total); err != nil {
-		return nil, 0, err
-	}
-	qArgs := append([]any{}, args...)
-	qArgs = append(qArgs, limit, offset)
-	limIdx := len(args) + 1
-	offIdx := len(args) + 2
-	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
+	nameQ := strings.TrimSpace(f.Q)
+
+	if nameQ == "" {
+		var total int
+		countQ := `SELECT COUNT(*) ` + patientFromJoin + ` WHERE ` + where
+		if err := conn.QueryRowContext(ctx, countQ, args...).Scan(&total); err != nil {
+			return nil, 0, err
+		}
+		qArgs := append([]any{}, args...)
+		qArgs = append(qArgs, limit, offset)
+		limIdx := len(args) + 1
+		offIdx := len(args) + 2
+		rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
 		SELECT pat.id::text, pat.event_id::text, pat.therapy_id::text, t.therapy_name,
 		       pat.full_name_enc, pat.birth_date_enc, COALESCE(pat.complaint,''),
 		       COALESCE(pat.preferred_time,''), pat.reservation_status, pat.slot_id::text,
 		       s.slot_date::text, s.start_time::text, s.end_time::text
 		%s WHERE %s %s LIMIT $%d OFFSET $%d`,
-		patientFromJoin, where, patientOrderBy, limIdx, offIdx), qArgs...)
+			patientFromJoin, where, patientOrderBy, limIdx, offIdx), qArgs...)
+		if err != nil {
+			return nil, 0, err
+		}
+		defer rows.Close()
+		items, err := scanPatientRows(rows)
+		if err != nil {
+			return nil, 0, err
+		}
+		return items, total, nil
+	}
+
+	// Encrypted names cannot be substring-searched in SQL; fetch candidates then filter in memory.
+	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
+		SELECT pat.id::text, pat.event_id::text, pat.therapy_id::text, t.therapy_name,
+		       pat.full_name_enc, pat.birth_date_enc, COALESCE(pat.complaint,''),
+		       COALESCE(pat.preferred_time,''), pat.reservation_status, pat.slot_id::text,
+		       s.slot_date::text, s.start_time::text, s.end_time::text
+		%s WHERE %s %s LIMIT $%d`,
+		patientFromJoin, where, patientOrderBy, len(args)+1),
+		append(append([]any{}, args...), maxPatientExportRows)...)
 	if err != nil {
 		return nil, 0, err
 	}
 	defer rows.Close()
-	items, err := scanPatientRows(rows)
+	allItems, err := scanPatientRows(rows)
 	if err != nil {
 		return nil, 0, err
 	}
-	return items, total, nil
+	filtered := filterPatientsByNameQuery(allItems, nameQ)
+	total := len(filtered)
+	if offset >= total {
+		return []Patient{}, total, nil
+	}
+	end := offset + limit
+	if end > total {
+		end = total
+	}
+	return filtered[offset:end], total, nil
 }
