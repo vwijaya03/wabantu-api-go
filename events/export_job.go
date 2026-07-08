@@ -43,13 +43,22 @@ type PatientExportFilters struct {
 	Status        string   `json:"status,omitempty"`
 	SlotDate      string   `json:"slotDate,omitempty"`
 	HasSlot       string   `json:"hasSlot,omitempty"`
+	SortBy        string   `json:"sortBy,omitempty"`
+	SortDir       string   `json:"sortDir,omitempty"`
 	HiddenColumns []string `json:"hiddenColumns,omitempty"`
 }
 
+// StaffExportFilters — urutan baris untuk export staf.
+type StaffExportFilters struct {
+	SortBy  string `json:"sortBy,omitempty"`
+	SortDir string `json:"sortDir,omitempty"`
+}
+
 type CreateExportJobParams struct {
-	Kind    string                `json:"kind"`
-	Format  string                `json:"format,omitempty"`
-	Filters *PatientExportFilters `json:"filters,omitempty"`
+	Kind         string                `json:"kind"`
+	Format       string                `json:"format,omitempty"`
+	Filters      *PatientExportFilters `json:"filters,omitempty"`
+	StaffFilters *StaffExportFilters   `json:"staffFilters,omitempty"`
 }
 
 type ExportJobListResponse struct {
@@ -93,6 +102,7 @@ func CreateExportJob(ctx context.Context, eventId string, p *CreateExportJobPara
 	}
 
 	filters := patientFilterInput{}
+	staffFilters := staffExportFilterInput{}
 	if kind == exportKindPatientsPDF || kind == exportKindPatientsXLSX {
 		filters = patientFilterFromExport(p.Filters)
 		if err := validatePatientFilters(filters); err != nil {
@@ -108,6 +118,11 @@ func CreateExportJob(ctx context.Context, eventId string, p *CreateExportJobPara
 				total, maxPatientExportRows,
 			))
 		}
+	} else {
+		staffFilters = staffExportFilterFromParams(p.StaffFilters)
+		if err := validateStaffExportSort(staffFilters.SortBy, staffFilters.SortDir); err != nil {
+			return nil, err
+		}
 	}
 
 	hiddenCols := parsePatientHiddenColumns(nil)
@@ -119,6 +134,7 @@ func CreateExportJob(ctx context.Context, eventId string, p *CreateExportJobPara
 		"kind":          kind,
 		"format":        format,
 		"filters":       patientFiltersToMap(filters),
+		"staffFilters":  staffFiltersToMap(staffFilters),
 		"hiddenColumns": hiddenColumnList(hiddenCols),
 	})
 	if err != nil {
@@ -137,7 +153,7 @@ func CreateExportJob(ctx context.Context, eventId string, p *CreateExportJobPara
 	}
 
 	async.RunBounded(async.ExportSem, func() {
-		processExportJobAsync(u.TenantSchema, id, eventId, kind, format, filters, hiddenCols, u.AccountID, u.TenantID, u.ImpersonationTenantName)
+		processExportJobAsync(u.TenantSchema, id, eventId, kind, format, filters, staffFilters, hiddenCols, u.AccountID, u.TenantID, u.ImpersonationTenantName)
 	})
 
 	now := time.Now()
@@ -219,7 +235,7 @@ func ListExportJobs(ctx context.Context, eventId string) (*ExportJobListResponse
 	return &ExportJobListResponse{Items: items}, nil
 }
 
-func processExportJobAsync(schema, jobID, eventID, kind, format string, filters patientFilterInput, hiddenCols map[string]bool, accountID, tenantID, tenantName string) {
+func processExportJobAsync(schema, jobID, eventID, kind, format string, filters patientFilterInput, staffFilters staffExportFilterInput, hiddenCols map[string]bool, accountID, tenantID, tenantName string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
@@ -229,10 +245,10 @@ func processExportJobAsync(schema, jobID, eventID, kind, format string, filters 
 	}
 	defer conn.Close()
 
-	processExportJob(ctx, conn, jobID, eventID, kind, format, filters, hiddenCols, accountID, tenantID, tenantName)
+	processExportJob(ctx, conn, jobID, eventID, kind, format, filters, staffFilters, hiddenCols, accountID, tenantID, tenantName)
 }
 
-func processExportJob(ctx context.Context, conn *sql.Conn, jobID, eventID, kind, format string, filters patientFilterInput, hiddenCols map[string]bool, accountID, tenantID, tenantName string) {
+func processExportJob(ctx context.Context, conn *sql.Conn, jobID, eventID, kind, format string, filters patientFilterInput, staffFilters staffExportFilterInput, hiddenCols map[string]bool, accountID, tenantID, tenantName string) {
 	defer func() {
 		if r := recover(); r != nil {
 			failExportJob(ctx, conn, jobID, fmt.Sprintf("export gagal: %v", r))
@@ -249,9 +265,9 @@ func processExportJob(ctx context.Context, conn *sql.Conn, jobID, eventID, kind,
 	case exportKindPatientsXLSX:
 		processPatientsXLSXExportJob(ctx, conn, jobID, eventID, filters, hiddenCols, tenantID, tenantName)
 	case exportKindStaffSheet:
-		processStaffSheetExportJob(ctx, conn, jobID, eventID)
+		processStaffSheetExportJob(ctx, conn, jobID, eventID, staffFilters)
 	case exportKindStaffList:
-		processStaffListExportJob(ctx, conn, jobID, eventID)
+		processStaffListExportJob(ctx, conn, jobID, eventID, staffFilters)
 	default:
 		failExportJob(ctx, conn, jobID, "jenis export tidak dikenali")
 	}
@@ -324,7 +340,7 @@ func processPatientsXLSXExportJob(ctx context.Context, conn *sql.Conn, jobID, ev
 	completeExportJob(ctx, conn, jobID, dataURL, fileName, len(items))
 }
 
-func processStaffListExportJob(ctx context.Context, conn *sql.Conn, jobID, eventID string) {
+func processStaffListExportJob(ctx context.Context, conn *sql.Conn, jobID, eventID string, staffFilters staffExportFilterInput) {
 	updateExportJobProgress(ctx, conn, jobID, "Memuat daftar staf...")
 	var eventName string
 	if err := conn.QueryRowContext(ctx, `
@@ -338,6 +354,7 @@ func processStaffListExportJob(ctx context.Context, conn *sql.Conn, jobID, event
 		failExportJob(ctx, conn, jobID, exportErrMessage(err, "gagal memuat staf"))
 		return
 	}
+	sortStaffListRowsInMemory(rows, staffFilters.SortBy, staffFilters.SortDir)
 	updateExportJobProgress(ctx, conn, jobID, "Membuat Excel...")
 	xlsxBytes, err := buildStaffListXLSX(eventName, rows)
 	if err != nil {
@@ -419,13 +436,14 @@ func processPatientsExportJob(ctx context.Context, conn *sql.Conn, jobID, eventI
 	completeExportJob(ctx, conn, jobID, dataURL, fileName, len(items))
 }
 
-func processStaffSheetExportJob(ctx context.Context, conn *sql.Conn, jobID, eventID string) {
+func processStaffSheetExportJob(ctx context.Context, conn *sql.Conn, jobID, eventID string, staffFilters staffExportFilterInput) {
 	updateExportJobProgress(ctx, conn, jobID, "Memuat staf & penugasan...")
 	data, err := loadStaffSheetExportData(ctx, conn, eventID)
 	if err != nil {
 		failExportJob(ctx, conn, jobID, exportErrMessage(err, "gagal memuat data staf"))
 		return
 	}
+	sortStaffSheetRowsInMemory(data.TherapyStaff, staffFilters.SortBy, staffFilters.SortDir)
 
 	updateExportJobProgress(ctx, conn, jobID, "Membuat lembar Excel...")
 	xlsxBytes, err := buildStaffSheetXLSX(data)
@@ -560,14 +578,32 @@ func patientFilterFromExport(f *PatientExportFilters) patientFilterInput {
 	}
 	return patientFilterInput{
 		Q: f.Q, TherapyID: f.TherapyID, Status: f.Status, SlotDate: f.SlotDate, HasSlot: f.HasSlot,
+		SortBy: f.SortBy, SortDir: f.SortDir,
 	}
+}
+
+type staffExportFilterInput struct {
+	SortBy  string
+	SortDir string
+}
+
+func staffExportFilterFromParams(f *StaffExportFilters) staffExportFilterInput {
+	if f == nil {
+		return staffExportFilterInput{}
+	}
+	return staffExportFilterInput{SortBy: f.SortBy, SortDir: f.SortDir}
 }
 
 func patientFiltersToMap(f patientFilterInput) map[string]string {
 	return map[string]string{
 		"q": f.Q, "therapyId": f.TherapyID, "status": f.Status,
 		"slotDate": f.SlotDate, "hasSlot": f.HasSlot,
+		"sortBy": f.SortBy, "sortDir": f.SortDir,
 	}
+}
+
+func staffFiltersToMap(f staffExportFilterInput) map[string]string {
+	return map[string]string{"sortBy": f.SortBy, "sortDir": f.SortDir}
 }
 
 func exportErrMessage(err error, fallback string) string {
