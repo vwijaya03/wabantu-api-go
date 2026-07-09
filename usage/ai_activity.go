@@ -22,7 +22,6 @@ const (
 	PurposeCatalogImport       = "catalog_import"
 	PurposeTransactionImport   = "transaction_import"
 	PurposePaymentProofOCR     = "payment_proof_ocr"
-	PurposeProductImageMatch   = "product_image_match"
 )
 
 // AIActivityParams is one auditable AI decision or model call for a tenant.

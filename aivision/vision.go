@@ -133,38 +133,6 @@ Jangan mengarang angka yang tidak terlihat di gambar.`
 const paymentProofVisionUser = `Ekstrak bukti transfer dari gambar ini. Format JSON:
 {"amount":0,"bank":"","account_number":"","account_name":"","date":"","confidence":0}`
 
-// ProductImageMatchExtract is vision output for matching a product photo to catalog.
-type ProductImageMatchExtract struct {
-	ProductName       string  `json:"productName"`
-	SkuHint           string  `json:"skuHint"`
-	Confidence        float64 `json:"confidence"`
-	VisualDescription string  `json:"visualDescription"`
-}
-
-const productImageVisionSystem = `Kamu mengidentifikasi produk dagangan dari foto untuk dicocokkan ke katalog toko online (pakaian, makanan, dll).
-Jawab HANYA SATU objek JSON valid, tanpa markdown.
-- productName: nama produk yang terlihat di kemasan/label/foto (bahasa Indonesia jika ada).
-- skuHint: kode SKU/barcode/label produk jika terbaca; kosongkan "" jika tidak ada.
-- visualDescription: deskripsi singkat visual (warna, bentuk, jenis barang) untuk pencocokan.
-- confidence: 0.0–1.0 seberapa yakin identifikasi produk benar.
-Jangan mengarang produk yang tidak terlihat. Jika foto bukan produk dagangan (meme, selfie, screenshot chat), confidence rendah (<0.5).`
-
-const productImageVisionUser = `Identifikasi produk dagangan di gambar ini untuk dicocokkan ke katalog toko. Format JSON:
-{"productName":"","skuHint":"","visualDescription":"","confidence":0}`
-
-// ExtractProductMatchFromImage calls Claude vision for catalog product matching.
-func ExtractProductMatchFromImage(ctx context.Context, apiKey string, imageBytes []byte, mediaType string) (ProductImageMatchExtract, Usage, error) {
-	raw, usage, err := visionExtract(ctx, apiKey, imageBytes, mediaType, productImageVisionSystem, productImageVisionUser)
-	var out ProductImageMatchExtract
-	if err != nil {
-		return out, usage, err
-	}
-	if uerr := json.Unmarshal([]byte(raw), &out); uerr != nil {
-		return out, usage, fmt.Errorf("parse product image JSON: %w", uerr)
-	}
-	return out, usage, nil
-}
-
 // ExtractPaymentProofFromImage calls Claude vision for payment proof OCR.
 func ExtractPaymentProofFromImage(ctx context.Context, apiKey string, imageBytes []byte, mediaType string) (PaymentProofExtract, Usage, error) {
 	raw, usage, err := visionExtract(ctx, apiKey, imageBytes, mediaType, paymentProofVisionSystem, paymentProofVisionUser)
