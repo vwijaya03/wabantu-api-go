@@ -269,6 +269,12 @@ CREATE TABLE IF NOT EXISTS evt_export_job (
     updated_at   TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_evt_export_job_event ON evt_export_job(event_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_evt_patient_event ON evt_patient(event_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_evt_patient_event_therapy ON evt_patient(event_id, therapy_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_evt_time_slot_event ON evt_time_slot(event_id, slot_date, therapy_id);
+CREATE INDEX IF NOT EXISTS idx_evt_event_therapy_event ON evt_event_therapy(event_id);
+CREATE INDEX IF NOT EXISTS idx_evt_event_status_start ON evt_event(status, start_date DESC) WHERE deleted_at IS NULL;
 `
 
 func runEventsSchemaAndSeed(ctx context.Context, conn *sql.Conn) error {

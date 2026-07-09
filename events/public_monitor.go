@@ -115,21 +115,25 @@ func loadPublicStaffMonitorPeople(ctx context.Context, conn *sql.Conn, eventID s
 		return nil, appErrs.Internal(err.Error())
 	}
 
+	extrasByID := make([]EventPerson, len(scratch))
+	for i, s := range scratch {
+		extrasByID[i].ID = s.personID
+	}
+	if err := attachPersonExtrasBatch(ctx, conn, extrasByID); err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+
 	var out []PublicStaffMonitorPerson
-	for _, s := range scratch {
+	for i, s := range scratch {
 		fullName, err := decryptPersonName(s.nameEnc, s.nameLegacy)
 		if err != nil {
-			return nil, appErrs.Internal(err.Error())
-		}
-		var extras EventPerson
-		if err := loadPersonExtras(ctx, conn, s.personID, &extras); err != nil {
 			return nil, appErrs.Internal(err.Error())
 		}
 		out = append(out, PublicStaffMonitorPerson{
 			FullName:          fullName,
 			RoleLabel:         personTypeLabel(s.personType),
-			TherapyNames:      extras.TherapyNames,
-			IsPencatat:        extras.IsPencatat,
+			TherapyNames:      extrasByID[i].TherapyNames,
+			IsPencatat:        extrasByID[i].IsPencatat,
 			CountsTowardMeals: s.countsTowardMeals,
 			Notes:             publicDisplayNotes(s.notes),
 		})

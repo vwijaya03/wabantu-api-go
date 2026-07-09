@@ -128,10 +128,10 @@ func ListEventPeople(ctx context.Context, eventId string, p *ListPeopleParams) (
 		if err := rows.Err(); err != nil {
 			return nil, appErrs.Internal(err.Error())
 		}
+		if err := attachPersonExtrasBatch(ctx, conn, items); err != nil {
+			return nil, appErrs.Internal(err.Error())
+		}
 		for idx := range items {
-			if err := loadPersonExtras(ctx, conn, items[idx].ID, &items[idx]); err != nil {
-				return nil, appErrs.Internal(err.Error())
-			}
 			if len(items[idx].TherapyIDs) > 0 {
 				items[idx].TherapyID = &items[idx].TherapyIDs[0]
 			}
