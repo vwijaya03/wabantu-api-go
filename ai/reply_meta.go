@@ -40,7 +40,9 @@ const (
 	PathLLMGrounded       = "llm_grounded"
 	PathCostLimit         = "cost_limit"
 	PathAutoFallback      = "auto_fallback"
-	PathPaymentProof      = "payment_proof"
+	PathPaymentProof        = "payment_proof"
+	PathProductImageMatch   = "product_image_match"
+	PathImageFallback       = "image_fallback"
 )
 
 // AiReplyMeta is stored on message.metadata and echoed in structured logs.
