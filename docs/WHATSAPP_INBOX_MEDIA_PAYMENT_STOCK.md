@@ -88,7 +88,8 @@ Urutan merge disarankan: **Fase 1 → Fase 4 → Fase 2 → Fase 3**
 
 | Fase | Nama | Effort | PR branch contoh |
 |------|------|--------|------------------|
-| 1 | Media di Inbox | M | `feat/inbox-media` |
+| 1 | Media di Inbox (MVP) | M | `feat/inbox-media` |
+| 1b | Persist media ke S3 | L | `feat/inbox-media-s3` |
 | 4 | Stok guard AI | M | `feat/ai-stock-guard` |
 | 2 | Bukti transfer + setting | L | `feat/order-payment-proof` |
 | 3 | AI image context lanjutan | M–L | `feat/ai-image-context` |
@@ -103,27 +104,50 @@ Staff/owner melihat gambar yang dikirim pelanggan di Inbox.
 
 ### Backend (`api-go`)
 
-- [ ] `whatsapp.DownloadMedia(ctx, accessToken, mediaID)` via Meta Graph API
-- [ ] **MVP:** `GET /api/v1/inbox/messages/:messageId/media` — proxy on-demand + cache Redis TTL
-- [ ] **Production (1b):** async download saat webhook → persist blob / object storage; simpan URL di `message.metadata`
-- [ ] `GetMessages`: field `media?: { url, mimeType, thumbnailUrl? }` per message
-- [ ] `lastMessagePreview` conversation: prefix `📷` untuk image
+- [x] `whatsapp.DownloadMedia(ctx, accessToken, mediaID)` via Meta Graph API
+- [x] **MVP:** `GET /api/v1/inbox/messages/:messageId/media` — proxy on-demand + cache Redis TTL
+- [ ] **Production (1b):** async download saat webhook → persist ke S3; lihat [Fase 1b](#fase-1b--persist-media-ke-amazon-s3) + [`docs-development-shipped/inbox-media-s3.md`](../docs-development-shipped/inbox-media-s3.md)
+- [x] `GetMessages`: field `media?: { url, mimeType, thumbnailUrl? }` per message
+- [x] `lastMessagePreview` conversation: prefix `📷` untuk image
+
+**Shipped detail:** [`docs-development-shipped/inbox-media-fase1.md`](../docs-development-shipped/inbox-media-fase1.md)
 
 ### Frontend (`web-frontend`)
 
-- [ ] Komponen `InboxMessageBubble` — render `image`, caption, lightbox
-- [ ] `document` / `audio` / `video`: placeholder v1 ("belum didukung penuh")
-- [ ] Update `lib/api/inbox.ts` — type `InboxMessage` + media
+- [x] Komponen `InboxMessageBubble` — render `image`, caption
+- [ ] Lightbox fullscreen (klik gambar → Dialog) — branch `feat/inbox-media-lightbox` (web-frontend)
+- [x] `document` / `audio` / `video`: placeholder v1 ("belum didukung penuh")
+- [x] Update `lib/api/inbox.ts` — type `InboxMessage` + media
 
 ### Test
 
-- [ ] Webhook fixture image → row `message.type=image`
-- [ ] GET media endpoint auth + tenant isolation
-- [ ] FE render gambar inbound
+- [x] Webhook fixture image → row `message.type=image`
+- [x] GET media endpoint auth + tenant isolation
+- [x] FE render gambar inbound
 
 ### PR
 
-- api-go dan web-frontend **terpisah**; merge backend dulu jika kontrak API baru.
+- api-go [#35](https://github.com/vwijaya03/wabantu-api-go/pull/35) + web-frontend [#25](https://github.com/vwijaya03/wabantu-web-frontend/pull/25) — merged.
+
+---
+
+## Fase 1b — Persist media ke Amazon S3
+
+### Tujuan
+
+Media inbox tidak bergantung pada `access_token` Meta jangka panjang; object tersimpan di bucket tenant-scoped dengan tracking `storage_byte`.
+
+### Status
+
+- [ ] Pub/Sub `inbox-media-persist` — download async saat webhook
+- [ ] Package `shared/mediastorage` — Put/Get/Delete S3
+- [ ] Patch `message.metadata` — `persisted`, `s3Key`, `mimeType`, `bytes`
+- [ ] `GetMessageMedia` — stream S3 jika `s3Key` ada, else fallback proxy Meta
+- [ ] Encore secrets `AWSS3*` + graceful degrade jika kosong (lokal)
+- [ ] Increment `usage.storage_byte`; skip persist jika over quota
+
+**Spesifikasi implementasi:** [`docs-development-shipped/inbox-media-s3.md`](../docs-development-shipped/inbox-media-s3.md)  
+**Branch:** `feat/inbox-media-s3` (api-go only)
 
 ---
 
@@ -273,7 +297,7 @@ Toggle hanya **owner** (`canPerformOwnerActions`).
 
 - [x] Badge list: Belum bayar / Bukti masuk / Terverifikasi / Ditolak
 - [x] Detail order: thumbnail bukti, hasil OCR, tombol Verifikasi / Tolak / Buka batas bukti
-- [ ] Inbox: gambar bukti → link "Lihat order terkait"
+- [x] Inbox: gambar bukti → link "Lihat order terkait" (`linkedOrderId` di `GetMessages`)
 - [x] System message + WA outbound saat bukti masuk / verified / ditolak / batas 5x
 
 **UI shipped:** [`web-frontend/docs-development-shipped/payment-proof-fase2.md`](../../web-frontend/docs-development-shipped/payment-proof-fase2.md)
@@ -311,32 +335,64 @@ AI tidak diam untuk semua gambar non-bukti.
 
 ### Scope bertahap
 
-| Sub | Perilaku |
-|-----|----------|
-| 3a | Image + caption → proses caption sebagai text |
-| 3b | Image tanpa caption + order aktif → pipeline bukti (Fase 2) |
-| 3c | Image produk → vision match katalog (opsional, kuota) |
-| 3d | Tidak relevan → pesan fallback + opsi handoff |
+| Sub | Perilaku | Status |
+|-----|----------|--------|
+| 3a | Image + caption → proses caption sebagai text | ✅ Shipped |
+| 3b | Image tanpa caption + order aktif → pipeline bukti (Fase 2) | ✅ Shipped |
+| 3c | Image produk → vision match katalog (opsional, kuota) | 🔲 Planned — `feat/ai-image-context` |
+| 3d | Tidak relevan → pesan fallback + opsi handoff | 🔲 Planned — `feat/ai-image-context` |
 
-**Prioritas setelah Fase 1+2 stabil.**
+### Fase 3a — Caption sebagai teks (shipped)
+
+- [x] `inboundTextForAutoReply` — image/video/document + caption → proses sebagai `userText`
+- [x] Tanpa caption → skip auto-reply (`media inbound without caption`)
+
+**Shipped detail:** [`docs-development-shipped/ai-image-caption.md`](../docs-development-shipped/ai-image-caption.md)
+
+### Fase 3b — Gambar tanpa caption → bukti (shipped)
+
+- [x] `IsPaymentProofInbound` di `autoreply.go` — skip AI untuk gambar bukti
+- [x] `processPaymentProofJob` — image tanpa caption + order aktif masuk pipeline Fase 2
+- [x] No target order → silent skip *(akan diganti 3d di `feat/ai-image-context`)*
+
+**Shipped detail:** [`docs-development-shipped/payment-proof-fase2.md`](../docs-development-shipped/payment-proof-fase2.md)
+
+### Fase 3c — Vision match katalog (planned)
+
+- [ ] `aivision.ExtractProductMatchFromImage` — prompt produk + confidence
+- [ ] Fuzzy match ke katalog/inventory aktif (threshold ≥ 0.85)
+- [ ] Balas stok/harga via `buildCatalogItemReply` + `formatStockLabel`
+- [ ] Rate limit 5 vision image/contact/jam; purpose `product_image_match`
+- [ ] Tidak match → fallback 3d
+
+### Fase 3d — Fallback gambar (planned)
+
+- [ ] Trigger saat payment-proof skip (no order) + autoreply skip (no caption)
+- [ ] Outbound WA: minta ketik pertanyaan atau *bantuan*
+- [ ] Record AI activity path `image_fallback`
+- [ ] Opsional handoff (`image_unhandled`) — default off v1
+
+**Spesifikasi implementasi 3c/3d:** [`docs-development-shipped/ai-image-context.md`](../docs-development-shipped/ai-image-context.md)  
+**Branch:** `feat/ai-image-context` (api-go only)
 
 ---
 
 ## Dampak Teknis per Layer
 
-| Layer | Fase 1 | Fase 4 | Fase 2 | Fase 3 |
-|-------|--------|--------|--------|--------|
-| `whatsapp/` | Download media | — | — | — |
-| `webhook/` | Trigger download job | — | Trigger proof job | — |
-| `inbox/` | Media URL API | — | Link proof | — |
-| `ai/` | — | Stock guard | Image + OCR | Vision routing |
-| `order/` | — | — | payment_status, verify API | — |
-| `aivision/` | — | — | Prompt bukti | Prompt produk |
-| `tenant/` | — | — | Migration | — |
-| `web-frontend` inbox | Render image | — | Link order | — |
-| `web-frontend` orders | — | Warning stok | Badge + verify | — |
-| `web-frontend` settings | — | — | Mode manual/auto + warning token | — |
-| `web-frontend` KB | — | — | Copy rekening wajib | — |
+| Layer | Fase 1 | Fase 1b | Fase 4 | Fase 2 | Fase 3 |
+|-------|--------|---------|--------|--------|--------|
+| `whatsapp/` | Download media | — | — | — | — |
+| `webhook/` | Insert message | Trigger persist job | — | Trigger proof job | — |
+| `inbox/` | Media URL API | S3 GET fallback | — | Link proof | Fetch bytes |
+| `shared/mediastorage/` | — | S3 client | — | — | — |
+| `ai/` | — | — | Stock guard | Image + OCR | Image context 3c/3d |
+| `order/` | — | — | — | payment_status, verify API | — |
+| `aivision/` | — | — | — | Prompt bukti | Prompt produk |
+| `tenant/` | — | — | Migration | Migration | — |
+| `web-frontend` inbox | Render image | — | — | Link order | — |
+| `web-frontend` orders | — | — | Warning stok | Badge + verify | — |
+| `web-frontend` settings | — | — | — | Mode manual/auto + warning token | — |
+| `web-frontend` KB | — | — | — | Copy rekening wajib | — |
 
 ---
 
@@ -359,10 +415,12 @@ AI tidak diam untuk semua gambar non-bukti.
 
 | Fase | Effort | Catatan |
 |------|--------|---------|
-| 1 | S–M (3–5 hari) | Proxy media MVP |
-| 4 | M (3–5 hari) | Bisa paralel Fase 1 |
-| 2 | L (1–2 minggu) | Migration + vision + UI |
-| 3 | M–L | Setelah 2 stabil |
+| 1 | S–M (3–5 hari) | Proxy media MVP — **shipped** |
+| 1b | L (4–6 hari) | S3 persist + secrets + quota |
+| 4 | M (3–5 hari) | Bisa paralel Fase 1 — **shipped** |
+| 2 | L (1–2 minggu) | Migration + vision + UI — **shipped** |
+| 3a/3b | S | Caption + bukti routing — **shipped** |
+| 3c/3d | M | Vision katalog + fallback — planned |
 
 ---
 
@@ -394,6 +452,7 @@ web-frontend/lib/api/inbox.ts
 | Tanggal | Perubahan |
 |---------|-----------|
 | 2026-06 | Draft awal dari ultrathink + keputusan produk: setting manual/auto, verified→processing, rekening dari KB, stok tolak tanpa alternatif |
+| 2026-07 | Sync status shipped: Fase 1 MVP, 2 (incl. inbox link), 4, 4b, 3a, 3b. Tambah Fase 1b S3 + Fase 3c/3d planned; shipped docs `inbox-media-s3.md`, `ai-image-context.md` |
 
 ---
 

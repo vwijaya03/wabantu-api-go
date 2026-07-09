@@ -20,3 +20,5 @@ Setiap file `*.md` di folder ini = satu entri rilis.
 | [ai-recipient-policy.md](./ai-recipient-policy.md) | Jawaban kebijakan pesan atas nama orang lain |
 | [ai-structured-order.md](./ai-structured-order.md) | Pesanan multi-baris + guard catalog hijack |
 | [payment-proof-fase2.md](./payment-proof-fase2.md) | Bukti transfer, limit 5x penolakan, unblock owner |
+| [inbox-media-s3.md](./inbox-media-s3.md) | **Planned** — persist media inbox ke Amazon S3 (Fase 1b) |
+| [ai-image-context.md](./ai-image-context.md) | **Planned** — vision match katalog (3c) + fallback gambar (3d) |
