@@ -119,6 +119,80 @@ func syncPersonVolunteer(ctx context.Context, exec interface {
 	return err
 }
 
+func attachPersonExtrasBatch(ctx context.Context, conn *sql.Conn, items []EventPerson) error {
+	if len(items) == 0 {
+		return nil
+	}
+	byID := make(map[string]*EventPerson, len(items))
+	personIDs := make([]string, len(items))
+	for i := range items {
+		byID[items[i].ID] = &items[i]
+		personIDs[i] = items[i].ID
+	}
+
+	rows, err := conn.QueryContext(ctx, `
+		SELECT pt.person_id::text, pt.therapy_id::text, t.therapy_name,
+		       pt.available_from::text, pt.available_until::text
+		FROM evt_person_therapy pt
+		JOIN evt_therapy t ON t.id = pt.therapy_id
+		WHERE pt.person_id = ANY($1::uuid[])
+		ORDER BY pt.person_id, t.display_order`, personIDs)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var pid, tid, tname string
+		var af, au sql.NullString
+		if err := rows.Scan(&pid, &tid, &tname, &af, &au); err != nil {
+			return err
+		}
+		person := byID[pid]
+		if person == nil {
+			continue
+		}
+		person.TherapyIDs = append(person.TherapyIDs, tid)
+		person.TherapyNames = append(person.TherapyNames, tname)
+		if person.AvailableFrom == nil && person.AvailableUntil == nil {
+			if af.Valid {
+				person.AvailableFrom = &af.String
+			}
+			if au.Valid {
+				person.AvailableUntil = &au.String
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	vrows, err := conn.QueryContext(ctx, `
+		SELECT person_id::text, volunteer_role_id::text, is_pencatat
+		FROM evt_event_volunteer
+		WHERE person_id = ANY($1::uuid[])`, personIDs)
+	if err != nil {
+		return err
+	}
+	defer vrows.Close()
+	for vrows.Next() {
+		var pid string
+		var rid sql.NullString
+		var pencatat bool
+		if err := rows.Scan(&pid, &rid, &pencatat); err != nil {
+			return err
+		}
+		person := byID[pid]
+		if person == nil {
+			continue
+		}
+		if rid.Valid {
+			person.VolunteerRoleID = &rid.String
+		}
+		person.IsPencatat = pencatat
+	}
+	return vrows.Err()
+}
+
 func loadPersonExtras(ctx context.Context, conn *sql.Conn, personID string, person *EventPerson) error {
 	rows, err := conn.QueryContext(ctx, `
 		SELECT pt.therapy_id::text, t.therapy_name
