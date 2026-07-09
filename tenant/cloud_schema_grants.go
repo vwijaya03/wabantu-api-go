@@ -12,6 +12,9 @@ import (
 
 const cloudDBTenantAdmin = "db_tenant_admin"
 
+// Runtime roles that execute Encore service SQL; need membership to SET ROLE db_tenant_admin.
+var cloudRuntimeRoles = []string{"encore_services", "encore_writer"}
+
 // ensureCloudSchemaDeployGrants grants Encore Cloud deploy/migrator access to a tenant schema.
 // Must run on the same connection that created the schema (encore_container) so GRANT/OWNER succeed.
 func ensureCloudSchemaDeployGrants(ctx context.Context, conn *sql.Conn, schemaName string) error {
@@ -43,7 +46,22 @@ func ensureCloudSchemaDeployGrants(ctx context.Context, conn *sql.Conn, schemaNa
 			return fmt.Errorf("%s: %w", stmt, err)
 		}
 	}
+	ensureCloudRuntimeRoleMembership(ctx, conn)
 	return nil
+}
+
+// ensureCloudRuntimeRoleMembership lets encore_services/writer assume db_tenant_admin for DDL
+// such as DROP SCHEMA from super-admin APIs. Idempotent; best-effort on connections without grant privilege.
+func ensureCloudRuntimeRoleMembership(ctx context.Context, conn *sql.Conn) {
+	if encore.Meta().Environment.Cloud == encore.CloudLocal {
+		return
+	}
+	for _, role := range cloudRuntimeRoles {
+		stmt := fmt.Sprintf("GRANT %s TO %s", cloudDBTenantAdmin, role)
+		if _, err := conn.ExecContext(ctx, stmt); err != nil {
+			rlog.Warn("cloud runtime role membership grant skipped", "grantee", role, "err", err)
+		}
+	}
 }
 
 func quoteIdent(ident string) string {
@@ -66,6 +84,8 @@ func repairAllCloudSchemaDeployGrants(ctx context.Context) {
 		return
 	}
 	defer conn.Close()
+
+	ensureCloudRuntimeRoleMembership(ctx, conn)
 
 	for _, schema := range schemas {
 		if err := ensureCloudSchemaDeployGrants(ctx, conn, schema); err != nil {

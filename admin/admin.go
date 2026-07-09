@@ -407,17 +407,9 @@ func DeleteTenant(ctx context.Context, id string, p *DeleteTenantParams) (*Delet
 		return nil, &errs.Error{Code: errs.FailedPrecondition, Message: "schema tenant tidak aman untuk dihapus"}
 	}
 
-	tenantTx, err := tenant.DataDB.Stdlib().BeginTx(ctx, nil)
-	if err != nil {
-		return nil, &errs.Error{Code: errs.Internal, Message: "begin delete failed"}
-	}
-	defer tenantTx.Rollback()
-
-	if _, err = tenantTx.ExecContext(ctx, fmt.Sprintf(`DROP SCHEMA IF EXISTS %s CASCADE`, quoteIdent(t.SchemaName))); err != nil {
-		return nil, &errs.Error{Code: errs.Internal, Message: "drop schema failed"}
-	}
-	if err = tenantTx.Commit(); err != nil {
-		return nil, &errs.Error{Code: errs.Internal, Message: "commit drop schema failed"}
+	if err := tenant.DropTenantSchema(ctx, t.SchemaName); err != nil {
+		rlog.Error("tenant schema drop failed", "tenantId", id, "schema", t.SchemaName, "err", err)
+		return nil, &errs.Error{Code: errs.Internal, Message: err.Error()}
 	}
 
 	tx, err := db.Stdlib().BeginTx(ctx, nil)
