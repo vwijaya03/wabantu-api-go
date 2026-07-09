@@ -10,11 +10,12 @@ import (
 )
 
 type PublicStaffMonitorPerson struct {
-	FullName     string   `json:"fullName"`
-	RoleLabel    string   `json:"roleLabel"`
-	TherapyNames []string `json:"therapyNames"`
-	IsPencatat   bool     `json:"isPencatat"`
-	Notes        string   `json:"notes,omitempty"`
+	FullName           string   `json:"fullName"`
+	RoleLabel          string   `json:"roleLabel"`
+	TherapyNames       []string `json:"therapyNames"`
+	IsPencatat         bool     `json:"isPencatat"`
+	CountsTowardMeals  bool     `json:"countsTowardMeals"`
+	Notes              string   `json:"notes,omitempty"`
 }
 
 type PublicStaffMonitorResponse struct {
@@ -84,39 +85,54 @@ func loadPublicStaffMonitorPeople(ctx context.Context, conn *sql.Conn, eventID s
 	rows, err := conn.QueryContext(ctx, `
 		SELECT p.id::text,
 		       COALESCE(p.full_name_enc,''), COALESCE(p.full_name,''),
-		       p.person_type, COALESCE(p.notes,'')
+		       p.person_type, COALESCE(p.notes,''), p.counts_toward_meals
 		FROM evt_event_person p
 		WHERE p.event_id=$1::uuid AND p.deleted_at IS NULL
 		ORDER BY p.person_type, p.created_at`, eventID)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer rows.Close()
-
-	var out []PublicStaffMonitorPerson
+	type staffScratch struct {
+		personID            string
+		nameEnc, nameLegacy string
+		personType, notes   string
+		countsTowardMeals   bool
+	}
+	var scratch []staffScratch
 	for rows.Next() {
-		var personID, nameEnc, nameLegacy, personType, notes string
-		if err := rows.Scan(&personID, &nameEnc, &nameLegacy, &personType, &notes); err != nil {
+		var s staffScratch
+		if err := rows.Scan(&s.personID, &s.nameEnc, &s.nameLegacy, &s.personType, &s.notes, &s.countsTowardMeals); err != nil {
+			_ = rows.Close()
 			return nil, appErrs.Internal(err.Error())
 		}
-		fullName, err := decryptPersonName(nameEnc, nameLegacy)
+		scratch = append(scratch, s)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, appErrs.Internal(err.Error())
+	}
+	if err := rows.Close(); err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+
+	var out []PublicStaffMonitorPerson
+	for _, s := range scratch {
+		fullName, err := decryptPersonName(s.nameEnc, s.nameLegacy)
 		if err != nil {
 			return nil, appErrs.Internal(err.Error())
 		}
 		var extras EventPerson
-		if err := loadPersonExtras(ctx, conn, personID, &extras); err != nil {
+		if err := loadPersonExtras(ctx, conn, s.personID, &extras); err != nil {
 			return nil, appErrs.Internal(err.Error())
 		}
 		out = append(out, PublicStaffMonitorPerson{
-			FullName:     fullName,
-			RoleLabel:    personTypeLabel(personType),
-			TherapyNames: extras.TherapyNames,
-			IsPencatat:   extras.IsPencatat,
-			Notes:        publicDisplayNotes(notes),
+			FullName:          fullName,
+			RoleLabel:         personTypeLabel(s.personType),
+			TherapyNames:      extras.TherapyNames,
+			IsPencatat:        extras.IsPencatat,
+			CountsTowardMeals: s.countsTowardMeals,
+			Notes:             publicDisplayNotes(s.notes),
 		})
-	}
-	if err := rows.Err(); err != nil {
-		return nil, appErrs.Internal(err.Error())
 	}
 	sort.Slice(out, func(i, j int) bool {
 		return strings.ToLower(out[i].FullName) < strings.ToLower(out[j].FullName)
