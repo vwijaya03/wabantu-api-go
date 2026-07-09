@@ -33,6 +33,25 @@ psql "$TENANT_URI" -c "
   SELECT nspname AS schema, pg_get_userbyid(nspowner) AS owner
   FROM pg_namespace WHERE nspname ~ '^t_' ORDER BY 1;"
 
+echo "--- drop_tenant_schema function ---"
+psql "$TENANT_URI" -c "
+  SELECT p.proname,
+         pg_get_userbyid(p.proowner) AS owner,
+         p.prosecdef AS security_definer,
+         has_function_privilege('encore_services', 'public.drop_tenant_schema(text)', 'EXECUTE') AS services_exec
+  FROM pg_proc p
+  JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public' AND p.proname = 'drop_tenant_schema';"
+
+echo "--- db_tenant_admin role members ---"
+psql "$TENANT_URI" -c "
+  SELECT r.rolname AS role, m.rolname AS member
+  FROM pg_auth_members am
+  JOIN pg_roles r ON r.oid = am.roleid
+  JOIN pg_roles m ON m.oid = am.member
+  WHERE r.rolname = 'db_tenant_admin'
+  ORDER BY 2;"
+
 echo "--- system DB public tables (owner) ---"
 psql "$SYSTEM_URI" -c "
   SELECT tablename, tableowner FROM pg_tables

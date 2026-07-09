@@ -168,24 +168,46 @@ psql "$TENANT_URI" -c "
   SELECT nspname AS schema, pg_get_userbyid(nspowner) AS owner
   FROM pg_namespace WHERE nspname ~ '^t_' ORDER BY 1;"
 
-echo "--- tenant DB: runtime role membership for DROP SCHEMA via API ---"
-psql "$TENANT_URI" -v ON_ERROR_STOP=1 <<SQL
-DO \$\$
+echo "--- tenant DB: drop_tenant_schema() + runtime role membership ---"
+TENANT_SUPER_URI="$(encore db conn-uri tenant --env="$ENV_NAME" --superuser)"
+DROP_FN_SQL="$(cat "$ROOT/tenant/migrations/2_drop_tenant_schema_fn.up.sql")"
+psql "$TENANT_SUPER_URI" -v ON_ERROR_STOP=1 -c "$DROP_FN_SQL"
+
+psql "$TENANT_SUPER_URI" -v ON_ERROR_STOP=1 <<'SQL'
+DO $$
 BEGIN
-  BEGIN
-    EXECUTE format('GRANT %I TO encore_services', '$TENANT_OWNER');
-    RAISE NOTICE 'granted % to encore_services', '$TENANT_OWNER';
-  EXCEPTION WHEN OTHERS THEN
-    RAISE NOTICE 'skip grant to encore_services: %', SQLERRM;
-  END;
-  BEGIN
-    EXECUTE format('GRANT %I TO encore_writer', '$TENANT_OWNER');
-    RAISE NOTICE 'granted % to encore_writer', '$TENANT_OWNER';
-  EXCEPTION WHEN OTHERS THEN
-    RAISE NOTICE 'skip grant to encore_writer: %', SQLERRM;
-  END;
-END \$\$;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'db_tenant_admin') THEN
+    BEGIN
+      GRANT db_tenant_admin TO encore_services;
+      RAISE NOTICE 'granted db_tenant_admin to encore_services';
+    EXCEPTION WHEN OTHERS THEN
+      RAISE NOTICE 'skip grant db_tenant_admin to encore_services: %', SQLERRM;
+    END;
+    BEGIN
+      GRANT db_tenant_admin TO encore_writer;
+      RAISE NOTICE 'granted db_tenant_admin to encore_writer';
+    EXCEPTION WHEN OTHERS THEN
+      RAISE NOTICE 'skip grant db_tenant_admin to encore_writer: %', SQLERRM;
+    END;
+  END IF;
+END $$;
 SQL
+
+echo
+echo "Verify drop_tenant_schema function:"
+psql "$TENANT_URI" -c "
+  SELECT p.proname,
+         pg_get_userbyid(p.proowner) AS owner,
+         p.prosecdef AS security_definer
+  FROM pg_proc p
+  JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public' AND p.proname = 'drop_tenant_schema';"
+
+echo
+echo "Verify runtime can execute drop_tenant_schema:"
+psql "$TENANT_URI" -c "
+  SELECT has_function_privilege('encore_services', 'public.drop_tenant_schema(text)', 'EXECUTE') AS services_exec,
+         has_function_privilege('encore_writer', 'public.drop_tenant_schema(text)', 'EXECUTE') AS writer_exec;"
 
 echo
 echo "Verify admin role can access t_* schemas:"
