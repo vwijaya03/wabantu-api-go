@@ -135,7 +135,10 @@ func loadEventDashboard(ctx context.Context, tenantSchema, eventId string) (*Eve
 		  SELECT person_id FROM evt_event_assignment WHERE event_id=$1::uuid AND deleted_at IS NULL
 		) u`, eventId).Scan(&d.UniquePeopleCount)
 
-	d.MealConsumptionCount = d.UniquePeopleCount
+	_ = conn.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM evt_event_person
+		WHERE event_id=$1::uuid AND deleted_at IS NULL AND counts_toward_meals = true`, eventId,
+	).Scan(&d.MealConsumptionCount)
 	return &d, nil
 }
 

@@ -256,6 +256,45 @@ func resolveTherapyIDsByNames(ctx context.Context, conn *sql.Conn, names []strin
 	return ids, nil
 }
 
+func countsTowardMealsValue(p *UpsertPersonParams) bool {
+	if p == nil || p.CountsTowardMeals == nil {
+		return true
+	}
+	return *p.CountsTowardMeals
+}
+
+func personTypeLabel(pt string) string {
+	switch strings.ToUpper(strings.TrimSpace(pt)) {
+	case "THERAPIST":
+		return "Terapis"
+	case "VOLUNTEER":
+		return "Relawan"
+	case "SHIJIE":
+		return "Shijie"
+	case "DAOSHI":
+		return "Daoshi"
+	case "FASHI":
+		return "Fashi"
+	default:
+		return pt
+	}
+}
+
+// publicDisplayNotes strips phone suffix added during online staff registration.
+func publicDisplayNotes(notes string) string {
+	notes = strings.TrimSpace(notes)
+	if notes == "" {
+		return ""
+	}
+	if idx := strings.Index(notes, " · Telp:"); idx >= 0 {
+		return strings.TrimSpace(notes[:idx])
+	}
+	if strings.HasPrefix(notes, "Telp:") {
+		return ""
+	}
+	return notes
+}
+
 func resolveVolunteerRoleIDByName(ctx context.Context, conn *sql.Conn, name string) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {

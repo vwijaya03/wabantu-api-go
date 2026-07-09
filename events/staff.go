@@ -26,10 +26,11 @@ type EventPerson struct {
 	TherapyIDs       []string  `json:"therapyIds,omitempty"`
 	TherapyNames     []string  `json:"therapyNames,omitempty"`
 	VolunteerRoleID  *string   `json:"volunteerRoleId,omitempty"`
-	IsPencatat       bool      `json:"isPencatat"`
-	AvailableFrom    *string   `json:"availableFrom,omitempty"`
-	AvailableUntil   *string   `json:"availableUntil,omitempty"`
-	CreatedAt        time.Time `json:"createdAt"`
+	IsPencatat         bool      `json:"isPencatat"`
+	CountsTowardMeals  bool      `json:"countsTowardMeals"`
+	AvailableFrom      *string   `json:"availableFrom,omitempty"`
+	AvailableUntil     *string   `json:"availableUntil,omitempty"`
+	CreatedAt          time.Time `json:"createdAt"`
 }
 
 type UpsertPersonParams struct {
@@ -45,9 +46,10 @@ type UpsertPersonParams struct {
 	TherapyID        *string  `json:"therapyId,omitempty"`
 	TherapyIDs       []string `json:"therapyIds,omitempty"`
 	VolunteerRoleID  *string  `json:"volunteerRoleId,omitempty"`
-	IsPencatat       bool     `json:"isPencatat"`
-	AvailableFrom    *string  `json:"availableFrom,omitempty"`
-	AvailableUntil   *string  `json:"availableUntil,omitempty"`
+	IsPencatat        bool     `json:"isPencatat"`
+	CountsTowardMeals *bool    `json:"countsTowardMeals,omitempty"`
+	AvailableFrom     *string  `json:"availableFrom,omitempty"`
+	AvailableUntil    *string  `json:"availableUntil,omitempty"`
 }
 
 type ListPeopleParams struct {
@@ -107,7 +109,7 @@ func ListEventPeople(ctx context.Context, eventId string, p *ListPeopleParams) (
 			var arr, dep, notes sql.NullString
 			var nameEnc, nameLegacy sql.NullString
 			if err := rows.Scan(&person.ID, &person.EventID, &nameEnc, &nameLegacy, &person.PersonType,
-				&person.AttendanceStatus, &arr, &dep, &notes, &person.CreatedAt); err != nil {
+				&person.AttendanceStatus, &arr, &dep, &notes, &person.CountsTowardMeals, &person.CreatedAt); err != nil {
 				return nil, appErrs.Internal(err.Error())
 			}
 			person.FullName, err = decryptPersonName(nameEnc.String, nameLegacy.String)
@@ -146,7 +148,7 @@ func ListEventPeople(ctx context.Context, eventId string, p *ListPeopleParams) (
 		       COALESCE(p.full_name_enc,''), COALESCE(p.full_name,''),
 		       p.person_type, p.attendance_status,
 		       p.arrival_time::text, p.departure_time::text, COALESCE(p.notes,''),
-		       p.created_at
+		       p.counts_toward_meals, p.created_at
 		FROM evt_event_person p
 		WHERE %s %s`, where, orderBy), args...)
 		if err != nil {
@@ -179,7 +181,7 @@ func ListEventPeople(ctx context.Context, eventId string, p *ListPeopleParams) (
 		       COALESCE(p.full_name_enc,''), COALESCE(p.full_name,''),
 		       p.person_type, p.attendance_status,
 		       p.arrival_time::text, p.departure_time::text, COALESCE(p.notes,''),
-		       p.created_at
+		       p.counts_toward_meals, p.created_at
 		FROM evt_event_person p
 		WHERE %s %s LIMIT $%d OFFSET $%d`, where, orderBy, i, i+1), args...)
 	if err != nil {
@@ -253,10 +255,11 @@ func CreateEventPerson(ctx context.Context, eventId string, p *UpsertPersonParam
 		return nil, appErrs.Internal(encErr.Error())
 	}
 	err = tx.QueryRowContext(ctx, `
-		INSERT INTO evt_event_person (event_id, full_name, full_name_enc, normalized_name, person_type, attendance_status, arrival_time, departure_time, notes)
-		VALUES ($1::uuid,$2,$3,$4,$5,$6,$7::time,$8::time,$9) RETURNING id::text`,
+		INSERT INTO evt_event_person (event_id, full_name, full_name_enc, normalized_name, person_type, attendance_status, arrival_time, departure_time, notes, counts_toward_meals)
+		VALUES ($1::uuid,$2,$3,$4,$5,$6,$7::time,$8::time,$9,$10) RETURNING id::text`,
 		eventId, piiPlaceholder(nameEnc), nameEnc, nameIdx, pt, att,
 		nullTimeStrPtr(p.ArrivalTime), nullTimeStrPtr(p.DepartureTime), nullStr(p.Notes),
+		countsTowardMealsValue(p),
 	).Scan(&personID)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
@@ -333,10 +336,12 @@ func UpdateEventPerson(ctx context.Context, eventId, personId string, p *UpsertP
 	_, err = conn.ExecContext(ctx, `
 		UPDATE evt_event_person SET full_name=$1, full_name_enc=$2, normalized_name=$3,
 		  person_type=$4, attendance_status=$5,
-		  arrival_time=$6::time, departure_time=$7::time, notes=$8, updated_at=now()
-		WHERE id=$9::uuid AND event_id=$10::uuid AND deleted_at IS NULL`,
+		  arrival_time=$6::time, departure_time=$7::time, notes=$8,
+		  counts_toward_meals=$9, updated_at=now()
+		WHERE id=$10::uuid AND event_id=$11::uuid AND deleted_at IS NULL`,
 		piiPlaceholder(nameEnc), nameEnc, nameIdx, pt, att,
-		nullTimeStrPtr(p.ArrivalTime), nullTimeStrPtr(p.DepartureTime), nullStr(p.Notes), personId, eventId)
+		nullTimeStrPtr(p.ArrivalTime), nullTimeStrPtr(p.DepartureTime), nullStr(p.Notes),
+		countsTowardMealsValue(p), personId, eventId)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}

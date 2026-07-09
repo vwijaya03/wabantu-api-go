@@ -99,8 +99,9 @@ CREATE TABLE IF NOT EXISTS evt_event_person (
     attendance_status VARCHAR(20)  NOT NULL DEFAULT 'PRESENT',
     arrival_time      TIME,
     departure_time    TIME,
-    notes             TEXT,
-    created_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    notes                 TEXT,
+    counts_toward_meals   BOOLEAN      NOT NULL DEFAULT true,
+    created_at            TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
     deleted_at        TIMESTAMPTZ,
     CONSTRAINT evt_person_type_chk CHECK (person_type IN ('THERAPIST','SHIJIE','VOLUNTEER','DAOSHI','FASHI')),
@@ -191,6 +192,7 @@ CREATE TABLE IF NOT EXISTS evt_audit_log (
 CREATE INDEX IF NOT EXISTS idx_evt_audit_created ON evt_audit_log(created_at DESC);
 
 ALTER TABLE evt_event_volunteer ADD COLUMN IF NOT EXISTS is_pencatat BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE evt_event_person ADD COLUMN IF NOT EXISTS counts_toward_meals BOOLEAN NOT NULL DEFAULT true;
 
 CREATE TABLE IF NOT EXISTS evt_person_therapy (
     person_id      UUID NOT NULL REFERENCES evt_event_person(id) ON DELETE CASCADE,
