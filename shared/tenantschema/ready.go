@@ -100,7 +100,11 @@ func EventsModuleReady(ctx context.Context, conn *sql.Conn) (bool, error) {
 			return false, err
 		}
 	}
-	return columnExists(ctx, conn, "evt_patient", "contact_id")
+	ok, err := columnExists(ctx, conn, "evt_patient", "contact_id")
+	if err != nil || !ok {
+		return false, err
+	}
+	return columnExists(ctx, conn, "evt_event_person", "counts_toward_meals")
 }
 
 // KnowledgeBaseReady — Q/A table for AI knowledge base module.

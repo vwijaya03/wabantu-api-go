@@ -80,11 +80,20 @@ func tenantConn(ctx context.Context, schema string) (*sql.Conn, error) {
 // ensureEventsSchema applies evt_* DDL on tenants created before the events module (idempotent).
 func ensureEventsSchema(ctx context.Context, schema string) error {
 	eventsSchemaMu.Lock()
-	if eventsSchemaDone[schema] {
-		eventsSchemaMu.Unlock()
-		return nil
-	}
+	done := eventsSchemaDone[schema]
 	eventsSchemaMu.Unlock()
+	if done {
+		ready, err := eventsPersonPatchReady(ctx, schema)
+		if err != nil {
+			return err
+		}
+		if ready {
+			return nil
+		}
+		eventsSchemaMu.Lock()
+		delete(eventsSchemaDone, schema)
+		eventsSchemaMu.Unlock()
+	}
 
 	_, err, _ := eventsSchemaGroup.Do(schema, func() (any, error) {
 		eventsSchemaMu.Lock()
@@ -136,23 +145,64 @@ func applyEventsSchemaPatches(ctx context.Context, schema string) error {
 		return patchErr
 	}
 	if exists {
-		hasBreak, colErr := tenantschema.ColumnExists(ctx, conn, "evt_event", "break_start_time")
-		if colErr != nil {
-			return appErrs.Internal(colErr.Error())
-		}
-		if !hasBreak {
-			if encore.Meta().Environment.Cloud != encore.CloudLocal {
-				return fmt.Errorf(
-					"kolom jeda acara belum ada di cloud: jalankan ./scripts/patch-events-break-columns-cloud.sh %s",
-					encore.Meta().Environment.Name,
-				)
-			}
-			if patchErr = tenant.RunEventsSchemaPatches(ctx, schema); patchErr != nil {
-				return patchErr
-			}
+		if err := ensureEventsMissingColumns(ctx, conn, schema); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+func eventsPersonPatchReady(ctx context.Context, schema string) (bool, error) {
+	conn, err := tenant.TenantConn(ctx, schema)
+	if err != nil {
+		return false, err
+	}
+	defer conn.Close()
+	var exists bool
+	if err := conn.QueryRowContext(ctx, `
+		SELECT EXISTS (
+		  SELECT 1 FROM information_schema.tables
+		  WHERE table_schema = current_schema() AND table_name = 'evt_event_person'
+		)`).Scan(&exists); err != nil {
+		return false, appErrs.Internal(err.Error())
+	}
+	if !exists {
+		return true, nil
+	}
+	return tenantschema.ColumnExists(ctx, conn, "evt_event_person", "counts_toward_meals")
+}
+
+func ensureEventsMissingColumns(ctx context.Context, conn *sql.Conn, schema string) error {
+	type colCheck struct {
+		table  string
+		column string
+	}
+	checks := []colCheck{
+		{"evt_event", "break_start_time"},
+		{"evt_event_person", "counts_toward_meals"},
+	}
+	var missing *colCheck
+	for i := range checks {
+		c := &checks[i]
+		has, colErr := tenantschema.ColumnExists(ctx, conn, c.table, c.column)
+		if colErr != nil {
+			return appErrs.Internal(colErr.Error())
+		}
+		if !has {
+			missing = c
+			break
+		}
+	}
+	if missing == nil {
+		return nil
+	}
+	if encore.Meta().Environment.Cloud != encore.CloudLocal {
+		return fmt.Errorf(
+			"kolom %s.%s belum ada di cloud: jalankan migrate tenant schemas untuk environment %s",
+			missing.table, missing.column, encore.Meta().Environment.Name,
+		)
+	}
+	return tenant.RunEventsSchemaPatches(ctx, schema)
 }
 
 func paginate(page, pageSize int) (int, int) {
