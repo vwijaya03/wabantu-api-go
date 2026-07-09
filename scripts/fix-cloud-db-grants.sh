@@ -168,6 +168,25 @@ psql "$TENANT_URI" -c "
   SELECT nspname AS schema, pg_get_userbyid(nspowner) AS owner
   FROM pg_namespace WHERE nspname ~ '^t_' ORDER BY 1;"
 
+echo "--- tenant DB: runtime role membership for DROP SCHEMA via API ---"
+psql "$TENANT_URI" -v ON_ERROR_STOP=1 <<SQL
+DO \$\$
+BEGIN
+  BEGIN
+    EXECUTE format('GRANT %I TO encore_services', '$TENANT_OWNER');
+    RAISE NOTICE 'granted % to encore_services', '$TENANT_OWNER';
+  EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'skip grant to encore_services: %', SQLERRM;
+  END;
+  BEGIN
+    EXECUTE format('GRANT %I TO encore_writer', '$TENANT_OWNER');
+    RAISE NOTICE 'granted % to encore_writer', '$TENANT_OWNER';
+  EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'skip grant to encore_writer: %', SQLERRM;
+  END;
+END \$\$;
+SQL
+
 echo
 echo "Verify admin role can access t_* schemas:"
 psql "$TENANT_URI" -c "
