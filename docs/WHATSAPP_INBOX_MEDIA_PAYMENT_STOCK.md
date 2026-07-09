@@ -115,7 +115,7 @@ Staff/owner melihat gambar yang dikirim pelanggan di Inbox.
 ### Frontend (`web-frontend`)
 
 - [x] Komponen `InboxMessageBubble` — render `image`, caption
-- [ ] Lightbox fullscreen (klik gambar → Dialog) — branch `feat/inbox-media-lightbox` (web-frontend)
+- [ ] Lightbox fullscreen (klik gambar → Dialog) — PR web-frontend [#40](https://github.com/vwijaya03/wabantu-web-frontend/pull/40) (`feat/inbox-media-lightbox`)
 - [x] `document` / `audio` / `video`: placeholder v1 ("belum didukung penuh")
 - [x] Update `lib/api/inbox.ts` — type `InboxMessage` + media
 
@@ -147,7 +147,7 @@ Media inbox tidak bergantung pada `access_token` Meta jangka panjang; object ter
 - [ ] Increment `usage.storage_byte`; skip persist jika over quota
 
 **Spesifikasi implementasi:** [`docs-development-shipped/inbox-media-s3.md`](../docs-development-shipped/inbox-media-s3.md)  
-**Branch:** `feat/inbox-media-s3` (api-go only)
+**Branch / PR:** `feat/inbox-media-s3` — api-go [#58](https://github.com/vwijaya03/wabantu-api-go/pull/58)
 
 ---
 
@@ -373,7 +373,7 @@ AI tidak diam untuk semua gambar non-bukti.
 - [ ] Opsional handoff (`image_unhandled`) — default off v1
 
 **Spesifikasi implementasi 3c/3d:** [`docs-development-shipped/ai-image-context.md`](../docs-development-shipped/ai-image-context.md)  
-**Branch:** `feat/ai-image-context` (api-go only)
+**Branch / PR:** `feat/ai-image-context` — api-go [#59](https://github.com/vwijaya03/wabantu-api-go/pull/59)
 
 ---
 
@@ -408,6 +408,40 @@ AI tidak diam untuk semua gambar non-bukti.
 - [ ] Manual QA (Fase 4): `customer_label` tampil di chat; kosong → pakai `name` gudang
 - [ ] Manual QA (Fase 4): halaman Gudang — tambah/edit label pelanggan tersimpan
 - [ ] `npm run build` / `tsc` web-frontend
+
+---
+
+## Staging QA Checklist (manual — setelah deploy PR #58, #59, #40)
+
+Jalankan di environment staging setelah merge & deploy backend + frontend. Centang setelah diverifikasi.
+
+### Fase 1b — S3 persist (PR #58)
+
+- [ ] Setup Encore secrets `AWSS3*` + bucket staging; kirim gambar WA → object muncul di `{tenant}/inbox/`
+- [ ] `message.metadata` berisi `persisted=true`, `s3Key`, `mimeType`, `bytes`
+- [ ] GET `/inbox/messages/:id/media` setelah persist → gambar load tanpa Meta token valid
+- [ ] Quota `storage_byte` ter-increment di usage tenant
+- [ ] Regresi lokal (secrets kosong): proxy Meta + Redis cache tetap jalan
+
+### Fase 3c/3d — AI image context (PR #59)
+
+- [ ] Gambar random tanpa caption + tanpa order aktif → AI balas fallback 3d (*bantuan*)
+- [ ] Foto produk yang ada di katalog + `ai_enabled` → balasan stok/harga (3c)
+- [ ] Foto produk tidak match / confidence rendah → fallback 3d
+- [ ] Gambar ke-6/contact/jam → skip vision, fallback 3d saja
+- [ ] `ai_enabled=false` → hanya fallback 3d (tanpa vision)
+- [ ] **Regresi 3b:** bukti transfer + order draft → `proof_submitted` / pipeline Fase 2 unchanged
+
+### Fase 1 — Lightbox FE (PR #40)
+
+- [ ] Klik thumbnail gambar di inbox → Dialog fullscreen terbuka
+- [ ] ESC / klik luar → lightbox tutup
+
+### Regresi umum
+
+- [ ] Kirim gambar WA → tampil inbox (thumbnail + caption)
+- [ ] Bukti transfer → flag order → verify manual → `processing`
+- [ ] Auto_verify + FAQ rekening → `processing` tanpa klik owner
 
 ---
 
@@ -453,6 +487,7 @@ web-frontend/lib/api/inbox.ts
 |---------|-----------|
 | 2026-06 | Draft awal dari ultrathink + keputusan produk: setting manual/auto, verified→processing, rekening dari KB, stok tolak tanpa alternatif |
 | 2026-07 | Sync status shipped: Fase 1 MVP, 2 (incl. inbox link), 4, 4b, 3a, 3b. Tambah Fase 1b S3 + Fase 3c/3d planned; shipped docs `inbox-media-s3.md`, `ai-image-context.md` |
+| 2026-07 | Tambah Staging QA Checklist gabungan; link PR #58 (S3), #59 (3c/3d), #40 (lightbox) |
 
 ---
 
