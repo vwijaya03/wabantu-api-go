@@ -178,7 +178,7 @@ func attachPersonExtrasBatch(ctx context.Context, conn *sql.Conn, items []EventP
 		var pid string
 		var rid sql.NullString
 		var pencatat bool
-		if err := rows.Scan(&pid, &rid, &pencatat); err != nil {
+		if err := vrows.Scan(&pid, &rid, &pencatat); err != nil {
 			return err
 		}
 		person := byID[pid]
