@@ -28,7 +28,11 @@ func DropTenantSchema(ctx context.Context, schemaName string) error {
 func dropTenantSchemaViaFunction(ctx context.Context, schemaName string) error {
 	_, err := DataDB.Stdlib().ExecContext(ctx, `SELECT public.drop_tenant_schema($1)`, schemaName)
 	if err != nil {
-		return fmt.Errorf("drop tenant schema function: %w", err)
+		return fmt.Errorf(
+			"drop tenant schema function (jalankan ./scripts/fix-cloud-db-grants.sh %s): %w",
+			encore.Meta().Environment.Name,
+			err,
+		)
 	}
 	return nil
 }
