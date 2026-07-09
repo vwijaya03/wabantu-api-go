@@ -74,6 +74,19 @@ func TestResolveAssignmentOrderByStartTime(t *testing.T) {
 	}
 }
 
+func TestResolvePeopleOrderByPersonType(t *testing.T) {
+	got, err := resolvePeopleOrderBy("personType", "asc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "ORDER BY p.person_type ASC, p.created_at ASC" {
+		t.Fatalf("unexpected: %q", got)
+	}
+	if peopleSortNeedsInMemory("personType") {
+		t.Fatal("personType sort should use SQL ORDER BY, not in-memory")
+	}
+}
+
 func TestSortStaffListRowsInMemory(t *testing.T) {
 	rows := []staffListRow{
 		{FullName: "Zara", PersonType: "VOLUNTEER"},
