@@ -70,7 +70,7 @@ func processPaymentProofJob(ctx context.Context, job *PaymentProofJob) error {
 	}
 	if target == nil {
 		rlog.Info("payment proof skipped: no target order", "conversationId", job.ConversationID)
-		return nil
+		return PublishImageContextJob(ctx, imageContextJobFromPaymentProof(job))
 	}
 
 	if handled, err := handleBlockedPaymentProof(ctx, conn, job, target); err != nil {
