@@ -16,6 +16,7 @@ import (
 	"encore.dev/storage/sqldb"
 
 	"encore.app/wabantu/ai"
+	"encore.app/wabantu/inbox"
 	"encore.app/wabantu/workflow"
 	appauth "encore.app/wabantu/auth"
 	"encore.app/wabantu/leads"
@@ -213,6 +214,16 @@ func ingestMessage(ctx context.Context, msg whatsapp.InboundMessage) error {
 			InboundMessageID: messageID,
 		}); pubErr != nil {
 			rlog.Warn("publish payment proof job failed", "err", pubErr, "messageId", messageID)
+		}
+	}
+
+	if inbox.IsPersistableMediaType(msg.Type) {
+		if pubErr := inbox.PublishInboxMediaPersistJob(ctx, &inbox.InboxMediaPersistJob{
+			TenantSchema: schema,
+			MessageID:    messageID,
+			MessageType:  msg.Type,
+		}); pubErr != nil {
+			rlog.Warn("publish inbox media persist job failed", "err", pubErr, "messageId", messageID)
 		}
 	}
 

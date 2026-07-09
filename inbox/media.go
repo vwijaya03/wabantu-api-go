@@ -14,6 +14,7 @@ import (
 
 	appauth "encore.app/wabantu/auth"
 	apperr "encore.app/wabantu/shared/errs"
+	"encore.app/wabantu/shared/mediastorage"
 	"encore.app/wabantu/whatsapp"
 )
 
@@ -153,6 +154,19 @@ func fetchMessageMediaBytes(ctx context.Context, tenantSchema string, row *messa
 	if !mediaDownloadTypes[strings.ToLower(row.Type)] {
 		return nil, "", apperr.BadRequest("Pesan ini bukan media")
 	}
+
+	if s3Key := extractS3KeyFromMetadata(row.Metadata); s3Key != "" && mediastorage.Configured() {
+		data, mime, err := mediastorage.Get(ctx, s3Key)
+		if err == nil && len(data) > 0 {
+			return data, extractPersistedMimeFromMetadata(row.Metadata, mime), nil
+		}
+		rlog.Warn("inbox media s3 get failed, fallback to meta proxy",
+			"err", err,
+			"messageId", row.ID,
+			"s3Key", s3Key,
+		)
+	}
+
 	mediaID := whatsapp.ExtractMediaIDFromRaw(row.Type, row.Metadata)
 	if mediaID == "" {
 		return nil, "", apperr.NotFound("Media tidak tersedia untuk pesan ini")
