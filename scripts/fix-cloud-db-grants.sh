@@ -170,7 +170,31 @@ psql "$TENANT_URI" -c "
 
 echo "--- tenant DB: drop_tenant_schema() + runtime role membership ---"
 TENANT_SUPER_URI="$(encore db conn-uri tenant --env="$ENV_NAME" --superuser)"
-DROP_FN_SQL="$(cat "$ROOT/tenant/migrations/2_drop_tenant_schema_fn.up.sql")"
+DROP_FN_SQL="$(cat "$ROOT/tenant/migrations/3_drop_tenant_schema_fn_v2.up.sql")"
+
+echo "Reassign t_* schema owners → db_tenant_admin (superuser)..."
+psql "$TENANT_SUPER_URI" -v ON_ERROR_STOP=1 <<'SQL'
+DO $$
+DECLARE
+  s text;
+  target text := 'db_tenant_admin';
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = target) THEN
+    RAISE NOTICE 'skip schema owner repair: % missing', target;
+    RETURN;
+  END IF;
+  FOR s IN SELECT nspname FROM pg_namespace WHERE nspname ~ '^t_' ORDER BY 1 LOOP
+    BEGIN
+      EXECUTE format('ALTER SCHEMA %I OWNER TO %I', s, target);
+      RAISE NOTICE 'owner % → %', s, target;
+    EXCEPTION WHEN OTHERS THEN
+      RAISE NOTICE 'skip owner %: %', s, SQLERRM;
+    END;
+  END LOOP;
+END $$;
+SQL
+
+echo "Deploy drop_tenant_schema() (superuser-owned SECURITY DEFINER)..."
 psql "$TENANT_SUPER_URI" -v ON_ERROR_STOP=1 -c "$DROP_FN_SQL"
 
 psql "$TENANT_SUPER_URI" -v ON_ERROR_STOP=1 <<'SQL'
@@ -202,6 +226,12 @@ psql "$TENANT_URI" -c "
   FROM pg_proc p
   JOIN pg_namespace n ON n.oid = p.pronamespace
   WHERE n.nspname = 'public' AND p.proname = 'drop_tenant_schema';"
+
+echo
+echo "Verify t_agency_properti_jg owner (sample):"
+psql "$TENANT_URI" -c "
+  SELECT nspname AS schema, pg_get_userbyid(nspowner) AS owner
+  FROM pg_namespace WHERE nspname ~ '^t_' ORDER BY 1 LIMIT 5;"
 
 echo
 echo "Verify runtime can execute drop_tenant_schema:"
