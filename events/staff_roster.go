@@ -502,10 +502,11 @@ func createPersonInEvent(ctx context.Context, conn *sql.Conn, eventID string, p 
 		return appErrs.Internal(encErr.Error())
 	}
 	err = tx.QueryRowContext(ctx, `
-		INSERT INTO evt_event_person (event_id, full_name, full_name_enc, normalized_name, person_type, attendance_status, arrival_time, departure_time, notes)
-		VALUES ($1::uuid,$2,$3,$4,$5,$6,$7::time,$8::time,$9) RETURNING id::text`,
+		INSERT INTO evt_event_person (event_id, full_name, full_name_enc, normalized_name, person_type, attendance_status, arrival_time, departure_time, notes, counts_toward_meals)
+		VALUES ($1::uuid,$2,$3,$4,$5,$6,$7::time,$8::time,$9,$10) RETURNING id::text`,
 		eventID, piiPlaceholder(nameEnc), nameEnc, nameIdx, pt, att,
 		nullTimeStrPtr(p.ArrivalTime), nullTimeStrPtr(p.DepartureTime), nullStr(p.Notes),
+		countsTowardMealsValue(p),
 	).Scan(&personID)
 	if err != nil {
 		return appErrs.Internal(err.Error())
