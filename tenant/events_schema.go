@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS evt_event (
     event_name            VARCHAR(200) NOT NULL,
     event_slug            VARCHAR(120) NOT NULL,
     event_description     TEXT,
+    catering_order_notes  TEXT,
     location              VARCHAR(300),
     start_date            DATE         NOT NULL,
     end_date              DATE         NOT NULL,
@@ -225,6 +226,7 @@ ALTER TABLE evt_event_therapy_slot_template ADD COLUMN IF NOT EXISTS capacity IN
 
 ALTER TABLE evt_event ADD COLUMN IF NOT EXISTS break_start_time TIME;
 ALTER TABLE evt_event ADD COLUMN IF NOT EXISTS break_end_time TIME;
+ALTER TABLE evt_event ADD COLUMN IF NOT EXISTS catering_order_notes TEXT;
 
 CREATE TABLE IF NOT EXISTS evt_staff_roster (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
