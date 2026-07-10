@@ -134,15 +134,17 @@ func applyEventsSchemaPatches(ctx context.Context, schema string) error {
 		return appErrs.Internal(err.Error())
 	}
 	var patchErr error
-	if cloudReady {
-		patchErr = tenant.SeedEventsMasterDataOnly(ctx, schema)
-	} else if !exists {
+	// Cloud tenants with evt_event must still run idempotent evt_* DDL (new columns/indexes).
+	if !exists && !cloudReady {
 		patchErr = tenant.RunSchemaPatches(ctx, schema)
 	} else {
 		patchErr = tenant.RunEventsSchemaPatches(ctx, schema)
 	}
 	if patchErr != nil {
 		return patchErr
+	}
+	if seedErr := tenant.SeedEventsMasterDataOnly(ctx, schema); seedErr != nil {
+		return seedErr
 	}
 	if exists {
 		if err := ensureEventsMissingColumns(ctx, conn, schema); err != nil {
@@ -169,7 +171,18 @@ func eventsPersonPatchReady(ctx context.Context, schema string) (bool, error) {
 	if !exists {
 		return true, nil
 	}
-	return tenantschema.ColumnExists(ctx, conn, "evt_event_person", "counts_toward_meals")
+	hasMeals, err := tenantschema.ColumnExists(ctx, conn, "evt_event_person", "counts_toward_meals")
+	if err != nil {
+		return false, appErrs.Internal(err.Error())
+	}
+	if !hasMeals {
+		return false, nil
+	}
+	hasCatering, err := tenantschema.ColumnExists(ctx, conn, "evt_event", "catering_order_notes")
+	if err != nil {
+		return false, appErrs.Internal(err.Error())
+	}
+	return hasCatering, nil
 }
 
 func ensureEventsMissingColumns(ctx context.Context, conn *sql.Conn, schema string) error {
@@ -179,6 +192,7 @@ func ensureEventsMissingColumns(ctx context.Context, conn *sql.Conn, schema stri
 	}
 	checks := []colCheck{
 		{"evt_event", "break_start_time"},
+		{"evt_event", "catering_order_notes"},
 		{"evt_event_person", "counts_toward_meals"},
 	}
 	var missing *colCheck

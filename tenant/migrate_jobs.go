@@ -303,6 +303,12 @@ func ShouldUseSyncMigration(req *MigrateSchemasRequest) bool {
 
 // ProcessTenantSchemaMigration applies patches (or backfills version) for one tenant.
 func ProcessTenantSchemaMigration(ctx context.Context, tenantID, schemaName, migratedBy string) error {
+	// Module-specific evt_* DDL (new columns) is idempotent and must run even when
+	// tenant schema_patch_version is already current.
+	if err := RunEventsSchemaPatches(ctx, schemaName); err != nil {
+		return err
+	}
+
 	ver, err := getTenantSchemaPatchVersion(ctx, tenantID)
 	if err != nil {
 		return err
