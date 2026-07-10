@@ -167,18 +167,19 @@ func attachPersonExtrasBatch(ctx context.Context, conn *sql.Conn, items []EventP
 	}
 
 	vrows, err := conn.QueryContext(ctx, `
-		SELECT person_id::text, volunteer_role_id::text, is_pencatat
-		FROM evt_event_volunteer
-		WHERE person_id = ANY($1::uuid[])`, personIDs)
+		SELECT ev.person_id::text, ev.volunteer_role_id::text, COALESCE(vr.role_name,''), ev.is_pencatat
+		FROM evt_event_volunteer ev
+		LEFT JOIN evt_volunteer_role vr ON vr.id = ev.volunteer_role_id AND vr.deleted_at IS NULL
+		WHERE ev.person_id = ANY($1::uuid[])`, personIDs)
 	if err != nil {
 		return err
 	}
 	defer vrows.Close()
 	for vrows.Next() {
-		var pid string
+		var pid, roleName string
 		var rid sql.NullString
 		var pencatat bool
-		if err := vrows.Scan(&pid, &rid, &pencatat); err != nil {
+		if err := vrows.Scan(&pid, &rid, &roleName, &pencatat); err != nil {
 			return err
 		}
 		person := byID[pid]
@@ -188,6 +189,7 @@ func attachPersonExtrasBatch(ctx context.Context, conn *sql.Conn, items []EventP
 		if rid.Valid {
 			person.VolunteerRoleID = &rid.String
 		}
+		person.VolunteerRoleName = roleName
 		person.IsPencatat = pencatat
 	}
 	return vrows.Err()
@@ -220,16 +222,21 @@ func loadPersonExtras(ctx context.Context, conn *sql.Conn, personID string, pers
 		return err
 	}
 	var rid sql.NullString
+	var roleName string
 	var pencatat bool
 	err = conn.QueryRowContext(ctx, `
-		SELECT volunteer_role_id::text, is_pencatat FROM evt_event_volunteer WHERE person_id=$1::uuid`, personID,
-	).Scan(&rid, &pencatat)
+		SELECT ev.volunteer_role_id::text, COALESCE(vr.role_name,''), ev.is_pencatat
+		FROM evt_event_volunteer ev
+		LEFT JOIN evt_volunteer_role vr ON vr.id = ev.volunteer_role_id AND vr.deleted_at IS NULL
+		WHERE ev.person_id=$1::uuid`, personID,
+	).Scan(&rid, &roleName, &pencatat)
 	if err != nil && err != sql.ErrNoRows {
 		return err
 	}
 	if rid.Valid {
 		person.VolunteerRoleID = &rid.String
 	}
+	person.VolunteerRoleName = roleName
 	person.IsPencatat = pencatat
 	af, au, err := loadPersonPartialTimes(ctx, conn, personID)
 	if err != nil {

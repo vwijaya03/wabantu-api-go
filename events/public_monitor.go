@@ -13,6 +13,7 @@ type PublicStaffMonitorPerson struct {
 	FullName           string   `json:"fullName"`
 	RoleLabel          string   `json:"roleLabel"`
 	TherapyNames       []string `json:"therapyNames"`
+	VolunteerRoleName  string   `json:"volunteerRoleName,omitempty"`
 	IsPencatat         bool     `json:"isPencatat"`
 	CountsTowardMeals  bool     `json:"countsTowardMeals"`
 	Notes              string   `json:"notes,omitempty"`
@@ -133,6 +134,7 @@ func loadPublicStaffMonitorPeople(ctx context.Context, conn *sql.Conn, eventID s
 			FullName:          fullName,
 			RoleLabel:         personTypeLabel(s.personType),
 			TherapyNames:      extrasByID[i].TherapyNames,
+			VolunteerRoleName: extrasByID[i].VolunteerRoleName,
 			IsPencatat:        extrasByID[i].IsPencatat,
 			CountsTowardMeals: s.countsTowardMeals,
 			Notes:             publicDisplayNotes(s.notes),

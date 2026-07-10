@@ -25,7 +25,8 @@ type EventPerson struct {
 	TherapyID        *string   `json:"therapyId,omitempty"` // first therapy (compat)
 	TherapyIDs       []string  `json:"therapyIds,omitempty"`
 	TherapyNames     []string  `json:"therapyNames,omitempty"`
-	VolunteerRoleID  *string   `json:"volunteerRoleId,omitempty"`
+	VolunteerRoleID    *string   `json:"volunteerRoleId,omitempty"`
+	VolunteerRoleName  string    `json:"volunteerRoleName,omitempty"`
 	IsPencatat         bool      `json:"isPencatat"`
 	CountsTowardMeals  bool      `json:"countsTowardMeals"`
 	AvailableFrom      *string   `json:"availableFrom,omitempty"`
