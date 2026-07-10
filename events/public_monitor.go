@@ -25,6 +25,8 @@ type PublicStaffMonitorResponse struct {
 	Location             string                     `json:"location,omitempty"`
 	StartDate            string                     `json:"startDate"`
 	EndDate              string                     `json:"endDate"`
+	StartTime            string                     `json:"startTime"`
+	EndTime              string                     `json:"endTime"`
 	TherapyCapacity      []TherapyCapacityRow       `json:"therapyCapacity"`
 	MealConsumptionCount int                        `json:"mealConsumptionCount"`
 	Staff                []PublicStaffMonitorPerson `json:"staff"`
@@ -47,10 +49,10 @@ func GetPublicStaffMonitor(ctx context.Context, tenantSlug, eventSlug string) (*
 	var desc, loc sql.NullString
 	err = conn.QueryRowContext(ctx, `
 		SELECT id::text, event_name, event_description, location,
-		       start_date::text, end_date::text, status
+		       start_date::text, end_date::text, start_time::text, end_time::text, status
 		FROM evt_event
 		WHERE event_slug=$1 AND deleted_at IS NULL`, eventSlug,
-	).Scan(&eventID, &resp.EventName, &desc, &loc, &resp.StartDate, &resp.EndDate, &status)
+	).Scan(&eventID, &resp.EventName, &desc, &loc, &resp.StartDate, &resp.EndDate, &resp.StartTime, &resp.EndTime, &status)
 	if err == sql.ErrNoRows {
 		return nil, appErrs.NotFound("acara tidak ditemukan")
 	}

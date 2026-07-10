@@ -15,6 +15,7 @@ type Event struct {
 	EventName           string  `json:"eventName"`
 	EventSlug           string  `json:"eventSlug"`
 	EventDescription    string  `json:"eventDescription,omitempty"`
+	CateringOrderNotes  string  `json:"cateringOrderNotes,omitempty"`
 	Location            string  `json:"location,omitempty"`
 	StartDate           string  `json:"startDate"`
 	EndDate             string  `json:"endDate"`
@@ -67,6 +68,7 @@ type UpsertEventParams struct {
 	EventName             string  `json:"eventName"`
 	EventSlug             string  `json:"eventSlug,omitempty"`
 	EventDescription      string  `json:"eventDescription,omitempty"`
+	CateringOrderNotes    string  `json:"cateringOrderNotes,omitempty"`
 	Location              string  `json:"location,omitempty"`
 	StartDate             string  `json:"startDate"`
 	EndDate               string  `json:"endDate"`
@@ -82,11 +84,11 @@ type UpsertEventParams struct {
 
 func scanEvent(row interface{ Scan(...any) error }) (Event, error) {
 	var e Event
-	var desc, loc sql.NullString
+	var desc, cateringNotes, loc sql.NullString
 	var openAt, closeAt sql.NullTime
 	var breakStart, breakEnd sql.NullString
 	err := row.Scan(
-		&e.ID, &e.EventName, &e.EventSlug, &desc, &loc,
+		&e.ID, &e.EventName, &e.EventSlug, &desc, &cateringNotes, &loc,
 		&e.StartDate, &e.EndDate, &e.StartTime, &e.EndTime,
 		&breakStart, &breakEnd,
 		&openAt, &closeAt, &e.Status,
@@ -96,6 +98,9 @@ func scanEvent(row interface{ Scan(...any) error }) (Event, error) {
 	}
 	if desc.Valid {
 		e.EventDescription = desc.String
+	}
+	if cateringNotes.Valid {
+		e.CateringOrderNotes = cateringNotes.String
 	}
 	if loc.Valid {
 		e.Location = loc.String
@@ -159,7 +164,7 @@ func ListEvents(ctx context.Context, p *ListEventsParams) (*ListEventsResponse, 
 	}
 	args = append(args, lim, off)
 	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
-		SELECT id::text, event_name, event_slug, event_description, location,
+		SELECT id::text, event_name, event_slug, event_description, catering_order_notes, location,
 		       start_date::text, end_date::text, start_time::text, end_time::text,
 		       break_start_time::text, break_end_time::text,
 		       registration_open_at, registration_close_at, status
@@ -206,7 +211,7 @@ func loadEvent(ctx context.Context, tenantSchema, eventId string) (*Event, error
 	}
 	defer conn.Close()
 	row := conn.QueryRowContext(ctx, `
-		SELECT id::text, event_name, event_slug, event_description, location,
+		SELECT id::text, event_name, event_slug, event_description, catering_order_notes, location,
 		       start_date::text, end_date::text, start_time::text, end_time::text,
 		       break_start_time::text, break_end_time::text,
 		       registration_open_at, registration_close_at, status
@@ -253,13 +258,13 @@ func CreateEvent(ctx context.Context, p *UpsertEventParams) (*Event, error) {
 	var id string
 	err = conn.QueryRowContext(ctx, `
 		INSERT INTO evt_event (
-		  event_name, event_slug, event_description, location,
+		  event_name, event_slug, event_description, catering_order_notes, location,
 		  start_date, end_date, start_time, end_time,
 		  break_start_time, break_end_time,
 		  registration_open_at, registration_close_at, status, created_by
-		) VALUES ($1,$2,$3,$4,$5::date,$6::date,$7::time,$8::time,$9::time,$10::time,$11,$12,$13,$14::uuid)
+		) VALUES ($1,$2,$3,$4,$5,$6::date,$7::date,$8::time,$9::time,$10::time,$11::time,$12,$13,$14,$15::uuid)
 		RETURNING id::text`,
-		p.EventName, slug, nullStr(p.EventDescription), nullStr(p.Location),
+		p.EventName, slug, nullStr(p.EventDescription), nullStr(p.CateringOrderNotes), nullStr(p.Location),
 		p.StartDate, p.EndDate, p.StartTime, p.EndTime,
 		nullTimeStrPtr(p.BreakStartTime), nullTimeStrPtr(p.BreakEndTime),
 		parseTimePtr(p.RegistrationOpenAt), parseTimePtr(p.RegistrationCloseAt),
@@ -321,12 +326,12 @@ func UpdateEvent(ctx context.Context, eventId string, p *UpsertEventParams) (*Ev
 	st := strings.ToUpper(strings.TrimSpace(p.Status))
 	_, err = conn.ExecContext(ctx, `
 		UPDATE evt_event SET
-		  event_name=$1, event_slug=$2, event_description=$3, location=$4,
-		  start_date=$5::date, end_date=$6::date, start_time=$7::time, end_time=$8::time,
-		  break_start_time=$9::time, break_end_time=$10::time,
-		  registration_open_at=$11, registration_close_at=$12, status=$13, updated_at=now()
-		WHERE id=$14::uuid AND deleted_at IS NULL`,
-		p.EventName, slug, nullStr(p.EventDescription), nullStr(p.Location),
+		  event_name=$1, event_slug=$2, event_description=$3, catering_order_notes=$4, location=$5,
+		  start_date=$6::date, end_date=$7::date, start_time=$8::time, end_time=$9::time,
+		  break_start_time=$10::time, break_end_time=$11::time,
+		  registration_open_at=$12, registration_close_at=$13, status=$14, updated_at=now()
+		WHERE id=$15::uuid AND deleted_at IS NULL`,
+		p.EventName, slug, nullStr(p.EventDescription), nullStr(p.CateringOrderNotes), nullStr(p.Location),
 		p.StartDate, p.EndDate, p.StartTime, p.EndTime,
 		nullTimeStrPtr(p.BreakStartTime), nullTimeStrPtr(p.BreakEndTime),
 		parseTimePtr(p.RegistrationOpenAt), parseTimePtr(p.RegistrationCloseAt), st, eventId,
@@ -399,6 +404,7 @@ func validateEventParams(p *UpsertEventParams) error {
 	}
 	p.EventName = clampLen(p.EventName, 200)
 	p.EventDescription = clampLen(p.EventDescription, 2000)
+	p.CateringOrderNotes = clampLen(p.CateringOrderNotes, 2000)
 	p.Location = clampLen(p.Location, 300)
 	st := strings.ToUpper(strings.TrimSpace(p.Status))
 	valid := map[string]bool{"DRAFT": true, "PUBLISHED": true, "CLOSED": true, "CANCELLED": true, "ARCHIVED": true}

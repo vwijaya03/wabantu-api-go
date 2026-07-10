@@ -16,6 +16,8 @@ type PublicEventInfo struct {
 	Location         string              `json:"location,omitempty"`
 	StartDate        string              `json:"startDate"`
 	EndDate          string              `json:"endDate"`
+	StartTime        string              `json:"startTime"`
+	EndTime          string              `json:"endTime"`
 	Status           string              `json:"status"`
 	RegistrationOpen bool                `json:"registrationOpen"`
 	Message          string              `json:"message,omitempty"`
@@ -82,11 +84,11 @@ func GetPublicRegistration(ctx context.Context, tenantSlug, eventSlug string) (*
 	var openAt, closeAt sql.NullTime
 	err = conn.QueryRowContext(ctx, `
 		SELECT event_name, event_description, location,
-		       start_date::text, end_date::text, status,
+		       start_date::text, end_date::text, start_time::text, end_time::text, status,
 		       registration_open_at, registration_close_at
 		FROM evt_event
 		WHERE event_slug=$1 AND deleted_at IS NULL`, eventSlug,
-	).Scan(&e.EventName, &desc, &loc, &e.StartDate, &e.EndDate, &e.Status, &openAt, &closeAt)
+	).Scan(&e.EventName, &desc, &loc, &e.StartDate, &e.EndDate, &e.StartTime, &e.EndTime, &e.Status, &openAt, &closeAt)
 	if err == sql.ErrNoRows {
 		return nil, appErrs.NotFound("acara tidak ditemukan")
 	}
@@ -248,6 +250,8 @@ type PublicStaffEventInfo struct {
 	Location         string          `json:"location,omitempty"`
 	StartDate        string          `json:"startDate"`
 	EndDate          string          `json:"endDate"`
+	StartTime        string          `json:"startTime"`
+	EndTime          string          `json:"endTime"`
 	Status           string          `json:"status"`
 	RegistrationOpen bool            `json:"registrationOpen"`
 	Message          string          `json:"message,omitempty"`
@@ -284,11 +288,11 @@ func GetPublicStaffRegistration(ctx context.Context, tenantSlug, eventSlug strin
 	var openAt, closeAt sql.NullTime
 	err = conn.QueryRowContext(ctx, `
 		SELECT event_name, event_description, location,
-		       start_date::text, end_date::text, status,
+		       start_date::text, end_date::text, start_time::text, end_time::text, status,
 		       registration_open_at, registration_close_at
 		FROM evt_event
 		WHERE event_slug=$1 AND deleted_at IS NULL`, eventSlug,
-	).Scan(&e.EventName, &desc, &loc, &e.StartDate, &e.EndDate, &e.Status, &openAt, &closeAt)
+	).Scan(&e.EventName, &desc, &loc, &e.StartDate, &e.EndDate, &e.StartTime, &e.EndTime, &e.Status, &openAt, &closeAt)
 	if err == sql.ErrNoRows {
 		return nil, appErrs.NotFound("acara tidak ditemukan")
 	}
