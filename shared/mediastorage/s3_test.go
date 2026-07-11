@@ -5,13 +5,34 @@ import (
 	"testing"
 )
 
-func TestConfigured_emptySecrets(t *testing.T) {
-	if Configured() {
-		t.Fatal("expected Configured() false when secrets are empty in test env")
+func TestS3Configured_logic(t *testing.T) {
+	if s3Configured("", "", "", "") {
+		t.Fatal("empty secrets must not be configured")
+	}
+	if s3Configured("bucket", "ap-southeast-1", "AKIA", "secret") == false {
+		t.Fatal("all fields set must be configured")
+	}
+	if s3Configured("bucket", "ap-southeast-1", "AKIA", "") {
+		t.Fatal("missing secret must not be configured")
+	}
+	if s3Configured("  ", "ap-southeast-1", "AKIA", "secret") {
+		t.Fatal("whitespace bucket must not be configured")
 	}
 }
 
+func TestConfigured_runtimeSecrets(t *testing.T) {
+	// Encore Cloud CI/deploy may inject AWSS3* secrets — do not assert empty env.
+	if Configured() {
+		t.Log("S3 secrets present in runtime; Configured()=true is expected")
+		return
+	}
+	t.Log("S3 secrets absent; Configured()=false")
+}
+
 func TestPutGetDelete_notConfigured(t *testing.T) {
+	if Configured() {
+		t.Skip("S3 configured in this environment — skip unconfigured Put/Get/Delete assertions")
+	}
 	ctx := context.Background()
 	if err := Put(ctx, "key", []byte("data"), "text/plain"); err == nil {
 		t.Fatal("expected Put error when s3 not configured")

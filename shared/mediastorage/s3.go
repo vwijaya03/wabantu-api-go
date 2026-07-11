@@ -31,12 +31,22 @@ var (
 	clientErr  error
 )
 
+// s3Configured reports whether all required S3 settings are non-empty.
+func s3Configured(bucket, region, accessKeyID, secretAccessKey string) bool {
+	return strings.TrimSpace(bucket) != "" &&
+		strings.TrimSpace(region) != "" &&
+		strings.TrimSpace(accessKeyID) != "" &&
+		strings.TrimSpace(secretAccessKey) != ""
+}
+
 // Configured reports whether S3 credentials and bucket are available.
 func Configured() bool {
-	return strings.TrimSpace(secrets.AWSS3Bucket) != "" &&
-		strings.TrimSpace(secrets.AWSS3Region) != "" &&
-		strings.TrimSpace(secrets.AWSS3AccessKeyID) != "" &&
-		strings.TrimSpace(secrets.AWSS3SecretAccessKey) != ""
+	return s3Configured(
+		secrets.AWSS3Bucket,
+		secrets.AWSS3Region,
+		secrets.AWSS3AccessKeyID,
+		secrets.AWSS3SecretAccessKey,
+	)
 }
 
 func getClient(ctx context.Context) (*s3.Client, error) {
