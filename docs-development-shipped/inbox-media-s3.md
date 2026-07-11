@@ -52,7 +52,7 @@ Set via `encore secret set` (kosong di lokal = graceful degrade):
 | `AWSS3Region` | `ap-southeast-1` | Region AWS |
 | `AWSS3AccessKeyID` | IAM user key | |
 | `AWSS3SecretAccessKey` | IAM secret | |
-| `AWSS3Endpoint` | *(kosong)* | Isi untuk R2/MinIO compat; kosong = AWS native |
+| *(custom endpoint)* | — | AWS S3 native; R2/MinIO butuh perubahan kode terpisah |
 
 **IAM policy minimal:** `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject` pada prefix `*/inbox/*`.
 

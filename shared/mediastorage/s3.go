@@ -22,7 +22,6 @@ var secrets struct {
 	AWSS3Region          string
 	AWSS3AccessKeyID     string
 	AWSS3SecretAccessKey string
-	AWSS3Endpoint        string
 }
 
 var (
@@ -66,14 +65,8 @@ func getClient(ctx context.Context) (*s3.Client, error) {
 			clientErr = fmt.Errorf("load aws config: %w", err)
 			return
 		}
-		opts := []func(*s3.Options){}
-		if ep := strings.TrimSpace(secrets.AWSS3Endpoint); ep != "" {
-			opts = append(opts, func(o *s3.Options) {
-				o.BaseEndpoint = aws.String(ep)
-				o.UsePathStyle = true
-			})
-		}
-		s3Client = s3.NewFromConfig(cfg, opts...)
+		// AWS native S3 only (no custom endpoint secret — Encore requires all secrets set per env).
+		s3Client = s3.NewFromConfig(cfg)
 	})
 	if clientErr != nil {
 		return nil, clientErr
