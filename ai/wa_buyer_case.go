@@ -144,6 +144,9 @@ func detectResponseBehavior(c WABuyerCase, out TurnOutcome) ResponseBehavior {
 	if out.Order != nil && c.CurrentState != nil && out.Order.Qty != c.CurrentState.Qty && out.Order.Qty > 0 {
 		return BehaviorQtyUpdated
 	}
+	if out.Path == PathPaymentFAQ {
+		return BehaviorPaymentInfo
+	}
 	if out.Path == PathOrderFlow {
 		if strings.Contains(reply, "penerima") || strings.Contains(reply, "nama") && strings.Contains(reply, "hp") {
 			return BehaviorAskRecipient
@@ -169,7 +172,7 @@ func detectResponseBehavior(c WABuyerCase, out TurnOutcome) ResponseBehavior {
 		}
 		return BehaviorCatalogProduct
 	}
-	if IsOrderStatusInquiry(c.InputUser) {
+	if IsOrderStatusInquiry(c.InputUser) || IsOrderRefStatusLookup(c.InputUser) {
 		return BehaviorOrderStatus
 	}
 	if IsPaymentQuestion(c.InputUser) {

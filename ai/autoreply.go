@@ -283,7 +283,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	}
 
 	// Status inquiry sebelum greeting — "halo min punya pesanan aktif?" bukan sapaan murni.
-	if (IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText)) && !wantsOrderContextFromHistory(userText) {
+	if (IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) || IsOrderRefStatusLookup(userText)) && !wantsOrderContextFromHistory(userText) {
 		return s.handleCustomerOrderStatus(ctx, conn, payload.TenantSchema, payload, convo, channel, contact, userText, nil)
 	}
 
@@ -336,6 +336,16 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	}
 	enrichCatalogStock(ctx, conn, catalog)
 
+	if IsPaymentQuestion(userText) {
+		if ans, ok := tryPaymentFAQAnswer(userText, kbEntries); ok {
+			finalReply := applyOutputPolicy(ans)
+			out := metaNoLLM(reasonAIGenerated, PathPaymentFAQ)
+			out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
+			err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
+			return err == nil, err
+		}
+	}
+
 	if IsOrderCancelRequest(userText) {
 		orderSt, _ := s.getOrderState(ctx, payload.TenantID, convo.ID)
 		s.clearOrderState(ctx, payload.TenantID, convo.ID)
@@ -365,7 +375,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	if IsThirdPartyBuyerLookup(userText) {
 		return s.handleThirdPartyBuyerLookupDenied(ctx, conn, payload, convo, channel, contact)
 	}
-	if IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) {
+	if IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) || IsOrderRefStatusLookup(userText) {
 		return s.handleCustomerOrderStatus(ctx, conn, payload.TenantSchema, payload, convo, channel, contact, userText, history)
 	}
 
@@ -577,7 +587,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	if IsThirdPartyBuyerLookup(userText) {
 		return s.handleThirdPartyBuyerLookupDenied(ctx, conn, payload, convo, channel, contact)
 	}
-	if IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) {
+	if IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) || IsOrderRefStatusLookup(userText) {
 		return s.handleCustomerOrderStatus(ctx, conn, payload.TenantSchema, payload, convo, channel, contact, userText, history)
 	}
 

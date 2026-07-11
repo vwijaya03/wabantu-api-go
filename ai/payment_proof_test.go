@@ -32,6 +32,29 @@ func TestLoadPaymentAccountsFromKB(t *testing.T) {
 	}
 }
 
+func TestLoadPaymentAccountsFromKBSpacedNumbers(t *testing.T) {
+	cat := "Nomor Rekening"
+	kb := []dbKBEntry{{
+		Question: "Nomor Rekening",
+		Answer:   "BCA 110 220 330 atas nama Omah Apparel\nMandiri 311 211 111 atas nama Omah Apparel",
+		Category: &cat,
+		IsActive: true,
+	}}
+	accounts := loadPaymentAccountsFromKB(kb)
+	if len(accounts) < 2 {
+		t.Fatalf("expected at least 2 accounts, got %+v", accounts)
+	}
+	foundBCA := false
+	for _, a := range accounts {
+		if a.AccountNumber == "110220330" && a.Bank == "BCA" {
+			foundBCA = true
+		}
+	}
+	if !foundBCA {
+		t.Fatalf("spaced BCA account not parsed: %+v", accounts)
+	}
+}
+
 func TestEvaluatePaymentProofRulesAmountMatch(t *testing.T) {
 	total := 150000.0
 	target := &persistedOrder{Total: total}
@@ -75,6 +98,30 @@ func TestEvaluatePaymentProofRulesKBEmpty(t *testing.T) {
 	if ok || flags[0] != "kb_empty" {
 		t.Fatalf("expected kb_empty, ok=%v flags=%v", ok, flags)
 	}
+}
+
+func TestMarkPaymentProofAIReviewFlags(t *testing.T) {
+	flags := markPaymentProofAIReviewFlags("auto_verify", false, "proof_submitted", []string{"mismatch_amount"})
+	if !containsFlag(flags, "ai_review_required") {
+		t.Fatalf("expected ai_review_required, got %v", flags)
+	}
+	flags = markPaymentProofAIReviewFlags("auto_verify", true, "verified", []string{})
+	if containsFlag(flags, "ai_review_required") {
+		t.Fatalf("verified should not add ai_review_required: %v", flags)
+	}
+	flags = markPaymentProofAIReviewFlags("manual", false, "proof_submitted", nil)
+	if containsFlag(flags, "ai_review_required") {
+		t.Fatalf("manual mode should not add ai_review_required: %v", flags)
+	}
+}
+
+func containsFlag(flags []string, want string) bool {
+	for _, f := range flags {
+		if f == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestIsPaymentKBEntry(t *testing.T) {

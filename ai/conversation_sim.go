@@ -51,7 +51,7 @@ func (s *ConversationSimulator) Turn(userText string) TurnOutcome {
 	}
 
 	// Match autoreply.go: status inquiry before greeting and cancel.
-	if IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) {
+	if IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) || IsOrderRefStatusLookup(userText) {
 		out.Path = PathOrderStatus
 		out.Intent = SalesIntent{State: SalesStateConsulting, Topic: SalesTopicOrderStatus, Confidence: 0.9}
 		s.appendHistory(userText, "")
@@ -187,9 +187,19 @@ func (s *ConversationSimulator) Turn(userText string) TurnOutcome {
 	if IsRecipientPolicyQuestion(userText) {
 		formal := strOrEmpty(s.Profile.Tone) == "formal"
 		out.Path = PathRecipientPolicy
-		out.Reply = replyRecipientPolicyQuestion(userText, nil, formal)
+		out.Reply = replyRecipientPolicyQuestion(userText, s.KB, formal)
 		s.appendHistory(userText, out.Reply)
 		return out
+	}
+
+	if IsPaymentQuestion(userText) {
+		if ans, ok := tryPaymentFAQAnswer(userText, s.KB); ok {
+			out.Path = PathPaymentFAQ
+			out.Intent = SalesIntent{State: SalesStateConsulting, Topic: SalesTopicGeneral, Confidence: 0.9}
+			out.Reply = ans
+			s.appendHistory(userText, out.Reply)
+			return out
+		}
 	}
 
 	if catReply, ok := replyFromBusinessCatalog(userText, s.Profile, s.Catalog, s.History); ok {
@@ -219,8 +229,19 @@ func newOmahSimulator() *ConversationSimulator {
 	return &ConversationSimulator{
 		Profile: p,
 		Catalog: omahCatalog(),
+		KB:      omahPaymentKB(),
 		ScopeKW: businessScopeKeywords(p),
 	}
+}
+
+func omahPaymentKB() []dbKBEntry {
+	cat := "Nomor Rekening"
+	return []dbKBEntry{{
+		Question: "Nomor Rekening",
+		Answer:   "BCA 110220330 atas nama Omah Apparel\nMandiri 311211111 atas nama Omah Apparel",
+		Category: &cat,
+		IsActive: true,
+	}}
 }
 
 func fullAddressBlock() string {

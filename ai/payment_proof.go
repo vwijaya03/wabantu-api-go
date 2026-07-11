@@ -121,28 +121,39 @@ func processPaymentProofJob(ctx context.Context, job *PaymentProofJob) error {
 	meta := paymentProofMetaFromOCR(ocr, fileHash)
 	if ocrErr != nil {
 		meta.Flags = append(meta.Flags, "ocr_failed")
+		if settings.Mode == "auto_verify" {
+			meta.Flags = appendPaymentProofFlag(meta.Flags, "ai_review_required")
+		}
 		return applyPaymentProofResult(ctx, conn, job, target, "proof_submitted", target.Status, meta, true, "")
 	}
 
 	autoVerify := false
 	newStatus := target.Status
-	if settings.Mode == "auto_verify" && payableCount == 1 {
+	if settings.Mode == "auto_verify" {
+		if payableCount > 1 {
+			meta.Flags = append(meta.Flags, "multi_order")
+		}
 		kb, _ := loadKBEntries(ctx, conn, 50)
 		accounts := loadPaymentAccountsFromKB(kb)
 		ok, flags := evaluatePaymentProofRules(target, ocr, accounts)
 		meta.Flags = append(meta.Flags, flags...)
-		if ok && ocr.Confidence >= settings.MinConf && len(accounts) > 0 {
+		minConf := settings.MinConf
+		if minConf >= 1.0 {
+			minConf = 0.95
+		}
+		if ok && ocr.Confidence >= minConf && len(accounts) > 0 {
 			autoVerify = true
 			newStatus = "processing"
+		} else if ok && ocr.Confidence > 0 && ocr.Confidence < minConf {
+			meta.Flags = appendPaymentProofFlag(meta.Flags, "low_confidence")
 		}
-	} else if payableCount > 1 {
-		meta.Flags = append(meta.Flags, "multi_order")
 	}
 
 	paymentStatus := "proof_submitted"
 	if autoVerify {
 		paymentStatus = "verified"
 	}
+	meta.Flags = markPaymentProofAIReviewFlags(settings.Mode, autoVerify, paymentStatus, meta.Flags)
 	return applyPaymentProofResult(ctx, conn, job, target, paymentStatus, newStatus, meta, autoVerify, "")
 }
 
@@ -283,7 +294,7 @@ func IsPaymentProofInbound(msgType, body string) bool {
 	if text == "" {
 		return true
 	}
-	for _, kw := range []string{"bukti", "transfer", " tf", "tf ", "bayar", "pembayaran", "screenshot", "struk", "mutasi"} {
+	for _, kw := range []string{"bukti", "transfer", " tf", "tf ", "bayar", "pembayaran", "screenshot", "struk", "mutasi", "kirim lagi", "cek lagi", "kirim ulang", "coba cek"} {
 		if strings.Contains(text, kw) {
 			return true
 		}
@@ -371,6 +382,25 @@ func lookupPaymentProofHashOtherOrder(ctx context.Context, q tenantQuerier, tena
 		return "", false, err
 	}
 	return otherID, true, nil
+}
+
+func appendPaymentProofFlag(flags []string, flag string) []string {
+	for _, f := range flags {
+		if f == flag {
+			return flags
+		}
+	}
+	return append(flags, flag)
+}
+
+func markPaymentProofAIReviewFlags(mode string, autoVerify bool, paymentStatus string, flags []string) []string {
+	if strings.ToLower(strings.TrimSpace(mode)) != "auto_verify" {
+		return flags
+	}
+	if autoVerify || paymentStatus != "proof_submitted" {
+		return flags
+	}
+	return appendPaymentProofFlag(flags, "ai_review_required")
 }
 
 func paymentProofMetaFromOCR(ocr aivision.PaymentProofExtract, fileHash string) paymentProofMeta {
@@ -538,12 +568,26 @@ func parsePaymentAccountsFromText(text string) []paymentAccount {
 				break
 			}
 		}
-		if strings.Contains(lower, "atas nama") || strings.Contains(lower, "a/n") {
-			parts := strings.SplitN(line, ":", 2)
-			name := strings.TrimSpace(parts[len(parts)-1])
-			if name != "" {
-				out = append(out, paymentAccount{Bank: bank, AccountName: name})
-			}
+		acctLine := line
+		name := ""
+		if idx := strings.Index(lower, "atas nama"); idx >= 0 {
+			acctLine = strings.TrimSpace(line[:idx])
+			name = strings.TrimSpace(line[idx+len("atas nama"):])
+			name = strings.TrimPrefix(name, ":")
+			name = strings.TrimSpace(name)
+		} else if idx := strings.Index(lower, "a/n"); idx >= 0 {
+			acctLine = strings.TrimSpace(line[:idx])
+			name = strings.TrimSpace(line[idx+len("a/n"):])
+			name = strings.TrimPrefix(name, ":")
+			name = strings.TrimSpace(name)
+		}
+		acctNum := digitsOnly(acctLine)
+		if len(acctNum) >= 8 && len(acctNum) <= 16 {
+			out = append(out, paymentAccount{Bank: bank, AccountNumber: acctNum, AccountName: name})
+			continue
+		}
+		if name != "" {
+			out = append(out, paymentAccount{Bank: bank, AccountName: name})
 		}
 	}
 	return out

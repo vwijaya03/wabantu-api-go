@@ -149,5 +149,8 @@ func groundLLMReply(
 	if catReply, ok := replyFromBusinessCatalog(userText, profile, catalog, history); ok {
 		return catReply, true, v.Reason
 	}
+	if IsPaymentQuestion(userText) {
+		return "Maaf kak, info rekening pembayaran belum tersedia otomatis. Tim CS akan bantu ya 🙏", true, "payment_no_kb"
+	}
 	return "Saya belum menemukan data tersebut di katalog saat ini.", true, v.Reason
 }

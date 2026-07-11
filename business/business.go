@@ -240,8 +240,8 @@ func UpdateProfile(ctx context.Context, req *UpdateProfileRequest) (*UpdateProfi
 	}
 	if req.PaymentAutoVerifyMinConfidence != nil {
 		conf := *req.PaymentAutoVerifyMinConfidence
-		if conf < 0 || conf > 1 {
-			return nil, apperr.BadRequest("paymentAutoVerifyMinConfidence harus antara 0 dan 1")
+		if conf < 0 || conf >= 1 {
+			return nil, apperr.BadRequest("paymentAutoVerifyMinConfidence harus antara 0 dan 0.99 (rekomendasi 0.95)")
 		}
 		sets = append(sets, fmt.Sprintf("payment_auto_verify_min_confidence = $%d", idx))
 		args = append(args, conf)

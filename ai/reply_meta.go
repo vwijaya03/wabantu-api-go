@@ -41,6 +41,7 @@ const (
 	PathCostLimit         = "cost_limit"
 	PathAutoFallback      = "auto_fallback"
 	PathPaymentProof        = "payment_proof"
+	PathPaymentFAQ          = "payment_faq"
 	PathProductImageMatch   = "product_image_match"
 	PathImageFallback       = "image_fallback"
 )
