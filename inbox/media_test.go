@@ -101,3 +101,57 @@ func TestCachedInboxMediaRoundTrip(t *testing.T) {
 		t.Fatalf("decoded = %+v", decoded)
 	}
 }
+
+func TestExtractS3KeyFromMetadata(t *testing.T) {
+	meta := json.RawMessage(`{"image":{"id":"m1"},"persisted":true,"s3Key":"t_demo/inbox/msg/a.jpg"}`)
+	if got := extractS3KeyFromMetadata(meta); got != "t_demo/inbox/msg/a.jpg" {
+		t.Fatalf("s3Key = %q", got)
+	}
+	if extractS3KeyFromMetadata(json.RawMessage(`{}`)) != "" {
+		t.Fatal("empty metadata should return empty key")
+	}
+}
+
+func TestIsMediaPersisted(t *testing.T) {
+	meta := json.RawMessage(`{"persisted":true,"s3Key":"t_demo/inbox/msg/a.jpg"}`)
+	if !isMediaPersisted(meta) {
+		t.Fatal("expected persisted")
+	}
+	if isMediaPersisted(json.RawMessage(`{"persisted":true}`)) {
+		t.Fatal("persisted without s3Key should be false")
+	}
+}
+
+func TestMergePersistMetadata(t *testing.T) {
+	existing := json.RawMessage(`{"image":{"id":"wa-123"}}`)
+	merged, err := mergePersistMetadata(existing, "t_demo/inbox/m1/abc.jpg", "image/jpeg", 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(merged, &m); err != nil {
+		t.Fatal(err)
+	}
+	if m["persisted"] != true {
+		t.Fatal("expected persisted true")
+	}
+	if m["s3Key"] != "t_demo/inbox/m1/abc.jpg" {
+		t.Fatalf("s3Key = %v", m["s3Key"])
+	}
+	if m["bytes"] != float64(1024) {
+		t.Fatalf("bytes = %v", m["bytes"])
+	}
+	img, ok := m["image"].(map[string]any)
+	if !ok || img["id"] != "wa-123" {
+		t.Fatalf("image metadata preserved: %+v", m["image"])
+	}
+}
+
+func TestIsPersistableMediaType(t *testing.T) {
+	if !IsPersistableMediaType("image") {
+		t.Fatal("image should be persistable")
+	}
+	if IsPersistableMediaType("text") {
+		t.Fatal("text should not be persistable")
+	}
+}
