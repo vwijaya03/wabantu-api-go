@@ -211,9 +211,32 @@ var orderStatusInquiryPhrases = []string{
 	"pesanan saya", "pesanan ku", "order saya", "ada pesanan", "punya pesanan",
 	"punya order", "ada order",
 	"status pesanan", "nomor pesanan", "no pesanan", "cek pesanan", "lihat pesanan",
+	"detail pesanan", "lihat detail",
 	"pesanan yang", "pesanan atas nama", "orderan saya", "pesanan mana",
 	"apakah saya punya", "saya punya pesanan", "masih punya pesanan",
 	"pembeli atas nama saya", "pembeli saya", "pembeli atas nama ini",
+}
+
+// IsOrderRefStatusLookup — buyer sends an order ref (with or without short status/detail phrasing).
+func IsOrderRefStatusLookup(userText string) bool {
+	ref := parseOrderRefFromMessage(userText)
+	if ref == "" {
+		return false
+	}
+	text := strings.ToLower(strings.TrimSpace(userText))
+	remainder := strings.ReplaceAll(text, strings.ToLower(ref), "")
+	remainder = strings.TrimSpace(strings.NewReplacer("?", "", "!", "", ".", "", ",", "").Replace(remainder))
+	if remainder == "" || len(remainder) <= 4 {
+		return true
+	}
+	for _, p := range []string{
+		"status", "detail", "cek", "lihat", "gimana", "bagaimana", "progress", "update",
+	} {
+		if strings.Contains(text, p) {
+			return true
+		}
+	}
+	return false
 }
 
 var selfBuyerLookupPhrases = []string{

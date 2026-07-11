@@ -116,6 +116,17 @@ func requireOwner(u *types.AuthUser) error {
 	return nil
 }
 
+func resolveKBEntrySource(src *string) string {
+	if src == nil {
+		return "manual"
+	}
+	s := strings.TrimSpace(*src)
+	if s == "" {
+		return "manual"
+	}
+	return s
+}
+
 // ─── Endpoints ───────────────────────────────────────────────────────────────
 
 //encore:api auth method=GET path=/api/v1/knowledge-base
@@ -218,13 +229,14 @@ func Create(ctx context.Context, req *CreateRequest) (*CreateResponse, error) {
 	if req.IsActive != nil {
 		isActive = *req.IsActive
 	}
+	source := resolveKBEntrySource(req.Source)
 
 	var entry KBEntry
 	err = conn.QueryRowContext(ctx, `
 		INSERT INTO knowledge_base_entry (question, answer, category, source, is_active)
 		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id, question, answer, category, source, is_active, created_at, updated_at`,
-		req.Question, req.Answer, req.Category, req.Source, isActive,
+		req.Question, req.Answer, req.Category, source, isActive,
 	).Scan(&entry.ID, &entry.Question, &entry.Answer, &entry.Category,
 		&entry.Source, &entry.IsActive, &entry.CreatedAt, &entry.UpdatedAt)
 	if err != nil {
