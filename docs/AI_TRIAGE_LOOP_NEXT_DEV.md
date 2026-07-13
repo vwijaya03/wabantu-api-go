@@ -227,6 +227,15 @@ sequenceDiagram
 - UI tab **AI Review** — datetime picker + tabel flagged + link ke Jalankan loop
 - **Tidak** auto-dispatch GHA; komplementer dengan simulator routing (Fase 1–3)
 
+### Fase 7 — Human report dari Inbox (~1 hari, api-go + web-frontend) ✅
+
+- Tabel system `ai_triage_report` — laporan manual per balasan AI (immutable snapshot user/reply text)
+- `POST/GET /api/v1/inbox/messages/:id/report` — tenant staff + superadmin (impersonate); rate limit 20/hari (tenant) / 50/hari (superadmin)
+- `GET/PATCH /api/v1/admin/ai-triage/reports` — antrian review superadmin
+- Pub/Sub `ai-triage-report-judge` — Haiku judge async saat report dibuat (konteks, bukan keputusan final)
+- UI Inbox: tombol **Report** pada balasan `ai`/`system`
+- UI tab **Laporan** di `/dashboard/admin/ai-triage` — konfirmasi / abaikan / jalankan loop
+
 ---
 
 ## Urutan deploy
@@ -235,6 +244,7 @@ sequenceDiagram
 2. GHA Fase 3 → test `workflow_dispatch` manual
 3. web-frontend Fase 4 → E2E dari UI
 4. Cron Fase 5
+5. Fase 6 LLM scan → Fase 7 human report (api-go dulu, lalu web)
 
 **Estimasi total:** ~4–5 hari kerja.
 
