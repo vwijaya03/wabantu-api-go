@@ -55,13 +55,18 @@ func ReportMessage(ctx context.Context, id string, p *ReportMessageParams) (*Rep
 		return nil, apperr.BadRequest("message id required")
 	}
 
-	exists, _, err := existsReportForOutbound(ctx, messageID)
+	exists, existingID, err := existsReportForOutbound(ctx, messageID)
 	if err != nil {
 		rlog.Error("check report exists failed", "err", err)
 		return nil, apperr.Internal("gagal memeriksa laporan")
 	}
 	if exists {
-		return nil, apperr.AlreadyExists("balasan ini sudah dilapor")
+		report, loadErr := loadTriageReportByID(ctx, existingID)
+		if loadErr != nil {
+			rlog.Error("load existing report failed", "err", loadErr, "reportId", existingID)
+			return nil, apperr.AlreadyExists("balasan ini sudah dilapor")
+		}
+		return &ReportMessageResponse{Report: report}, nil
 	}
 
 	reporterRole := triagereport.ReporterRoleFromAuth(user.Role)
@@ -113,6 +118,11 @@ func ReportMessage(ctx context.Context, id string, p *ReportMessageParams) (*Rep
 	})
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "idx_ai_triage_report_outbound") {
+			if exists, existingID, err2 := existsReportForOutbound(ctx, messageID); err2 == nil && exists {
+				if report, loadErr := loadTriageReportByID(ctx, existingID); loadErr == nil {
+					return &ReportMessageResponse{Report: report}, nil
+				}
+			}
 			return nil, apperr.AlreadyExists("balasan ini sudah dilapor")
 		}
 		rlog.Error("insert triage report failed", "err", err)
@@ -132,6 +142,7 @@ func ReportMessage(ctx context.Context, id string, p *ReportMessageParams) (*Rep
 
 	report, err := loadTriageReportByID(ctx, reportID)
 	if err != nil {
+		rlog.Error("load triage report after insert failed", "err", err, "reportId", reportID)
 		return nil, apperr.Internal("laporan tersimpan tetapi gagal dimuat")
 	}
 	return &ReportMessageResponse{Report: report}, nil
