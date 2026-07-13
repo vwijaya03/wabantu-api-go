@@ -1,6 +1,6 @@
-# Planned: Persist Media Inbox ke Amazon S3 (Fase 1b)
+# Shipped: Persist Media Inbox ke Amazon S3 (Fase 1b)
 
-**Status:** Planned — branch `feat/inbox-media-s3`  
+**Status:** Shipped — merged PR [#58](https://github.com/vwijaya03/wabantu-api-go/pull/58)  
 **Roadmap terkait:** [`docs/WHATSAPP_INBOX_MEDIA_PAYMENT_STOCK.md`](../docs/WHATSAPP_INBOX_MEDIA_PAYMENT_STOCK.md) — Fase 1b  
 **Prasyarat:** [inbox-media-fase1.md](./inbox-media-fase1.md) (proxy Meta MVP sudah shipped)
 
@@ -58,7 +58,7 @@ Set via `encore secret set` (kosong di lokal = graceful degrade):
 
 ---
 
-## File kunci (rencana implementasi)
+## File kunci (implementasi)
 
 | File | Peran |
 |------|--------|

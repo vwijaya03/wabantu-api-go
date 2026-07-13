@@ -2,7 +2,7 @@
 
 > **Audience:** Senior full-stack developers from Node.js/TypeScript (Express, NestJS, Prisma/TypeORM) learning **Go** and **Encore**.  
 > **Codebase:** `api-go/` — Encore rewrite of NestJS `api/`.  
-> **Companion docs:** [README.md](./README.md) · [APP_FLOW_GUIDE.md](./APP_FLOW_GUIDE.md) · [ENDPOINT_COMPATIBILITY.md](./ENDPOINT_COMPATIBILITY.md) · **[docs/README.md](./docs/README.md)** (indeks docs) · **[docs/WHATSAPP_AI_ROUTING.md](./docs/WHATSAPP_AI_ROUTING.md)** (webhook → AI routing) · **[docs-development-shipped/payment-proof-fase2.md](./docs-development-shipped/payment-proof-fase2.md)** (bukti transfer, limit 5x) · **[LIMITS_AND_QUOTAS.md](./LIMITS_AND_QUOTAS.md)** (rate limit, trial/paid kuota, billing checkout) · **[docs/FINANCE_MODULE.md](./docs/FINANCE_MODULE.md)** (modul keuangan) · **[docs/ORDER_CUSTOMER_CHAT.md](./docs/ORDER_CUSTOMER_CHAT.md)** (nomor pesanan, cancel & status via chat)
+> **Companion docs:** [README.md](./README.md) · [APP_FLOW_GUIDE.md](./APP_FLOW_GUIDE.md) · [ENDPOINT_COMPATIBILITY.md](./ENDPOINT_COMPATIBILITY.md) · **[docs/README.md](./docs/README.md)** (indeks docs) · **[docs/WHATSAPP_AI_ROUTING.md](./docs/WHATSAPP_AI_ROUTING.md)** (webhook → AI routing) · **[docs/WHATSAPP_INBOX_MEDIA_PAYMENT_STOCK.md](./docs/WHATSAPP_INBOX_MEDIA_PAYMENT_STOCK.md)** (roadmap media/bukti/stok) · **[docs-development-shipped/inbox-media-fase1.md](./docs-development-shipped/inbox-media-fase1.md)** (media inbox proxy Meta) · **[docs-development-shipped/inbox-media-s3.md](./docs-development-shipped/inbox-media-s3.md)** (persist media S3) · **[docs-development-shipped/payment-proof-fase2.md](./docs-development-shipped/payment-proof-fase2.md)** (bukti transfer, limit 5x) · **[docs-development-shipped/ai-image-caption.md](./docs-development-shipped/ai-image-caption.md)** (caption gambar → teks) · **[docs-development-shipped/ai-stock-guard-fase4.md](./docs-development-shipped/ai-stock-guard-fase4.md)** (stok per gudang) · **[docs-development-shipped/ai-order-chat-lookup.md](./docs-development-shipped/ai-order-chat-lookup.md)** (order lookup scoped chat) · **[docs-development-shipped/ai-image-context.md](./docs-development-shipped/ai-image-context.md)** (vision katalog, planned) · **[LIMITS_AND_QUOTAS.md](./LIMITS_AND_QUOTAS.md)** (rate limit, trial/paid kuota, billing checkout) · **[docs/FINANCE_MODULE.md](./docs/FINANCE_MODULE.md)** (modul keuangan) · **[docs/ORDER_CUSTOMER_CHAT.md](./docs/ORDER_CUSTOMER_CHAT.md)** (nomor pesanan, cancel & status via chat)
 
 **Baru belajar Go?** Langsung ke **[Bagian 18 Go untuk developer Node.js](#18-go-language-guide-for-nodejs-developers-with-wabantu-examples)** — penjelasan pointer, error, context, interface, dll. dengan contoh nyata dari repo ini.
 
@@ -320,6 +320,11 @@ sequenceDiagram
 | `ai/classifier_routing.go` | Haiku vs Sonnet + FAQ direct bypass |
 | `ai/reply_meta.go` | Outbound metadata paths + `LogAndRecord` |
 | `ai/payment_proof.go` | Pipeline bukti transfer, limit 5x penolakan, outbound WA pembeli |
+| `ai/payment_proof_jobs.go` | Pub/Sub `payment-proof-jobs` |
+| `ai/order_stock_guard.go` | Stok per gudang, tolak qty order jika tidak ada gudang tunggal cukup |
+| `inbox/media.go` | `GetMessageMedia` — proxy Meta / stream S3 |
+| `inbox/media_persist_jobs.go` | Pub/Sub `inbox-media-persist` → S3 |
+| `shared/mediastorage/s3.go` | Put/Get/Delete object storage (inbox media) |
 | `order/payment_proof.go` | API verify / reject / unblock bukti transfer |
 | `order/payment_proof_meta.go` | Helper `rejectionCount`, `proofBlocked`, `PaymentProofMaxRejections` |
 | `usage/ai_activity.go` | Tenant AI activity log API |
@@ -607,6 +612,12 @@ Secret tidak hot-reload. Lupa restart = perilaku aneh (nilai lama/kosong).
 | `RajaOngkirAPIKey` | `shipping/shipping.go` | Ongkir | Untuk shipping |
 | `RajaOngkirAccountType` | `shipping/shipping.go` | `starter` / `basic` / `pro` | Untuk shipping |
 | `SentryDSN` | `shared/sentry/sentry.go` | Error tracking | Opsional |
+| `AWSS3Bucket` | `shared/mediastorage/s3.go` | Bucket persist media inbox | Opsional (kosong = skip S3) |
+| `AWSS3Region` | `shared/mediastorage/s3.go` | Region AWS S3 | Opsional |
+| `AWSS3AccessKeyID` | `shared/mediastorage/s3.go` | IAM access key | Opsional |
+| `AWSS3SecretAccessKey` | `shared/mediastorage/s3.go` | IAM secret | Opsional |
+
+Detail persist media: [docs-development-shipped/inbox-media-s3.md](./docs-development-shipped/inbox-media-s3.md).
 
 ---
 
@@ -683,7 +694,8 @@ encore run
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
 | GET | `/api/v1/inbox/conversations` | auth | List + search + cursor |
-| GET | `/api/v1/inbox/conversations/:id/messages` | auth | Message history |
+| GET | `/api/v1/inbox/conversations/:id/messages` | auth | Message history (`media` field per image/video/doc) |
+| GET | `/api/v1/inbox/messages/:messageId/media` | auth raw | Stream bytes — S3 jika `metadata.s3Key`, else proxy Meta |
 | POST | `/api/v1/inbox/conversations/:id/messages` | auth | Staff outbound (calls Meta via `whatsapp`) |
 | PATCH | `/api/v1/inbox/conversations/:id/read` | auth | Zero unread |
 | POST | `.../handoff` | auth | Pause AI, system message |
@@ -721,11 +733,11 @@ Production path: **Pub/Sub** `ai-jobs`, not HTTP.
 
 | Service | Base path | Auth |
 |---------|-----------|------|
-| business | `/api/v1/business/profile`, `/catalog?q=&page=&pageSize=`, `/catalog/import-image/*` (vision preview + commit) | auth; katalog write owner |
+| business | `/api/v1/business/profile`, `/catalog?q=&page=&pageSize=`, `/catalog/import-image/*` (vision preview + commit); `PATCH profile` termasuk `paymentVerificationMode` | auth; katalog write owner |
 | kb | `/api/v1/knowledge-base` | auth |
 | inbox contacts | `/api/v1/inbox/contacts?q=&page=&pageSize=` + POST/PATCH/DELETE + batch status/delete | auth |
 | leads | `/api/v1/leads` | auth; internal CRM capture pipeline |
-| order | `/api/v1/orders?q=&status=&page=&pageSize=`, `/api/v1/order-status/batch`, `/api/v1/order-delete/batch` | auth; write owner |
+| order | `/api/v1/orders?q=&status=&page=&pageSize=`, `/api/v1/order-status/batch`, `/api/v1/order-delete/batch`, `POST .../payment-proof/verify|reject|unblock` | auth; write owner |
 | payment | `/api/v1/payment/*`, webhook | mixed |
 | shipping | `/api/v1/shipping/*` | auth |
 | billing | `/api/v1/billing/*` (`overview`, `select-plan`, `top-up`) | auth |
@@ -950,6 +962,21 @@ See sequence in Bagian 5. Key branches:
 **Import katalog dari gambar (dashboard, bukan WA):** `business/catalog_image.go` + `ai/vision.go` — lihat [docs/CATALOG_IMAGE_IMPORT.md](./docs/CATALOG_IMAGE_IMPORT.md).
 
 **Import transaksi dari gambar:** `finance/transaction_image.go` + `aivision/vision.go` (hindari import cycle ke package `ai`) — lihat [docs/TRANSACTION_IMAGE_IMPORT.md](./docs/TRANSACTION_IMAGE_IMPORT.md).
+
+### Inbound media, bukti transfer & stock guard
+
+Roadmap: [docs/WHATSAPP_INBOX_MEDIA_PAYMENT_STOCK.md](./docs/WHATSAPP_INBOX_MEDIA_PAYMENT_STOCK.md).
+
+| Fase | Alur singkat | Shipped doc |
+|------|--------------|-------------|
+| 1 | Webhook media → `GetMessages.media` → `GET .../media` proxy Meta | [inbox-media-fase1.md](./docs-development-shipped/inbox-media-fase1.md) |
+| 1b | Pub/Sub `inbox-media-persist` → `shared/mediastorage` S3 | [inbox-media-s3.md](./docs-development-shipped/inbox-media-s3.md) |
+| 2 + 3b | Pub/Sub `payment-proof-jobs` → `ai/payment_proof.go` → owner verify/reject | [payment-proof-fase2.md](./docs-development-shipped/payment-proof-fase2.md) |
+| 3a | Caption gambar/video/doc sebagai teks inbound | [ai-image-caption.md](./docs-development-shipped/ai-image-caption.md) |
+| 3c/3d | Vision match katalog + fallback gambar (planned) | [ai-image-context.md](./docs-development-shipped/ai-image-context.md) |
+| 4 | `order_stock_guard.go` — stok per gudang, tolak qty | [ai-stock-guard-fase4.md](./docs-development-shipped/ai-stock-guard-fase4.md) |
+| 4b | Order lookup scoped chat, deny third-party | [ai-order-chat-lookup.md](./docs-development-shipped/ai-order-chat-lookup.md) |
+
 - Failures: retry Pub/Sub → `FallbackAutoReply`
 
 AI activity log (super_admin): `GET /api/v1/admin/tenant/:id/ai-activity` (+ `/summary`). Saat impersonate: juga `GET /api/v1/usage/ai-activity` (tenant efektif). Owner tenant **tidak** punya akses.
@@ -1449,8 +1476,13 @@ Included above: architecture (Bagian 1), service deps (Bagian 2), auth sequence 
 flowchart LR
   WH[webhook] -->|Publish| AIQ[ai-jobs]
   AIQ --> SUB[ai-auto-reply]
+  WH -->|media| IMP[inbox-media-persist]
+  IMP --> S3[(S3)]
+  WH -->|image| PP[payment-proof-jobs]
+  PP --> PPH[payment-proof-handler]
+  WH -->|planned| IC[image-context-jobs]
   AI[ai] -->|Publish| SUM[conversation-summarize]
-  IMP[importcsv] --> FIM[file-import]
+  IMP2[importcsv] --> FIM[file-import]
   BC[broadcast] --> BS[broadcast-send]
   WH --> WR[webhook-retry]
   WR --> DLQ[webhook-retry-dlq]

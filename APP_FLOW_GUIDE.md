@@ -306,6 +306,7 @@ Query GET: `search`, `category`, `page`, `pageSize` (string kosong = tidak filte
 | POST | `/api/v1/inbox/conversations/:id/handoff` | auth |
 | POST | `/api/v1/inbox/conversations/:id/ai-resume` | auth |
 | GET | `/api/v1/inbox/conversations/:id/messages` | auth |
+| GET | `/api/v1/inbox/messages/:messageId/media` | auth (raw stream) |
 | POST | `/api/v1/inbox/conversations/:id/messages` | auth |
 | GET | `/api/v1/inbox/contacts?q=&page=&pageSize=` | auth |
 | POST | `/api/v1/inbox/contacts` | auth |
@@ -320,6 +321,8 @@ Query daftar percakapan:
 - `limit`, `cursor`
 
 Query pesan: `limit`, `offset`, `cursor` (base64).
+
+Response `GetMessages`: tiap pesan bisa punya `media?: { url, mimeType, thumbnailUrl? }` — `url` relatif ke `GET /inbox/messages/:id/media` (proxy Meta + cache Redis; stream S3 jika `metadata.s3Key` ada). Detail: [`docs-development-shipped/inbox-media-fase1.md`](./docs-development-shipped/inbox-media-fase1.md).
 
 **Query boolean:** filter `unreadOnly` / `aiHandled` di api-go pakai string `"true"` / `"false"` (bukan boolean JSON di query).
 
@@ -474,6 +477,43 @@ Secret: `AiInternalToken` (sama nilai `AI_INTERNAL_TOKEN` di `api/.env`).
 
 ---
 
+## 12b) Alur media inbox, bukti transfer & stock guard
+
+Roadmap lengkap: [`docs/WHATSAPP_INBOX_MEDIA_PAYMENT_STOCK.md`](./docs/WHATSAPP_INBOX_MEDIA_PAYMENT_STOCK.md).
+
+### Media inbox (Fase 1 + 1b)
+
+```
+Webhook image/video/document
+    → INSERT message (metadata.image.id)
+    → GET /inbox/messages/:id/media → proxy Meta Graph API + Redis cache (1 jam)
+    → (jika AWSS3* terisi) Pub/Sub inbox-media-persist → S3 → metadata.persisted + s3Key
+```
+
+- Fase 1 shipped: [`docs-development-shipped/inbox-media-fase1.md`](./docs-development-shipped/inbox-media-fase1.md)
+- Fase 1b S3 persist: [`docs-development-shipped/inbox-media-s3.md`](./docs-development-shipped/inbox-media-s3.md)
+- File: `inbox/media.go`, `inbox/media_persist_jobs.go`, `shared/mediastorage/s3.go`
+
+### Bukti transfer (Fase 2 + 3b)
+
+```
+Gambar inbound (caption atau tanpa caption)
+    → Pub/Sub payment-proof-jobs (ai/payment_proof_jobs.go)
+    → ai/payment_proof.go: deteksi bukti, link ke order, payment_status
+    → Owner: POST /orders/:id/payment-proof/verify|reject|unblock
+```
+
+- Shipped: [`docs-development-shipped/payment-proof-fase2.md`](./docs-development-shipped/payment-proof-fase2.md)
+- Caption sebagai teks (3a): [`docs-development-shipped/ai-image-caption.md`](./docs-development-shipped/ai-image-caption.md)
+- Planned vision katalog (3c/3d): [`docs-development-shipped/ai-image-context.md`](./docs-development-shipped/ai-image-context.md)
+
+### Stock guard & order lookup (Fase 4 + 4b)
+
+- Stok per gudang, tolak qty jika tidak ada gudang tunggal cukup: [`docs-development-shipped/ai-stock-guard-fase4.md`](./docs-development-shipped/ai-stock-guard-fase4.md) — `ai/order_stock_guard.go`
+- Lookup order scoped chat + deny third-party: [`docs-development-shipped/ai-order-chat-lookup.md`](./docs-development-shipped/ai-order-chat-lookup.md)
+
+---
+
 ## 13) Perintah harian (cheat sheet)
 
 ### Hari pertama — setup
@@ -540,6 +580,9 @@ Hapus volume Docker yang dibuat Encore untuk Postgres, atau gunakan perintah res
 | `ANTHROPIC_API_KEY` | `AnthropicApiKey` + `AnthropicAPIKey` |
 | `AI_INTERNAL_TOKEN` | `AiInternalToken` |
 | `META_WEBHOOK_VERIFY_TOKEN` | `WebhookVerifyToken` |
+| *(opsional, Fase 1b)* `AWSS3_BUCKET` / `AWSS3_REGION` / `AWSS3_ACCESS_KEY_ID` / `AWSS3_SECRET_ACCESS_KEY` | `AWSS3Bucket`, `AWSS3Region`, `AWSS3AccessKeyID`, `AWSS3SecretAccessKey` |
+
+Kosong di lokal = skip persist S3; proxy Meta tetap jalan. Detail: [`docs-development-shipped/inbox-media-s3.md`](./docs-development-shipped/inbox-media-s3.md).
 
 Yang **tidak** dipakai api-go dengan cara yang sama:
 
@@ -614,7 +657,9 @@ Secret `WebhookVerifyToken` harus sama dengan token di Meta Developer Console.
 | 4 | `shared/db/tenant.go` |
 | 5 | `webhook/webhook.go` |
 | 6 | `ai/api.go` + `ai/autoreply.go` |
-| 7 | `inbox/inbox.go` |
+| 7 | `inbox/inbox.go` + `inbox/media.go` |
+| 8 | `ai/payment_proof.go` + `ai/order_stock_guard.go` |
+| 9 | `shared/mediastorage/s3.go` (persist media inbox) |
 
 Bandingkan dengan Nest: `api/src/auth/auth.service.ts`, `api/src/whatsapp/whatsapp.service.ts`, `api/src/ai/ai-auto-reply.service.ts`.
 

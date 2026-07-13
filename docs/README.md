@@ -20,6 +20,9 @@ Peta navigasi untuk menjawab pertanyaan tentang backend WABantu. Mulai dari sini
 | Ownership order — siapa boleh lihat WB-…? | [ORDER_OWNERSHIP_RESEARCH.md](./ORDER_OWNERSHIP_RESEARCH.md) |
 | Stok per gudang di order flow AI | [ai-stock-guard-fase4.md](../docs-development-shipped/ai-stock-guard-fase4.md) |
 | Media gambar + caption di chat | [ai-image-caption.md](../docs-development-shipped/ai-image-caption.md) |
+| Tampilan gambar di inbox (proxy Meta) | [inbox-media-fase1.md](../docs-development-shipped/inbox-media-fase1.md) |
+| Persist media inbox ke S3 | [inbox-media-s3.md](../docs-development-shipped/inbox-media-s3.md) |
+| Vision match katalog dari gambar (planned) | [ai-image-context.md](../docs-development-shipped/ai-image-context.md) |
 | Tagihan Meta vs kuota WABantu | [META_WHATSAPP_MESSAGING_AND_BILLING.md](./META_WHATSAPP_MESSAGING_AND_BILLING.md) |
 | Kuota trial / paket / routing model AI | [LIMITS_AND_QUOTAS.md](../LIMITS_AND_QUOTAS.md) |
 | Roadmap WA (media, bukti transfer, stok) | [WHATSAPP_INBOX_MEDIA_PAYMENT_STOCK.md](./WHATSAPP_INBOX_MEDIA_PAYMENT_STOCK.md) |
@@ -37,6 +40,9 @@ Peta navigasi untuk menjawab pertanyaan tentang backend WABantu. Mulai dari sini
 | [ORDER_CUSTOMER_CHAT.md](./ORDER_CUSTOMER_CHAT.md) | Nomor WB-*, status & cancel via chat |
 | [META_WHATSAPP_MESSAGING_AND_BILLING.md](./META_WHATSAPP_MESSAGING_AND_BILLING.md) | CSW 24 jam, template berbayar Meta |
 | [WHATSAPP_INBOX_MEDIA_PAYMENT_STOCK.md](./WHATSAPP_INBOX_MEDIA_PAYMENT_STOCK.md) | Roadmap fase inbox/media/payment/stok |
+| [inbox-media-fase1.md](../docs-development-shipped/inbox-media-fase1.md) | Media inbox — proxy Meta, field `media` di GetMessages |
+| [inbox-media-s3.md](../docs-development-shipped/inbox-media-s3.md) | Persist media inbox ke Amazon S3 |
+| [ai-image-context.md](../docs-development-shipped/ai-image-context.md) | Vision match katalog + fallback gambar (planned) |
 | [LIMITS_AND_QUOTAS.md](../LIMITS_AND_QUOTAS.md) | Kuota paket, AI token, broadcast |
 
 ## Order & pembeli

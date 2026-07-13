@@ -139,15 +139,15 @@ Media inbox tidak bergantung pada `access_token` Meta jangka panjang; object ter
 
 ### Status
 
-- [ ] Pub/Sub `inbox-media-persist` — download async saat webhook
-- [ ] Package `shared/mediastorage` — Put/Get/Delete S3
-- [ ] Patch `message.metadata` — `persisted`, `s3Key`, `mimeType`, `bytes`
-- [ ] `GetMessageMedia` — stream S3 jika `s3Key` ada, else fallback proxy Meta
-- [ ] Encore secrets `AWSS3*` + graceful degrade jika kosong (lokal)
-- [ ] Increment `usage.storage_byte`; skip persist jika over quota
+- [x] Pub/Sub `inbox-media-persist` — download async saat webhook
+- [x] Package `shared/mediastorage` — Put/Get/Delete S3
+- [x] Patch `message.metadata` — `persisted`, `s3Key`, `mimeType`, `bytes`
+- [x] `GetMessageMedia` — stream S3 jika `s3Key` ada, else fallback proxy Meta
+- [x] Encore secrets `AWSS3*` + graceful degrade jika kosong (lokal)
+- [x] Increment `usage.storage_byte`; skip persist jika over quota
 
-**Spesifikasi implementasi:** [`docs-development-shipped/inbox-media-s3.md`](../docs-development-shipped/inbox-media-s3.md)  
-**Branch / PR:** `feat/inbox-media-s3` — api-go [#58](https://github.com/vwijaya03/wabantu-api-go/pull/58)
+**Shipped detail:** [`docs-development-shipped/inbox-media-s3.md`](../docs-development-shipped/inbox-media-s3.md)  
+**PR:** api-go [#58](https://github.com/vwijaya03/wabantu-api-go/pull/58) (merged)
 
 ---
 
@@ -177,6 +177,8 @@ AI jawab stok akurat **per gudang**; order flow tidak membuat draft jika qty mel
 - `api-go`: `ai/`, `inventory/`, migration tenant
 - `web-frontend`: field label pelanggan di halaman Gudang
 
+**Shipped detail:** [`docs-development-shipped/ai-stock-guard-fase4.md`](../docs-development-shipped/ai-stock-guard-fase4.md)
+
 ---
 
 ## Fase 4b — Order status dari history chat (ownership)
@@ -205,6 +207,8 @@ Pembeli bisa cek pesanan milik chat mereka (termasuk dari history outbound & hin
 - [ ] `pembeli atas nama saya ada ?` → `order_status`
 - [ ] `pembeli atas nama ini ada? Nama: supriyanto` + order scoped penerima supriyanto → `order_status` WB-...
 - [ ] Nama supriyanto tanpa order di scope → tidak ada pesanan di chat ini (tanpa bocor data orang lain)
+
+**Shipped detail:** [`docs-development-shipped/ai-order-chat-lookup.md`](../docs-development-shipped/ai-order-chat-lookup.md)
 
 ---
 
