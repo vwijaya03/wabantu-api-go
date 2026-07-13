@@ -303,11 +303,11 @@ func loadTriageJob(ctx context.Context, jobID string) (AITriageJob, error) {
 func updateTriageJobStatus(ctx context.Context, jobID, status, errText, githubRunURL string) error {
 	_, err := system.DB.Exec(ctx, `
 		UPDATE ai_triage_job
-		SET status = $2,
+		SET status = $2::varchar,
 		    error_text = NULLIF($3, ''),
 		    github_run_url = NULLIF($4, ''),
 		    updated_at = now(),
-		    completed_at = CASE WHEN $2 IN ('failed', 'pr_ready') THEN now() ELSE completed_at END
+		    completed_at = CASE WHEN $2::varchar IN ('failed', 'pr_ready') THEN now() ELSE completed_at END
 		WHERE id = $1::uuid`,
 		jobID, status, errText, githubRunURL,
 	)

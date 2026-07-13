@@ -95,7 +95,7 @@ func CompleteInternalAITriageJob(w http.ResponseWriter, req *http.Request) {
 func completeTriageJob(ctx context.Context, jobID, status, prURL, githubRunURL, errText string) error {
 	_, err := system.DB.Exec(ctx, `
 		UPDATE ai_triage_job
-		SET status = $2,
+		SET status = $2::varchar,
 		    pr_url = NULLIF($3, ''),
 		    github_run_url = NULLIF($4, ''),
 		    error_text = NULLIF($5, ''),
