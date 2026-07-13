@@ -12,13 +12,16 @@ import (
 )
 
 const triageJudgeSystemPrompt = `You are a QA judge for WhatsApp AI auto-replies in Indonesian businesses.
-Given customer message, bot reply, and routing path, decide if the reply is problematic.
+Given customer message, bot reply, routing path, and the official product catalog, decide if the reply is problematic.
 
 Respond with ONLY valid JSON (no markdown):
 {"flagged":boolean,"severity":"low|medium|high","category":"wrong_answer|off_topic|hallucination|rude|other|ok","reason":"short Indonesian explanation"}
 
-Flag true when: wrong facts, off-topic, hallucinated product/price, rude, or clearly unhelpful.
-Flag false when reply is reasonable for the question.`
+Rules:
+- The official catalog is the source of truth for which products this business sells. Do NOT infer product scope from the business name alone (e.g. "Apparel" may still sell food items if listed in catalog).
+- Flag hallucination only when the reply mentions products/prices that are NOT in the catalog or clearly invents facts.
+- Flag wrong_answer when facts in the reply contradict the question or are clearly incorrect — not merely because a product seems unusual for the business name.
+- Flag false when reply is reasonable and catalog-backed for the question.`
 
 type llmJudgeVerdict struct {
 	Flagged  bool   `json:"flagged"`
@@ -27,7 +30,7 @@ type llmJudgeVerdict struct {
 	Reason   string `json:"reason"`
 }
 
-func judgeTriageTurn(ctx context.Context, businessName string, turn AITriageTurn) (llmJudgeVerdict, CompletionUsage, error) {
+func judgeTriageTurn(ctx context.Context, businessName string, catalog []dbCatalogItem, turn AITriageTurn) (llmJudgeVerdict, CompletionUsage, error) {
 	client := NewAnthropicClient(secrets.AnthropicApiKey, AnthropicConfig{
 		Model:     DefaultHaikuAPIID(),
 		MaxTokens: 256,
@@ -37,13 +40,7 @@ func judgeTriageTurn(ctx context.Context, businessName string, turn AITriageTurn
 	if biz == "" {
 		biz = "(tidak diketahui)"
 	}
-	userPrompt := fmt.Sprintf(
-		"Bisnis: %s\nPath routing: %s\n\nPesan pelanggan:\n%s\n\nBalasan AI:\n%s",
-		biz,
-		strings.TrimSpace(turn.Path),
-		truncateForJudge(turn.UserText, 800),
-		truncateForJudge(turn.ReplyText, 1200),
-	)
+	userPrompt := buildJudgeUserPrompt(biz, catalog, turn)
 
 	text, usage, err := client.CompleteText(ctx, DefaultHaikuAPIID(), triageJudgeSystemPrompt, userPrompt, 256)
 	if err != nil {
@@ -59,7 +56,43 @@ func judgeTriageTurn(ctx context.Context, businessName string, turn AITriageTurn
 		verdict.Flagged = false
 	}
 	normalizeJudgeVerdict(&verdict)
+	softenCatalogHallucinationVerdict(&verdict, turn.ReplyText, catalog)
 	return verdict, usage, nil
+}
+
+func buildJudgeUserPrompt(businessName string, catalog []dbCatalogItem, turn AITriageTurn) string {
+	var b strings.Builder
+	b.WriteString("Bisnis: ")
+	b.WriteString(businessName)
+	b.WriteString("\nPath routing: ")
+	b.WriteString(strings.TrimSpace(turn.Path))
+	b.WriteString("\n\n")
+	b.WriteString(BuildCatalogContext(catalog))
+	b.WriteString("\n\nPesan pelanggan:\n")
+	b.WriteString(truncateForJudge(turn.UserText, 800))
+	b.WriteString("\n\nBalasan AI:\n")
+	b.WriteString(truncateForJudge(turn.ReplyText, 1200))
+	return b.String()
+}
+
+// softenCatalogHallucinationVerdict clears false-positive hallucination flags when the reply
+// mentions products that exist in the official catalog (e.g. food items in an "Apparel" tenant).
+func softenCatalogHallucinationVerdict(v *llmJudgeVerdict, reply string, catalog []dbCatalogItem) {
+	if !v.Flagged || len(catalog) == 0 {
+		return
+	}
+	switch v.Category {
+	case "hallucination":
+	default:
+		return
+	}
+	if len(findMentionedCatalogItems(reply, catalog)) == 0 {
+		return
+	}
+	v.Flagged = false
+	v.Category = "ok"
+	v.Severity = "low"
+	v.Reason = "produk disebutkan ada di katalog resmi"
 }
 
 func parseJudgeVerdict(text string) (llmJudgeVerdict, error) {
