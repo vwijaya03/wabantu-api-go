@@ -20,8 +20,8 @@ Respond with ONLY valid JSON (no markdown):
 Rules:
 - The official catalog is the source of truth for which products this business sells. Do NOT infer product scope from the business name alone (e.g. "Apparel" may still sell food items if listed in catalog).
 - Flag hallucination only when the reply mentions products/prices that are NOT in the catalog or clearly invents facts.
-- Flag wrong_answer when facts in the reply contradict the question or are clearly incorrect — not merely because a product seems unusual for the business name.
-- Flag false when reply is reasonable and catalog-backed for the question.`
+- Flag wrong_answer when facts in the reply contradict the question, when the reply ignores the customer's explicit question (e.g. asked "bisa nambah order?" but only order status shown), or when path is out_of_scope for benign in-scope messages (greeting, acknowledgment like "ditunggu ya", "baik kalau begitu").
+- Flag false when reply is reasonable, catalog-backed, and directly addresses the customer's question.`
 
 type llmJudgeVerdict struct {
 	Flagged  bool   `json:"flagged"`
@@ -56,6 +56,8 @@ func judgeTriageTurn(ctx context.Context, businessName string, catalog []dbCatal
 		verdict.Flagged = false
 	}
 	normalizeJudgeVerdict(&verdict)
+	reconcileJudgeVerdict(&verdict)
+	enforceMisroutedOutOfScope(&verdict, turn)
 	softenCatalogHallucinationVerdict(&verdict, turn.ReplyText, catalog)
 	return verdict, usage, nil
 }
@@ -73,6 +75,66 @@ func buildJudgeUserPrompt(businessName string, catalog []dbCatalogItem, turn AIT
 	b.WriteString("\n\nBalasan AI:\n")
 	b.WriteString(truncateForJudge(turn.ReplyText, 1200))
 	return b.String()
+}
+
+// reconcileJudgeVerdict upgrades inconsistent judge output (reason says problematic but flagged=false).
+func reconcileJudgeVerdict(v *llmJudgeVerdict) {
+	if v.Flagged || v.Reason == "" {
+		return
+	}
+	lower := strings.ToLower(v.Reason)
+	hints := []string{
+		"tidak menjawab",
+		"tidak secara eksplisit menjawab",
+		"tidak relevan dengan pertanyaan",
+		"tidak menjawab langsung",
+		"tidak menjawab pertanyaan",
+		"mengabaikan pertanyaan",
+	}
+	for _, hint := range hints {
+		if strings.Contains(lower, hint) {
+			v.Flagged = true
+			v.Category = "wrong_answer"
+			if v.Severity == "" || v.Severity == "low" {
+				v.Severity = "medium"
+			}
+			return
+		}
+	}
+}
+
+func enforceMisroutedOutOfScope(v *llmJudgeVerdict, turn AITriageTurn) {
+	if v.Flagged || turn.Path != PathOutOfScope {
+		return
+	}
+	if !isBenignInScopePhrase(turn.UserText) {
+		return
+	}
+	v.Flagged = true
+	v.Category = "wrong_answer"
+	v.Severity = "medium"
+	v.Reason = "Pesan pelanggan masuk scope (salam/akuan) tapi di-routing ke out_of_scope"
+}
+
+func isBenignInScopePhrase(userText string) bool {
+	text := strings.ToLower(strings.TrimSpace(userText))
+	if text == "" {
+		return false
+	}
+	if IsGreetingLike(userText) {
+		return true
+	}
+	phrases := []string{
+		"baik kalau begitu", "ditunggu ya", "ditunggu", "oke kak", "siap kak",
+		"makasih", "terima kasih", "ok kak", "baik kak", "baik", "oke", "siap",
+		"bro", "sis", "kak",
+	}
+	for _, p := range phrases {
+		if text == p {
+			return true
+		}
+	}
+	return false
 }
 
 // softenCatalogHallucinationVerdict clears false-positive hallucination flags when the reply
