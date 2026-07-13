@@ -71,3 +71,60 @@ func TestSoftenCatalogHallucinationVerdict_keepsWrongAnswer(t *testing.T) {
 		t.Fatal("wrong_answer should not be auto-cleared by catalog guard")
 	}
 }
+
+func TestReconcileJudgeVerdict_unansweredQuestion(t *testing.T) {
+	v := llmJudgeVerdict{
+		Flagged:  false,
+		Category: "ok",
+		Severity: "low",
+		Reason:   "Bot tidak menjawab pertanyaan 'bisa nambah orderan?' tetapi menampilkan status pesanan",
+	}
+	reconcileJudgeVerdict(&v)
+	if !v.Flagged {
+		t.Fatal("expected flag when reason mentions unanswered question")
+	}
+	if v.Category != "wrong_answer" {
+		t.Fatalf("category = %s want wrong_answer", v.Category)
+	}
+}
+
+func TestReconcileJudgeVerdict_keepsConsistentOk(t *testing.T) {
+	v := llmJudgeVerdict{
+		Flagged:  false,
+		Category: "ok",
+		Reason:   "Balasan sesuai dan menjawab pertanyaan status pesanan",
+	}
+	reconcileJudgeVerdict(&v)
+	if v.Flagged {
+		t.Fatal("expected ok verdict unchanged")
+	}
+}
+
+func TestEnforceMisroutedOutOfScope_ditunggu(t *testing.T) {
+	v := llmJudgeVerdict{Flagged: false, Category: "ok"}
+	turn := AITriageTurn{
+		Path:     PathOutOfScope,
+		UserText: "ditunggu ya",
+		ReplyText: "Maaf kak, itu di luar topik bisnis kami ya.",
+	}
+	enforceMisroutedOutOfScope(&v, turn)
+	if !v.Flagged {
+		t.Fatal("expected flag for misrouted out_of_scope")
+	}
+	if v.Category != "wrong_answer" {
+		t.Fatalf("category = %s want wrong_answer", v.Category)
+	}
+}
+
+func TestEnforceMisroutedOutOfScope_keepsRealOutOfScope(t *testing.T) {
+	v := llmJudgeVerdict{Flagged: false, Category: "ok"}
+	turn := AITriageTurn{
+		Path:     PathOutOfScope,
+		UserText: "berapa harga saham BBRI hari ini?",
+		ReplyText: "Maaf kak, itu di luar topik bisnis kami ya.",
+	}
+	enforceMisroutedOutOfScope(&v, turn)
+	if v.Flagged {
+		t.Fatal("expected no flag for genuine out_of_scope question")
+	}
+}
