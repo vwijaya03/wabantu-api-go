@@ -33,6 +33,7 @@ MIGRATIONS=(
   "7:system/migrations/7_tenant_schema_patch_version.up.sql"
   "8:system/migrations/8_tenant_schema_migration_jobs.up.sql"
   "9:system/migrations/9_tenant_schema_migration_job_lane.up.sql"
+  "10:system/migrations/10_ai_triage_job.up.sql"
 )
 
 for entry in "${MIGRATIONS[@]}"; do
