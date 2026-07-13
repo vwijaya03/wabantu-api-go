@@ -188,7 +188,7 @@ sequenceDiagram
 - `GET /api/v1/admin/ai-triage/anomalies`
 - `POST /api/v1/admin/ai-triage/jobs`
 - `GET /api/v1/admin/ai-triage/jobs/:id`
-- Dispatch `workflow_dispatch` via secret `GITHUB_TOKEN`
+- Dispatch `workflow_dispatch` via secret `GitHubActionsToken`
 
 ### Fase 3 — GitHub Actions (~1 hari, api-go)
 
@@ -225,8 +225,8 @@ sequenceDiagram
 
 ```bash
 # GitHub PAT: repo wabantu-api-go, permissions contents + pull_requests + actions
-encore secret set --dev GITHUB_TOKEN
-encore secret set --prod GITHUB_TOKEN
+encore secret set --env=staging GitHubActionsToken
+encore secret set --env=prod GitHubActionsToken
 ```
 
 Branch protection `master`: require check AI Regression setelah Fase 3.
