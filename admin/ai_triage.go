@@ -31,6 +31,7 @@ const (
 
 var triageSecrets struct {
 	GitHubActionsToken string
+	AiInternalToken    string
 }
 
 // ---------- Types ----------
