@@ -260,32 +260,55 @@ func RunLLMTriageScan(ctx context.Context, p LLMScanParams) (*LLMScanRunResult, 
 	result := &LLMScanRunResult{
 		Findings: make([]LLMScanFinding, 0, len(turns)),
 	}
+
+	pending := make([]AITriageTurn, 0, len(turns))
 	for _, turn := range turns {
-		verdict, tok, err := judgeTriageTurn(ctx, businessName, catalog, turn)
 		result.TurnsChecked++
+		if det := tryDeterministicJudge(turn, catalog); det.Resolved {
+			appendLLMScanFinding(result, turn, det.Verdict)
+			_ = recordTriageJudgeActivity(ctx, p.TenantSchema, p.TenantID, turn, det.Verdict, CompletionUsage{}, false)
+			continue
+		}
+		pending = append(pending, turn)
+	}
+
+	for i := 0; i < len(pending); i += triageJudgeBatchSize {
+		end := i + triageJudgeBatchSize
+		if end > len(pending) {
+			end = len(pending)
+		}
+		batch := pending[i:end]
+		verdicts, tok, err := judgeTriageTurnBatch(ctx, businessName, catalog, batch)
 		result.InputTokens += tok.InputTokens
 		result.OutputTokens += tok.OutputTokens
 		if err != nil {
-			result.Findings = append(result.Findings, LLMScanFinding{
-				AITriageTurn: turn,
-				Flagged:      false,
-				Reason:       "judge_error: " + err.Error(),
-			})
+			for _, turn := range batch {
+				result.Findings = append(result.Findings, LLMScanFinding{
+					AITriageTurn: turn,
+					Flagged:      false,
+					Reason:       "judge_error: " + err.Error(),
+				})
+			}
 			continue
 		}
-		finding := LLMScanFinding{
-			AITriageTurn: turn,
-			Flagged:      verdict.Flagged,
-			Severity:     verdict.Severity,
-			Category:     verdict.Category,
-			Reason:       verdict.Reason,
+		for j, turn := range batch {
+			appendLLMScanFinding(result, turn, verdicts[j])
+			_ = recordTriageJudgeActivity(ctx, p.TenantSchema, p.TenantID, turn, verdicts[j], tok, true)
 		}
-		if finding.Flagged {
-			result.FindingsCount++
-		}
-		result.Findings = append(result.Findings, finding)
-
-		_ = recordTriageJudgeActivity(ctx, p.TenantSchema, p.TenantID, turn, verdict, tok)
 	}
 	return result, nil
+}
+
+func appendLLMScanFinding(result *LLMScanRunResult, turn AITriageTurn, verdict llmJudgeVerdict) {
+	finding := LLMScanFinding{
+		AITriageTurn: turn,
+		Flagged:      verdict.Flagged,
+		Severity:     verdict.Severity,
+		Category:     verdict.Category,
+		Reason:       verdict.Reason,
+	}
+	if finding.Flagged {
+		result.FindingsCount++
+	}
+	result.Findings = append(result.Findings, finding)
 }

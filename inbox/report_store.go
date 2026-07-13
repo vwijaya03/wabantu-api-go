@@ -3,6 +3,7 @@ package inbox
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"strings"
 
 	"encore.dev/beta/errs"
@@ -10,6 +11,20 @@ import (
 	"encore.app/wabantu/shared/triagereport"
 	"encore.app/wabantu/system"
 )
+
+func isNoRow(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return true
+	}
+	var e *errs.Error
+	if errors.As(err, &e) && e.Code == errs.NotFound {
+		return true
+	}
+	return false
+}
 
 func countReportsToday(ctx context.Context, reportedBy string) (int, error) {
 	var n int
@@ -29,7 +44,7 @@ func existsReportForOutbound(ctx context.Context, outboundMessageID string) (boo
 		WHERE outbound_message_id = $1::uuid`,
 		outboundMessageID,
 	).Scan(&id)
-	if err == sql.ErrNoRows {
+	if isNoRow(err) {
 		return false, "", nil
 	}
 	if err != nil {
@@ -81,7 +96,7 @@ func scanTriageReportRow(ctx context.Context, id string) (triagereport.Report, e
 		&reviewBy, &reviewNote, &reviewedAt,
 		&r.CreatedAt, &r.UpdatedAt, &tenantName,
 	)
-	if err == sql.ErrNoRows {
+	if isNoRow(err) {
 		return triagereport.Report{}, &errs.Error{Code: errs.NotFound, Message: "laporan tidak ditemukan"}
 	}
 	if err != nil {
