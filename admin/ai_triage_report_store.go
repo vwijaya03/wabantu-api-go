@@ -120,9 +120,9 @@ const reportSelectSQL = `
 	       r.judge_flagged, COALESCE(r.judge_category, ''), COALESCE(r.judge_reason, ''),
 	       COALESCE(r.reviewed_by::text, ''), COALESCE(r.review_note, ''),
 	       r.reviewed_at, r.created_at, r.updated_at,
-	       COALESCE(tc.company_name, '')
+	       COALESCE(t.name, '')
 	FROM ai_triage_report r
-	LEFT JOIN tenant_company tc ON tc.tenant_id = r.tenant_id`
+	LEFT JOIN tenant t ON t.id = r.tenant_id`
 
 func scanTriageReportRows(rows interface {
 	Next() bool
