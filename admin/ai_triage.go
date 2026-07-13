@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -259,6 +260,20 @@ func reclaimStaleTriageJobs(ctx context.Context) (int, error) {
 	return int(res.RowsAffected()), nil
 }
 
+func isNoRow(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return true
+	}
+	var e *errs.Error
+	if errors.As(err, &e) && e.Code == errs.NotFound {
+		return true
+	}
+	return false
+}
+
 func insertTriageJob(ctx context.Context, in triageJobInsert) (string, error) {
 	var id string
 	var inbound any
@@ -300,7 +315,7 @@ func loadTriageJob(ctx context.Context, jobID string) (AITriageJob, error) {
 		&analysis, &regression, &githubRun, &prURL, &errText,
 		&job.CreatedAt, &job.UpdatedAt, &completed,
 	)
-	if err == sql.ErrNoRows {
+	if isNoRow(err) {
 		return job, &errs.Error{Code: errs.NotFound, Message: "triage job not found"}
 	}
 	if err != nil {
