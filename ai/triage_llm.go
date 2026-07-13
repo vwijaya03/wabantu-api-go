@@ -252,11 +252,16 @@ func RunLLMTriageScan(ctx context.Context, p LLMScanParams) (*LLMScanRunResult, 
 		businessName = strings.TrimSpace(profile.BusinessName)
 	}
 
+	catalog, err := loadActiveCatalog(ctx, conn, 40)
+	if err != nil {
+		catalog = nil
+	}
+
 	result := &LLMScanRunResult{
 		Findings: make([]LLMScanFinding, 0, len(turns)),
 	}
 	for _, turn := range turns {
-		verdict, tok, err := judgeTriageTurn(ctx, businessName, turn)
+		verdict, tok, err := judgeTriageTurn(ctx, businessName, catalog, turn)
 		result.TurnsChecked++
 		result.InputTokens += tok.InputTokens
 		result.OutputTokens += tok.OutputTokens
