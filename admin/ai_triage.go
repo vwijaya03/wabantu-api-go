@@ -106,23 +106,33 @@ func ListAITriageAnomalies(ctx context.Context, p *ListAITriageAnomaliesParams) 
 	if p.Limit > 0 {
 		limit = p.Limit
 	}
-	entries, err := ai.FetchRecentAIActivityAnomalies(ctx, schema, limit)
+	if limit > ai.TriageAnomalyMax() {
+		limit = ai.TriageAnomalyMax()
+	}
+
+	out, err := listAnomaliesFromSnapshot(ctx, p.TenantID, limit)
 	if err != nil {
 		return nil, &errs.Error{Code: errs.Internal, Message: "list anomalies failed"}
 	}
-	out := make([]AITriageAnomaly, 0, len(entries))
-	for _, e := range entries {
-		out = append(out, AITriageAnomaly{
-			TenantID:        p.TenantID,
-			TenantSchema:    schema,
-			Path:            e.Path,
-			Reason:          e.Reason,
-			ConversationID:  e.ConversationID,
-			InboundID:       e.InboundID,
-			UserText:        e.UserText,
-			CreatedAt:       e.CreatedAt,
-			ReviewSuggested: e.ReviewSuggested,
-		})
+	if len(out) == 0 {
+		entries, err := ai.FetchRecentAIActivityAnomalies(ctx, schema, limit)
+		if err != nil {
+			return nil, &errs.Error{Code: errs.Internal, Message: "list anomalies failed"}
+		}
+		out = make([]AITriageAnomaly, 0, len(entries))
+		for _, e := range entries {
+			out = append(out, AITriageAnomaly{
+				TenantID:        p.TenantID,
+				TenantSchema:    schema,
+				Path:            e.Path,
+				Reason:          e.Reason,
+				ConversationID:  e.ConversationID,
+				InboundID:       e.InboundID,
+				UserText:        e.UserText,
+				CreatedAt:       e.CreatedAt,
+				ReviewSuggested: e.ReviewSuggested,
+			})
+		}
 	}
 	return &ListAITriageAnomaliesResponse{Anomalies: out}, nil
 }

@@ -13,12 +13,17 @@ import (
 )
 
 const (
-	triageMaxMessages      = 200
-	triageAnchorBefore     = 80
-	triageAnchorAfter      = 20
-	triageAnomalyDefault   = 50
-	triageAnomalyMax       = 100
+	triageMaxMessages           = 200
+	triageAnchorBefore          = 80
+	triageAnchorAfter           = 20
+	triageAnomalyDefault        = 50
+	triageAnomalyMax            = 100
+	triageAnomalyPerTenantLimit = 50
+	triageAnomalyGlobalCap      = 200
 )
+
+// TriageAnomalyWindow is the lookback for cron and live anomaly listing.
+const TriageAnomalyWindow = time.Hour
 
 // TriageMessage is one inbox row used for routing replay (read-only).
 type TriageMessage struct {
@@ -387,6 +392,11 @@ func escapeGoString(s string) string {
 	return strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`, "\r", "").Replace(s)
 }
 
+// TriageAnomalyMax returns the API max limit for anomaly listing.
+func TriageAnomalyMax() int {
+	return triageAnomalyMax
+}
+
 // FetchRecentAIActivityAnomalies lists recent ai_activity rows for superadmin review (read-only).
 func FetchRecentAIActivityAnomalies(ctx context.Context, tenantSchema string, limit int) ([]TriageAnomalyEntry, error) {
 	tenantSchema = strings.TrimSpace(tenantSchema)
@@ -407,9 +417,9 @@ func FetchRecentAIActivityAnomalies(ctx context.Context, tenantSchema string, li
 		SELECT metadata, created_at
 		FROM usage_event
 		WHERE event_type = $1
-		  AND created_at >= now() - interval '1 hour'
+		  AND created_at >= now() - $2::interval
 		ORDER BY created_at DESC
-		LIMIT $2`, "ai_activity", limit)
+		LIMIT $3`, "ai_activity", formatPGInterval(TriageAnomalyWindow), limit)
 	if err != nil {
 		return nil, err
 	}

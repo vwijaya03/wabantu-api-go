@@ -212,10 +212,11 @@ sequenceDiagram
 - Tab Mencurigakan + Investigasi + tombol Jalankan loop + link PR
 - Link dari halaman AI Activity
 
-### Fase 5 — Cron auto-scan (~0.5 hari, api-go)
+### Fase 5 — Cron auto-scan (~0.5 hari, api-go) ✅
 
-- Scan `usage_event` type `ai_activity` 1x/jam (batas Encore free)
-- Isi daftar mencurigakan di UI
+- [x] Cron `ai-triage-anomaly-scan` 1×/jam (`0 * * * *`)
+- [x] Tabel system `ai_triage_anomaly` — snapshot read-only per tenant
+- [x] Cap 50/tenant, 200 global; `GET anomalies` baca snapshot + fallback live
 - Ikuti query & cap di § [Scale & safety guardrails](#scale--safety-guardrails-jutaan-message)
 
 ---

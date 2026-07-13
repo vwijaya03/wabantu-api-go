@@ -75,6 +75,37 @@ func ListSchemaNames(ctx context.Context) ([]string, error) {
 	return names, rows.Err()
 }
 
+// ActiveTenantSchema pairs a live tenant id with its PostgreSQL schema name.
+type ActiveTenantSchema struct {
+	TenantID   string
+	SchemaName string
+}
+
+// ListActiveTenantSchemas returns non-deleted tenants with a registered schema.
+func ListActiveTenantSchemas(ctx context.Context) ([]ActiveTenantSchema, error) {
+	rows, err := system.DB.Query(ctx,
+		`SELECT tc.tenant_id::text, tc.schema_name
+		 FROM tenant_company tc
+		 JOIN tenant t ON t.id = tc.tenant_id
+		 WHERE tc.schema_name IS NOT NULL AND tc.schema_name <> ''
+		   AND t.deleted_at IS NULL
+		 ORDER BY tc.schema_name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]ActiveTenantSchema, 0)
+	for rows.Next() {
+		var item ActiveTenantSchema
+		if err := rows.Scan(&item.TenantID, &item.SchemaName); err != nil {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
 // ---------- request / response ----------
 
 type CreateTenantParams struct {
