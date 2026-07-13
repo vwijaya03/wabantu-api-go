@@ -192,9 +192,19 @@ sequenceDiagram
 
 ### Fase 3 — GitHub Actions (~1 hari, api-go)
 
-- `.github/workflows/ai-triage-fix.yml` — test, fix, PR draft
-- `.github/workflows/ai-regression.yml` — gate tiap PR
-- `scripts/triage-apply.go` — tulis auto-gen test file
+- [x] `.github/workflows/ai-triage-fix.yml` — fetch job → apply regression → test → draft PR → callback Encore
+- [x] `.github/workflows/ai-regression.yml` — gate tiap PR ke `master`
+- [x] `scripts/triage-apply.go` — tulis `conversation_regression_auto_gen_test.go`
+- [x] Internal API: `GET/POST /api/v1/internal/ai-triage/jobs/:id` (+ `/complete`)
+
+**GitHub repo secrets (wabantu-api-go):**
+
+| Secret | Isi |
+|--------|-----|
+| `AI_INTERNAL_TOKEN` | Sama dengan Encore secret `AiInternalToken` |
+| `ENCORE_STAGING_API_URL` | Base URL staging tanpa `/api/v1` (mis. `https://staging-wabantu-viko-8vni.encr.app`) |
+
+**Catatan:** Workflow tidak auto-fix `autoreply.go` — hanya draft PR berisi regression cases; routing fix manual review.
 
 ### Fase 4 — UI Superadmin (~1 hari, web-frontend)
 
@@ -229,7 +239,7 @@ encore secret set --env=staging GitHubActionsToken
 encore secret set --env=prod GitHubActionsToken
 ```
 
-Branch protection `master`: require check AI Regression setelah Fase 3.
+Branch protection `master`: require check **AI Regression** setelah Fase 3 merge.
 
 ---
 

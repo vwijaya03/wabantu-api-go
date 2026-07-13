@@ -1,0 +1,28 @@
+name: AI Regression
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+jobs:
+  ai-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Install Encore CLI
+        run: |
+          curl -L https://encore.dev/install.sh | bash
+          echo "$HOME/.encore/bin" >> "$GITHUB_PATH"
+
+      - name: Run AI conversation regression
+        run: ./scripts/run-ai-regression-tests.sh

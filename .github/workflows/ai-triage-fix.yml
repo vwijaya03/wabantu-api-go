@@ -1,0 +1,134 @@
+name: AI Triage Fix
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: ai_triage_job UUID from Encore
+        required: true
+        type: string
+      tenant_schema:
+        description: Tenant schema (for PR body)
+        required: false
+        type: string
+      conversation_id:
+        description: Conversation UUID (for PR body)
+        required: false
+        type: string
+      inbound_id:
+        description: Inbound message UUID (for PR body)
+        required: false
+        type: string
+      regression_code:
+        description: Deprecated — workflow fetches job from Encore API
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  triage-fix:
+    runs-on: ubuntu-latest
+    env:
+      JOB_ID: ${{ github.event.inputs.job_id }}
+      ENCORE_API_URL: ${{ secrets.ENCORE_STAGING_API_URL }}
+      AI_INTERNAL_TOKEN: ${{ secrets.AI_INTERNAL_TOKEN }}
+      TENANT_SCHEMA: ${{ github.event.inputs.tenant_schema }}
+      CONVERSATION_ID: ${{ github.event.inputs.conversation_id }}
+      INBOUND_ID: ${{ github.event.inputs.inbound_id }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Install Encore CLI
+        run: |
+          curl -L https://encore.dev/install.sh | bash
+          echo "$HOME/.encore/bin" >> "$GITHUB_PATH"
+
+      - name: Fetch triage job from Encore
+        run: |
+          set -euo pipefail
+          if [ -z "${ENCORE_API_URL:-}" ] || [ -z "${AI_INTERNAL_TOKEN:-}" ]; then
+            echo "Repository secrets required: ENCORE_STAGING_API_URL, AI_INTERNAL_TOKEN" >&2
+            exit 1
+          fi
+          curl -fsS \
+            -H "X-Ai-Internal-Token: $AI_INTERNAL_TOKEN" \
+            "$ENCORE_API_URL/api/v1/internal/ai-triage/jobs/$JOB_ID" \
+            -o /tmp/triage_job.json
+          python3 - <<'PY'
+          import json, sys
+          with open("/tmp/triage_job.json") as f:
+              job = json.load(f).get("job") or {}
+          code = (job.get("regressionCode") or "").strip()
+          if not code:
+              sys.exit("job.regressionCode is empty")
+          with open("/tmp/regression.go", "w") as out:
+              out.write(code)
+          PY
+
+      - name: Apply auto-gen regression file
+        run: go run scripts/triage-apply.go --job-id "$JOB_ID" < /tmp/regression.go
+
+      - name: Run AI regression tests
+        run: ./scripts/run-ai-regression-tests.sh
+
+      - name: Create draft PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          BRANCH="fix/ai-triage-${JOB_ID:0:8}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add ai/conversation_regression_auto_gen_test.go
+          git commit -m "test(ai-triage): regression cases job $JOB_ID"
+          git push origin "$BRANCH"
+          PR_URL=$(gh pr create --draft \
+            --title "test(ai-triage): regression job ${JOB_ID:0:8}" \
+            --body "## AI Triage Loop (auto)
+
+          - Job: \`$JOB_ID\`
+          - Tenant schema: \`${TENANT_SCHEMA:-}\`
+          - Conversation: \`${CONVERSATION_ID:-}\`
+          - Inbound: \`${INBOUND_ID:-}\`
+
+          Regression cases di \`conversation_regression_auto_gen_test.go\`.
+          Routing fix di \`ai/autoreply.go\` perlu review manual agar production match simulator.")
+          echo "pr_url=$PR_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Report completion to Encore
+        if: success()
+        run: |
+          curl -fsS -X POST \
+            -H "Content-Type: application/json" \
+            -H "X-Ai-Internal-Token: $AI_INTERNAL_TOKEN" \
+            -d "$(jq -n \
+              --arg status "pr_ready" \
+              --arg pr "${{ steps.pr.outputs.pr_url }}" \
+              --arg run "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+              '{status:$status, prUrl:$pr, githubRunUrl:$run}')" \
+            "$ENCORE_API_URL/api/v1/internal/ai-triage/jobs/$JOB_ID/complete"
+
+      - name: Report failure to Encore
+        if: failure()
+        run: |
+          curl -fsS -X POST \
+            -H "Content-Type: application/json" \
+            -H "X-Ai-Internal-Token: $AI_INTERNAL_TOKEN" \
+            -d "$(jq -n \
+              --arg status "failed" \
+              --arg err "workflow failed — see Actions run" \
+              --arg run "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+              '{status:$status, errorText:$err, githubRunUrl:$run}')" \
+            "$ENCORE_API_URL/api/v1/internal/ai-triage/jobs/$JOB_ID/complete" || true

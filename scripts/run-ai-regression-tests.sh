@@ -9,4 +9,4 @@ echo "Checking Encore test Postgres cluster..."
 
 echo ""
 echo "Running AI conversation regression loop..."
-encore test ./ai/ -run 'TestConversationRegression|TestTryPaymentFAQAnswer|TestIsOrderRefStatusLookup|TestIsPaymentProofInbound' -count=1 "$@"
+encore test ./ai/ -run 'TestConversationRegression|TestConversationRegressionAutoGen|TestTryPaymentFAQAnswer|TestIsOrderRefStatusLookup|TestIsPaymentProofInbound' -count=1 "$@"
