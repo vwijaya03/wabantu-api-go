@@ -31,7 +31,7 @@ const (
 	triageWorkflowFile          = "ai-triage-fix.yml"
 )
 
-var triageSecrets struct {
+var secrets struct {
 	GitHubActionsToken string
 	AiInternalToken    string
 }
@@ -373,7 +373,7 @@ func dispatchTriageWorkflowAsync(jobID, tenantSchema, conversationID, inboundID,
 }
 
 func dispatchGitHubTriageWorkflow(ctx context.Context, jobID string, inputs map[string]string) error {
-	token := strings.TrimSpace(triageSecrets.GitHubActionsToken)
+	token := strings.TrimSpace(secrets.GitHubActionsToken)
 	if token == "" {
 		return fmt.Errorf("GitHubActionsToken not configured")
 	}

@@ -108,7 +108,7 @@ func completeTriageJob(ctx context.Context, jobID, status, prURL, githubRunURL, 
 }
 
 func assertTriageInternalToken(token string) error {
-	expected := strings.TrimSpace(triageSecrets.AiInternalToken)
+	expected := strings.TrimSpace(secrets.AiInternalToken)
 	if expected == "" || token == "" {
 		return &errs.Error{Code: errs.Unauthenticated, Message: "Unauthorized internal request"}
 	}

@@ -92,6 +92,7 @@ RAJAONGKIR_API_KEY="$(env_get RAJAONGKIR_API_KEY || true)"
 RAJAONGKIR_ACCOUNT_TYPE="$(env_get RAJAONGKIR_ACCOUNT_TYPE || true)"
 SENTRY_DSN="$(env_get SENTRY_DSN || true)"
 PLATFORM_ADMIN_BOOTSTRAP="$(env_get PLATFORM_ADMIN_BOOTSTRAP_SECRET || true)"
+GITHUB_ACTIONS_TOKEN="$(env_get GITHUB_ACTIONS_TOKEN || true)"
 
 set_cloud_secret JWTSecret "$JWT_ACCESS_SECRET"
 set_cloud_secret DataEncryptionKey "$DATA_ENCRYPTION_KEY"
@@ -107,5 +108,6 @@ set_cloud_secret RajaOngkirAPIKey "$RAJAONGKIR_API_KEY" true
 set_cloud_secret RajaOngkirAccountType "${RAJAONGKIR_ACCOUNT_TYPE:-starter}" true
 set_cloud_secret SentryDSN "$SENTRY_DSN" true
 set_cloud_secret PlatformAdminBootstrapSecret "$PLATFORM_ADMIN_BOOTSTRAP"
+set_cloud_secret GitHubActionsToken "$GITHUB_ACTIONS_TOKEN" true
 
 echo "Done. Verify: encore secret list --env=$ENV_NAME"
