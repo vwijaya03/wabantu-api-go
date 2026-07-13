@@ -41,7 +41,8 @@ func judgeTriageTurn(ctx context.Context, businessName string, catalog []dbCatal
 	if biz == "" {
 		biz = "(tidak diketahui)"
 	}
-	userPrompt := buildJudgeUserPrompt(biz, catalog, turn)
+	compact := relevantCatalogForTurn(turn, catalog)
+	userPrompt := buildJudgeUserPrompt(biz, compact, turn)
 
 	text, usage, err := client.CompleteText(ctx, DefaultHaikuAPIID(), triageJudgeSystemPrompt, userPrompt, 256)
 	if err != nil {
@@ -53,13 +54,7 @@ func judgeTriageTurn(ctx context.Context, businessName string, catalog []dbCatal
 		rlog.Warn("triage llm judge parse failed", "raw", previewText(text, 200), "err", err)
 		return llmJudgeVerdict{}, usage, err
 	}
-	if verdict.Category == "ok" {
-		verdict.Flagged = false
-	}
-	normalizeJudgeVerdict(&verdict)
-	reconcileJudgeVerdict(&verdict)
-	enforceMisroutedOutOfScope(&verdict, turn)
-	softenCatalogHallucinationVerdict(&verdict, turn.ReplyText, catalog)
+	finalizeJudgeVerdict(&verdict, turn, catalog)
 	return verdict, usage, nil
 }
 
@@ -234,10 +229,16 @@ func truncateForJudge(s string, max int) string {
 	return s[:max] + "…"
 }
 
-func recordTriageJudgeActivity(ctx context.Context, tenantSchema, tenantID string, turn AITriageTurn, v llmJudgeVerdict, tok CompletionUsage) error {
+func recordTriageJudgeActivity(ctx context.Context, tenantSchema, tenantID string, turn AITriageTurn, v llmJudgeVerdict, tok CompletionUsage, llmUsed bool) error {
 	reason := v.Reason
 	if !v.Flagged {
 		reason = "ok: " + reason
+	}
+	model := ""
+	tier := ""
+	if llmUsed {
+		model = DefaultHaikuAPIID()
+		tier = "haiku"
 	}
 	return usage.RecordAIActivity(ctx, usage.AIActivityParams{
 		TenantSchema:   tenantSchema,
@@ -247,9 +248,9 @@ func recordTriageJudgeActivity(ctx context.Context, tenantSchema, tenantID strin
 		Purpose:        usage.PurposeTriageLLMJudge,
 		Path:           turn.Path,
 		Reason:         reason,
-		Model:          DefaultHaikuAPIID(),
-		Tier:           "haiku",
-		LLMUsed:        true,
+		Model:          model,
+		Tier:           tier,
+		LLMUsed:        llmUsed,
 		InputTokens:    tok.InputTokens,
 		OutputTokens:   tok.OutputTokens,
 	})
