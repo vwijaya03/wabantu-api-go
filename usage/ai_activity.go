@@ -23,6 +23,7 @@ const (
 	PurposeTransactionImport   = "transaction_import"
 	PurposePaymentProofOCR     = "payment_proof_ocr"
 	PurposeProductImageMatch   = "product_image_match"
+	PurposeTriageLLMJudge     = "triage_llm_judge"
 )
 
 // AIActivityParams is one auditable AI decision or model call for a tenant.

@@ -219,6 +219,14 @@ sequenceDiagram
 - [x] Cap 50/tenant, 200 global; `GET anomalies` baca snapshot + fallback live
 - Ikuti query & cap di § [Scale & safety guardrails](#scale--safety-guardrails-jutaan-message)
 
+### Fase 6 — LLM-as-judge window scan (~2 hari, api-go + web-frontend) ✅
+
+- `POST /api/v1/admin/ai-triage/llm-scans` — scan read-only pasangan pesan dalam rentang waktu (max 6 jam, 30 turn)
+- `GET /api/v1/admin/ai-triage/llm-scans/:id` — poll status + findings
+- Haiku judge: flag balasan bermasalah (wrong_answer, off_topic, hallucination, dll.)
+- UI tab **AI Review** — datetime picker + tabel flagged + link ke Jalankan loop
+- **Tidak** auto-dispatch GHA; komplementer dengan simulator routing (Fase 1–3)
+
 ---
 
 ## Urutan deploy
@@ -246,7 +254,6 @@ Branch protection `master`: require check **AI Regression** setelah Fase 3 merge
 
 ## Yang ditunda (bukan next dev)
 
-- LLM-as-judge untuk assert teks balasan
 - Auto-merge PR tanpa human
 - Auto-deploy setelah merge
 - Integration test 3280 di CI
