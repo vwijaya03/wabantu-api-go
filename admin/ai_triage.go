@@ -30,7 +30,7 @@ const (
 )
 
 var triageSecrets struct {
-	GitHubToken string
+	GitHubActionsToken string
 }
 
 // ---------- Types ----------
@@ -328,9 +328,9 @@ func dispatchTriageWorkflowAsync(jobID, tenantSchema, conversationID, inboundID,
 }
 
 func dispatchGitHubTriageWorkflow(ctx context.Context, jobID string, inputs map[string]string) error {
-	token := strings.TrimSpace(triageSecrets.GitHubToken)
+	token := strings.TrimSpace(triageSecrets.GitHubActionsToken)
 	if token == "" {
-		return fmt.Errorf("GITHUB_TOKEN not configured")
+		return fmt.Errorf("GitHubActionsToken not configured")
 	}
 
 	payload := map[string]any{
