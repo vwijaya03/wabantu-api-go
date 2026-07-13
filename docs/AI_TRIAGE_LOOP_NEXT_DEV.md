@@ -47,6 +47,80 @@ flowchart TB
 
 ---
 
+## Scale & safety guardrails (jutaan message)
+
+Loop triage **tidak** memindai seluruh tabel `message`. Volume global aman selama setiap operasi tetap **scoped + dibatasi**.
+
+### Prinsip
+
+| Layer | Tabel | Skala operasi triage |
+|-------|-------|----------------------|
+| Hot path | `message` | Setiap pesan WA masuk — **tidak disentuh** triage |
+| Cold path — cron | `usage_event` | ~1 baris per AI reply; scan jam terakhir saja |
+| Cold path — analyzer | `message` | Hanya `conversation_id` yang diflag; puluhan–ratusan baris |
+
+`usage_event` lebih kecil dari `message` (tidak semua pesan punya baris AI activity). Index yang sudah ada: `idx_usage_event_type_created` pada `(event_type, created_at)`; `message` punya `idx_message_conv_created`.
+
+### Query wajib (implementasi)
+
+**Cron mencurigakan (Fase 5)** — jangan full scan:
+
+```sql
+SELECT id, metadata, created_at
+FROM "{tenant_schema}".usage_event
+WHERE event_type = 'ai_activity'
+  AND created_at >= now() - interval '1 hour'
+ORDER BY created_at DESC
+LIMIT 50;
+```
+
+- Jalankan **per tenant aktif** dengan cap total baris lintas tenant (mis. max 200/jam).
+- Cron hanya **mengisi daftar UI** — tidak auto-trigger GHA tanpa klik superadmin.
+
+**Analyzer (Fase 1)** — wajib filter conversation:
+
+```sql
+SELECT id, direction, body, metadata, created_at
+FROM "{tenant_schema}".message
+WHERE conversation_id = $1
+ORDER BY created_at ASC
+LIMIT 200;
+```
+
+- **Dilarang:** `SELECT` tanpa `conversation_id`, scan lintas tenant dalam satu job, atau `COUNT(*)` full table untuk anomaly.
+
+**API list anomalies** — pagination + `LIMIT` (default 50, max 100).
+
+### Batas konkuren & antrian
+
+| Guardrail | Nilai | Alasan |
+|-----------|-------|--------|
+| Job triage concurrent | Max 3 | Lindungi DB + GitHub API |
+| Pesan per analisa | Max 200 | Cukup untuk konteks routing; hindari load chat panjang |
+| Cron frequency | 1×/jam | Batas cron Encore free + beban read rendah |
+| Dispatch GHA | 1 workflow per job | Queue `ai_triage_job`; status `pending` → `running` → `completed` / `failed` |
+| Akses API | `super_admin` only | Tidak expose ke tenant owner |
+
+### Risiko di scale besar & mitigasi
+
+| Risiko | Mitigasi |
+|--------|----------|
+| `usage_event` membengkak (tahun+) | Retention opsional untuk row triage (mis. 90 hari); rollup anomaly sudah tersimpan di `ai_triage_job` |
+| Banyak tenant × cron | Cap global per run; prioritas tenant dengan anomaly rate tinggi (v2) |
+| Chat sangat panjang (>200 pesan) | Analyzer pakai 200 pesan terakhir saja (`ORDER BY created_at DESC LIMIT 200` lalu reverse) |
+| GHA spam PR draft | Human wajib klik "Jalankan loop"; cron tidak dispatch otomatis |
+| Index tidak dipakai | Review `EXPLAIN` saat implementasi; jangan query tanpa filter `event_type` / `conversation_id` |
+
+### Checklist review sebelum merge implementasi
+
+- [ ] Semua query triage punya `LIMIT` eksplisit
+- [ ] Tidak ada `Publish` ke `ai-jobs` / `payment-proof-jobs` dari package triage
+- [ ] Job concurrent dicek di DB atau Redis sebelum dispatch GHA
+- [ ] Test load: tenant mock 10k `usage_event` + cron → selesai <5 detik read-only
+- [ ] Test analyzer: conversation 500 pesan → hanya fetch 200, tidak timeout
+
+---
+
 ## Requirement
 
 | Yang diinginkan | Yang tidak diinginkan |
@@ -132,6 +206,7 @@ sequenceDiagram
 
 - Scan `usage_event` type `ai_activity` 1x/jam (batas Encore free)
 - Isi daftar mencurigakan di UI
+- Ikuti query & cap di § [Scale & safety guardrails](#scale--safety-guardrails-jutaan-message)
 
 ---
 
