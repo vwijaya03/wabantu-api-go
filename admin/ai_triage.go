@@ -24,9 +24,11 @@ const (
 	triageJobStatusPRReady = "pr_ready"
 	triageJobStatusFailed  = "failed"
 
-	triageMaxConcurrentJobs = 3
-	triageGitHubRepo        = "vwijaya03/wabantu-api-go"
-	triageWorkflowFile      = "ai-triage-fix.yml"
+	triageMaxConcurrentJobs   = 3
+	triageJobStalePendingAfter  = 3 * time.Minute
+	triageJobStaleRunningAfter  = 2 * time.Hour
+	triageGitHubRepo            = "vwijaya03/wabantu-api-go"
+	triageWorkflowFile          = "ai-triage-fix.yml"
 )
 
 var triageSecrets struct {
@@ -149,6 +151,12 @@ func CreateAITriageJob(ctx context.Context, p *CreateAITriageJobParams) (*Create
 		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "tenantId and conversationId required"}
 	}
 
+	if reclaimed, reclaimErr := reclaimStaleTriageJobs(ctx); reclaimErr != nil {
+		rlog.Warn("reclaim stale triage jobs failed", "err", reclaimErr)
+	} else if reclaimed > 0 {
+		rlog.Info("reclaimed stale triage jobs", "count", reclaimed)
+	}
+
 	active, err := countActiveTriageJobs(ctx)
 	if err != nil {
 		return nil, &errs.Error{Code: errs.Internal, Message: "check triage queue failed"}
@@ -226,6 +234,29 @@ func countActiveTriageJobs(ctx context.Context) (int, error) {
 		triageJobStatusPending, triageJobStatusRunning,
 	).Scan(&n)
 	return n, err
+}
+
+// reclaimStaleTriageJobs fails zombie jobs that block the concurrent queue.
+// Pending jobs should dispatch within minutes; running jobs should complete via GHA callback.
+func reclaimStaleTriageJobs(ctx context.Context) (int, error) {
+	pendingCutoff := time.Now().UTC().Add(-triageJobStalePendingAfter)
+	runningCutoff := time.Now().UTC().Add(-triageJobStaleRunningAfter)
+	res, err := system.DB.Exec(ctx, `
+		UPDATE ai_triage_job
+		SET status = $1::varchar,
+		    error_text = COALESCE(NULLIF(error_text, ''), 'stale job reclaimed'),
+		    updated_at = now(),
+		    completed_at = now()
+		WHERE status = $2::varchar AND created_at < $3
+		   OR status = $4::varchar AND updated_at < $5`,
+		triageJobStatusFailed,
+		triageJobStatusPending, pendingCutoff,
+		triageJobStatusRunning, runningCutoff,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return int(res.RowsAffected()), nil
 }
 
 func insertTriageJob(ctx context.Context, in triageJobInsert) (string, error) {
@@ -320,6 +351,7 @@ func dispatchTriageWorkflowAsync(jobID, tenantSchema, conversationID, inboundID,
 
 	if err := updateTriageJobStatus(ctx, jobID, triageJobStatusRunning, "", ""); err != nil {
 		rlog.Error("triage job status running failed", "jobId", jobID, "err", err)
+		_ = updateTriageJobStatus(ctx, jobID, triageJobStatusFailed, "status running update failed: "+err.Error(), "")
 		return
 	}
 
