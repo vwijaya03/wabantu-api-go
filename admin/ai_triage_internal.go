@@ -40,13 +40,14 @@ func GetInternalAITriageJob(w http.ResponseWriter, req *http.Request) {
 		writeTriageJSONError(w, err)
 		return
 	}
-	id := strings.TrimSpace(req.PathValue("id"))
+	id := triageJobIDFromPath(req)
 	if id == "" {
 		writeTriageJSONError(w, &errs.Error{Code: errs.InvalidArgument, Message: "job id required"})
 		return
 	}
 	job, err := loadTriageJob(ctx, id)
 	if err != nil {
+		rlog.Warn("load triage job for internal api failed", "jobId", id, "err", err)
 		writeTriageJSONError(w, err)
 		return
 	}
@@ -62,7 +63,7 @@ func CompleteInternalAITriageJob(w http.ResponseWriter, req *http.Request) {
 		writeTriageJSONError(w, err)
 		return
 	}
-	id := strings.TrimSpace(req.PathValue("id"))
+	id := triageJobIDFromPath(req)
 	if id == "" {
 		writeTriageJSONError(w, &errs.Error{Code: errs.InvalidArgument, Message: "job id required"})
 		return
@@ -105,6 +106,24 @@ func completeTriageJob(ctx context.Context, jobID, status, prURL, githubRunURL, 
 		jobID, status, prURL, githubRunURL, errText,
 	)
 	return err
+}
+
+func triageJobIDFromPath(req *http.Request) string {
+	if v := strings.TrimSpace(req.PathValue("id")); v != "" {
+		return v
+	}
+	parts := strings.Split(strings.Trim(req.URL.Path, "/"), "/")
+	for i, p := range parts {
+		if p != "jobs" || i+1 >= len(parts) {
+			continue
+		}
+		id := strings.TrimSpace(parts[i+1])
+		if id == "" || id == "complete" {
+			continue
+		}
+		return id
+	}
+	return ""
 }
 
 func assertTriageInternalToken(token string) error {
