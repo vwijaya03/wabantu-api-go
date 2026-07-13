@@ -8,6 +8,7 @@ import (
 
 	"encore.dev/rlog"
 
+	"encore.app/wabantu/tenant"
 	"encore.app/wabantu/usage"
 )
 
@@ -60,6 +61,45 @@ func judgeTriageTurn(ctx context.Context, businessName string, catalog []dbCatal
 	enforceMisroutedOutOfScope(&verdict, turn)
 	softenCatalogHallucinationVerdict(&verdict, turn.ReplyText, catalog)
 	return verdict, usage, nil
+}
+
+// TriageJudgeResult is the public verdict shape for report async judge.
+type TriageJudgeResult struct {
+	Flagged  bool   `json:"flagged"`
+	Severity string `json:"severity,omitempty"`
+	Category string `json:"category,omitempty"`
+	Reason   string `json:"reason,omitempty"`
+}
+
+// JudgeTriageTurn runs Haiku QA on one turn (cold path).
+func JudgeTriageTurn(ctx context.Context, businessName string, catalog []dbCatalogItem, turn AITriageTurn) (TriageJudgeResult, CompletionUsage, error) {
+	v, usage, err := judgeTriageTurn(ctx, businessName, catalog, turn)
+	if err != nil {
+		return TriageJudgeResult{}, usage, err
+	}
+	return TriageJudgeResult{
+		Flagged:  v.Flagged,
+		Severity: v.Severity,
+		Category: v.Category,
+		Reason:   v.Reason,
+	}, usage, nil
+}
+
+// JudgeReportTurn loads tenant catalog/profile and runs Haiku QA on one turn.
+func JudgeReportTurn(ctx context.Context, tenantSchema string, turn AITriageTurn) (TriageJudgeResult, error) {
+	conn, err := tenant.TenantConn(ctx, tenantSchema)
+	if err != nil {
+		return TriageJudgeResult{}, err
+	}
+	defer conn.Close()
+
+	businessName := ""
+	if profile, err := loadBusinessProfile(ctx, conn); err == nil && profile != nil {
+		businessName = strings.TrimSpace(profile.BusinessName)
+	}
+	catalog, _ := loadActiveCatalog(ctx, conn, 40)
+	result, _, err := JudgeTriageTurn(ctx, businessName, catalog, turn)
+	return result, err
 }
 
 func buildJudgeUserPrompt(businessName string, catalog []dbCatalogItem, turn AITriageTurn) string {
