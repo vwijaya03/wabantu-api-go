@@ -204,6 +204,7 @@ sequenceDiagram
 | `AI_INTERNAL_TOKEN` | Sama dengan Encore secret `AiInternalToken` |
 | `ENCORE_STAGING_API_URL` | Base URL staging tanpa `/api/v1` (mis. `https://staging-wabantu-viko-8vni.encr.app`) |
 | `ENCORE_AUTH_KEY` | Auth key dari Encore Cloud → App Settings → Auth Keys (untuk `encore test` di GHA) |
+| `GITHUB_PAT` | (Opsional) PAT dengan scope `repo` jika org memblokir `GITHUB_TOKEN` membuat PR — atau aktifkan **Settings → Actions → Allow GitHub Actions to create and approve pull requests** |
 
 **Catatan:** Workflow tidak auto-fix `autoreply.go` — hanya draft PR berisi regression cases; routing fix manual review.
 
