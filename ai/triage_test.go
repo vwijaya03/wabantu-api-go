@@ -100,11 +100,26 @@ func TestGenerateRegressionCases(t *testing.T) {
 		UserText:     "bisa minta nomor rekeningnya ga sih ?",
 		ExpectedPath: PathPaymentFAQ,
 	}}, "t_omah_apparel")
-	if !strings.Contains(code, "PathPaymentFAQ") {
-		t.Fatalf("missing path const: %s", code)
+	if !strings.Contains(code, "wantPath: PathPaymentFAQ") {
+		t.Fatalf("wantPath should reference const, got: %s", code)
+	}
+	if strings.Contains(code, `wantPath: "PathPaymentFAQ"`) {
+		t.Fatalf("wantPath must not be quoted const name: %s", code)
 	}
 	if !strings.Contains(code, "nomor rekening") {
 		t.Fatalf("missing input text: %s", code)
+	}
+
+	consulting := GenerateRegressionCases([]TriageMismatch{{
+		InboundID:    "1df31813",
+		UserText:     "berapa harga kaosnya?",
+		ExpectedPath: PathConsulting,
+	}}, "t_omah_apparel")
+	if !strings.Contains(consulting, "wantPath: PathConsulting") {
+		t.Fatalf("consulting path should use const: %s", consulting)
+	}
+	if strings.Contains(consulting, `\"consulting\"`) {
+		t.Fatalf("consulting path must not be double-quoted: %s", consulting)
 	}
 }
 

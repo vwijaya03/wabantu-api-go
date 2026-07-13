@@ -347,7 +347,7 @@ func GenerateRegressionCases(mismatches []TriageMismatch, tenantSchema string) s
 		}
 		name := regressionCaseName(m.InboundID, added)
 		input := escapeGoString(m.UserText)
-		b.WriteString(fmt.Sprintf("\t\t{\n\t\t\tname: %q,\n\t\t\tinput: %q,\n\t\t\twantPath: %q,\n\t\t},\n",
+		b.WriteString(fmt.Sprintf("\t\t{\n\t\t\tname: %q,\n\t\t\tinput: %q,\n\t\t\twantPath: %s,\n\t\t},\n",
 			name, input, pathConstName(m.ExpectedPath)))
 		added++
 	}
@@ -383,6 +383,8 @@ func pathConstName(path string) string {
 		return "PathFAQDirect"
 	case PathFAQCache:
 		return "PathFAQCache"
+	case PathConsulting:
+		return "PathConsulting"
 	default:
 		return fmt.Sprintf("%q", path)
 	}
