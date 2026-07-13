@@ -48,6 +48,7 @@ type AITriageAnomaly struct {
 	Reason          string    `json:"reason,omitempty"`
 	ConversationID  string    `json:"conversationId,omitempty"`
 	InboundID       string    `json:"inboundId,omitempty"`
+	UserText        string    `json:"userText,omitempty"`
 	CreatedAt       time.Time `json:"createdAt"`
 	ReviewSuggested bool      `json:"reviewSuggested"`
 }
@@ -118,6 +119,7 @@ func ListAITriageAnomalies(ctx context.Context, p *ListAITriageAnomaliesParams) 
 			Reason:          e.Reason,
 			ConversationID:  e.ConversationID,
 			InboundID:       e.InboundID,
+			UserText:        e.UserText,
 			CreatedAt:       e.CreatedAt,
 			ReviewSuggested: e.ReviewSuggested,
 		})
@@ -295,9 +297,9 @@ func updateTriageJobStatus(ctx context.Context, jobID, status, errText, githubRu
 		    error_text = NULLIF($3, ''),
 		    github_run_url = NULLIF($4, ''),
 		    updated_at = now(),
-		    completed_at = CASE WHEN $2 IN ($5, $6) THEN now() ELSE completed_at END
+		    completed_at = CASE WHEN $2 IN ('failed', 'pr_ready') THEN now() ELSE completed_at END
 		WHERE id = $1::uuid`,
-		jobID, status, errText, githubRunURL, triageJobStatusFailed, triageJobStatusPRReady,
+		jobID, status, errText, githubRunURL,
 	)
 	return err
 }

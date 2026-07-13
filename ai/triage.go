@@ -428,17 +428,71 @@ func FetchRecentAIActivityAnomalies(ctx context.Context, tenantSchema string, li
 		}
 		out = append(out, entry)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := enrichAnomalyUserTexts(ctx, conn, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func enrichAnomalyUserTexts(ctx context.Context, q tenantQuerier, entries []TriageAnomalyEntry) error {
+	if len(entries) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(entries))
+	seen := make(map[string]struct{}, len(entries))
+	for i := range entries {
+		id := strings.TrimSpace(entries[i].InboundID)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	rows, err := q.QueryContext(ctx, `
+		SELECT id::text, COALESCE(body, '')
+		FROM message
+		WHERE id = ANY($1::uuid[])`, ids)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	bodies := make(map[string]string, len(ids))
+	for rows.Next() {
+		var id, body string
+		if err := rows.Scan(&id, &body); err != nil {
+			return err
+		}
+		bodies[id] = body
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for i := range entries {
+		if body, ok := bodies[entries[i].InboundID]; ok {
+			entries[i].UserText = body
+		}
+	}
+	return nil
 }
 
 // TriageAnomalyEntry is one recent AI activity row suggested for review.
 type TriageAnomalyEntry struct {
-	Path           string    `json:"path"`
-	Reason         string    `json:"reason,omitempty"`
-	ConversationID string    `json:"conversationId,omitempty"`
-	InboundID      string    `json:"inboundId,omitempty"`
-	CreatedAt      time.Time `json:"createdAt"`
-	ReviewSuggested bool     `json:"reviewSuggested"`
+	Path            string    `json:"path"`
+	Reason          string    `json:"reason,omitempty"`
+	ConversationID  string    `json:"conversationId,omitempty"`
+	InboundID       string    `json:"inboundId,omitempty"`
+	UserText        string    `json:"userText,omitempty"`
+	CreatedAt       time.Time `json:"createdAt"`
+	ReviewSuggested bool      `json:"reviewSuggested"`
 }
 
 func parseAnomalyMetadata(metaJSON []byte, createdAt time.Time) TriageAnomalyEntry {
