@@ -333,7 +333,7 @@ func reclaimStaleTriageJobs(ctx context.Context) (int, error) {
 		triageJobStatusFailed,
 		triageJobStatusPending, pendingCutoff,
 		triageJobStatusRunning, runningCutoff,
-		triageJobStatusFixRunning, runningCutoff,
+		triageJobStatusFixRunning,
 	)
 	if err != nil {
 		return 0, err
