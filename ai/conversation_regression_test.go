@@ -7,12 +7,13 @@ import (
 
 // conversationRegressionCase — skenario regresi dari percakapan WA nyata (Omah Apparel thread Jul 2026).
 type conversationRegressionCase struct {
-	name       string
-	input      string
-	wantPath   string
-	wantSubstr []string
-	wantNot    []string
-	extraCheck func(t *testing.T, out TurnOutcome)
+	name        string
+	input       string
+	priorInputs []string
+	wantPath    string
+	wantSubstr  []string
+	wantNot     []string
+	extraCheck  func(t *testing.T, out TurnOutcome)
 }
 
 var conversationRegressionCases = []conversationRegressionCase{
@@ -78,6 +79,9 @@ func TestConversationRegression(t *testing.T) {
 			local := newOmahSimulator()
 			local.History = append([]dbMessage{}, sim.History...)
 			local.Order = sim.Order
+			for _, prior := range tc.priorInputs {
+				local.Turn(prior)
+			}
 			out := local.Turn(tc.input)
 			if tc.extraCheck != nil {
 				tc.extraCheck(t, out)

@@ -29,6 +29,9 @@ func TestConversationRegressionAutoGen(t *testing.T) {
 			local := newOmahSimulator()
 			local.History = append([]dbMessage{}, sim.History...)
 			local.Order = sim.Order
+			for _, prior := range tc.priorInputs {
+				local.Turn(prior)
+			}
 			out := local.Turn(tc.input)
 			if tc.extraCheck != nil {
 				tc.extraCheck(t, out)
