@@ -175,6 +175,12 @@ func CreateAITriageJob(ctx context.Context, p *CreateAITriageJobParams) (*Create
 	if err != nil {
 		return nil, &errs.Error{Code: errs.Internal, Message: "analyze conversation failed"}
 	}
+	if ai.CountRegressionMismatches(analysis.Mismatches) == 0 {
+		return nil, &errs.Error{
+			Code:    errs.InvalidArgument,
+			Message: "tidak ada routing mismatch deterministik di percakapan ini",
+		}
+	}
 	analysisJSON, _ := json.Marshal(analysis)
 	regressionCode := ai.GenerateRegressionCases(analysis.Mismatches, schema)
 

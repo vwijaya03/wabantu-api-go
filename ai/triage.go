@@ -331,6 +331,18 @@ func AnalyzeConversation(ctx context.Context, tenantSchema, conversationID, focu
 	return result, nil
 }
 
+// CountRegressionMismatches returns how many deterministic routing cases would be emitted.
+func CountRegressionMismatches(mismatches []TriageMismatch) int {
+	n := 0
+	for _, m := range mismatches {
+		if m.Skipped || m.ExpectedPath == "" || m.UserText == "" {
+			continue
+		}
+		n++
+	}
+	return n
+}
+
 // GenerateRegressionCases emits Go source for conversation_regression_auto_gen_test.go.
 func GenerateRegressionCases(mismatches []TriageMismatch, tenantSchema string) string {
 	var b strings.Builder
