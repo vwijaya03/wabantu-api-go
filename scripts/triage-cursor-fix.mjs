@@ -3,8 +3,10 @@
  * Cursor Composer 2.5 routing fix for AI triage jobs.
  * Reads /tmp/triage_job.json (Encore internal API) and applies minimal patches.
  */
-import { readFileSync, writeFileSync } from "node:fs";
-import { Agent, CursorAgentError } from "@cursor/sdk";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Agent, CursorAgentError, JsonlLocalAgentStore } from "@cursor/sdk";
 
 const jobPath = process.env.TRIAGE_JOB_JSON || "/tmp/triage_job.json";
 const apiKey = process.env.CURSOR_API_KEY?.trim();
@@ -20,11 +22,15 @@ const analysis = job.analysis || {};
 const prompt = buildPrompt(job, analysis);
 console.error("triage-cursor-fix: prompting Composer 2.5…");
 
+const storeDir = join(tmpdir(), "wabantu-cursor-triage", job.id || process.env.JOB_ID || "default");
+mkdirSync(storeDir, { recursive: true });
+const store = new JsonlLocalAgentStore(storeDir);
+
 try {
   const result = await Agent.prompt(prompt, {
     apiKey,
     model: { id: "composer-2.5" },
-    local: { cwd: process.cwd(), settingSources: [] },
+    local: { cwd: process.cwd(), settingSources: [], store },
   });
 
   if (result.status === "error") {
