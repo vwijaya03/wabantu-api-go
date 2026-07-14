@@ -91,7 +91,7 @@ jobs:
 
       - name: Install Cursor SDK
         working-directory: scripts
-        run: npm install @cursor/sdk
+        run: npm ci
 
       - name: Run Composer 2.5 routing fix
         env:
