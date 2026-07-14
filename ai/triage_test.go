@@ -123,6 +123,17 @@ func TestGenerateRegressionCases(t *testing.T) {
 	}
 }
 
+func TestCountRegressionMismatches(t *testing.T) {
+	mismatches := []TriageMismatch{
+		{InboundID: "a", UserText: "halo", ExpectedPath: PathGreeting},
+		{InboundID: "b", UserText: "foto", Skipped: true, SkipReason: "media"},
+		{InboundID: "c", UserText: "", ExpectedPath: PathOrderFlow},
+	}
+	if got := CountRegressionMismatches(mismatches); got != 1 {
+		t.Fatalf("CountRegressionMismatches = %d want 1", got)
+	}
+}
+
 func mustMetaPath(t *testing.T, path string) json.RawMessage {
 	t.Helper()
 	b, err := json.Marshal(AiReplyMeta{Path: path, Reason: "ai_generated"})
