@@ -99,7 +99,7 @@ func TestGenerateRegressionCases(t *testing.T) {
 		InboundID:    "abc",
 		UserText:     "bisa minta nomor rekeningnya ga sih ?",
 		ExpectedPath: PathPaymentFAQ,
-	}}, "t_omah_apparel")
+	}}, "t_omah_apparel", SimulatorToSnapshot(newOmahSimulator(), "t_omah_apparel"))
 	if !strings.Contains(code, "wantPath: PathPaymentFAQ") {
 		t.Fatalf("wantPath should reference const, got: %s", code)
 	}
@@ -114,7 +114,7 @@ func TestGenerateRegressionCases(t *testing.T) {
 		InboundID:    "1df31813",
 		UserText:     "berapa harga kaosnya?",
 		ExpectedPath: PathConsulting,
-	}}, "t_omah_apparel")
+	}}, "t_omah_apparel", SimulatorToSnapshot(newOmahSimulator(), "t_omah_apparel"))
 	if !strings.Contains(consulting, "wantPath: PathConsulting") {
 		t.Fatalf("consulting path should use const: %s", consulting)
 	}
@@ -127,9 +127,12 @@ func TestGenerateRegressionCases(t *testing.T) {
 		UserText:     "mau order abon",
 		ExpectedPath: PathOrderFlow,
 		PriorTurns:   []string{"halo", "ada stok?"},
-	}}, "t_omah_apparel")
+	}}, "t_omah_apparel", SimulatorToSnapshot(newOmahSimulator(), "t_omah_apparel"))
 	if !strings.Contains(multi, `priorInputs: []string{"halo", "ada stok?"}`) {
 		t.Fatalf("expected priorInputs in generated code: %s", multi)
+	}
+	if !strings.Contains(code, "triageAutoGenSnapshotJSON") {
+		t.Fatalf("expected catalog snapshot in generated code: %s", code)
 	}
 }
 

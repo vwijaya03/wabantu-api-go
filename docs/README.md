@@ -13,6 +13,7 @@ Peta navigasi untuk menjawab pertanyaan tentang backend WABantu. Mulai dari sini
 | Pertanyaan umum | Buka |
 |-----------------|------|
 | Alur pesan WA dari webhook sampai AI balas? | [WHATSAPP_AI_ROUTING.md](./WHATSAPP_AI_ROUTING.md) |
+| Loop engineering otomatis (AI Triage)? | [AI_TRIAGE_LOOP_NEXT_DEV.md](./AI_TRIAGE_LOOP_NEXT_DEV.md) |
 | Kenapa pesan ini dapat path `order_status` / `llm` / `catalog_db`? | [WHATSAPP_AI_ROUTING.md](./WHATSAPP_AI_ROUTING.md) → §Decision tree + §Tabel path |
 | Bagaimana AI mendeteksi intent (greeting, order, katalog)? | [WHATSAPP_AI_ROUTING.md](./WHATSAPP_AI_ROUTING.md) → §Tabel deteksi intent |
 | Cek / batal pesanan lewat chat pembeli | [ORDER_CUSTOMER_CHAT.md](./ORDER_CUSTOMER_CHAT.md) |
@@ -84,5 +85,6 @@ Peta navigasi untuk menjawab pertanyaan tentang backend WABantu. Mulai dari sini
 | File | Isi |
 |------|-----|
 | [WHATSAPP_BUYER_BEHAVIOR_TESTS.md](./WHATSAPP_BUYER_BEHAVIOR_TESTS.md) | Test perilaku buyer |
+| [AI_TRIAGE_LOOP_NEXT_DEV.md](./AI_TRIAGE_LOOP_NEXT_DEV.md) | Loop engineering AI Triage (analyze → regression → PR) |
 | [CHAOS_BUYER_RESEARCH.md](./CHAOS_BUYER_RESEARCH.md) | Riset chaos buyer |
 | [BACKEND_AUDIT_REPORT.md](./BACKEND_AUDIT_REPORT.md) | Laporan audit backend |

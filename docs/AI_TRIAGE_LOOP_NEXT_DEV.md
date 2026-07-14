@@ -206,6 +206,7 @@ Tab **AI Review** tetap punya tombol loop per percakapan untuk cek routing terse
 | Cursor fix script | `api-go/scripts/triage-cursor-fix.mjs` |
 | Golden regression | `api-go/ai/conversation_regression_test.go` |
 | Auto-gen regression | `api-go/ai/conversation_regression_auto_gen_test.go` |
+| Catalog snapshot | `api-go/ai/triage_snapshot.go` — embed tenant catalog di auto-gen test |
 
 ---
 
@@ -216,7 +217,8 @@ Tab **AI Review** tetap punya tombol loop per percakapan untuk cek routing terse
 **File:** `api-go/ai/triage.go`, `triage_test.go`
 
 - [x] `AnalyzeConversation` — replay multi-turn, bandingkan `metadata.path` vs simulator
-- [x] `GenerateRegressionCases` — output ke `conversation_regression_auto_gen_test.go` dengan **`priorInputs`** (konteks turn sebelumnya)
+- [x] `GenerateRegressionCases` — output ke `conversation_regression_auto_gen_test.go` dengan **`priorInputs`** + **`triageAutoGenSnapshotJSON`**
+- [x] `SimulatorToSnapshot` / `SimulatorFromSnapshotJSON` — freeze profile + catalog + KB tenant saat analyze
 - [x] `CountRegressionMismatches`, `EnrichAnalysisResult` (fixHints)
 - [x] Allowlist path non-deterministik: `llm`, `llm_grounded`, `llm_tools`
 - [x] Tolak job jika tidak ada mismatch deterministik
@@ -242,14 +244,22 @@ Tab **AI Review** tetap punya tombol loop per percakapan untuk cek routing terse
   "fixHints": {
     "likelyFiles": ["ai/autoreply.go", "ai/conversation_sim.go"],
     "catalogSource": "tenant_db",
-    "testUsesFixture": "newOmahSimulator"
+    "testUsesFixture": "tenant_catalog_snapshot"
+  },
+  "simulatorSnapshot": {
+    "tenantSchema": "t_omah_apparel",
+    "profile": { "businessName": "Omah Apparel" },
+    "catalog": [{ "id": "...", "name": "...", "sellPrice": 35000 }],
+    "kb": [{ "question": "Nomor Rekening", "answer": "..." }]
   },
   "cursorAgentId": "...",
   "cursorFixGithubRunUrl": "..."
 }
 ```
 
-**Catatan catalog:** analyzer pakai `BuildSimulatorFromTenant` (DB live); test GHA pakai `newOmahSimulator()` (fixture). Gap ini bisa menyebabkan false positive — Composer fix harus review diff manual.
+**Catalog snapshot (Fase 9):** saat analyze, `BuildSimulatorFromTenant` memuat katalog live tenant. Snapshot yang sama di-embed sebagai `triageAutoGenSnapshotJSON` di file auto-gen sehingga GHA replay **simulator identik** dengan analyze — bukan `newOmahSimulator()` fixture.
+
+**Batasan:** snapshot max ~40 item katalog (`loadActiveCatalog` limit). Stok per gudang ikut jika sudah di-enrich saat analyze. Tenant lain = snapshot berbeda per job.
 
 ### Fase 2 — Job API ✅
 
@@ -270,7 +280,7 @@ Tab **AI Review** tetap punya tombol loop per percakapan untuk cek routing terse
 - [x] Regression merah **tidak memblokir** PR — status `pr_ready_needs_fix`
 - [x] Artifact GHA `mismatch-report-{jobId}` (`triage_job.json`, `regression_failures.json`, log)
 - [x] `.github/workflows/ai-regression.yml` — gate golden suite tiap PR ke `master`
-- [x] `scripts/triage-apply.go` — tulis `conversation_regression_auto_gen_test.go` (replay `priorInputs`)
+- [x] `scripts/triage-apply.go` — tulis `conversation_regression_auto_gen_test.go` (replay `priorInputs` + snapshot)
 - [x] `scripts/parse-regression-failures.py` — parse output test → `regressionFailures`
 
 **GitHub repo secrets (wabantu-api-go):**
@@ -348,6 +358,24 @@ Tab **AI Review** tetap punya tombol loop per percakapan untuk cek routing terse
 - **Batch per percakapan** — satu job, banyak regression case, satu PR
 - Golden suite (`conversation_regression_test.go`) tetap kecil; auto-gen = quarantine sampai hijau
 
+### Fase 9 — Catalog snapshot di auto-gen regression ✅
+
+**Masalah yang diselesaikan:** analyzer pakai katalog tenant DB, test GHA pakai `newOmahSimulator()` → mass false positive (`want consulting` vs `order_flow`).
+
+**api-go:**
+
+- [x] `ai/triage_snapshot.go` — `TriageSimulatorSnapshot`, round-trip JSON
+- [x] `AnalyzeConversation` menyimpan `simulatorSnapshot` di analysis job
+- [x] `GenerateRegressionCases` embed `const triageAutoGenSnapshotJSON = "..."`
+- [x] `TestConversationRegressionAutoGen` pakai `mustTriageAutoGenSimulator()` (fallback `newOmahSimulator` hanya jika snapshot kosong)
+- [x] Prompt Composer (`triage-cursor-fix.mjs`) menjelaskan jangan ubah snapshot
+
+**Alur:**
+
+```
+Analyze (tenant DB) → snapshot JSON → commit di PR draft → GHA test replay snapshot yang sama
+```
+
 ---
 
 ## Urutan deploy
@@ -358,8 +386,9 @@ Tab **AI Review** tetap punya tombol loop per percakapan untuk cek routing terse
 4. Cron Fase 5
 5. Fase 6 LLM scan → Fase 7 human report
 6. Fase 8 Composer fix — set `CURSOR_API_KEY` di GitHub, merge api-go + web
+7. Fase 9 catalog snapshot — deploy api-go; **re-run loop** untuk job baru (PR lama tanpa snapshot perlu loop ulang)
 
-**Status:** Fase 1–8 diimplementasikan. PR utama: api-go #88, web-frontend #58 (lihat GitHub).
+**Status:** Fase 1–9 diimplementasikan.
 
 ---
 
@@ -384,7 +413,6 @@ Branch protection `master`: require check **AI Regression** (`ai-regression.yml`
 - Auto-merge PR tanpa human
 - Auto-deploy setelah merge
 - Regression isi balasan LLM (golden reply text dari LLM judge findings)
-- Catalog snapshot embed di test GHA (saat ini fixture vs tenant DB masih bisa mismatch)
 - Integration test 3280 di CI
 - Batch loop banyak percakapan berbeda dalam satu klik
 
