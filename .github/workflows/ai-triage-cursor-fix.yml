@@ -1,0 +1,170 @@
+name: AI Triage Cursor Fix
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: ai_triage_job UUID from Encore
+        required: true
+        type: string
+      tenant_schema:
+        description: Tenant schema
+        required: false
+        type: string
+      conversation_id:
+        description: Conversation UUID
+        required: false
+        type: string
+      pr_url:
+        description: Existing draft PR URL to update
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  cursor-fix:
+    runs-on: ubuntu-latest
+    env:
+      JOB_ID: ${{ github.event.inputs.job_id }}
+      ENCORE_API_URL: ${{ secrets.ENCORE_STAGING_API_URL }}
+      AI_INTERNAL_TOKEN: ${{ secrets.AI_INTERNAL_TOKEN }}
+      PR_URL: ${{ github.event.inputs.pr_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Install Encore CLI
+        run: |
+          curl -L https://encore.dev/install.sh | bash
+          echo "$HOME/.encore/bin" >> "$GITHUB_PATH"
+
+      - name: Authenticate Encore CLI
+        env:
+          ENCORE_AUTH_KEY: ${{ secrets.ENCORE_AUTH_KEY }}
+        run: |
+          set -euo pipefail
+          encore auth login --auth-key="$ENCORE_AUTH_KEY"
+
+      - name: Fetch triage job
+        run: |
+          set -euo pipefail
+          curl -fsS \
+            -H "X-Ai-Internal-Token: $AI_INTERNAL_TOKEN" \
+            "$ENCORE_API_URL/api/v1/internal/ai-triage/jobs/$JOB_ID" \
+            -o /tmp/triage_job.json
+
+      - name: Checkout triage PR branch
+        env:
+          GITHUB_PAT: ${{ secrets.GITHUB_PAT }}
+        run: |
+          set -euo pipefail
+          if [ -n "${GITHUB_PAT:-}" ]; then
+            export GH_TOKEN="$GITHUB_PAT"
+          else
+            export GH_TOKEN="${{ github.token }}"
+          fi
+          BRANCH="fix/ai-triage-${JOB_ID:0:8}"
+          if [ -n "${PR_URL:-}" ]; then
+            PR_NUM="$(echo "$PR_URL" | sed -n 's|.*/pull/\([0-9]*\).*|\1|p')"
+            if [ -n "$PR_NUM" ]; then
+              gh pr checkout "$PR_NUM"
+              exit 0
+            fi
+          fi
+          git fetch origin "$BRANCH" && git checkout "$BRANCH" || git checkout -b "$BRANCH"
+
+      - name: Setup Node for Cursor SDK
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Cursor SDK
+        working-directory: scripts
+        run: npm install @cursor/sdk
+
+      - name: Run Composer 2.5 routing fix
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          TRIAGE_JOB_JSON: /tmp/triage_job.json
+        run: node scripts/triage-cursor-fix.mjs
+
+      - name: Verify diff
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo "Composer tidak mengubah file — tidak ada patch routing" >&2
+            exit 1
+          fi
+          git diff --stat
+
+      - name: Run auto-gen regression tests
+        id: regression
+        continue-on-error: true
+        run: |
+          chmod +x scripts/run-triage-autogen-tests.sh
+          ./scripts/run-triage-autogen-tests.sh 2>&1 | tee /tmp/regression.log
+
+      - name: Commit and push fix
+        env:
+          GITHUB_PAT: ${{ secrets.GITHUB_PAT }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(ai-triage): routing fix via Composer job $JOB_ID"
+          if [ -n "${GITHUB_PAT:-}" ]; then
+            git push origin HEAD
+          else
+            git push origin HEAD
+          fi
+
+      - name: Report completion to Encore
+        if: always()
+        run: |
+          set -euo pipefail
+          AGENT_ID=""
+          if [ -f /tmp/cursor_agent_id.txt ]; then
+            AGENT_ID="$(cat /tmp/cursor_agent_id.txt)"
+          fi
+          if [ "${{ steps.regression.outcome }}" = "success" ]; then
+            STATUS="pr_ready"
+            ERR=""
+          elif [ "${{ job.status }}" = "failure" ]; then
+            STATUS="failed"
+            ERR="cursor fix workflow failed"
+          else
+            STATUS="pr_ready_needs_fix"
+            ERR="regression masih gagal setelah Composer fix"
+          fi
+          FAILURES_JSON="[]"
+          if [ -f /tmp/regression.log ] && [ "${{ steps.regression.outcome }}" = "failure" ]; then
+            python3 scripts/parse-regression-failures.py /tmp/regression.log > /tmp/regression_failures.json || true
+            if [ -f /tmp/regression_failures.json ]; then
+              FAILURES_JSON="$(cat /tmp/regression_failures.json)"
+            fi
+          fi
+          curl -fsS -X POST \
+            -H "Content-Type: application/json" \
+            -H "X-Ai-Internal-Token: $AI_INTERNAL_TOKEN" \
+            -d "$(jq -n \
+              --arg status "$STATUS" \
+              --arg pr "${PR_URL:-}" \
+              --arg run "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+              --arg err "$ERR" \
+              --arg agent "$AGENT_ID" \
+              --arg cursorRun "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+              --argjson failures "$FAILURES_JSON" \
+              '{status:$status, prUrl:$pr, githubRunUrl:$run, errorText:$err, cursorAgentId:$agent, cursorFixGithubRunUrl:$cursorRun, regressionFailures:$failures}')" \
+            "$ENCORE_API_URL/api/v1/internal/ai-triage/jobs/$JOB_ID/complete" || true

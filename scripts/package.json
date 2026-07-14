@@ -1,0 +1,8 @@
+{
+  "name": "wabantu-api-go-scripts",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@cursor/sdk": "^0.1.0"
+  }
+}

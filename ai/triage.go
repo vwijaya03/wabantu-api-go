@@ -37,24 +37,57 @@ type TriageMessage struct {
 
 // TriageMismatch is one inbound turn where simulator path differs from production.
 type TriageMismatch struct {
-	InboundID    string `json:"inboundId"`
-	UserText     string `json:"userText"`
-	ActualPath   string `json:"actualPath"`
-	ExpectedPath string `json:"expectedPath"`
-	Skipped      bool   `json:"skipped,omitempty"`
-	SkipReason   string `json:"skipReason,omitempty"`
+	InboundID    string   `json:"inboundId"`
+	UserText     string   `json:"userText"`
+	ActualPath   string   `json:"actualPath"`
+	ExpectedPath string   `json:"expectedPath"`
+	Skipped      bool     `json:"skipped,omitempty"`
+	SkipReason   string   `json:"skipReason,omitempty"`
+	PriorTurns   []string `json:"priorTurns,omitempty"`
+	TurnIndex    int      `json:"turnIndex,omitempty"`
+}
+
+// TriageRegressionFailure is one failed auto-gen regression case from GHA.
+type TriageRegressionFailure struct {
+	CaseName     string `json:"caseName"`
+	GotPath      string `json:"gotPath"`
+	WantPath     string `json:"wantPath"`
+	ReplyPreview string `json:"replyPreview,omitempty"`
+}
+
+// TriageFixHints guides AI routing fix (Composer / human review).
+type TriageFixHints struct {
+	LikelyFiles     []string `json:"likelyFiles"`
+	CatalogSource   string   `json:"catalogSource"`
+	TestUsesFixture string   `json:"testUsesFixture"`
 }
 
 // AnalyzeConversationResult summarizes a read-only routing replay.
 type AnalyzeConversationResult struct {
-	TenantSchema     string           `json:"tenantSchema"`
-	ConversationID   string           `json:"conversationId"`
-	FocusInboundID   string           `json:"focusInboundId,omitempty"`
-	MessagesLoaded   int              `json:"messagesLoaded"`
-	TurnsChecked     int              `json:"turnsChecked"`
-	TurnsSkipped     int              `json:"turnsSkipped"`
-	Mismatches       []TriageMismatch `json:"mismatches"`
-	HasDeterministic bool             `json:"hasDeterministicMismatch"`
+	TenantSchema         string                    `json:"tenantSchema"`
+	ConversationID       string                    `json:"conversationId"`
+	FocusInboundID       string                    `json:"focusInboundId,omitempty"`
+	MessagesLoaded       int                       `json:"messagesLoaded"`
+	TurnsChecked         int                       `json:"turnsChecked"`
+	TurnsSkipped         int                       `json:"turnsSkipped"`
+	Mismatches           []TriageMismatch          `json:"mismatches"`
+	HasDeterministic     bool                      `json:"hasDeterministicMismatch"`
+	RegressionFailures   []TriageRegressionFailure `json:"regressionFailures,omitempty"`
+	FixHints             *TriageFixHints           `json:"fixHints,omitempty"`
+	CursorAgentID        string                    `json:"cursorAgentId,omitempty"`
+	CursorFixGitHubRunURL string                   `json:"cursorFixGithubRunUrl,omitempty"`
+}
+
+// EnrichAnalysisResult adds fix hints for UI and AI fix workflows.
+func EnrichAnalysisResult(r *AnalyzeConversationResult) {
+	if r == nil {
+		return
+	}
+	r.FixHints = &TriageFixHints{
+		LikelyFiles:     []string{"ai/autoreply.go", "ai/conversation_sim.go"},
+		CatalogSource:   "tenant_db",
+		TestUsesFixture: "newOmahSimulator",
+	}
 }
 
 var nonDeterministicTriagePaths = map[string]bool{
@@ -197,6 +230,7 @@ func CompareConversationRoutes(sim *ConversationSimulator, messages []TriageMess
 		return result
 	}
 	focusInboundID = strings.TrimSpace(focusInboundID)
+	priorTurnInputs := make([]string, 0, 8)
 
 	for i, msg := range messages {
 		if !isInboundTriageTurn(msg) {
@@ -251,8 +285,11 @@ func CompareConversationRoutes(sim *ConversationSimulator, messages []TriageMess
 				UserText:     previewText(userText, 120),
 				ActualPath:   actualPath,
 				ExpectedPath: out.Path,
+				PriorTurns:   append([]string{}, priorTurnInputs...),
+				TurnIndex:    len(priorTurnInputs),
 			})
 		}
+		priorTurnInputs = append(priorTurnInputs, userText)
 	}
 	return result
 }
@@ -328,6 +365,7 @@ func AnalyzeConversation(ctx context.Context, tenantSchema, conversationID, focu
 	result.TenantSchema = tenantSchema
 	result.ConversationID = conversationID
 	result.FocusInboundID = strings.TrimSpace(focusInboundID)
+	EnrichAnalysisResult(result)
 	return result, nil
 }
 
@@ -359,8 +397,18 @@ func GenerateRegressionCases(mismatches []TriageMismatch, tenantSchema string) s
 		}
 		name := regressionCaseName(m.InboundID, added)
 		input := escapeGoString(m.UserText)
-		b.WriteString(fmt.Sprintf("\t\t{\n\t\t\tname: %q,\n\t\t\tinput: %q,\n\t\t\twantPath: %s,\n\t\t},\n",
-			name, input, pathConstName(m.ExpectedPath)))
+		b.WriteString(fmt.Sprintf("\t\t{\n\t\t\tname: %q,\n\t\t\tinput: %q,\n", name, input))
+		if len(m.PriorTurns) > 0 {
+			b.WriteString("\t\t\tpriorInputs: []string{")
+			for i, p := range m.PriorTurns {
+				if i > 0 {
+					b.WriteString(", ")
+				}
+				b.WriteString(fmt.Sprintf("%q", escapeGoString(p)))
+			}
+			b.WriteString("},\n")
+		}
+		b.WriteString(fmt.Sprintf("\t\t\twantPath: %s,\n\t\t},\n", pathConstName(m.ExpectedPath)))
 		added++
 	}
 	b.WriteString("\t}\n}\n")

@@ -121,6 +121,16 @@ func TestGenerateRegressionCases(t *testing.T) {
 	if strings.Contains(consulting, `\"consulting\"`) {
 		t.Fatalf("consulting path must not be double-quoted: %s", consulting)
 	}
+
+	multi := GenerateRegressionCases([]TriageMismatch{{
+		InboundID:    "abc",
+		UserText:     "mau order abon",
+		ExpectedPath: PathOrderFlow,
+		PriorTurns:   []string{"halo", "ada stok?"},
+	}}, "t_omah_apparel")
+	if !strings.Contains(multi, `priorInputs: []string{"halo", "ada stok?"}`) {
+		t.Fatalf("expected priorInputs in generated code: %s", multi)
+	}
 }
 
 func TestCountRegressionMismatches(t *testing.T) {

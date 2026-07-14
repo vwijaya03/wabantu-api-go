@@ -89,13 +89,36 @@ jobs:
       - name: Apply auto-gen regression file
         run: go run scripts/triage-apply.go --job-id "$JOB_ID" < /tmp/regression.go
 
-      - name: Run AI regression tests
-        run: ./scripts/run-ai-regression-tests.sh
+      - name: Run auto-gen regression tests
+        id: regression
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          chmod +x scripts/run-triage-autogen-tests.sh
+          ./scripts/run-triage-autogen-tests.sh 2>&1 | tee /tmp/regression.log
+
+      - name: Parse regression failures
+        if: steps.regression.outcome == 'failure'
+        run: |
+          python3 scripts/parse-regression-failures.py /tmp/regression.log > /tmp/regression_failures.json
+          echo "Parsed failures:"
+          cat /tmp/regression_failures.json
+
+      - name: Upload mismatch report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mismatch-report-${{ env.JOB_ID }}
+          path: |
+            /tmp/triage_job.json
+            /tmp/regression_failures.json
+            /tmp/regression.log
+          if-no-files-found: ignore
 
       - name: Create draft PR
         id: pr
         env:
-          GH_TOKEN: ${{ github.token }}
+          GITHUB_PAT: ${{ secrets.GITHUB_PAT }}
         run: |
           set -euo pipefail
           BRANCH="fix/ai-triage-${JOB_ID:0:8}"
@@ -105,7 +128,15 @@ jobs:
           git add ai/conversation_regression_auto_gen_test.go
           git commit -m "test(ai-triage): regression cases job $JOB_ID"
           git push origin "$BRANCH"
-          PR_URL=$(gh pr create --draft \
+
+          if [ -n "${GITHUB_PAT:-}" ]; then
+            export GH_TOKEN="$GITHUB_PAT"
+          else
+            export GH_TOKEN="${{ github.token }}"
+          fi
+
+          PR_URL=""
+          if PR_URL=$(gh pr create --draft \
             --title "test(ai-triage): regression job ${JOB_ID:0:8}" \
             --body "## AI Triage Loop (auto)
 
@@ -115,20 +146,39 @@ jobs:
           - Inbound: \`${INBOUND_ID:-}\`
 
           Regression cases di \`conversation_regression_auto_gen_test.go\`.
-          Routing fix di \`ai/autoreply.go\` perlu review manual agar production match simulator.")
+          Routing fix: gunakan **Fix dengan AI** di konsol superadmin atau patch manual \`ai/autoreply.go\`."); then
+            echo "Created draft PR: $PR_URL"
+          else
+            PR_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/master...${BRANCH}?expand=1"
+            echo "::warning::gh pr create diblokir — buka compare URL atau set GITHUB_PAT"
+          fi
           echo "pr_url=$PR_URL" >> "$GITHUB_OUTPUT"
 
       - name: Report completion to Encore
         if: success()
         run: |
+          set -euo pipefail
+          if [ "${{ steps.regression.outcome }}" = "success" ]; then
+            STATUS="pr_ready"
+            ERR=""
+          else
+            STATUS="pr_ready_needs_fix"
+            ERR="regression tests failed — lihat artifact mismatch-report"
+          fi
+          FAILURES_JSON="[]"
+          if [ -f /tmp/regression_failures.json ]; then
+            FAILURES_JSON="$(cat /tmp/regression_failures.json)"
+          fi
           curl -fsS -X POST \
             -H "Content-Type: application/json" \
             -H "X-Ai-Internal-Token: $AI_INTERNAL_TOKEN" \
             -d "$(jq -n \
-              --arg status "pr_ready" \
+              --arg status "$STATUS" \
               --arg pr "${{ steps.pr.outputs.pr_url }}" \
               --arg run "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-              '{status:$status, prUrl:$pr, githubRunUrl:$run}')" \
+              --arg err "$ERR" \
+              --argjson failures "$FAILURES_JSON" \
+              '{status:$status, prUrl:$pr, githubRunUrl:$run, errorText:$err, regressionFailures:$failures}')" \
             "$ENCORE_API_URL/api/v1/internal/ai-triage/jobs/$JOB_ID/complete"
 
       - name: Report failure to Encore

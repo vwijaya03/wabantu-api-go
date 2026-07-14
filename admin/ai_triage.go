@@ -20,16 +20,19 @@ import (
 )
 
 const (
-	triageJobStatusPending = "pending"
-	triageJobStatusRunning = "running"
-	triageJobStatusPRReady = "pr_ready"
-	triageJobStatusFailed  = "failed"
+	triageJobStatusPending         = "pending"
+	triageJobStatusRunning         = "running"
+	triageJobStatusPRReady         = "pr_ready"
+	triageJobStatusPRReadyNeedsFix = "pr_ready_needs_fix"
+	triageJobStatusFixRunning      = "fix_running"
+	triageJobStatusFailed          = "failed"
 
-	triageMaxConcurrentJobs   = 3
-	triageJobStalePendingAfter  = 3 * time.Minute
-	triageJobStaleRunningAfter  = 2 * time.Hour
-	triageGitHubRepo            = "vwijaya03/wabantu-api-go"
-	triageWorkflowFile          = "ai-triage-fix.yml"
+	triageMaxConcurrentJobs      = 3
+	triageJobStalePendingAfter   = 3 * time.Minute
+	triageJobStaleRunningAfter   = 2 * time.Hour
+	triageGitHubRepo             = "vwijaya03/wabantu-api-go"
+	triageWorkflowFile           = "ai-triage-fix.yml"
+	triageCursorFixWorkflowFile  = "ai-triage-cursor-fix.yml"
 )
 
 var secrets struct {
@@ -181,6 +184,7 @@ func CreateAITriageJob(ctx context.Context, p *CreateAITriageJobParams) (*Create
 			Message: "tidak ada routing mismatch deterministik di percakapan ini",
 		}
 	}
+	ai.EnrichAnalysisResult(analysis)
 	analysisJSON, _ := json.Marshal(analysis)
 	regressionCode := ai.GenerateRegressionCases(analysis.Mismatches, schema)
 
@@ -220,6 +224,75 @@ func GetAITriageJob(ctx context.Context, id string) (*GetAITriageJobResponse, er
 	return &GetAITriageJobResponse{Job: job}, nil
 }
 
+type RequestAITriageJobFixResponse struct {
+	Job AITriageJob `json:"job"`
+}
+
+// RequestAITriageJobFix dispatches Cursor Composer fix workflow for a job with routing mismatches.
+//
+//encore:api auth method=POST path=/api/v1/admin/ai-triage/jobs/:id/ai-fix tag:super_admin
+func RequestAITriageJobFix(ctx context.Context, id string) (*RequestAITriageJobFixResponse, error) {
+	if _, err := requireSuperAdmin(ctx); err != nil {
+		return nil, err
+	}
+	jobID := strings.TrimSpace(id)
+	if jobID == "" {
+		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "job id required"}
+	}
+	job, err := loadTriageJob(ctx, jobID)
+	if err != nil {
+		return nil, err
+	}
+	switch job.Status {
+	case triageJobStatusPRReadyNeedsFix, triageJobStatusFailed:
+	default:
+		return nil, &errs.Error{
+			Code:    errs.FailedPrecondition,
+			Message: "fix AI hanya untuk job pr_ready_needs_fix atau failed dengan mismatch",
+		}
+	}
+	if job.Status == triageJobStatusFixRunning {
+		return nil, &errs.Error{Code: errs.FailedPrecondition, Message: "fix AI sudah berjalan untuk job ini"}
+	}
+	if !triageJobHasFixableMismatches(job.Analysis) {
+		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "tidak ada mismatch routing untuk diperbaiki"}
+	}
+
+	active, err := countActiveTriageJobs(ctx)
+	if err != nil {
+		return nil, &errs.Error{Code: errs.Internal, Message: "check triage queue failed"}
+	}
+	if active >= triageMaxConcurrentJobs {
+		return nil, &errs.Error{Code: errs.ResourceExhausted, Message: "max concurrent triage jobs reached (3)"}
+	}
+
+	if err := updateTriageJobStatus(ctx, jobID, triageJobStatusFixRunning, "", ""); err != nil {
+		return nil, &errs.Error{Code: errs.Internal, Message: "update job status failed"}
+	}
+
+	go dispatchCursorFixWorkflowAsync(jobID, job.TenantSchema, job.ConversationID, job.PRURL)
+
+	job, err = loadTriageJob(ctx, jobID)
+	if err != nil {
+		return nil, &errs.Error{Code: errs.Internal, Message: "load triage job failed"}
+	}
+	return &RequestAITriageJobFixResponse{Job: job}, nil
+}
+
+func triageJobHasFixableMismatches(analysisJSON json.RawMessage) bool {
+	if len(analysisJSON) == 0 {
+		return false
+	}
+	var analysis ai.AnalyzeConversationResult
+	if err := json.Unmarshal(analysisJSON, &analysis); err != nil {
+		return false
+	}
+	if ai.CountRegressionMismatches(analysis.Mismatches) > 0 {
+		return true
+	}
+	return len(analysis.RegressionFailures) > 0
+}
+
 // ---------- DB + GitHub helpers ----------
 
 type triageJobInsert struct {
@@ -237,8 +310,8 @@ func countActiveTriageJobs(ctx context.Context) (int, error) {
 	err := system.DB.QueryRow(ctx, `
 		SELECT COUNT(*)::int
 		FROM ai_triage_job
-		WHERE status IN ($1, $2)`,
-		triageJobStatusPending, triageJobStatusRunning,
+		WHERE status IN ($1, $2, $3)`,
+		triageJobStatusPending, triageJobStatusRunning, triageJobStatusFixRunning,
 	).Scan(&n)
 	return n, err
 }
@@ -255,10 +328,12 @@ func reclaimStaleTriageJobs(ctx context.Context) (int, error) {
 		    updated_at = now(),
 		    completed_at = now()
 		WHERE status = $2::varchar AND created_at < $3
-		   OR status = $4::varchar AND updated_at < $5`,
+		   OR status = $4::varchar AND updated_at < $5
+		   OR status = $6::varchar AND updated_at < $5`,
 		triageJobStatusFailed,
 		triageJobStatusPending, pendingCutoff,
 		triageJobStatusRunning, runningCutoff,
+		triageJobStatusFixRunning, runningCutoff,
 	)
 	if err != nil {
 		return 0, err
@@ -359,7 +434,7 @@ func updateTriageJobStatus(ctx context.Context, jobID, status, errText, githubRu
 		    error_text = NULLIF($3, ''),
 		    github_run_url = NULLIF($4, ''),
 		    updated_at = now(),
-		    completed_at = CASE WHEN $2::varchar IN ('failed', 'pr_ready') THEN now() ELSE completed_at END
+		    completed_at = CASE WHEN $2::varchar IN ('failed', 'pr_ready', 'pr_ready_needs_fix') THEN now() ELSE completed_at END
 		WHERE id = $1::uuid`,
 		jobID, status, errText, githubRunURL,
 	)
@@ -376,7 +451,7 @@ func dispatchTriageWorkflowAsync(jobID, tenantSchema, conversationID, inboundID,
 		return
 	}
 
-	err := dispatchGitHubTriageWorkflow(ctx, jobID, map[string]string{
+	err := dispatchGitHubWorkflow(ctx, triageWorkflowFile, jobID, map[string]string{
 		"job_id":          jobID,
 		"tenant_schema":   tenantSchema,
 		"conversation_id": conversationID,
@@ -390,10 +465,27 @@ func dispatchTriageWorkflowAsync(jobID, tenantSchema, conversationID, inboundID,
 	}
 
 	rlog.Info("triage workflow dispatched", "jobId", jobID)
-	// Phase 3 workflow will callback or poll to set pr_ready; until then stay running.
 }
 
-func dispatchGitHubTriageWorkflow(ctx context.Context, jobID string, inputs map[string]string) error {
+func dispatchCursorFixWorkflowAsync(jobID, tenantSchema, conversationID, prURL string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	err := dispatchGitHubWorkflow(ctx, triageCursorFixWorkflowFile, jobID, map[string]string{
+		"job_id":          jobID,
+		"tenant_schema":   tenantSchema,
+		"conversation_id": conversationID,
+		"pr_url":          prURL,
+	})
+	if err != nil {
+		rlog.Warn("cursor fix workflow dispatch failed", "jobId", jobID, "err", err)
+		_ = updateTriageJobStatus(ctx, jobID, triageJobStatusPRReadyNeedsFix, err.Error(), "")
+		return
+	}
+	rlog.Info("cursor fix workflow dispatched", "jobId", jobID)
+}
+
+func dispatchGitHubWorkflow(ctx context.Context, workflowFile, jobID string, inputs map[string]string) error {
 	token := strings.TrimSpace(secrets.GitHubActionsToken)
 	if token == "" {
 		return fmt.Errorf("GitHubActionsToken not configured")
@@ -408,7 +500,7 @@ func dispatchGitHubTriageWorkflow(ctx context.Context, jobID string, inputs map[
 		return err
 	}
 
-	url := fmt.Sprintf("https://api.github.com/repos/%s/actions/workflows/%s/dispatches", triageGitHubRepo, triageWorkflowFile)
+	url := fmt.Sprintf("https://api.github.com/repos/%s/actions/workflows/%s/dispatches", triageGitHubRepo, workflowFile)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return err

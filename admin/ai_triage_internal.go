@@ -11,6 +11,7 @@ import (
 	"encore.dev/beta/errs"
 	"encore.dev/rlog"
 
+	"encore.app/wabantu/ai"
 	"encore.app/wabantu/system"
 )
 
@@ -21,10 +22,13 @@ type InternalGetAITriageJobResponse struct {
 
 // CompleteAITriageJobParams updates job status after GHA finishes.
 type CompleteAITriageJobParams struct {
-	Status       string `json:"status"`
-	PRURL        string `json:"prUrl,omitempty"`
-	GitHubRunURL string `json:"githubRunUrl,omitempty"`
-	ErrorText    string `json:"errorText,omitempty"`
+	Status               string                        `json:"status"`
+	PRURL                string                        `json:"prUrl,omitempty"`
+	GitHubRunURL         string                        `json:"githubRunUrl,omitempty"`
+	ErrorText            string                        `json:"errorText,omitempty"`
+	RegressionFailures   []ai.TriageRegressionFailure  `json:"regressionFailures,omitempty"`
+	CursorAgentID        string                        `json:"cursorAgentId,omitempty"`
+	CursorFixGitHubRunURL string                       `json:"cursorFixGithubRunUrl,omitempty"`
 }
 
 type CompleteAITriageJobResponse struct {
@@ -80,14 +84,19 @@ func CompleteInternalAITriageJob(w http.ResponseWriter, req *http.Request) {
 	}
 	status := strings.TrimSpace(p.Status)
 	switch status {
-	case triageJobStatusPRReady, triageJobStatusFailed:
+	case triageJobStatusPRReady, triageJobStatusPRReadyNeedsFix, triageJobStatusFailed:
 	default:
-		writeTriageJSONError(w, &errs.Error{Code: errs.InvalidArgument, Message: "status must be pr_ready or failed"})
+		writeTriageJSONError(w, &errs.Error{Code: errs.InvalidArgument, Message: "status must be pr_ready, pr_ready_needs_fix, or failed"})
 		return
 	}
 	if err := completeTriageJob(ctx, id, status, p.PRURL, p.GitHubRunURL, p.ErrorText); err != nil {
 		writeTriageJSONError(w, &errs.Error{Code: errs.Internal, Message: "update job failed"})
 		return
+	}
+	if len(p.RegressionFailures) > 0 || p.CursorAgentID != "" || p.CursorFixGitHubRunURL != "" {
+		if err := patchTriageJobAnalysis(ctx, id, p.RegressionFailures, p.CursorAgentID, p.CursorFixGitHubRunURL); err != nil {
+			rlog.Warn("patch triage job analysis failed", "jobId", id, "err", err)
+		}
 	}
 	rlog.Info("triage job completed", "jobId", id, "status", status, "prUrl", p.PRURL)
 	writeTriageJSON(w, http.StatusOK, CompleteAITriageJobResponse{OK: true})
@@ -105,6 +114,36 @@ func completeTriageJob(ctx context.Context, jobID, status, prURL, githubRunURL, 
 		WHERE id = $1::uuid`,
 		jobID, status, prURL, githubRunURL, errText,
 	)
+	return err
+}
+
+func patchTriageJobAnalysis(ctx context.Context, jobID string, failures []ai.TriageRegressionFailure, cursorAgentID, cursorFixRunURL string) error {
+	job, err := loadTriageJob(ctx, jobID)
+	if err != nil {
+		return err
+	}
+	var analysis ai.AnalyzeConversationResult
+	if len(job.Analysis) > 0 {
+		_ = json.Unmarshal(job.Analysis, &analysis)
+	}
+	if len(failures) > 0 {
+		analysis.RegressionFailures = failures
+	}
+	if strings.TrimSpace(cursorAgentID) != "" {
+		analysis.CursorAgentID = strings.TrimSpace(cursorAgentID)
+	}
+	if strings.TrimSpace(cursorFixRunURL) != "" {
+		analysis.CursorFixGitHubRunURL = strings.TrimSpace(cursorFixRunURL)
+	}
+	ai.EnrichAnalysisResult(&analysis)
+	merged, err := json.Marshal(analysis)
+	if err != nil {
+		return err
+	}
+	_, err = system.DB.Exec(ctx, `
+		UPDATE ai_triage_job
+		SET analysis_json = $2::jsonb, updated_at = now()
+		WHERE id = $1::uuid`, jobID, string(merged))
 	return err
 }
 
