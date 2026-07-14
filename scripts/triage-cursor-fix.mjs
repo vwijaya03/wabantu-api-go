@@ -76,6 +76,11 @@ ${JSON.stringify(regressionFailures, null, 2)}
 ## Hints
 ${JSON.stringify(fixHints, null, 2)}
 
+## Catalog snapshot
+Auto-gen regression tests replay routing with the same tenant catalog/profile/KB frozen at analyze time
+(embedded as triageAutoGenSnapshotJSON in conversation_regression_auto_gen_test.go).
+Do NOT change the snapshot unless catalog data itself changed; fix routing in autoreply.go / conversation_sim.go.
+
 ## Tasks
 1. Read ai/conversation_regression_auto_gen_test.go for failing cases (priorInputs must be replayed before input).
 2. Fix routing so encore test passes:

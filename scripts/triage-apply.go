@@ -38,6 +38,9 @@ func main() {
 	if content == "" {
 		fatal("stdin empty: regression cases required")
 	}
+	if !strings.Contains(content, "triageAutoGenSnapshotJSON") {
+		content = "const triageAutoGenSnapshotJSON = \"\"\n\n" + content
+	}
 
 	target := filepath.Join(root, *outPath)
 	file := buildAutoGenTestFile(*jobID, content)
@@ -81,15 +84,27 @@ func buildAutoGenTestFile(jobID, generated string) string {
 		b.WriteString("\n")
 	}
 	b.WriteString(`
+func mustTriageAutoGenSimulator(t *testing.T) *ConversationSimulator {
+	t.Helper()
+	if triageAutoGenSnapshotJSON == "" {
+		return newOmahSimulator()
+	}
+	sim, err := SimulatorFromSnapshotJSON(triageAutoGenSnapshotJSON)
+	if err != nil {
+		t.Fatalf("triage snapshot: %v", err)
+	}
+	return sim
+}
+
 func TestConversationRegressionAutoGen(t *testing.T) {
 	cases := conversationRegressionAutoGenCases()
 	if len(cases) == 0 {
 		t.Skip("no auto-generated regression cases")
 	}
-	sim := newOmahSimulator()
+	sim := mustTriageAutoGenSimulator(t)
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			local := newOmahSimulator()
+			local := mustTriageAutoGenSimulator(t)
 			local.History = append([]dbMessage{}, sim.History...)
 			local.Order = sim.Order
 			for _, prior := range tc.priorInputs {

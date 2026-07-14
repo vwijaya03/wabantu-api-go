@@ -186,7 +186,7 @@ func CreateAITriageJob(ctx context.Context, p *CreateAITriageJobParams) (*Create
 	}
 	ai.EnrichAnalysisResult(analysis)
 	analysisJSON, _ := json.Marshal(analysis)
-	regressionCode := ai.GenerateRegressionCases(analysis.Mismatches, schema)
+	regressionCode := ai.GenerateRegressionCases(analysis.Mismatches, schema, analysis.SimulatorSnapshot)
 
 	jobID, err := insertTriageJob(ctx, triageJobInsert{
 		TenantID:       p.TenantID,

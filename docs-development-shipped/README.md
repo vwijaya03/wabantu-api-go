@@ -22,3 +22,4 @@ Setiap file `*.md` di folder ini = satu entri rilis.
 | [payment-proof-fase2.md](./payment-proof-fase2.md) | Bukti transfer, limit 5x penolakan, unblock owner |
 | [inbox-media-s3.md](./inbox-media-s3.md) | Persist media inbox ke Amazon S3 (Fase 1b) |
 | [ai-image-context.md](./ai-image-context.md) | **Planned** — vision match katalog (3c) + fallback gambar (3d) |
+| [ai-triage-catalog-snapshot.md](./ai-triage-catalog-snapshot.md) | Loop AI Triage: embed katalog tenant di auto-gen regression test |

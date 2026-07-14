@@ -747,7 +747,7 @@ Production path: **Pub/Sub** `ai-jobs`, not HTTP.
 | workflow | `GET/POST/PATCH/DELETE /api/v1/workflows` | auth (PATCH/DELETE owner) |
 | branch | `/api/v1/branches` | auth |
 | analytics | `/api/v1/analytics/overview` | auth |
-| admin | `/api/v1/admin/*`, `GET .../tenant/:id/ai-activity` (+ summary) | super_admin |
+| admin | `/api/v1/admin/*`, `GET .../tenant/:id/ai-activity` (+ summary), **`/admin/ai-triage/*`** (loop engineering) | super_admin |
 | flag | `/api/v1/flags` | auth |
 | health | `/api/v1/health`, `/ready` | public |
 | tenant | `/api/v1/internal/tenant/*` | private |
@@ -980,6 +980,8 @@ Roadmap: [docs/WHATSAPP_INBOX_MEDIA_PAYMENT_STOCK.md](./docs/WHATSAPP_INBOX_MEDI
 - Failures: retry Pub/Sub → `FallbackAutoReply`
 
 AI activity log (super_admin): `GET /api/v1/admin/tenant/:id/ai-activity` (+ `/summary`). Saat impersonate: juga `GET /api/v1/usage/ai-activity` (tenant efektif). Owner tenant **tidak** punya akses.
+
+**AI Triage Loop** (super_admin, cold path): `GET/POST /api/v1/admin/ai-triage/*` — analyze routing mismatch per percakapan, dispatch GHA regression + optional Composer fix. Analyzer embed **catalog snapshot** tenant ke auto-gen test (`triageAutoGenSnapshotJSON`). Lihat [docs/AI_TRIAGE_LOOP_NEXT_DEV.md](./docs/AI_TRIAGE_LOOP_NEXT_DEV.md).
 
 ## 7.4 Staff sends message from inbox
 

@@ -16,6 +16,8 @@ WABANTU_AI_INTEGRATION=1 encore test ./ai/ -run TestBuyerBehavior1000 -count=1
 WABANTU_AI_INTEGRATION=1 encore test ./ai/ -run TestWABuyerCases2000 -count=1
 ```
 
+**AI Triage auto-gen** (`TestConversationRegressionAutoGen`): case dari loop superadmin; replay pakai **catalog snapshot tenant** (`triageAutoGenSnapshotJSON`), bukan fixture `newOmahSimulator()`. Lihat [AI_TRIAGE_LOOP_NEXT_DEV.md](./AI_TRIAGE_LOOP_NEXT_DEV.md) Fase 9.
+
 ---
 
 ## Suite 2000 — structured buyer cases
