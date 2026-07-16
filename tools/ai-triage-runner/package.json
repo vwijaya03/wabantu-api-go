@@ -1,5 +1,5 @@
 {
-  "name": "wabantu-api-go-scripts",
+  "name": "wabantu-ai-triage-runner",
   "private": true,
   "type": "module",
   "dependencies": {

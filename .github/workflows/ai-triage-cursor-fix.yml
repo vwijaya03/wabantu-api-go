@@ -99,7 +99,7 @@ jobs:
           node-version: "22"
 
       - name: Install Cursor SDK
-        working-directory: scripts
+        working-directory: tools/ai-triage-runner
         run: npm ci
 
       - name: Install ripgrep for Cursor SDK
@@ -111,7 +111,7 @@ jobs:
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
           TRIAGE_JOB_JSON: /tmp/triage_job.json
-        run: node scripts/triage-cursor-fix.mjs
+        run: node tools/ai-triage-runner/triage-cursor-fix.mjs
 
       - name: Verify diff
         id: verify_diff
