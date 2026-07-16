@@ -27,6 +27,7 @@ permissions:
 jobs:
   cursor-fix:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       JOB_ID: ${{ github.event.inputs.job_id }}
       ENCORE_API_URL: ${{ secrets.ENCORE_STAGING_API_URL }}
@@ -82,6 +83,14 @@ jobs:
               exit 0
             fi
           fi
+          JOB_PR="$(jq -r '.job.prUrl // empty' /tmp/triage_job.json)"
+          if [ -n "$JOB_PR" ]; then
+            PR_NUM="$(echo "$JOB_PR" | sed -n 's|.*/pull/\([0-9]*\).*|\1|p')"
+            if [ -n "$PR_NUM" ]; then
+              gh pr checkout "$PR_NUM"
+              exit 0
+            fi
+          fi
           git fetch origin "$BRANCH" && git checkout "$BRANCH" || git checkout -b "$BRANCH"
 
       - name: Setup Node for Cursor SDK
@@ -93,60 +102,82 @@ jobs:
         working-directory: scripts
         run: npm ci
 
+      - name: Install ripgrep for Cursor SDK
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
       - name: Run Composer 2.5 routing fix
+        id: composer
+        timeout-minutes: 15
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
           TRIAGE_JOB_JSON: /tmp/triage_job.json
         run: node scripts/triage-cursor-fix.mjs
 
       - name: Verify diff
+        id: verify_diff
+        if: steps.composer.outcome == 'success'
+        continue-on-error: true
         run: |
           set -euo pipefail
-          if git diff --quiet; then
-            echo "Composer tidak mengubah file — tidak ada patch routing" >&2
+          if git diff --quiet -- ai/autoreply.go ai/conversation_sim.go; then
+            echo "Composer tidak mengubah ai/autoreply.go atau ai/conversation_sim.go" >&2
             exit 1
           fi
-          git diff --stat
+          git diff --stat -- ai/autoreply.go ai/conversation_sim.go
 
       - name: Run auto-gen regression tests
         id: regression
+        if: steps.verify_diff.outcome == 'success'
         continue-on-error: true
         run: |
           chmod +x scripts/run-triage-autogen-tests.sh
           ./scripts/run-triage-autogen-tests.sh 2>&1 | tee /tmp/regression.log
 
       - name: Commit and push fix
+        if: steps.verify_diff.outcome == 'success'
         env:
           GITHUB_PAT: ${{ secrets.GITHUB_PAT }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+          git add ai/autoreply.go ai/conversation_sim.go
           git commit -m "fix(ai-triage): routing fix via Composer job $JOB_ID"
           if [ -n "${GITHUB_PAT:-}" ]; then
-            git push origin HEAD
+            export GH_TOKEN="$GITHUB_PAT"
           else
-            git push origin HEAD
+            export GH_TOKEN="${{ github.token }}"
           fi
+          git push origin HEAD
 
       - name: Report completion to Encore
         if: always()
         run: |
           set -euo pipefail
+          chmod +x scripts/triage-report-complete.sh
           AGENT_ID=""
           if [ -f /tmp/cursor_agent_id.txt ]; then
             AGENT_ID="$(cat /tmp/cursor_agent_id.txt)"
           fi
+          REPORT_PR="${PR_URL:-}"
+          if [ -z "$REPORT_PR" ]; then
+            REPORT_PR="$(jq -r '.job.prUrl // empty' /tmp/triage_job.json)"
+          fi
           if [ "${{ steps.regression.outcome }}" = "success" ]; then
             STATUS="pr_ready"
             ERR=""
-          elif [ "${{ job.status }}" = "failure" ]; then
+          elif [ "${{ steps.composer.outcome }}" = "failure" ]; then
             STATUS="failed"
-            ERR="cursor fix workflow failed"
-          else
+            ERR="Composer fix workflow gagal — lihat log Run Composer"
+          elif [ "${{ steps.verify_diff.outcome }}" = "failure" ]; then
+            STATUS="pr_ready_needs_fix"
+            ERR="Composer tidak menghasilkan patch routing — coba manual atau re-run Fix AI"
+          elif [ "${{ steps.regression.outcome }}" = "failure" ]; then
             STATUS="pr_ready_needs_fix"
             ERR="regression masih gagal setelah Composer fix"
+          else
+            STATUS="pr_ready_needs_fix"
+            ERR="cursor fix workflow tidak menyelesaikan regression"
           fi
           FAILURES_JSON="[]"
           if [ -f /tmp/regression.log ] && [ "${{ steps.regression.outcome }}" = "failure" ]; then
@@ -155,16 +186,13 @@ jobs:
               FAILURES_JSON="$(cat /tmp/regression_failures.json)"
             fi
           fi
-          curl -fsS -X POST \
-            -H "Content-Type: application/json" \
-            -H "X-Ai-Internal-Token: $AI_INTERNAL_TOKEN" \
-            -d "$(jq -n \
-              --arg status "$STATUS" \
-              --arg pr "${PR_URL:-}" \
-              --arg run "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-              --arg err "$ERR" \
-              --arg agent "$AGENT_ID" \
-              --arg cursorRun "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-              --argjson failures "$FAILURES_JSON" \
-              '{status:$status, prUrl:$pr, githubRunUrl:$run, errorText:$err, cursorAgentId:$agent, cursorFixGithubRunUrl:$cursorRun, regressionFailures:$failures}')" \
-            "$ENCORE_API_URL/api/v1/internal/ai-triage/jobs/$JOB_ID/complete" || true
+          BODY="$(jq -n \
+            --arg status "$STATUS" \
+            --arg pr "$REPORT_PR" \
+            --arg run "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --arg err "$ERR" \
+            --arg agent "$AGENT_ID" \
+            --arg cursorRun "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --argjson failures "$FAILURES_JSON" \
+            '{status:$status, prUrl:$pr, githubRunUrl:$run, errorText:$err, cursorAgentId:$agent, cursorFixGithubRunUrl:$cursorRun, regressionFailures:$failures}')"
+          ./scripts/triage-report-complete.sh "$JOB_ID" "$BODY"

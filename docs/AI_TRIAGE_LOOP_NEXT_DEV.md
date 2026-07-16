@@ -99,7 +99,7 @@ LIMIT 200;
 | Pesan per analisa | Max 200 | Cukup untuk konteks routing; hindari load chat panjang |
 | Cron frequency | 1×/jam | Batas cron Encore free + beban read rendah |
 | Dispatch GHA | 1 workflow per job | `ai_triage_job`; lihat [Status job](#status-job-ai_triage_job) |
-| Stale reclaim | pending > 3 menit, running/fix_running > 2 jam | Bebaskan slot zombie otomatis |
+| Stale reclaim | pending > 3 menit, running > 2 jam, fix_running > 30 menit | Bebaskan slot zombie otomatis |
 | Akses API | `super_admin` only | Tidak expose ke tenant owner |
 
 ### Risiko di scale besar & mitigasi
@@ -271,7 +271,7 @@ Tab **AI Review** tetap punya tombol loop per percakapan untuk cek routing terse
 - [x] `GET /api/v1/admin/ai-triage/jobs/:id`
 - [x] `POST /api/v1/admin/ai-triage/jobs/:id/ai-fix` — dispatch Composer fix (Fase 8)
 - [x] Internal: `GET/POST /api/v1/internal/ai-triage/jobs/:id` (+ `/complete`)
-- [x] Stale job reclaim (pending 3 menit, running/fix_running 2 jam)
+- [x] Stale job reclaim (pending 3 menit, running 2 jam, fix_running 30 menit)
 - [x] Dispatch `workflow_dispatch` via Encore secret `GitHubActionsToken`
 
 ### Fase 3 — GitHub Actions (triage-fix) ✅
@@ -337,8 +337,9 @@ Tab **AI Review** tetap punya tombol loop per percakapan untuk cek routing terse
 **api-go:**
 
 - [x] `.github/workflows/ai-triage-cursor-fix.yml` — checkout branch PR → Cursor SDK → patch routing → re-test → push
-- [x] `scripts/triage-cursor-fix.mjs` — `Agent.prompt` model `composer-2.5`, scope `ai/autoreply.go` + `ai/conversation_sim.go`
-- [x] `POST /api/v1/admin/ai-triage/jobs/:id/ai-fix` — trigger manual dari UI
+- [x] `scripts/triage-cursor-fix.mjs` — `Agent.create` + stream log, model `composer-2.5`, scope `ai/autoreply.go` + `ai/conversation_sim.go`
+- [x] `scripts/triage-report-complete.sh` — callback Encore dengan retry 3×
+- [x] `POST /api/v1/admin/ai-triage/jobs/:id/ai-fix` — trigger manual dari UI (maks 2× per job)
 - [x] Simpan `cursorAgentId`, `cursorFixGithubRunUrl` di analysis job
 
 **web-frontend:**
