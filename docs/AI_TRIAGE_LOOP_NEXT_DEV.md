@@ -203,7 +203,7 @@ Tab **AI Review** tetap punya tombol loop per percakapan untuk cek routing terse
 | Regression runner (golden) | `api-go/scripts/run-ai-regression-tests.sh` |
 | Regression runner (auto-gen saja) | `api-go/scripts/run-triage-autogen-tests.sh` |
 | Parse failure GHA | `api-go/scripts/parse-regression-failures.py` |
-| Cursor fix script | `api-go/scripts/triage-cursor-fix.mjs` |
+| Cursor fix runner (CI) | `api-go/tools/ai-triage-runner/triage-cursor-fix.mjs` |
 | Golden regression | `api-go/ai/conversation_regression_test.go` |
 | Auto-gen regression | `api-go/ai/conversation_regression_auto_gen_test.go` |
 | Catalog snapshot | `api-go/ai/triage_snapshot.go` — embed tenant catalog di auto-gen test |
@@ -337,7 +337,7 @@ Tab **AI Review** tetap punya tombol loop per percakapan untuk cek routing terse
 **api-go:**
 
 - [x] `.github/workflows/ai-triage-cursor-fix.yml` — checkout branch PR → Cursor SDK → patch routing → re-test → push
-- [x] `scripts/triage-cursor-fix.mjs` — `Agent.create` + stream log, model `composer-2.5`, scope `ai/autoreply.go` + `ai/conversation_sim.go`
+- [x] `tools/ai-triage-runner/triage-cursor-fix.mjs` — `Agent.create` + stream log, model `composer-2.5`, scope `ai/autoreply.go` + `ai/conversation_sim.go` (CI only)
 - [x] `scripts/triage-report-complete.sh` — callback Encore dengan retry 3×
 - [x] `POST /api/v1/admin/ai-triage/jobs/:id/ai-fix` — trigger manual dari UI (maks 2× per job)
 - [x] Simpan `cursorAgentId`, `cursorFixGithubRunUrl` di analysis job

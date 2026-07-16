@@ -2,3 +2,10 @@ encore.gen.go
 encore.gen.cue
 /.encore
 /encore.gen
+
+# CI-only Node tooling (see tools/ai-triage-runner/)
+tools/**/node_modules/
+scripts/node_modules/
+
+# Local DB dumps (dev only)
+.db-migrate/
