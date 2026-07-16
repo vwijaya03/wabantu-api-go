@@ -75,8 +75,9 @@ type AnalyzeConversationResult struct {
 	RegressionFailures   []TriageRegressionFailure `json:"regressionFailures,omitempty"`
 	FixHints             *TriageFixHints           `json:"fixHints,omitempty"`
 	SimulatorSnapshot    *TriageSimulatorSnapshot  `json:"simulatorSnapshot,omitempty"`
-	CursorAgentID        string                    `json:"cursorAgentId,omitempty"`
-	CursorFixGitHubRunURL string                   `json:"cursorFixGithubRunUrl,omitempty"`
+	CursorAgentID         string                    `json:"cursorAgentId,omitempty"`
+	CursorFixGitHubRunURL string                    `json:"cursorFixGithubRunUrl,omitempty"`
+	CursorFixAttempts     int                       `json:"cursorFixAttempts,omitempty"`
 }
 
 // EnrichAnalysisResult adds fix hints for UI and AI fix workflows.

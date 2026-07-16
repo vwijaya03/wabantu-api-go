@@ -31,6 +31,7 @@ permissions:
 jobs:
   triage-fix:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       JOB_ID: ${{ github.event.inputs.job_id }}
       ENCORE_API_URL: ${{ secrets.ENCORE_STAGING_API_URL }}
@@ -158,6 +159,7 @@ jobs:
         if: success()
         run: |
           set -euo pipefail
+          chmod +x scripts/triage-report-complete.sh
           if [ "${{ steps.regression.outcome }}" = "success" ]; then
             STATUS="pr_ready"
             ERR=""
@@ -169,27 +171,23 @@ jobs:
           if [ -f /tmp/regression_failures.json ]; then
             FAILURES_JSON="$(cat /tmp/regression_failures.json)"
           fi
-          curl -fsS -X POST \
-            -H "Content-Type: application/json" \
-            -H "X-Ai-Internal-Token: $AI_INTERNAL_TOKEN" \
-            -d "$(jq -n \
-              --arg status "$STATUS" \
-              --arg pr "${{ steps.pr.outputs.pr_url }}" \
-              --arg run "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-              --arg err "$ERR" \
-              --argjson failures "$FAILURES_JSON" \
-              '{status:$status, prUrl:$pr, githubRunUrl:$run, errorText:$err, regressionFailures:$failures}')" \
-            "$ENCORE_API_URL/api/v1/internal/ai-triage/jobs/$JOB_ID/complete"
+          BODY="$(jq -n \
+            --arg status "$STATUS" \
+            --arg pr "${{ steps.pr.outputs.pr_url }}" \
+            --arg run "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --arg err "$ERR" \
+            --argjson failures "$FAILURES_JSON" \
+            '{status:$status, prUrl:$pr, githubRunUrl:$run, errorText:$err, regressionFailures:$failures}')"
+          ./scripts/triage-report-complete.sh "$JOB_ID" "$BODY"
 
       - name: Report failure to Encore
         if: failure()
         run: |
-          curl -fsS -X POST \
-            -H "Content-Type: application/json" \
-            -H "X-Ai-Internal-Token: $AI_INTERNAL_TOKEN" \
-            -d "$(jq -n \
-              --arg status "failed" \
-              --arg err "workflow failed — see Actions run" \
-              --arg run "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-              '{status:$status, errorText:$err, githubRunUrl:$run}')" \
-            "$ENCORE_API_URL/api/v1/internal/ai-triage/jobs/$JOB_ID/complete" || true
+          set -euo pipefail
+          chmod +x scripts/triage-report-complete.sh
+          BODY="$(jq -n \
+            --arg status "failed" \
+            --arg err "workflow failed — see Actions run" \
+            --arg run "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            '{status:$status, errorText:$err, githubRunUrl:$run}')"
+          ./scripts/triage-report-complete.sh "$JOB_ID" "$BODY"

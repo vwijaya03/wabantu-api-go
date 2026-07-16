@@ -27,9 +27,11 @@ const (
 	triageJobStatusFixRunning      = "fix_running"
 	triageJobStatusFailed          = "failed"
 
-	triageMaxConcurrentJobs      = 3
-	triageJobStalePendingAfter   = 3 * time.Minute
-	triageJobStaleRunningAfter   = 2 * time.Hour
+	triageMaxConcurrentJobs       = 3
+	triageMaxCursorFixAttempts    = 2
+	triageJobStalePendingAfter    = 3 * time.Minute
+	triageJobStaleRunningAfter    = 2 * time.Hour
+	triageJobStaleFixRunningAfter = 30 * time.Minute
 	triageGitHubRepo             = "vwijaya03/wabantu-api-go"
 	triageWorkflowFile           = "ai-triage-fix.yml"
 	triageCursorFixWorkflowFile  = "ai-triage-cursor-fix.yml"
@@ -155,11 +157,7 @@ func CreateAITriageJob(ctx context.Context, p *CreateAITriageJobParams) (*Create
 		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "tenantId and conversationId required"}
 	}
 
-	if reclaimed, reclaimErr := reclaimStaleTriageJobs(ctx); reclaimErr != nil {
-		rlog.Warn("reclaim stale triage jobs failed", "err", reclaimErr)
-	} else if reclaimed > 0 {
-		rlog.Info("reclaimed stale triage jobs", "count", reclaimed)
-	}
+	maybeReclaimStaleTriageJobs(ctx)
 
 	active, err := countActiveTriageJobs(ctx)
 	if err != nil {
@@ -217,6 +215,7 @@ func GetAITriageJob(ctx context.Context, id string) (*GetAITriageJobResponse, er
 	if _, err := requireSuperAdmin(ctx); err != nil {
 		return nil, err
 	}
+	maybeReclaimStaleTriageJobs(ctx)
 	job, err := loadTriageJob(ctx, strings.TrimSpace(id))
 	if err != nil {
 		return nil, err
@@ -243,16 +242,26 @@ func RequestAITriageJobFix(ctx context.Context, id string) (*RequestAITriageJobF
 	if err != nil {
 		return nil, err
 	}
+	maybeReclaimStaleTriageJobs(ctx)
+	job, err = loadTriageJob(ctx, jobID)
+	if err != nil {
+		return nil, err
+	}
 	switch job.Status {
 	case triageJobStatusPRReadyNeedsFix, triageJobStatusFailed:
+	case triageJobStatusFixRunning:
+		return nil, &errs.Error{Code: errs.FailedPrecondition, Message: "fix AI sudah berjalan untuk job ini"}
 	default:
 		return nil, &errs.Error{
 			Code:    errs.FailedPrecondition,
 			Message: "fix AI hanya untuk job pr_ready_needs_fix atau failed dengan mismatch",
 		}
 	}
-	if job.Status == triageJobStatusFixRunning {
-		return nil, &errs.Error{Code: errs.FailedPrecondition, Message: "fix AI sudah berjalan untuk job ini"}
+	if attempts := triageJobCursorFixAttempts(job.Analysis); attempts >= triageMaxCursorFixAttempts {
+		return nil, &errs.Error{
+			Code:    errs.FailedPrecondition,
+			Message: fmt.Sprintf("Fix AI sudah dicoba %dx — lanjutkan patch manual di draft PR", attempts),
+		}
 	}
 	if !triageJobHasFixableMismatches(job.Analysis) {
 		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "tidak ada mismatch routing untuk diperbaiki"}
@@ -277,6 +286,17 @@ func RequestAITriageJobFix(ctx context.Context, id string) (*RequestAITriageJobF
 		return nil, &errs.Error{Code: errs.Internal, Message: "load triage job failed"}
 	}
 	return &RequestAITriageJobFixResponse{Job: job}, nil
+}
+
+func triageJobCursorFixAttempts(analysisJSON json.RawMessage) int {
+	if len(analysisJSON) == 0 {
+		return 0
+	}
+	var analysis ai.AnalyzeConversationResult
+	if err := json.Unmarshal(analysisJSON, &analysis); err != nil {
+		return 0
+	}
+	return analysis.CursorFixAttempts
 }
 
 func triageJobHasFixableMismatches(analysisJSON json.RawMessage) bool {
@@ -318,9 +338,21 @@ func countActiveTriageJobs(ctx context.Context) (int, error) {
 
 // reclaimStaleTriageJobs fails zombie jobs that block the concurrent queue.
 // Pending jobs should dispatch within minutes; running jobs should complete via GHA callback.
+func maybeReclaimStaleTriageJobs(ctx context.Context) {
+	reclaimed, err := reclaimStaleTriageJobs(ctx)
+	if err != nil {
+		rlog.Warn("reclaim stale triage jobs failed", "err", err)
+		return
+	}
+	if reclaimed > 0 {
+		rlog.Info("reclaimed stale triage jobs", "count", reclaimed)
+	}
+}
+
 func reclaimStaleTriageJobs(ctx context.Context) (int, error) {
 	pendingCutoff := time.Now().UTC().Add(-triageJobStalePendingAfter)
 	runningCutoff := time.Now().UTC().Add(-triageJobStaleRunningAfter)
+	fixRunningCutoff := time.Now().UTC().Add(-triageJobStaleFixRunningAfter)
 	res, err := system.DB.Exec(ctx, `
 		UPDATE ai_triage_job
 		SET status = $1::varchar,
@@ -329,11 +361,11 @@ func reclaimStaleTriageJobs(ctx context.Context) (int, error) {
 		    completed_at = now()
 		WHERE status = $2::varchar AND created_at < $3
 		   OR status = $4::varchar AND updated_at < $5
-		   OR status = $6::varchar AND updated_at < $5`,
+		   OR status = $6::varchar AND updated_at < $7`,
 		triageJobStatusFailed,
 		triageJobStatusPending, pendingCutoff,
 		triageJobStatusRunning, runningCutoff,
-		triageJobStatusFixRunning,
+		triageJobStatusFixRunning, fixRunningCutoff,
 	)
 	if err != nil {
 		return 0, err

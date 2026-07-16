@@ -94,7 +94,7 @@ func CompleteInternalAITriageJob(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	if len(p.RegressionFailures) > 0 || p.CursorAgentID != "" || p.CursorFixGitHubRunURL != "" {
-		if err := patchTriageJobAnalysis(ctx, id, p.RegressionFailures, p.CursorAgentID, p.CursorFixGitHubRunURL); err != nil {
+		if err := patchTriageJobAnalysis(ctx, id, p.RegressionFailures, p.CursorAgentID, p.CursorFixGitHubRunURL, p.CursorFixGitHubRunURL != ""); err != nil {
 			rlog.Warn("patch triage job analysis failed", "jobId", id, "err", err)
 		}
 	}
@@ -106,18 +106,21 @@ func completeTriageJob(ctx context.Context, jobID, status, prURL, githubRunURL, 
 	_, err := system.DB.Exec(ctx, `
 		UPDATE ai_triage_job
 		SET status = $2::varchar,
-		    pr_url = NULLIF($3, ''),
-		    github_run_url = NULLIF($4, ''),
-		    error_text = NULLIF($5, ''),
+		    pr_url = COALESCE(NULLIF($3, ''), pr_url),
+		    github_run_url = COALESCE(NULLIF($4, ''), github_run_url),
+		    error_text = CASE
+		        WHEN $2::varchar = $6::varchar THEN NULL
+		        ELSE COALESCE(NULLIF($5, ''), error_text)
+		    END,
 		    updated_at = now(),
 		    completed_at = now()
 		WHERE id = $1::uuid`,
-		jobID, status, prURL, githubRunURL, errText,
+		jobID, status, prURL, githubRunURL, errText, triageJobStatusPRReady,
 	)
 	return err
 }
 
-func patchTriageJobAnalysis(ctx context.Context, jobID string, failures []ai.TriageRegressionFailure, cursorAgentID, cursorFixRunURL string) error {
+func patchTriageJobAnalysis(ctx context.Context, jobID string, failures []ai.TriageRegressionFailure, cursorAgentID, cursorFixRunURL string, incrementFixAttempts bool) error {
 	job, err := loadTriageJob(ctx, jobID)
 	if err != nil {
 		return err
@@ -134,6 +137,9 @@ func patchTriageJobAnalysis(ctx context.Context, jobID string, failures []ai.Tri
 	}
 	if strings.TrimSpace(cursorFixRunURL) != "" {
 		analysis.CursorFixGitHubRunURL = strings.TrimSpace(cursorFixRunURL)
+	}
+	if incrementFixAttempts {
+		analysis.CursorFixAttempts++
 	}
 	ai.EnrichAnalysisResult(&analysis)
 	merged, err := json.Marshal(analysis)
