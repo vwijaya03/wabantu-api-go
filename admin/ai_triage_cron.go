@@ -30,8 +30,8 @@ func ScanAITriageAnomalies(ctx context.Context) error {
 		return err
 	}
 
-	if _, err := system.DB.Exec(ctx, `TRUNCATE ai_triage_anomaly`); err != nil {
-		rlog.Error("ai-triage scan: truncate", "err", err)
+	if _, err := system.DB.Exec(ctx, `DELETE FROM ai_triage_anomaly`); err != nil {
+		rlog.Error("ai-triage scan: clear snapshot", "err", err)
 		return err
 	}
 
