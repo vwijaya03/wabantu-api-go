@@ -97,6 +97,18 @@ if [[ ${#orphan_list[@]} -gt 0 ]]; then
   fail=1
 fi
 
+if psql "$SYSTEM_URI" -tAc "SELECT to_regclass('public.ai_triage_anomaly')" | grep -q ai_triage_anomaly; then
+  svc_delete="$(psql "$SYSTEM_URI" -tAc "
+    SELECT has_table_privilege('encore_services', 'public.ai_triage_anomaly', 'DELETE')" | tr -d '[:space:]')"
+  if [[ "$svc_delete" != "t" ]]; then
+    echo "FAIL: encore_services lacks DELETE on ai_triage_anomaly — ai-triage scan will fail"
+    echo "      Run: ./scripts/fix-cloud-db-grants.sh $ENV_NAME"
+    fail=1
+  else
+    echo "OK: encore_services can write ai_triage_anomaly"
+  fi
+fi
+
 echo
 if [[ "$fail" -ne 0 ]]; then
   echo "Run:" >&2

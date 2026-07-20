@@ -34,6 +34,9 @@ MIGRATIONS=(
   "8:system/migrations/8_tenant_schema_migration_jobs.up.sql"
   "9:system/migrations/9_tenant_schema_migration_job_lane.up.sql"
   "10:system/migrations/10_ai_triage_job.up.sql"
+  "11:system/migrations/11_ai_triage_anomaly.up.sql"
+  "12:system/migrations/12_ai_triage_llm_scan.up.sql"
+  "13:system/migrations/13_ai_triage_report.up.sql"
 )
 
 for entry in "${MIGRATIONS[@]}"; do
@@ -57,6 +60,15 @@ for entry in "${MIGRATIONS[@]}"; do
     INSERT INTO schema_migrations (version, dirty) VALUES ($version, false)
     ON CONFLICT (version) DO UPDATE SET dirty = false;"
 done
+
+echo ""
+echo "=== Step 3: GRANT runtime roles on new public tables ==="
+psql "$ADMIN_URI" -v ON_ERROR_STOP=1 -c "
+  GRANT USAGE ON SCHEMA public TO encore_writer, encore_reader, encore_services;
+  GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO encore_writer, encore_services;
+  GRANT SELECT ON ALL TABLES IN SCHEMA public TO encore_reader;
+  GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO encore_writer, encore_services;
+  GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO encore_reader;"
 
 echo ""
 echo "Done. Verify: ./scripts/verify-cloud-deploy-ready.sh $ENV_NAME"
