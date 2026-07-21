@@ -358,12 +358,36 @@ func resyncOrderCOGS(ctx context.Context, tenantSchema string, conn *sql.Conn, o
 	if net <= 0 {
 		return nil
 	}
-	short := orderID
+	walletID, err := orderIncomeWalletID(ctx, conn, orderID)
+	if err != nil {
+		return err
+	}
+	return finance.RecordInventoryEntry(ctx, tenantSchema, createdBy, ref,
+		"expense", finCatHPP, orderCOGSDescription(orderID), net, walletID)
+}
+
+func orderCOGSDescription(orderID string) string {
+	short := strings.TrimSpace(orderID)
 	if len(short) > 8 {
 		short = short[:8]
 	}
-	return finance.RecordInventoryEntry(ctx, tenantSchema, createdBy, ref,
-		"expense", finCatHPP, "HPP pesanan "+short, net)
+	return fmt.Sprintf("HPP pesanan #%s — harga pokok penjualan", short)
+}
+
+func orderIncomeWalletID(ctx context.Context, conn *sql.Conn, orderID string) (string, error) {
+	var wallet sql.NullString
+	err := conn.QueryRowContext(ctx, `
+		SELECT income_wallet_id::text FROM "order" WHERE id = $1::uuid`, orderID).Scan(&wallet)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", appErrs.Internal(err.Error())
+	}
+	if wallet.Valid {
+		return wallet.String, nil
+	}
+	return "", nil
 }
 
 func itemName(ctx context.Context, conn *sql.Conn, catalogItemID string) string {

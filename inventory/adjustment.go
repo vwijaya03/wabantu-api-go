@@ -242,7 +242,7 @@ func CreateAdjustment(ctx context.Context, p *AdjustmentParams) (*StockOpResult,
 	if dir == dirOut && res.TotalCost > 0 {
 		desc := fmt.Sprintf("Penyesuaian stok keluar (%s)", strings.TrimSpace(p.Note))
 		if err := finance.RecordInventoryEntry(ctx, u.TenantSchema, u.AccountID,
-			res.MovementID, "expense", finCatSelisihPersediaan, desc, round2(res.TotalCost)); err != nil {
+			res.MovementID, "expense", finCatSelisihPersediaan, desc, round2(res.TotalCost), ""); err != nil {
 			return nil, err
 		}
 	}
@@ -633,7 +633,7 @@ func CreateRevaluation(ctx context.Context, p *RevaluationParams) (*StockOpResul
 		}
 		desc := fmt.Sprintf("Revaluasi HPP (%s)", strings.TrimSpace(p.Note))
 		if err := finance.RecordInventoryEntry(ctx, u.TenantSchema, u.AccountID,
-			movementID, flow, finCatPenyesuaianNilai, desc, round2(abs(delta))); err != nil {
+			movementID, flow, finCatPenyesuaianNilai, desc, round2(abs(delta)), ""); err != nil {
 			return nil, err
 		}
 	}

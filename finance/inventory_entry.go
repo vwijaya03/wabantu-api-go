@@ -15,11 +15,12 @@ import (
 // "expense". referenceNo should be unique per event (e.g. the stock movement id)
 // so retries are idempotent. categoryName should be a system finance category
 // such as "Selisih Persediaan" or "Penyesuaian Nilai Persediaan".
+// preferredWalletID may be empty to use the default income wallet (first active cash wallet).
 //
 // Best-effort consistency mirrors the order→income pattern: callers post this
 // after the stock movement is committed and pre-check the period lock via
 // CheckCurrentPeriodUnlocked so failures are caught before the stock write.
-func RecordInventoryEntry(ctx context.Context, tenantSchema, createdBy, referenceNo, flow, categoryName, description string, amount float64) error {
+func RecordInventoryEntry(ctx context.Context, tenantSchema, createdBy, referenceNo, flow, categoryName, description string, amount float64, preferredWalletID string) error {
 	if amount <= 0 {
 		return nil
 	}
@@ -35,7 +36,7 @@ func RecordInventoryEntry(ctx context.Context, tenantSchema, createdBy, referenc
 	}
 	defer conn.Close()
 
-	walletID, err := resolveDefaultIncomeWallet(ctx, conn)
+	resolvedWalletID, err := resolveIncomeWallet(ctx, conn, preferredWalletID)
 	if err != nil {
 		return err
 	}
@@ -78,10 +79,10 @@ func RecordInventoryEntry(ctx context.Context, tenantSchema, createdBy, referenc
 		 (type, amount, currency, wallet_id, category_id, description, reference_no,
 		  transaction_date, status, tags, created_by)
 		 VALUES ($1, $2, 'IDR', $3, $4, $5, $6, $7, 'approved', '{}', $8)`,
-		flow, amount, walletID, nullStr(categoryID), description, refArg, today, createdBy); err != nil {
+		flow, amount, resolvedWalletID, nullStr(categoryID), description, refArg, today, createdBy); err != nil {
 		return appErrs.Internal("failed to record inventory finance entry: " + err.Error())
 	}
-	refreshWallets(ctx, conn, walletID, nil)
+	refreshWallets(ctx, conn, resolvedWalletID, nil)
 	return nil
 }
 

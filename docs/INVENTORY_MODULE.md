@@ -233,6 +233,7 @@ Catatan:
 - Stok minus tetap diblok bila `block_negative_stock = true`.
 
 Helper finance: `finance.RecordInventoryEntry` / `RemoveInventoryEntry` (idempotent per reference_no).
+Parameter `preferredWalletID` opsional — kosong memakai dompet default (perilaku lama untuk retur, bill, adjustment).
 
 ## 7. Bundle (PR-A4)
 
@@ -342,7 +343,9 @@ setiap kali status/baris pesanan berubah. Reconcile berbasis _desired state_:
 - **Block oversell**: sebelum commit transisi ke committed, `PrecheckOrderStock` menolak
   bila `block_negative_stock` dan stok kurang (fail-fast, pesanan tidak jadi pindah status).
 - **COGS** (mode akrual): `resyncOrderCOGS` menyetel expense **HPP / COGS** = net COGS
-  movement penjualan (idempotent, ref `cogs:<orderId>`). Mode cashflow: tidak ada COGS.
+  movement penjualan (idempotent, ref `cogs:<orderId>`). Dompet expense = **`order.income_wallet_id`**
+  (sama dengan pemasukan pesanan); kosong → dompet default. Deskripsi: `HPP pesanan #<8-char> — harga pokok penjualan`.
+  Mode cashflow: tidak ada COGS.
 - **Cancel/Delete cascade**: stok kembali + income pesanan dihapus (existing) + COGS dihapus.
 
 Tidak ada tabel/endpoint baru — perubahan pada `order` service + helper `inventory/order_sync.go`.
