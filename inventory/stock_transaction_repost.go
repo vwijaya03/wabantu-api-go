@@ -277,7 +277,7 @@ func recordAdjustmentFinance(ctx context.Context, tenantSchema, accountID string
 	}
 	desc := fmt.Sprintf("Penyesuaian stok keluar (%s)", strings.TrimSpace(r.note))
 	return finance.RecordInventoryEntry(ctx, tenantSchema, accountID,
-		r.res.MovementID, "expense", finCatSelisihPersediaan, desc, round2(r.res.TotalCost))
+		r.res.MovementID, "expense", finCatSelisihPersediaan, desc, round2(r.res.TotalCost), "")
 }
 
 func recordRevaluationFinance(ctx context.Context, tenantSchema, accountID, movementID, note string, delta float64) error {
@@ -290,5 +290,5 @@ func recordRevaluationFinance(ctx context.Context, tenantSchema, accountID, move
 	}
 	desc := fmt.Sprintf("Revaluasi HPP (%s)", strings.TrimSpace(note))
 	return finance.RecordInventoryEntry(ctx, tenantSchema, accountID,
-		movementID, flow, finCatPenyesuaianNilai, desc, round2(abs(delta)))
+		movementID, flow, finCatPenyesuaianNilai, desc, round2(abs(delta)), "")
 }

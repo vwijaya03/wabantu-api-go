@@ -265,7 +265,7 @@ func createSalesReturnConn(ctx context.Context, conn *sql.Conn, tenantSchema, ac
 	_, postExpense, _, serr := loadSyncSetting(ctx, conn)
 	if serr == nil && !postExpense && totalCost > 0 {
 		if err := finance.RecordInventoryEntry(ctx, tenantSchema, accountID,
-			"ret:"+returnID, "income", finCatHPP, "Retur penjualan "+returnNo, round2(totalCost)); err != nil {
+			"ret:"+returnID, "income", finCatHPP, "Retur penjualan "+returnNo, round2(totalCost), ""); err != nil {
 			return nil, err
 		}
 	}

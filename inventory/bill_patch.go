@@ -133,7 +133,7 @@ func UpdateBill(ctx context.Context, id string, p *UpdateBillParams) (*Bill, err
 	if setting.PurchasePostsExpense && subtotal > 0 {
 		desc := fmt.Sprintf("Pembelian persediaan %s", existing.BillNo)
 		if err := finance.RecordInventoryEntry(ctx, u.TenantSchema, u.AccountID,
-			id, "expense", finCatPembelianPersediaan, desc, round2(subtotal)); err != nil {
+			id, "expense", finCatPembelianPersediaan, desc, round2(subtotal), ""); err != nil {
 			return nil, err
 		}
 	}

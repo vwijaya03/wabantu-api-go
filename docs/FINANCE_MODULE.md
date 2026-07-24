@@ -277,9 +277,14 @@ Patch di `tenant/finance_schema.go`; index `to_char(...)` pada periode **tidak**
 
 Saat pesanan berstatus **`completed`** (create, update, atau batch status):
 
-- Insert transaksi `income` **approved** ke dompet default (biasanya Kas Tunai).
+- Insert transaksi `income` **approved** ke dompet **`order.income_wallet_id`** (kosong → dompet default, biasanya Kas Tunai).
 - Kategori sistem **Penjualan Produk** bila ada.
 - `reference_no` = UUID pesanan (idempoten — tidak dobel jika di-update ulang ke completed).
+
+Saat status committed dan modul inventory **setup_completed** (mode akrual, `purchase_posts_expense = false`):
+
+- Expense **HPP / COGS** dicatat ke **dompet yang sama** dengan pemasukan pesanan (`order.income_wallet_id`).
+- `reference_no` = `cogs:<orderId>` (idempoten via remove + re-insert saat stok pesanan berubah).
 
 Saat status kembali **`draft`** atau **`cancelled`** (atau cancel endpoint):
 
@@ -294,6 +299,7 @@ Implementasi: `finance/order_income.go`, dipanggil dari `order/order.go`.
 
 | Tanggal | Catatan |
 |---------|---------|
+| 2026-07-21 | HPP pesanan (mode akrual) mengikuti `order.income_wallet_id`; `RecordInventoryEntry` terima dompet opsional |
 | 2026-05-29 | Fix deadlock `*sql.Conn`: jangan panggil query (mis. `financeNow`) saat `Rows` masih terbuka — `templates/manage` timeout ~30s / `context canceled` |
 | 2026-05-27 | Tagihan bulanan: checklist per `YYYY-MM`, toggle checkbox, auto-post expense saat semua selesai; template CRUD + search/pagination; `due_anchor_date` + input tanggal |
 | 2026-05-27 | Pemasukan otomatis dari pesanan selesai; hapus saat draft/dibatalkan |

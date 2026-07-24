@@ -193,7 +193,7 @@ func UpdateSalesReturn(ctx context.Context, id string, p *UpdateSalesReturnParam
 	_, postExpense, _, serr := loadSyncSetting(ctx, conn)
 	if serr == nil && !postExpense && totalCost > 0 {
 		if err := finance.RecordInventoryEntry(ctx, u.TenantSchema, u.AccountID,
-			"ret:"+id, "income", finCatHPP, "Retur penjualan "+returnNo, round2(totalCost)); err != nil {
+			"ret:"+id, "income", finCatHPP, "Retur penjualan "+returnNo, round2(totalCost), ""); err != nil {
 			return nil, err
 		}
 	}

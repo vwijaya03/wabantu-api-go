@@ -40,3 +40,28 @@ func TestMergeRequirements(t *testing.T) {
 		t.Fatalf("b/w1 = %v, want 4", got[reqKey{"b", "w1"}])
 	}
 }
+
+func TestOrderCOGSDescription(t *testing.T) {
+	orderID := "12345678-abcd-4ef0-8000-000000000001"
+	got := orderCOGSDescription(orderID)
+	want := "HPP pesanan #12345678 — harga pokok penjualan"
+	if got != want {
+		t.Fatalf("orderCOGSDescription() = %q, want %q", got, want)
+	}
+}
+
+func TestOrderCOGSDescriptionShortID(t *testing.T) {
+	got := orderCOGSDescription("abc")
+	want := "HPP pesanan #abc — harga pokok penjualan"
+	if got != want {
+		t.Fatalf("orderCOGSDescription() = %q, want %q", got, want)
+	}
+}
+
+func TestOrderCOGSReferencePrefix(t *testing.T) {
+	orderID := "12345678-abcd-4ef0-8000-000000000001"
+	ref := cogsRefPrefix + orderID
+	if ref != "cogs:12345678-abcd-4ef0-8000-000000000001" {
+		t.Fatalf("cogs reference = %q", ref)
+	}
+}

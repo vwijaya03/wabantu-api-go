@@ -181,7 +181,7 @@ func CreateBill(ctx context.Context, p *CreateBillParams) (*Bill, error) {
 	if setting.PurchasePostsExpense && subtotal > 0 {
 		desc := fmt.Sprintf("Pembelian persediaan %s", billNo)
 		if err := finance.RecordInventoryEntry(ctx, u.TenantSchema, u.AccountID,
-			billID, "expense", finCatPembelianPersediaan, desc, round2(subtotal)); err != nil {
+			billID, "expense", finCatPembelianPersediaan, desc, round2(subtotal), ""); err != nil {
 			return nil, err
 		}
 	}
