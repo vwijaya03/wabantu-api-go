@@ -3,6 +3,8 @@ package events
 import (
 	"context"
 	"database/sql"
+	"sort"
+	"strings"
 )
 
 type PublicPatientScheduleRow struct {
@@ -28,6 +30,28 @@ func toPublicPatientScheduleRows(patients []Patient) []PublicPatientScheduleRow 
 		})
 	}
 	return out
+}
+
+// sortPublicPatientScheduleByPreferredTimeASC sorts by preferredTime ascending.
+// Empty preferred times are placed last; ties break by fullName then slotLabel.
+func sortPublicPatientScheduleByPreferredTimeASC(rows []PublicPatientScheduleRow) {
+	sort.SliceStable(rows, func(i, j int) bool {
+		ti := normalizePreferredTime(rows[i].PreferredTime)
+		tj := normalizePreferredTime(rows[j].PreferredTime)
+		ei, ej := ti == "", tj == ""
+		if ei != ej {
+			return !ei // non-empty before empty
+		}
+		if ti != tj {
+			return ti < tj
+		}
+		ni := strings.ToLower(strings.TrimSpace(rows[i].FullName))
+		nj := strings.ToLower(strings.TrimSpace(rows[j].FullName))
+		if ni != nj {
+			return ni < nj
+		}
+		return strings.TrimSpace(rows[i].SlotLabel) < strings.TrimSpace(rows[j].SlotLabel)
+	})
 }
 
 //encore:api public method=GET path=/api/v1/public/events/:tenantSlug/patient-schedule/:eventSlug
@@ -72,8 +96,11 @@ func loadPublicPatientSchedule(ctx context.Context, tenantSlug, eventSlug string
 		return nil, err
 	}
 
+	rows := toPublicPatientScheduleRows(patients)
+	sortPublicPatientScheduleByPreferredTimeASC(rows)
+
 	return &PublicPatientScheduleResponse{
 		EventName: eventName,
-		Patients:  toPublicPatientScheduleRows(patients),
+		Patients:  rows,
 	}, nil
 }

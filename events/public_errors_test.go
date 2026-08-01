@@ -127,3 +127,20 @@ func TestToPublicPatientScheduleRows(t *testing.T) {
 		t.Fatalf("nil input should yield empty non-nil slice, got %#v", empty)
 	}
 }
+
+func TestSortPublicPatientScheduleByPreferredTimeASC(t *testing.T) {
+	rows := []PublicPatientScheduleRow{
+		{FullName: "Candra", PreferredTime: "10:00", SlotLabel: "s3"},
+		{FullName: "Ani", PreferredTime: "", SlotLabel: "s0"},
+		{FullName: "Budi", PreferredTime: "9:30", SlotLabel: "s2"},
+		{FullName: "Dedi", PreferredTime: "09:00", SlotLabel: "s1"},
+		{FullName: "Eka", PreferredTime: "  ", SlotLabel: "s4"},
+	}
+	sortPublicPatientScheduleByPreferredTimeASC(rows)
+	want := []string{"Dedi", "Budi", "Candra", "Ani", "Eka"}
+	for i, name := range want {
+		if rows[i].FullName != name {
+			t.Fatalf("index %d: got %q want %q (rows=%+v)", i, rows[i].FullName, name, rows)
+		}
+	}
+}

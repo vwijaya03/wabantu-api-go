@@ -278,7 +278,7 @@ Seed default terapi (jika kosong): *Terapi 5 Elemen*, *Terapi Shijie*, *Terapi E
 | Field | Catatan |
 |-------|---------|
 | `eventName` | Nama acara |
-| `patients` | Hanya `CONFIRMED` yang sudah punya slot; urutan sama tab Jadwal dashboard |
+| `patients` | Hanya `CONFIRMED` yang sudah punya slot; diurutkan `preferredTime` ASC (kosong di akhir) |
 | `patients[].slotLabel` | Format sama `formatPatientSlotLabel` / schedule dashboard |
 | `patients[].preferredTime` | Boleh `""` |
 
