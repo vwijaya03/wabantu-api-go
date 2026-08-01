@@ -40,7 +40,10 @@ Modul **Event Reservation & Therapy** untuk tenant WABantu: manajemen acara, sta
 | `events/therapy_schedule.go` | Template slot manual, validasi |
 | `events/dashboard.go` | Ringkasan acara |
 | `events/event_duplicate.go` | Duplikat acara |
-| `events/public.go` | Pendaftaran publik (`/register/{tenant}/{event}`) |
+| `events/public.go` | Pendaftaran publik pasien & staf |
+| `events/public_monitor.go` | Monitor staf publik |
+| `events/public_patient_schedule.go` | Jadwal pasien publik |
+| `events/public_errors.go` | Sanitasi error publik (`EVT_*`) |
 | `events/image_import.go` | Import gambar staf/pasien |
 | `events/master.go` | Master terapi, peran relawan, tugas |
 | `events/helpers.go` | Schema cache, util tenant |
@@ -241,12 +244,61 @@ Seed default terapi (jika kosong): *Terapi 5 Elemen*, *Terapi Shijie*, *Terapi E
 
 ### Publik
 
-| Method | Path |
-|--------|------|
-| GET | `/api/v1/public/events/:tenantSlug/register/:eventSlug` |
-| POST | `/api/v1/public/events/:tenantSlug/register/:eventSlug` |
+| Method | Path | Keterangan |
+|--------|------|------------|
+| GET | `/api/v1/public/events/:tenantSlug/register/:eventSlug` | Info + terapi untuk form pasien |
+| GET | `/api/v1/public/events/:tenantSlug/register/:eventSlug/slots` | Slot tersedia per terapi |
+| POST | `/api/v1/public/events/:tenantSlug/register/:eventSlug` | Daftar pasien |
+| GET | `/api/v1/public/events/:tenantSlug/register/:eventSlug/staff` | Info form staf/relawan |
+| POST | `/api/v1/public/events/:tenantSlug/register/:eventSlug/staff` | Daftar staf/relawan |
+| GET | `/api/v1/public/events/:tenantSlug/monitor/:eventSlug` | Monitor staf publik (kapasitas + daftar staf) |
+| GET | `/api/v1/public/events/:tenantSlug/patient-schedule/:eventSlug` | Jadwal pasien publik (CONFIRMED + slot) |
 
-Acara harus `PUBLISHED` dan dalam jendela registrasi.
+- Pendaftaran pasien/staf: acara harus `PUBLISHED` dan dalam jendela registrasi.
+- Monitor & jadwal pasien: hanya `status = PUBLISHED` (selain itu → 404).
+
+#### Patient schedule response
+
+`GET .../patient-schedule/:eventSlug` mengembalikan:
+
+```json
+{
+  "eventName": "Terapi Energi 2 Agustus 2026",
+  "patients": [
+    {
+      "fullName": "Lilik Supatmi",
+      "therapyName": "Terapi 5 Elemen",
+      "slotLabel": "2 Agustus 2026 09:00–09:30",
+      "preferredTime": "09:00"
+    }
+  ]
+}
+```
+
+| Field | Catatan |
+|-------|---------|
+| `eventName` | Nama acara |
+| `patients` | Hanya `CONFIRMED` yang sudah punya slot; urutan sama tab Jadwal dashboard |
+| `patients[].slotLabel` | Format sama `formatPatientSlotLabel` / schedule dashboard |
+| `patients[].preferredTime` | Boleh `""` |
+
+**Tidak dikembalikan:** birth date, complaint, status, UUID, data tenant internal.
+
+#### Public error contract
+
+Endpoint `public/events/*` **tidak pernah** mengembalikan teks Postgres/SQL ke client.
+
+| Situasi | HTTP | `message` | `errorCode` (Details + log) |
+|---------|------|-----------|------------------------------|
+| Tenant/event tidak ada, atau bukan `PUBLISHED` | 404 | `Acara tidak ditemukan` | `EVT_NOT_FOUND` |
+| Transient (bad connection, missing `evt_*` relation) | 503 | `Jadwal sementara tidak tersedia. Coba muat ulang sebentar lagi.` | `EVT_PUBLIC_UNAVAILABLE` |
+| Error tak terduga lain | 500 | `Terjadi gangguan. Coba lagi nanti.` | `EVT_PUBLIC_INTERNAL` |
+
+Validasi input (mis. field wajib) tetap `400` dengan pesan field-level.
+
+**Logging:** `rlog.Error("public event failed", "errorCode", ..., "tenantSlug", ..., "eventSlug", ..., "err", err)` — detail DB hanya di server. Filter log Cloud/local dengan `errorCode` + `tenantSlug` + `eventSlug`.
+
+**Retry:** satu kali ulang query pada bad connection / missing relation transient, lalu 503 jika masih gagal.
 
 ### Import gambar (AI)
 
@@ -306,6 +358,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:4000/api/v1/events/staff
 | Import roster 0 added | Roster kosong — sync dari acara lama atau tambah staf dengan checkbox roster |
 | Export pasien ditolak | Terlalu banyak baris filter (> 2500) — persempit filter |
 | Export job `failed` setelah 15 menit | Job `processing` kedaluwarsa — ulangi export |
+| User melihat error `evt_* does not exist` / teks Postgres di monitor/jadwal publik | **Seharusnya tidak lagi** — client mendapat 503 aman (`EVT_PUBLIC_UNAVAILABLE`). Cek log server dengan `errorCode=EVT_PUBLIC_UNAVAILABLE`, lalu jalankan schema patch tenant (`RunEventsSchemaPatches` / buka halaman acara sekali) |
 
 ---
 

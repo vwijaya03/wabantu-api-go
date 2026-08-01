@@ -5,18 +5,16 @@ import (
 	"database/sql"
 	"sort"
 	"strings"
-
-	appErrs "encore.app/wabantu/shared/errs"
 )
 
 type PublicStaffMonitorPerson struct {
-	FullName           string   `json:"fullName"`
-	RoleLabel          string   `json:"roleLabel"`
-	TherapyNames       []string `json:"therapyNames"`
-	VolunteerRoleName  string   `json:"volunteerRoleName,omitempty"`
-	IsPencatat         bool     `json:"isPencatat"`
-	CountsTowardMeals  bool     `json:"countsTowardMeals"`
-	Notes              string   `json:"notes,omitempty"`
+	FullName          string   `json:"fullName"`
+	RoleLabel         string   `json:"roleLabel"`
+	TherapyNames      []string `json:"therapyNames"`
+	VolunteerRoleName string   `json:"volunteerRoleName,omitempty"`
+	IsPencatat        bool     `json:"isPencatat"`
+	CountsTowardMeals bool     `json:"countsTowardMeals"`
+	Notes             string   `json:"notes,omitempty"`
 }
 
 type PublicStaffMonitorResponse struct {
@@ -34,13 +32,19 @@ type PublicStaffMonitorResponse struct {
 
 //encore:api public method=GET path=/api/v1/public/events/:tenantSlug/monitor/:eventSlug
 func GetPublicStaffMonitor(ctx context.Context, tenantSlug, eventSlug string) (*PublicStaffMonitorResponse, error) {
+	return runPublicEvent(ctx, tenantSlug, eventSlug, func() (*PublicStaffMonitorResponse, error) {
+		return loadPublicStaffMonitor(ctx, tenantSlug, eventSlug)
+	})
+}
+
+func loadPublicStaffMonitor(ctx context.Context, tenantSlug, eventSlug string) (*PublicStaffMonitorResponse, error) {
 	schema, err := tenantSchemaBySlug(ctx, tenantSlug)
 	if err != nil {
 		return nil, err
 	}
 	conn, err := tenantConn(ctx, schema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
 	defer conn.Close()
 
@@ -54,13 +58,13 @@ func GetPublicStaffMonitor(ctx context.Context, tenantSlug, eventSlug string) (*
 		WHERE event_slug=$1 AND deleted_at IS NULL`, eventSlug,
 	).Scan(&eventID, &resp.EventName, &desc, &loc, &resp.StartDate, &resp.EndDate, &resp.StartTime, &resp.EndTime, &status)
 	if err == sql.ErrNoRows {
-		return nil, appErrs.NotFound("acara tidak ditemukan")
+		return nil, publicNotFound()
 	}
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
 	if status != "PUBLISHED" {
-		return nil, appErrs.NotFound("acara tidak tersedia")
+		return nil, publicNotFound()
 	}
 	if desc.Valid {
 		resp.EventDescription = desc.String
@@ -93,7 +97,7 @@ func loadPublicStaffMonitorPeople(ctx context.Context, conn *sql.Conn, eventID s
 		WHERE p.event_id=$1::uuid AND p.deleted_at IS NULL
 		ORDER BY p.person_type, p.created_at`, eventID)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
 	type staffScratch struct {
 		personID            string
@@ -106,16 +110,16 @@ func loadPublicStaffMonitorPeople(ctx context.Context, conn *sql.Conn, eventID s
 		var s staffScratch
 		if err := rows.Scan(&s.personID, &s.nameEnc, &s.nameLegacy, &s.personType, &s.notes, &s.countsTowardMeals); err != nil {
 			_ = rows.Close()
-			return nil, appErrs.Internal(err.Error())
+			return nil, err
 		}
 		scratch = append(scratch, s)
 	}
 	if err := rows.Err(); err != nil {
 		_ = rows.Close()
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
 	if err := rows.Close(); err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
 
 	extrasByID := make([]EventPerson, len(scratch))
@@ -123,14 +127,14 @@ func loadPublicStaffMonitorPeople(ctx context.Context, conn *sql.Conn, eventID s
 		extrasByID[i].ID = s.personID
 	}
 	if err := attachPersonExtrasBatch(ctx, conn, extrasByID); err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
 
 	var out []PublicStaffMonitorPerson
 	for i, s := range scratch {
 		fullName, err := decryptPersonName(s.nameEnc, s.nameLegacy)
 		if err != nil {
-			return nil, appErrs.Internal(err.Error())
+			return nil, err
 		}
 		out = append(out, PublicStaffMonitorPerson{
 			FullName:          fullName,
