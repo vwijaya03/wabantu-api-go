@@ -11,19 +11,19 @@ import (
 )
 
 type PublicEventInfo struct {
-	EventName        string              `json:"eventName"`
-	EventDescription string              `json:"eventDescription,omitempty"`
-	Location         string              `json:"location,omitempty"`
-	StartDate        string              `json:"startDate"`
-	EndDate          string              `json:"endDate"`
-	StartTime        string              `json:"startTime"`
-	EndTime          string              `json:"endTime"`
-	Status           string              `json:"status"`
-	RegistrationOpen bool                `json:"registrationOpen"`
-	Message          string              `json:"message,omitempty"`
-	Therapies        []Therapy           `json:"therapies"`
-	Closed           bool                `json:"closed"`
-	Cancelled        bool                `json:"cancelled"`
+	EventName        string    `json:"eventName"`
+	EventDescription string    `json:"eventDescription,omitempty"`
+	Location         string    `json:"location,omitempty"`
+	StartDate        string    `json:"startDate"`
+	EndDate          string    `json:"endDate"`
+	StartTime        string    `json:"startTime"`
+	EndTime          string    `json:"endTime"`
+	Status           string    `json:"status"`
+	RegistrationOpen bool      `json:"registrationOpen"`
+	Message          string    `json:"message,omitempty"`
+	Therapies        []Therapy `json:"therapies"`
+	Closed           bool      `json:"closed"`
+	Cancelled        bool      `json:"cancelled"`
 }
 
 type PublicRegisterParams struct {
@@ -59,23 +59,29 @@ func tenantSchemaBySlug(ctx context.Context, slug string) (string, error) {
 		JOIN tenant t ON t.id = tc.tenant_id
 		WHERE t.slug = $1 AND t.deleted_at IS NULL`, slug).Scan(&schema)
 	if err == sql.ErrNoRows {
-		return "", appErrs.NotFound("toko tidak ditemukan")
+		return "", publicNotFound()
 	}
 	if err != nil {
-		return "", appErrs.Internal(err.Error())
+		return "", err
 	}
 	return schema, nil
 }
 
 //encore:api public method=GET path=/api/v1/public/events/:tenantSlug/register/:eventSlug
 func GetPublicRegistration(ctx context.Context, tenantSlug, eventSlug string) (*PublicEventInfo, error) {
+	return runPublicEvent(ctx, tenantSlug, eventSlug, func() (*PublicEventInfo, error) {
+		return loadPublicRegistration(ctx, tenantSlug, eventSlug)
+	})
+}
+
+func loadPublicRegistration(ctx context.Context, tenantSlug, eventSlug string) (*PublicEventInfo, error) {
 	schema, err := tenantSchemaBySlug(ctx, tenantSlug)
 	if err != nil {
 		return nil, err
 	}
 	conn, err := tenantConn(ctx, schema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
 	defer conn.Close()
 
@@ -90,10 +96,10 @@ func GetPublicRegistration(ctx context.Context, tenantSlug, eventSlug string) (*
 		WHERE event_slug=$1 AND deleted_at IS NULL`, eventSlug,
 	).Scan(&e.EventName, &desc, &loc, &e.StartDate, &e.EndDate, &e.StartTime, &e.EndTime, &e.Status, &openAt, &closeAt)
 	if err == sql.ErrNoRows {
-		return nil, appErrs.NotFound("acara tidak ditemukan")
+		return nil, publicNotFound()
 	}
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
 	if desc.Valid {
 		e.EventDescription = desc.String
@@ -108,7 +114,7 @@ func GetPublicRegistration(ctx context.Context, tenantSlug, eventSlug string) (*
 		e.Message = "Acara dibatalkan."
 		return &e, nil
 	case "DRAFT", "ARCHIVED":
-		return nil, appErrs.NotFound("acara tidak tersedia")
+		return nil, publicNotFound()
 	case "CLOSED":
 		e.Closed = true
 		e.Message = "Pendaftaran telah ditutup."
@@ -131,13 +137,13 @@ func GetPublicRegistration(ctx context.Context, tenantSlug, eventSlug string) (*
 		WHERE e.event_slug=$1 AND t.deleted_at IS NULL AND t.is_active = true
 		ORDER BY t.display_order`, eventSlug)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var t Therapy
 		if err := rows.Scan(&t.ID, &t.TherapyName, &t.Description, &t.Active, &t.DisplayOrder); err != nil {
-			return nil, appErrs.Internal(err.Error())
+			return nil, err
 		}
 		e.Therapies = append(e.Therapies, t)
 	}
@@ -152,13 +158,19 @@ func GetPublicRegistrationSlots(ctx context.Context, tenantSlug, eventSlug strin
 	if p == nil || strings.TrimSpace(p.TherapyID) == "" {
 		return nil, appErrs.BadRequest("terapi wajib dipilih")
 	}
+	return runPublicEvent(ctx, tenantSlug, eventSlug, func() (*PublicSlotsResponse, error) {
+		return loadPublicRegistrationSlots(ctx, tenantSlug, eventSlug, p)
+	})
+}
+
+func loadPublicRegistrationSlots(ctx context.Context, tenantSlug, eventSlug string, p *PublicSlotsParams) (*PublicSlotsResponse, error) {
 	schema, err := tenantSchemaBySlug(ctx, tenantSlug)
 	if err != nil {
 		return nil, err
 	}
 	conn, err := tenantConn(ctx, schema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
 	defer conn.Close()
 
@@ -169,10 +181,10 @@ func GetPublicRegistrationSlots(ctx context.Context, tenantSlug, eventSlug strin
 		FROM evt_event WHERE event_slug=$1 AND deleted_at IS NULL`, eventSlug,
 	).Scan(&eventID, &status, &openAt, &closeAt)
 	if err == sql.ErrNoRows {
-		return nil, appErrs.NotFound("acara tidak ditemukan")
+		return nil, publicNotFound()
 	}
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
 	if status != "PUBLISHED" || !registrationOpen(time.Now(), openAt, closeAt) {
 		return &PublicSlotsResponse{Items: []PublicSlotOption{}}, nil
@@ -180,7 +192,7 @@ func GetPublicRegistrationSlots(ctx context.Context, tenantSlug, eventSlug strin
 
 	items, err := listPublicSlotOptions(ctx, conn, eventID, strings.TrimSpace(p.TherapyID))
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
 	return &PublicSlotsResponse{Items: items}, nil
 }
@@ -190,13 +202,19 @@ func PostPublicRegistration(ctx context.Context, tenantSlug, eventSlug string, p
 	if p == nil {
 		return nil, appErrs.BadRequest("data tidak valid")
 	}
+	return runPublicEvent(ctx, tenantSlug, eventSlug, func() (*PublicRegisterResponse, error) {
+		return postPublicRegistration(ctx, tenantSlug, eventSlug, p)
+	})
+}
+
+func postPublicRegistration(ctx context.Context, tenantSlug, eventSlug string, p *PublicRegisterParams) (*PublicRegisterResponse, error) {
 	schema, err := tenantSchemaBySlug(ctx, tenantSlug)
 	if err != nil {
 		return nil, err
 	}
 	conn, err := tenantConn(ctx, schema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
 	defer conn.Close()
 
@@ -207,10 +225,10 @@ func PostPublicRegistration(ctx context.Context, tenantSlug, eventSlug string, p
 		FROM evt_event WHERE event_slug=$1 AND deleted_at IS NULL`, eventSlug,
 	).Scan(&eventID, &status, &openAt, &closeAt)
 	if err == sql.ErrNoRows {
-		return nil, appErrs.NotFound("acara tidak ditemukan")
+		return nil, publicNotFound()
 	}
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
 	if status == "CANCELLED" {
 		return nil, appErrs.BadRequest("Acara dibatalkan.")
@@ -262,24 +280,30 @@ type PublicStaffEventInfo struct {
 }
 
 type PublicStaffRegisterBody struct {
-	FullName        string   `json:"fullName"`
-	Role            string   `json:"role"`
-	TherapyIDs      []string `json:"therapyIds,omitempty"`
-	VolunteerRoleID string   `json:"volunteerRoleId,omitempty"`
-	Phone              string   `json:"phone,omitempty"`
-	Notes              string   `json:"notes,omitempty"`
-	CountsTowardMeals  *bool    `json:"countsTowardMeals,omitempty"`
+	FullName          string   `json:"fullName"`
+	Role              string   `json:"role"`
+	TherapyIDs        []string `json:"therapyIds,omitempty"`
+	VolunteerRoleID   string   `json:"volunteerRoleId,omitempty"`
+	Phone             string   `json:"phone,omitempty"`
+	Notes             string   `json:"notes,omitempty"`
+	CountsTowardMeals *bool    `json:"countsTowardMeals,omitempty"`
 }
 
 //encore:api public method=GET path=/api/v1/public/events/:tenantSlug/register/:eventSlug/staff
 func GetPublicStaffRegistration(ctx context.Context, tenantSlug, eventSlug string) (*PublicStaffEventInfo, error) {
+	return runPublicEvent(ctx, tenantSlug, eventSlug, func() (*PublicStaffEventInfo, error) {
+		return loadPublicStaffRegistration(ctx, tenantSlug, eventSlug)
+	})
+}
+
+func loadPublicStaffRegistration(ctx context.Context, tenantSlug, eventSlug string) (*PublicStaffEventInfo, error) {
 	schema, err := tenantSchemaBySlug(ctx, tenantSlug)
 	if err != nil {
 		return nil, err
 	}
 	conn, err := tenantConn(ctx, schema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
 	defer conn.Close()
 
@@ -294,10 +318,10 @@ func GetPublicStaffRegistration(ctx context.Context, tenantSlug, eventSlug strin
 		WHERE event_slug=$1 AND deleted_at IS NULL`, eventSlug,
 	).Scan(&e.EventName, &desc, &loc, &e.StartDate, &e.EndDate, &e.StartTime, &e.EndTime, &e.Status, &openAt, &closeAt)
 	if err == sql.ErrNoRows {
-		return nil, appErrs.NotFound("acara tidak ditemukan")
+		return nil, publicNotFound()
 	}
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
 	if desc.Valid {
 		e.EventDescription = desc.String
@@ -312,7 +336,7 @@ func GetPublicStaffRegistration(ctx context.Context, tenantSlug, eventSlug strin
 		e.Message = "Acara dibatalkan."
 		return &e, nil
 	case "DRAFT", "ARCHIVED":
-		return nil, appErrs.NotFound("acara tidak tersedia")
+		return nil, publicNotFound()
 	case "CLOSED":
 		e.Closed = true
 		e.Message = "Pendaftaran telah ditutup."
@@ -334,13 +358,13 @@ func GetPublicStaffRegistration(ctx context.Context, tenantSlug, eventSlug strin
 		WHERE e.event_slug=$1 AND t.deleted_at IS NULL AND t.is_active = true
 		ORDER BY t.display_order`, eventSlug)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var t Therapy
 		if err := rows.Scan(&t.ID, &t.TherapyName, &t.Description, &t.Active, &t.DisplayOrder); err != nil {
-			return nil, appErrs.Internal(err.Error())
+			return nil, err
 		}
 		e.Therapies = append(e.Therapies, t)
 	}
@@ -354,13 +378,13 @@ func GetPublicStaffRegistration(ctx context.Context, tenantSlug, eventSlug strin
 		WHERE deleted_at IS NULL AND is_active = true
 		ORDER BY display_order`)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
 	defer vrows.Close()
 	for vrows.Next() {
 		var r VolunteerRole
 		if err := vrows.Scan(&r.ID, &r.RoleName, &r.Active, &r.DisplayOrder); err != nil {
-			return nil, appErrs.Internal(err.Error())
+			return nil, err
 		}
 		e.VolunteerRoles = append(e.VolunteerRoles, r)
 	}
@@ -375,13 +399,19 @@ func PostPublicStaffRegistration(ctx context.Context, tenantSlug, eventSlug stri
 	if p == nil {
 		return nil, appErrs.BadRequest("data tidak valid")
 	}
+	return runPublicEvent(ctx, tenantSlug, eventSlug, func() (*PublicRegisterResponse, error) {
+		return postPublicStaffRegistration(ctx, tenantSlug, eventSlug, p)
+	})
+}
+
+func postPublicStaffRegistration(ctx context.Context, tenantSlug, eventSlug string, p *PublicStaffRegisterBody) (*PublicRegisterResponse, error) {
 	schema, err := tenantSchemaBySlug(ctx, tenantSlug)
 	if err != nil {
 		return nil, err
 	}
 	conn, err := tenantConn(ctx, schema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
 	defer conn.Close()
 
@@ -392,10 +422,10 @@ func PostPublicStaffRegistration(ctx context.Context, tenantSlug, eventSlug stri
 		FROM evt_event WHERE event_slug=$1 AND deleted_at IS NULL`, eventSlug,
 	).Scan(&eventID, &status, &openAt, &closeAt)
 	if err == sql.ErrNoRows {
-		return nil, appErrs.NotFound("acara tidak ditemukan")
+		return nil, publicNotFound()
 	}
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
 	if status == "CANCELLED" {
 		return nil, appErrs.BadRequest("Acara dibatalkan.")
@@ -426,14 +456,14 @@ func PostPublicStaffRegistration(ctx context.Context, tenantSlug, eventSlug stri
 	}
 	saveFalse := false
 	params := &UpsertPersonParams{
-		FullName:         p.FullName,
-		Role:             p.Role,
-		TherapyIDs:       p.TherapyIDs,
-		VolunteerRoleID:  volID,
-		AttendanceStatus: "PRESENT",
-		Notes:            notes,
+		FullName:          p.FullName,
+		Role:              p.Role,
+		TherapyIDs:        p.TherapyIDs,
+		VolunteerRoleID:   volID,
+		AttendanceStatus:  "PRESENT",
+		Notes:             notes,
 		CountsTowardMeals: p.CountsTowardMeals,
-		SaveToRoster:     &saveFalse,
+		SaveToRoster:      &saveFalse,
 	}
 	if err := validatePerson(params); err != nil {
 		return nil, err
