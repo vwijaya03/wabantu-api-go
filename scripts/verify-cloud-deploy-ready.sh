@@ -93,7 +93,30 @@ for s in "${all_schemas[@]}"; do
 done
 if [[ ${#orphan_list[@]} -gt 0 ]]; then
   echo "FAIL: orphan schemas block Encore dynamic grants: ${orphan_list[*]}"
-  echo "      Run: ./scripts/prune-orphan-tenant-schemas-cloud.sh $ENV_NAME --apply"
+  echo "      Symptom: permission denied for table business_profile (SQLSTATE 42501)"
+  echo "      Run: ./scripts/prune-orphan-tenant-schemas-cloud.sh $ENV_NAME --apply --yes"
+  fail=1
+fi
+
+# Tables owned by encore_container_* (or other non-admin roles) also break dynamic grants
+# even when schema owner is db_tenant_admin — Encore admin cannot GRANT on those tables.
+bad_table_owners="$(psql "$TENANT_URI" -tAc "
+  SELECT n.nspname || '.' || c.relname || ' (owner=' || pg_get_userbyid(c.relowner) || ')'
+  FROM pg_class c
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname ~ '^t_'
+    AND c.relkind = 'r'
+    AND pg_get_userbyid(c.relowner) !~ '^(db_tenant_admin|encore_admin)'
+  ORDER BY 1
+  LIMIT 20")"
+if [[ -n "$bad_table_owners" ]]; then
+  echo "FAIL: t_* tables with owners that block Encore dynamic grants:"
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    echo "      $line"
+  done <<< "$bad_table_owners"
+  echo "      Run: ./scripts/fix-cloud-db-grants.sh $ENV_NAME"
+  echo "      (and prune orphans if listed above)"
   fail=1
 fi
 
@@ -112,6 +135,7 @@ fi
 echo
 if [[ "$fail" -ne 0 ]]; then
   echo "Run:" >&2
+  echo "  ./scripts/prune-orphan-tenant-schemas-cloud.sh $ENV_NAME --apply --yes   # if orphan t_* listed" >&2
   echo "  ./scripts/fix-cloud-db-grants.sh $ENV_NAME" >&2
   echo "  ./scripts/apply-system-schema-cloud.sh $ENV_NAME   # if deploy fails on system migration 6+" >&2
   exit 1

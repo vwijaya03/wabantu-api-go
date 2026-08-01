@@ -56,3 +56,35 @@ echo "--- system DB public tables (owner) ---"
 psql "$SYSTEM_URI" -c "
   SELECT tablename, tableowner FROM pg_tables
   WHERE schemaname = 'public' ORDER BY tablename LIMIT 20;"
+
+echo "--- business_profile owners (all t_*) ---"
+psql "$TENANT_URI" -c "
+  SELECT n.nspname AS schema, pg_get_userbyid(c.relowner) AS owner
+  FROM pg_class c
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE c.relname = 'business_profile' AND c.relkind = 'r'
+  ORDER BY 1;"
+
+echo "--- t_* tables NOT owned by db_tenant_admin / encore_admin* (block dynamic grants) ---"
+psql "$TENANT_URI" -c "
+  SELECT n.nspname AS schema,
+         pg_get_userbyid(c.relowner) AS owner,
+         count(*) AS tables
+  FROM pg_class c
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname ~ '^t_'
+    AND c.relkind = 'r'
+    AND pg_get_userbyid(c.relowner) !~ '^(db_tenant_admin|encore_admin)'
+  GROUP BY 1, 2
+  ORDER BY 1, 2;"
+
+echo "--- admin can GRANT on sample business_profile? ---"
+ADMIN_USER="$(psql "$TENANT_URI" -tAc 'SELECT current_user' | tr -d '[:space:]')"
+psql "$TENANT_URI" -c "
+  SELECT n.nspname AS schema,
+         pg_get_userbyid(c.relowner) AS owner,
+         has_table_privilege('$ADMIN_USER', n.nspname || '.' || c.relname, 'SELECT') AS admin_select
+  FROM pg_class c
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE c.relname = 'business_profile' AND c.relkind = 'r'
+  ORDER BY 1;"

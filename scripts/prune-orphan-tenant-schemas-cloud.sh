@@ -5,13 +5,27 @@
 # This script uses --superuser (encore_superuser_*).
 #
 # Usage:
-#   ./scripts/prune-orphan-tenant-schemas-cloud.sh staging          # dry-run
-#   ./scripts/prune-orphan-tenant-schemas-cloud.sh staging --apply
+#   ./scripts/prune-orphan-tenant-schemas-cloud.sh staging                # dry-run
+#   ./scripts/prune-orphan-tenant-schemas-cloud.sh staging --apply        # confirm prompt
+#   ./scripts/prune-orphan-tenant-schemas-cloud.sh staging --apply --yes  # non-interactive
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-ENV_NAME="${1:?Usage: $0 <encore-env> [--apply]}"
-APPLY="${2:-}"
+ENV_NAME="${1:?Usage: $0 <encore-env> [--apply] [--yes]}"
+APPLY=false
+YES=false
+shift || true
+for arg in "$@"; do
+  case "$arg" in
+    --apply) APPLY=true ;;
+    --yes|-y) YES=true ;;
+    *)
+      echo "Unknown arg: $arg" >&2
+      echo "Usage: $0 <encore-env> [--apply] [--yes]" >&2
+      exit 1
+      ;;
+  esac
+done
 cd "$ROOT"
 
 SYSTEM_URI="$(encore db conn-uri system --env="$ENV_NAME" --admin)"
@@ -60,15 +74,20 @@ for s in "${orphans[@]}"; do
   echo "  $s (owner: $owner)"
 done
 
-if [[ "$APPLY" != "--apply" ]]; then
+if [[ "$APPLY" != true ]]; then
   echo
-  echo "Dry-run only. To drop (requires --superuser): $0 $ENV_NAME --apply"
+  echo "Dry-run only. To drop (requires --superuser): $0 $ENV_NAME --apply --yes"
   exit 0
 fi
 
-echo
-read -r -p "DROP ${#orphans[@]} orphan schema(s) via superuser? [y/N] " ans
-[[ "$ans" == "y" || "$ans" == "Y" ]] || exit 0
+if [[ "$YES" != true ]]; then
+  echo
+  read -r -p "DROP ${#orphans[@]} orphan schema(s) via superuser? [y/N] " ans
+  [[ "$ans" == "y" || "$ans" == "Y" ]] || exit 0
+else
+  echo
+  echo "Applying DROP of ${#orphans[@]} orphan schema(s) via superuser (--yes)..."
+fi
 
 for s in "${orphans[@]}"; do
   echo "  DROP SCHEMA $s CASCADE"
