@@ -172,11 +172,12 @@ echo "--- tenant DB: drop_tenant_schema() + runtime role membership ---"
 TENANT_SUPER_URI="$(encore db conn-uri tenant --env="$ENV_NAME" --superuser)"
 DROP_FN_SQL="$(cat "$ROOT/tenant/migrations/3_drop_tenant_schema_fn_v2.up.sql")"
 
-echo "Reassign t_* schema owners → db_tenant_admin (superuser)..."
+echo "Reassign t_* schema + table owners → db_tenant_admin (superuser)..."
 psql "$TENANT_SUPER_URI" -v ON_ERROR_STOP=1 <<'SQL'
 DO $$
 DECLARE
   s text;
+  r record;
   target text := 'db_tenant_admin';
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = target) THEN
@@ -186,10 +187,27 @@ BEGIN
   FOR s IN SELECT nspname FROM pg_namespace WHERE nspname ~ '^t_' ORDER BY 1 LOOP
     BEGIN
       EXECUTE format('ALTER SCHEMA %I OWNER TO %I', s, target);
-      RAISE NOTICE 'owner % → %', s, target;
+      RAISE NOTICE 'schema owner % → %', s, target;
     EXCEPTION WHEN OTHERS THEN
-      RAISE NOTICE 'skip owner %: %', s, SQLERRM;
+      RAISE NOTICE 'skip schema owner %: %', s, SQLERRM;
     END;
+    -- Tables left owned by encore_container_* break deploy dynamic grants:
+    --   permission denied for table business_profile
+    FOR r IN
+      SELECT c.relname,
+             CASE WHEN c.relkind = 'S' THEN 'SEQUENCE' ELSE 'TABLE' END AS kind
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = s
+        AND c.relkind IN ('r', 'p', 'S', 'v', 'm')
+        AND pg_get_userbyid(c.relowner) IS DISTINCT FROM target
+    LOOP
+      BEGIN
+        EXECUTE format('ALTER %s %I.%I OWNER TO %I', r.kind, s, r.relname, target);
+      EXCEPTION WHEN OTHERS THEN
+        RAISE NOTICE 'skip object owner %.%: %', s, r.relname, SQLERRM;
+      END;
+    END LOOP;
   END LOOP;
 END $$;
 SQL

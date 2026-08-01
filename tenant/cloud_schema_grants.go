@@ -17,6 +17,10 @@ var cloudRuntimeRoles = []string{"encore_services", "encore_writer"}
 
 // ensureCloudSchemaDeployGrants grants Encore Cloud deploy/migrator access to a tenant schema.
 // Must run on the same connection that created the schema (encore_container) so GRANT/OWNER succeed.
+//
+// Tables created by RunTenantDDL are owned by encore_container_*. Encore deploy dynamic grants run
+// as encore_admin_* (member of db_tenant_admin). If tables stay owned by encore_container, deploy
+// fails with: permission denied for table business_profile.
 func ensureCloudSchemaDeployGrants(ctx context.Context, conn *sql.Conn, schemaName string) error {
 	if encore.Meta().Environment.Cloud == encore.CloudLocal {
 		return nil
@@ -46,8 +50,50 @@ func ensureCloudSchemaDeployGrants(ctx context.Context, conn *sql.Conn, schemaNa
 			return fmt.Errorf("%s: %w", stmt, err)
 		}
 	}
+	if err := transferCloudSchemaObjectOwners(ctx, conn, schemaName); err != nil {
+		rlog.Warn("cloud table owner transfer skipped", "schema", schemaName, "err", err)
+	}
 	ensureCloudRuntimeRoleMembership(ctx, conn)
 	return nil
+}
+
+// transferCloudSchemaObjectOwners moves tables/sequences/views in schema to db_tenant_admin so
+// encore_admin (member of db_tenant_admin) can execute Encore Cloud dynamic grants on deploy.
+func transferCloudSchemaObjectOwners(ctx context.Context, conn *sql.Conn, schemaName string) error {
+	// Only transfer objects we currently own — safe after RunTenantDDL on the creating connection.
+	stmt := fmt.Sprintf(`
+DO $do$
+DECLARE
+  r record;
+  target text := %s;
+  sch text := %s;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = target) THEN
+    RETURN;
+  END IF;
+  FOR r IN
+    SELECT c.relname,
+           CASE WHEN c.relkind = 'S' THEN 'SEQUENCE' ELSE 'TABLE' END AS kind
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = sch
+      AND c.relkind IN ('r', 'p', 'S', 'v', 'm')
+      AND pg_get_userbyid(c.relowner) = current_user
+  LOOP
+    BEGIN
+      EXECUTE format('ALTER %%s %%I.%%I OWNER TO %%I', r.kind, sch, r.relname, target);
+    EXCEPTION WHEN OTHERS THEN
+      RAISE NOTICE 'skip object owner %%.%%: %%', sch, r.relname, SQLERRM;
+    END;
+  END LOOP;
+END
+$do$`, quoteLiteral(cloudDBTenantAdmin), quoteLiteral(schemaName))
+	_, err := conn.ExecContext(ctx, stmt)
+	return err
+}
+
+func quoteLiteral(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 }
 
 // ensureCloudRuntimeRoleMembership lets encore_services/writer assume db_tenant_admin for DDL

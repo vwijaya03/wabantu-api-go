@@ -444,7 +444,8 @@ Custom domain & production AWS/GCP: plan Pro — https://encore.dev/docs/platfor
 | `schema "public" already exists` | Schema system sudah ada di cloud | Normal saat re-run; script terbaru skip DDL jika tabel sudah ada |
 | Login `db error` setelah migrasi | `pg_restore --no-privileges` — role `encore_writer` tidak punya `SELECT` | `./scripts/fix-cloud-db-grants.sh staging` (script migrasi terbaru sudah GRANT otomatis) |
 | Deploy gagal: `permission denied for schema t_*` (dynamic grants) | Schema `t_*` bukan milik role admin Encore (`encore_admin_*`) setelah `pg_restore` | `./scripts/diagnose-cloud-db-grants.sh staging` → `./scripts/fix-cloud-db-grants.sh staging` → `./scripts/verify-cloud-deploy-ready.sh staging` → redeploy |
-| Deploy gagal: `permission denied for schema t_*` (orphan / uji registrasi) | Schema yatim di DB tenant (bukan di `tenant_company`) — `--admin` tidak bisa DROP | `./scripts/prune-orphan-tenant-schemas-cloud.sh staging --apply` (pakai `--superuser`) |
+| Deploy gagal: `permission denied for schema t_*` (orphan / uji registrasi) | Schema yatim di DB tenant (bukan di `tenant_company`) — `--admin` tidak bisa DROP | `./scripts/prune-orphan-tenant-schemas-cloud.sh staging --apply --yes` (pakai `--superuser`) |
+| Deploy gagal: `permission denied for table business_profile` (dynamic grants) | Schema yatim (`t_example`, dll.) atau tabel `t_*` masih owned oleh `encore_container_*` — role `--admin` tidak bisa `GRANT` pada tabel itu | (1) `./scripts/diagnose-cloud-db-grants.sh staging` (2) prune orphan: `./scripts/prune-orphan-tenant-schemas-cloud.sh staging --apply --yes` (3) `./scripts/fix-cloud-db-grants.sh staging` (reassign owner tabel → `db_tenant_admin`) (4) `./scripts/verify-cloud-deploy-ready.sh staging` → redeploy |
 | Deploy gagal: `permission denied for table schema_migrations` | Tabel migrasi bukan milik `db_system_admin` / `db_tenant_admin` | Sama — `fix-cloud-db-grants.sh` (reassign ke database owner role) |
 | API `prepare catalog pricing failed` / DDL error | App role cloud tidak bisa `CREATE`/`ALTER`/`DROP` | Deploy kode terbaru (`shared/tenantschema` skip DDL jika schema sudah ada); `./scripts/verify-cloud-tenant-schemas.sh staging` |
 | `relation "public.tenant" does not exist` | DB cloud **kosong** (belum ada tabel) | Script terbaru restore **schema system** dulu; atau `git push encore` sampai deploy sukses |
@@ -480,7 +481,7 @@ Connect cloud account di dashboard → Encore provision RDS, dll. Lihat https://
 | `scripts/diagnose-cloud-db-grants.sh` | Debug role + owner schema (sebelum/sesudah fix grants) |
 | `scripts/fix-cloud-db-grants.sh` | Reassign owner schema `t_*` ke role admin Encore + GRANT (wajib setelah migrasi DB) |
 | `scripts/verify-cloud-deploy-ready.sh` | Cek owner `schema_migrations` + `t_*` sebelum push deploy |
-| `scripts/prune-orphan-tenant-schemas-cloud.sh` | Hapus `t_*` yatim via `--superuser` (wajib jika deploy gagal pada schema orphan) |
+| `scripts/prune-orphan-tenant-schemas-cloud.sh` | Hapus `t_*` yatim via `--superuser` (`--apply --yes`; wajib jika deploy gagal `permission denied for table business_profile`) |
 | `scripts/apply-tenant-schema-cloud.sh` | DDL pricing, `contact.status`, branch, workflow per `t_*` |
 | `scripts/apply-pii-schema-cloud.sh` | DDL kolom PII (`*_enc`, `*_idx`) semua schema `t_*` |
 | `scripts/backfill-pii-cloud.sh` | Backfill plaintext → terenkripsi semua tenant di cloud |
