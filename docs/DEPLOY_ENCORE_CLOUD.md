@@ -425,6 +425,74 @@ Custom domain & production AWS/GCP: plan Pro — https://encore.dev/docs/platfor
 
 ---
 
+## Hot-fix 2am: `permission denied for table business_profile`
+
+Gunakan bagian ini jika **deploy Encore Cloud gagal** dengan pesan mirip ini di build/deploy log:
+
+```text
+failed to execute dynamic grants: permission denied for table business_profile (SQLSTATE 42501)
+```
+
+Varian lain yang sama akar masalahnya:
+
+```text
+failed to execute dynamic grants: permission denied for schema t_...
+```
+
+### Apa artinya (root cause)
+
+Saat deploy, Encore menjalankan **dynamic grants** di DB tenant sebagai role `--admin` (`encore_admin_*`, anggota `db_tenant_admin`). Grant gagal jika:
+
+1. **Schema yatim (`t_*` orphan)** — ada di DB tenant tetapi **tidak** terdaftar di `system.tenant_company` (contoh klasik: `t_example` sisa uji registrasi). Tabel di dalamnya (sering `business_profile`) masih owned oleh `encore_container_*` / `encore_writer`. Role `--admin` **tidak bisa** `GRANT` maupun `DROP` schema itu.
+2. **Tabel registered `t_*` masih owned `encore_container_*`** — schema owner sudah benar, tapi object table belum di-reassign ke `db_tenant_admin` (sering setelah `pg_restore --no-owner` atau DDL dari container lama).
+
+Ini **bukan** bug aplikasi bisnis dan **bukan** masalah kode fitur; ini ownership Postgres di cloud.
+
+### Langkah perbaikan (urut, copy-paste)
+
+```bash
+cd api-go
+encore auth login   # jika CLI belum login
+
+# 1) Lihat orphan + owner business_profile
+./scripts/diagnose-cloud-db-grants.sh staging
+
+# 2) Hapus schema yatim (dry-run dulu, lalu apply)
+./scripts/prune-orphan-tenant-schemas-cloud.sh staging
+./scripts/prune-orphan-tenant-schemas-cloud.sh staging --apply --yes
+
+# 3) Reassign owner schema + tabel → db_tenant_admin + GRANT
+./scripts/fix-cloud-db-grants.sh staging
+
+# 4) Pastikan DB siap deploy
+./scripts/verify-cloud-deploy-ready.sh staging
+# Harus cetak: DB ready for Encore deploy.
+
+# 5) Retry deploy (push ulang / redeploy dari dashboard)
+```
+
+Ganti `staging` dengan nama env Encore yang gagal.
+
+| Script | Kapan | Role Encore |
+|--------|-------|-------------|
+| `diagnose-cloud-db-grants.sh` | Selalu pertama — cetak schema owner, orphan, owner `business_profile` | `--admin` |
+| `prune-orphan-tenant-schemas-cloud.sh` | Ada `t_*` yang tidak ada di `tenant_company` | `--superuser` (DROP) |
+| `fix-cloud-db-grants.sh` | Setelah prune, atau tabel masih owned `encore_container_*` | `--admin` + `--superuser` |
+| `verify-cloud-deploy-ready.sh` | Sebelum retry deploy; gagal = jangan push | `--admin` |
+
+**Jangan** mencoba `DROP SCHEMA` / `ALTER OWNER` lewat koneksi app biasa atau `--admin` saja pada orphan — biasanya `permission denied`. Prune memakai `--superuser` dengan sengaja.
+
+### Pencegahan
+
+- Setelah **migrasi lokal → cloud**: selalu `./scripts/fix-cloud-db-grants.sh <env>` lalu `./scripts/verify-cloud-deploy-ready.sh <env>` (lihat cheat sheet di bawah).
+- Sebelum push deploy yang menyentuh DB/migrasi: jalankan `verify-cloud-deploy-ready.sh` — script ini menolak orphan dan tabel dengan owner yang memblokir dynamic grants.
+- Jangan biarkan schema uji (`t_example`, dll.) menumpuk di staging; prune setelah eksperimen registrasi.
+- Kode runtime (`tenant/cloud_schema_grants.go`) setelah signup cloud ikut transfer owner tabel ke `db_tenant_admin` agar tenant baru tidak memblokir deploy berikutnya — **tetap** jalankan script ops di atas untuk sisa orphan / restore lama.
+
+Ringkas di tabel troubleshooting: baris *Deploy gagal: `permission denied for table business_profile`*.
+
+---
+
 ## Troubleshooting deploy
 
 | Gejala | Penyebab | Solusi |
@@ -445,7 +513,7 @@ Custom domain & production AWS/GCP: plan Pro — https://encore.dev/docs/platfor
 | Login `db error` setelah migrasi | `pg_restore --no-privileges` — role `encore_writer` tidak punya `SELECT` | `./scripts/fix-cloud-db-grants.sh staging` (script migrasi terbaru sudah GRANT otomatis) |
 | Deploy gagal: `permission denied for schema t_*` (dynamic grants) | Schema `t_*` bukan milik role admin Encore (`encore_admin_*`) setelah `pg_restore` | `./scripts/diagnose-cloud-db-grants.sh staging` → `./scripts/fix-cloud-db-grants.sh staging` → `./scripts/verify-cloud-deploy-ready.sh staging` → redeploy |
 | Deploy gagal: `permission denied for schema t_*` (orphan / uji registrasi) | Schema yatim di DB tenant (bukan di `tenant_company`) — `--admin` tidak bisa DROP | `./scripts/prune-orphan-tenant-schemas-cloud.sh staging --apply --yes` (pakai `--superuser`) |
-| Deploy gagal: `permission denied for table business_profile` (dynamic grants) | Schema yatim (`t_example`, dll.) atau tabel `t_*` masih owned oleh `encore_container_*` — role `--admin` tidak bisa `GRANT` pada tabel itu | (1) `./scripts/diagnose-cloud-db-grants.sh staging` (2) prune orphan: `./scripts/prune-orphan-tenant-schemas-cloud.sh staging --apply --yes` (3) `./scripts/fix-cloud-db-grants.sh staging` (reassign owner tabel → `db_tenant_admin`) (4) `./scripts/verify-cloud-deploy-ready.sh staging` → redeploy |
+| Deploy gagal: `permission denied for table business_profile` (dynamic grants) | Schema yatim dan/atau tabel `t_*` owned `encore_container_*` — `--admin` tidak bisa GRANT | **[Hot-fix 2am di atas](#hot-fix-2am-permission-denied-for-table-business_profile)** — diagnose → prune → fix-grants → verify → redeploy |
 | Deploy gagal: `permission denied for table schema_migrations` | Tabel migrasi bukan milik `db_system_admin` / `db_tenant_admin` | Sama — `fix-cloud-db-grants.sh` (reassign ke database owner role) |
 | API `prepare catalog pricing failed` / DDL error | App role cloud tidak bisa `CREATE`/`ALTER`/`DROP` | Deploy kode terbaru (`shared/tenantschema` skip DDL jika schema sudah ada); `./scripts/verify-cloud-tenant-schemas.sh staging` |
 | `relation "public.tenant" does not exist` | DB cloud **kosong** (belum ada tabel) | Script terbaru restore **schema system** dulu; atau `git push encore` sampai deploy sukses |
@@ -516,4 +584,11 @@ git add -A && git commit -m "Deploy staging" && git push encore master
 # 7. WAJIB setelah migrasi — sebelum deploy berikutnya
 ./scripts/fix-cloud-db-grants.sh staging
 ./scripts/verify-cloud-deploy-ready.sh staging
+
+# Jika deploy gagal: permission denied for table business_profile
+# → lihat "Hot-fix 2am" di atas, atau:
+# ./scripts/diagnose-cloud-db-grants.sh staging
+# ./scripts/prune-orphan-tenant-schemas-cloud.sh staging --apply --yes
+# ./scripts/fix-cloud-db-grants.sh staging
+# ./scripts/verify-cloud-deploy-ready.sh staging
 ```

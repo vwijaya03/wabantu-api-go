@@ -4,10 +4,22 @@
 # Encore Cloud dynamic grants on tenant DB run as the admin role from
 # `encore db conn-uri tenant --admin` (encore_admin_*), not db_tenant_admin.
 # System DB migrations use the database owner role (db_system_admin / encore-migrator).
-# pg_restore --no-owner leaves schemas/tables owned by wrong roles → deploy fails:
+# pg_restore --no-owner (or leftover encore_container_* owners) leaves schemas/tables
+# owned by wrong roles → deploy fails with either:
 #   permission denied for schema t_*
+#   permission denied for table business_profile (SQLSTATE 42501)
 #
-# Usage: ./scripts/fix-cloud-db-grants.sh staging
+# This script reassigns schema + table/sequence owners to db_tenant_admin (tenant)
+# / database owner (system), then GRANTs. Orphan t_* schemas that --admin cannot
+# touch must be pruned first:
+#   ./scripts/prune-orphan-tenant-schemas-cloud.sh <env> --apply --yes
+#
+# Usage:
+#   ./scripts/fix-cloud-db-grants.sh staging
+#
+# Typical sequence after a failed deploy:
+#   diagnose → prune orphans → fix-cloud-db-grants → verify-cloud-deploy-ready
+# See docs/DEPLOY_ENCORE_CLOUD.md § "Hot-fix 2am".
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

@@ -1,5 +1,19 @@
 #!/usr/bin/env bash
-# Print DB roles + schema owners (debug Encore deploy grant failures).
+# Print DB roles + schema/table owners (debug Encore Cloud deploy grant failures).
+#
+# Run this first when deploy logs show:
+#   failed to execute dynamic grants: permission denied for table business_profile
+#   (or permission denied for schema t_*)
+#
+# Output highlights:
+#   - registered tenants (system.tenant_company) vs t_* schemas in tenant DB
+#   - schema owners and business_profile owners (watch for encore_container_*)
+#   - tables not owned by db_tenant_admin / encore_admin* (block dynamic grants)
+#
+# Next steps (see docs/DEPLOY_ENCORE_CLOUD.md § "Hot-fix 2am"):
+#   ./scripts/prune-orphan-tenant-schemas-cloud.sh staging --apply --yes
+#   ./scripts/fix-cloud-db-grants.sh staging
+#   ./scripts/verify-cloud-deploy-ready.sh staging
 #
 # Usage: ./scripts/diagnose-cloud-db-grants.sh staging
 set -euo pipefail

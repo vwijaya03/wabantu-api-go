@@ -633,6 +633,7 @@ Stack compose contoh: `../infra/docker-compose.yml` (service `api-go`).
 | Login super admin OK, inbox 403 | Belum impersonate tenant | Admin → **Pantau** tenant (atau dropdown topbar) |
 | Deploy cloud OK, login gagal | `RedisURL` masih `localhost` | [docs/DEPLOY_REDIS.md](./docs/DEPLOY_REDIS.md) — set Upstash ke `--env=staging` |
 | Login staging `db error` setelah migrasi DB | GRANT Postgres hilang (`pg_restore --no-privileges`) | `./scripts/fix-cloud-db-grants.sh staging` — [DEPLOY_ENCORE_CLOUD.md](./docs/DEPLOY_ENCORE_CLOUD.md) |
+| Deploy cloud gagal: `permission denied for table business_profile` | Schema yatim `t_*` / tabel owned `encore_container_*` memblokir Encore dynamic grants | [Hot-fix 2am](./docs/DEPLOY_ENCORE_CLOUD.md#hot-fix-2am-permission-denied-for-table-business_profile) — diagnose → prune → fix-grants → verify |
 | Push ke Encore tidak trigger deploy | Remote `encore` belum ada | `git remote add encore encore://<app-id>` — lihat [DEPLOY_ENCORE_CLOUD.md](./docs/DEPLOY_ENCORE_CLOUD.md) |
 
 ---
@@ -641,10 +642,13 @@ Stack compose contoh: `../infra/docker-compose.yml` (service `api-go`).
 
 | File | Isi |
 |------|-----|
-| [docs/DEPLOY_ENCORE_CLOUD.md](./docs/DEPLOY_ENCORE_CLOUD.md) | Tutorial deploy ke Encore Cloud (secrets, git push, migrasi DB, frontend) |
+| [docs/DEPLOY_ENCORE_CLOUD.md](./docs/DEPLOY_ENCORE_CLOUD.md) | Tutorial deploy ke Encore Cloud (secrets, git push, migrasi DB, frontend) + hot-fix dynamic grants |
 | [docs/DEPLOY_REDIS.md](./docs/DEPLOY_REDIS.md) | Setup Redis eksternal (Upstash) untuk session di cloud |
 | [docs/STAGING_ACCESS.md](./docs/STAGING_ACCESS.md) | Test API (Postman/curl) & koneksi DB staging (TablePlus, `db proxy`) |
-| `scripts/fix-cloud-db-grants.sh` | Perbaiki login `db error` setelah migrasi DB ke cloud |
+| `scripts/diagnose-cloud-db-grants.sh` | Debug owner schema/tabel saat deploy gagal dynamic grants |
+| `scripts/prune-orphan-tenant-schemas-cloud.sh` | Hapus schema `t_*` yatim (penyebab `permission denied for table business_profile`) |
+| `scripts/fix-cloud-db-grants.sh` | Reassign owner + GRANT setelah migrasi / sebelum redeploy |
+| `scripts/verify-cloud-deploy-ready.sh` | Cek DB siap deploy (orphan + owner tabel) sebelum push |
 | [DEVELOPER_DOCUMENTATION.md](./DEVELOPER_DOCUMENTATION.md) | Dokumentasi teknis lengkap + [Bagian 8.1 Platform Admin](./DEVELOPER_DOCUMENTATION.md#81-platform-admin-internal-operator-wabantu-owner) |
 | [APP_FLOW_GUIDE.md](./APP_FLOW_GUIDE.md) | Alur end-to-end, peta endpoint, perintah step-by-step |
 | `finance/finance.go` | Wallet, kategori, transaksi, approval, period lock, audit, dashboard finance |

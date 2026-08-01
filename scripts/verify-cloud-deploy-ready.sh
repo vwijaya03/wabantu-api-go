@@ -1,7 +1,20 @@
 #!/usr/bin/env bash
 # Pre-deploy check: DB ownership compatible with Encore Cloud dynamic grants.
 #
+# Fails (exit 1) when deploy would hit:
+#   permission denied for table business_profile (SQLSTATE 42501)
+#   — orphan t_* schemas, or t_* tables owned by encore_container_* / wrong roles.
+#
+# Also checks system.schema_migrations / tenant_company owners and (if present)
+# encore_services DELETE on ai_triage_anomaly.
+#
+# Fix path when FAIL:
+#   ./scripts/prune-orphan-tenant-schemas-cloud.sh <env> --apply --yes   # orphans
+#   ./scripts/fix-cloud-db-grants.sh <env>
+# See docs/DEPLOY_ENCORE_CLOUD.md § "Hot-fix 2am".
+#
 # Usage: ./scripts/verify-cloud-deploy-ready.sh staging
+# Success prints: DB ready for Encore deploy.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

@@ -89,6 +89,7 @@ Lebih banyak contoh admin: [README.md — Curl / Postman](../README.md#curl--pos
 - Setelah migrasi DB, user harus **login ulang** (session Redis tidak ikut migrasi)
 - Login gagal + error Redis → cek [DEPLOY_REDIS.md](./DEPLOY_REDIS.md)
 - Response `{"message":"db error"}` setelah migrasi Postgres → jalankan `./scripts/fix-cloud-db-grants.sh staging` ([DEPLOY_ENCORE_CLOUD.md](./DEPLOY_ENCORE_CLOUD.md) Langkah 7)
+- Deploy gagal `permission denied for table business_profile` → [Hot-fix 2am](./DEPLOY_ENCORE_CLOUD.md#hot-fix-2am-permission-denied-for-table-business_profile) (prune orphan + fix grants)
 
 ---
 
@@ -259,6 +260,7 @@ SET search_path TO t_omah_apparel, public;
 | Putus tiba-tiba | Terminal proxy ditutup | Buka proxy lagi, reconnect TablePlus |
 | `must be owner of schema` | Koneksi `--write`, bukan `--admin` | Proxy + `conn-uri` dengan `--admin`; atau hapus via API admin |
 | Login API `db error` | GRANT DB hilang setelah `pg_restore` | `./scripts/fix-cloud-db-grants.sh staging` |
+| Deploy gagal `permission denied for table business_profile` | Orphan `t_*` / owner tabel `encore_container_*` | [Hot-fix 2am](./DEPLOY_ENCORE_CLOUD.md#hot-fix-2am-permission-denied-for-table-business_profile) |
 
 ---
 

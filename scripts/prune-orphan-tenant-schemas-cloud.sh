@@ -1,8 +1,16 @@
 #!/usr/bin/env bash
 # Drop tenant schemas t_* not registered in tenant_company (orphans block Encore deploy).
 #
+# Symptom in Encore deploy logs:
+#   failed to execute dynamic grants: permission denied for table business_profile
+#   (SQLSTATE 42501)
+#
 # Orphans owned by encore_container / encore_writer cannot be dropped with --admin.
-# This script uses --superuser (encore_superuser_*).
+# This script uses --superuser (encore_superuser_*). Dry-run lists orphans only;
+# --apply drops them. After prune, always run fix-grants + verify:
+#   ./scripts/fix-cloud-db-grants.sh <env>
+#   ./scripts/verify-cloud-deploy-ready.sh <env>
+# See docs/DEPLOY_ENCORE_CLOUD.md § "Hot-fix 2am".
 #
 # Usage:
 #   ./scripts/prune-orphan-tenant-schemas-cloud.sh staging                # dry-run
