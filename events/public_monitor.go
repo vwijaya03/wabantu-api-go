@@ -20,6 +20,7 @@ type PublicStaffMonitorPerson struct {
 type PublicStaffMonitorResponse struct {
 	EventName            string                     `json:"eventName"`
 	EventDescription     string                     `json:"eventDescription,omitempty"`
+	CateringOrderNotes   string                     `json:"cateringOrderNotes,omitempty"`
 	Location             string                     `json:"location,omitempty"`
 	StartDate            string                     `json:"startDate"`
 	EndDate              string                     `json:"endDate"`
@@ -50,13 +51,13 @@ func loadPublicStaffMonitor(ctx context.Context, tenantSlug, eventSlug string) (
 
 	var eventID, status string
 	var resp PublicStaffMonitorResponse
-	var desc, loc sql.NullString
+	var desc, catering, loc sql.NullString
 	err = conn.QueryRowContext(ctx, `
-		SELECT id::text, event_name, event_description, location,
+		SELECT id::text, event_name, event_description, catering_order_notes, location,
 		       start_date::text, end_date::text, start_time::text, end_time::text, status
 		FROM evt_event
 		WHERE event_slug=$1 AND deleted_at IS NULL`, eventSlug,
-	).Scan(&eventID, &resp.EventName, &desc, &loc, &resp.StartDate, &resp.EndDate, &resp.StartTime, &resp.EndTime, &status)
+	).Scan(&eventID, &resp.EventName, &desc, &catering, &loc, &resp.StartDate, &resp.EndDate, &resp.StartTime, &resp.EndTime, &status)
 	if err == sql.ErrNoRows {
 		return nil, publicNotFound()
 	}
@@ -68,6 +69,9 @@ func loadPublicStaffMonitor(ctx context.Context, tenantSlug, eventSlug string) (
 	}
 	if desc.Valid {
 		resp.EventDescription = desc.String
+	}
+	if catering.Valid {
+		resp.CateringOrderNotes = catering.String
 	}
 	if loc.Valid {
 		resp.Location = loc.String

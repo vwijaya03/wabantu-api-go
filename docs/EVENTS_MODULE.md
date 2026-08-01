@@ -251,11 +251,12 @@ Seed default terapi (jika kosong): *Terapi 5 Elemen*, *Terapi Shijie*, *Terapi E
 | POST | `/api/v1/public/events/:tenantSlug/register/:eventSlug` | Daftar pasien |
 | GET | `/api/v1/public/events/:tenantSlug/register/:eventSlug/staff` | Info form staf/relawan |
 | POST | `/api/v1/public/events/:tenantSlug/register/:eventSlug/staff` | Daftar staf/relawan |
-| GET | `/api/v1/public/events/:tenantSlug/monitor/:eventSlug` | Monitor staf publik (kapasitas + daftar staf) |
+| GET | `/api/v1/public/events/:tenantSlug/monitor/:eventSlug` | Monitor staf publik (kapasitas, daftar staf, `cateringOrderNotes`) |
 | GET | `/api/v1/public/events/:tenantSlug/patient-schedule/:eventSlug` | Jadwal pasien publik (CONFIRMED + slot) |
 
 - Pendaftaran pasien/staf: acara harus `PUBLISHED` dan dalam jendela registrasi.
 - Monitor & jadwal pasien: hanya `status = PUBLISHED` (selain itu → 404).
+- Monitor staf: field `cateringOrderNotes` dari `evt_event.catering_order_notes` (terpisah dari `eventDescription`).
 
 #### Patient schedule response
 
