@@ -461,7 +461,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	)
 
 	// ── Order flow — prioritas sebelum katalog statis ─────────────────────
-	if inScope && (classifier.Label == "order_intent" || IsStructuredOrderList(userText)) {
+	if shouldEnterOrderFlow(userText, history, inScope, classifier, catalog) {
 		sent, oErr := s.handleOrderFlow(ctx, conn, payload.TenantSchema, payload.TenantID, convo, channel, contact,
 			userText, profile, kbEntries, history, payload.InboundMessageID)
 		return sent, oErr
@@ -560,18 +560,6 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return err == nil, err
 	}
 
-	// ── Handle: order intent state machine ───────────────────────────────
-	if classifier.Label == "order_intent" || (IsOrderContinuationMessage(userText) && hasOrderIntentText(userText)) {
-		sent, oErr := s.handleOrderFlow(ctx, conn, payload.TenantSchema, payload.TenantID, convo, channel, contact,
-			userText, profile, kbEntries, history, payload.InboundMessageID)
-		return sent, oErr
-	}
-	if inScope && (IsOrderRevisionMessage(userText) ||
-		(mentionsOrderQty(userText) && IsActiveCheckoutFromHistory(history, userText))) {
-		sent, oErr := s.handleOrderFlow(ctx, conn, payload.TenantSchema, payload.TenantID, convo, channel, contact,
-			userText, profile, kbEntries, history, payload.InboundMessageID)
-		return sent, oErr
-	}
 	if inScope && IsCasualPraiseLike(userText) {
 		formal := strOrEmpty(profile.Tone) == "formal"
 		out := metaNoLLM(reasonAIGenerated, PathConsulting)
@@ -1394,6 +1382,132 @@ func (s *AutoReplyService) handleCustomerOrderStatus(
 		body += "\n\nUntuk membatalkan, ketik saja: batalkan pesanan."
 	}
 	return send(body)
+}
+
+// resolveSimulatorInScope mirrors autoreply.go scope check for routing replay.
+func resolveSimulatorInScope(userText string, history []dbMessage, scopeKW []string) bool {
+	fallbackKW := []string{
+		"harga", "stok", "produk", "order", "pengiriman", "ukuran", "size",
+		"mau", "tanya", "beli", "ada", "celana", "jeans", "baju", "apparel",
+	}
+	inScope := IsWithinBusinessScope(userText, scopeKW, fallbackKW)
+	if !inScope && (IsActiveCheckoutFromHistory(history, userText) || IsAcknowledgmentLike(userText)) {
+		inScope = true
+	}
+	return inScope
+}
+
+// resolveInboundClassifier mirrors autoreply.go classifier overrides after ResolveSalesIntent.
+func resolveInboundClassifier(
+	userText string,
+	history []dbMessage,
+	orderActive, inScope bool,
+	profile *dbBusinessProfile,
+	catalog []dbCatalogItem,
+) (SalesIntent, classifyResult) {
+	intent := ResolveSalesIntent(userText, history, orderActive, inScope, profile, catalog)
+	classifier := salesIntentToClassifier(intent)
+	if intent.Confidence < 0.72 {
+		legacy := classifyMessage(userText, inScope, profile)
+		if legacy.Label == "sensitive_escalate" || legacy.Label == "order_intent" || legacy.Label == "out_of_scope" {
+			classifier = legacy
+		}
+	}
+	if IsAcknowledgmentLike(userText) {
+		classifier = classifyResult{Label: "in_scope_question", Confidence: 0.85}
+	} else if intent.State == SalesStateCartReady {
+		classifier = classifyResult{Label: "order_intent", Confidence: intent.Confidence}
+	} else if intent.State == SalesStateSensitive {
+		classifier = classifyResult{Label: "sensitive_escalate", Confidence: intent.Confidence}
+	} else if intent.State == SalesStateOutOfScope {
+		classifier = classifyResult{Label: "out_of_scope", Confidence: intent.Confidence}
+	}
+	return intent, classifier
+}
+
+// isBareNewOrderInquiry — "saya mau buat pesanan baru ya min" tanpa barang/qty eksplisit.
+func isBareNewOrderInquiry(userText string, catalog []dbCatalogItem) bool {
+	if !IsExplicitNewOrderStart(userText) {
+		return false
+	}
+	if IsStructuredOrderList(userText) {
+		return false
+	}
+	if isNamedProductPurchaseIntent(userText, catalog) {
+		return false
+	}
+	if mentionsOrderQty(userText) {
+		return false
+	}
+	text := normalizeBuyerTextForRules(userText)
+	return !strings.Contains(text, "barang yang dibeli")
+}
+
+// isAmbiguousSingleLineStructuredOrder — satu baris bernomor + ukuran, butuh klarifikasi dulu.
+func isAmbiguousSingleLineStructuredOrder(userText string) bool {
+	if !structuredOrderNumberedLineRe.MatchString(userText) {
+		return false
+	}
+	if countOrderCandidateLines(userText) != 1 {
+		return false
+	}
+	text := strings.ToLower(userText)
+	return strings.Contains(text, "ukuran") || strings.Contains(text, "size") ||
+		orderSizeLineRe.MatchString(text)
+}
+
+// isInformalOrderPreview — "mau order ini" / dump produk multi-baris tanpa header checkout formal.
+func isInformalOrderPreview(userText string, catalog []dbCatalogItem) bool {
+	text := normalizeBuyerTextForRules(userText)
+	hasInformalHeader := strings.Contains(text, "order ini") || strings.Contains(text, "pesan ini") ||
+		strings.Contains(text, "beli beberapa barang")
+	if hasInformalHeader {
+		if strings.Contains(text, "barang yang dibeli") {
+			return false
+		}
+		if IsExplicitNewOrderStart(userText) && strings.Contains(text, "buat pesanan") {
+			return false
+		}
+		return countOrderCandidateLines(userText) >= 1 || messageNamesCatalogProduct(userText, catalog)
+	}
+	if countOrderCandidateLines(userText) >= 2 &&
+		!structuredOrderNumberedLineRe.MatchString(userText) &&
+		!strings.Contains(text, "barang yang dibeli") &&
+		!IsExplicitNewOrderStart(userText) {
+		return messageNamesCatalogProduct(userText, catalog)
+	}
+	return false
+}
+
+func shouldDeferOrderFlowEntry(userText string, catalog []dbCatalogItem) bool {
+	return isBareNewOrderInquiry(userText, catalog) ||
+		isAmbiguousSingleLineStructuredOrder(userText) ||
+		isInformalOrderPreview(userText, catalog)
+}
+
+// shouldEnterOrderFlow — satu sumber kebenaran entry order_flow (autoreply + simulator).
+func shouldEnterOrderFlow(
+	userText string,
+	history []dbMessage,
+	inScope bool,
+	classifier classifyResult,
+	catalog []dbCatalogItem,
+) bool {
+	if shouldDeferOrderFlowEntry(userText, catalog) {
+		return false
+	}
+	if inScope && (classifier.Label == "order_intent" || IsStructuredOrderList(userText)) {
+		return true
+	}
+	if classifier.Label == "order_intent" ||
+		(IsOrderContinuationMessage(userText) && hasOrderIntentText(userText)) {
+		return true
+	}
+	if inScope && (IsOrderRevisionMessage(userText) ||
+		(mentionsOrderQty(userText) && IsActiveCheckoutFromHistory(history, userText))) {
+		return true
+	}
+	return false
 }
 
 // ─── Message classifier ──────────────────────────────────────────────────────
