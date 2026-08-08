@@ -128,6 +128,162 @@ type classifyResult struct {
 	Confidence float64
 }
 
+var autoReplyScopeFallbackKW = []string{
+	"harga", "stok", "produk", "order", "pengiriman", "ukuran", "size",
+	"mau", "tanya", "beli", "ada", "celana", "jeans", "baju", "apparel",
+}
+
+// normalizeSimInboundText — regression fixtures encode newlines as literal "\n".
+func normalizeSimInboundText(userText string) string {
+	if !strings.Contains(userText, `\n`) {
+		return userText
+	}
+	return strings.ReplaceAll(userText, `\n`, "\n")
+}
+
+func resolveAutoReplyInScope(userText string, scopeKW []string, history []dbMessage) bool {
+	inScope := IsWithinBusinessScope(userText, scopeKW, autoReplyScopeFallbackKW)
+	if !inScope && (IsActiveCheckoutFromHistory(history, userText) || IsAcknowledgmentLike(userText)) {
+		inScope = true
+	}
+	return inScope
+}
+
+func resolveAutoReplyClassifier(
+	userText string,
+	history []dbMessage,
+	orderActive, inScope bool,
+	profile *dbBusinessProfile,
+	catalog []dbCatalogItem,
+) (SalesIntent, classifyResult) {
+	intent := ResolveSalesIntent(userText, history, orderActive, inScope, profile, catalog)
+	classifier := salesIntentToClassifier(intent)
+	if intent.Confidence < 0.72 {
+		legacy := classifyMessage(userText, inScope, profile)
+		if legacy.Label == "sensitive_escalate" || legacy.Label == "order_intent" || legacy.Label == "out_of_scope" {
+			classifier = legacy
+		}
+	}
+	if IsAcknowledgmentLike(userText) {
+		classifier = classifyResult{Label: "in_scope_question", Confidence: 0.85}
+	} else if intent.State == SalesStateCartReady {
+		classifier = classifyResult{Label: "order_intent", Confidence: intent.Confidence}
+	} else if intent.State == SalesStateSensitive {
+		classifier = classifyResult{Label: "sensitive_escalate", Confidence: intent.Confidence}
+	} else if intent.State == SalesStateOutOfScope {
+		classifier = classifyResult{Label: "out_of_scope", Confidence: intent.Confidence}
+	}
+	return intent, classifier
+}
+
+// shouldDeferOrderFlowForVagueNewOrder — "saya mau buat pesanan baru ya min" tanpa baris produk → LLM/consulting.
+func shouldDeferOrderFlowForVagueNewOrder(userText string, history []dbMessage, catalog []dbCatalogItem) bool {
+	if !IsNewPurchaseIntentQuestion(userText) {
+		return false
+	}
+	if IsStructuredOrderList(userText) || mentionsOrderQty(userText) {
+		return false
+	}
+	if isNamedProductPurchaseIntent(userText, catalog) || isHistoryBackedPurchaseIntent(userText, history, catalog) {
+		return false
+	}
+	return true
+}
+
+func shouldEnterOrderFlowRoute(
+	inScope bool,
+	classifier classifyResult,
+	userText string,
+	history []dbMessage,
+	catalog []dbCatalogItem,
+) bool {
+	if !inScope {
+		return false
+	}
+	if shouldDeferOrderFlowForVagueNewOrder(userText, history, catalog) {
+		return false
+	}
+	return classifier.Label == "order_intent" || IsStructuredOrderList(userText)
+}
+
+// shouldDeferOrderFlowAfterStructuredBreak — cart ulang saat FSM sudah lanjut → consulting/LLM, bukan order_flow lagi.
+func shouldDeferOrderFlowAfterStructuredBreak(prevStep, userText string) bool {
+	if prevStep == "" {
+		return false
+	}
+	if !IsStructuredOrderList(userText) && !IsExplicitNewOrderStart(userText) {
+		return false
+	}
+	return isOrderProductContinuationStep(prevStep)
+}
+
+func shouldSkipOrderFlowRouting(deferAfterBreak bool, userText string, history []dbMessage, catalog []dbCatalogItem) bool {
+	if deferAfterBreak {
+		return true
+	}
+	return shouldDeferOrderFlowForVagueNewOrder(userText, history, catalog)
+}
+
+func shouldDeferCatalogToConsulting(userText string, intent SalesIntent, catalog []dbCatalogItem) bool {
+	if intent.State != SalesStateConsulting {
+		return false
+	}
+	return isStockOrAvailabilityFollowUp(userText, catalog) && !messageNamesCatalogProduct(userText, catalog)
+}
+
+func simOrderFlowAdvance(in OrderFlowInput, persist persistOrderFunc) OrderFlowResult {
+	userText := in.UserText
+	catalog := in.Catalog
+	profile := in.Profile
+	formal := profile != nil && strOrEmpty(profile.Tone) == "formal"
+	tmpl := orderTemplatesFromKB(in.KB, formal)
+
+	if IsStructuredOrderList(userText) {
+		in.State = nil
+		outcome := evaluateStructuredOrder(userText, catalog, formal)
+		if outcome.Matched {
+			if len(outcome.Lines) == 0 {
+				if len(outcome.Unmatched) > 0 {
+					st := outcome.State
+					return OrderFlowResult{
+						State: &st,
+						Path:  PathOrderFlow,
+						Reply: structuredOrderUnmatchedReply(formal, outcome.Unmatched),
+					}
+				}
+			} else {
+				if outcome.NeedVariant {
+					st := outcome.State
+					return OrderFlowResult{
+						State: &st,
+						Path:  PathOrderFlow,
+						Reply: buildOrderFlowReply(outcome.State, tmpl.AskVariant, catalog),
+					}
+				}
+				if outcome.Blocked {
+					st := outcome.State
+					return OrderFlowResult{
+						State: &st,
+						Path:  PathOrderFlow,
+						Reply: outcome.BlockReply,
+					}
+				}
+				st := outcome.State
+				prompt := tmpl.AskRecipient
+				if len(outcome.Unmatched) > 0 {
+					prompt = structuredOrderUnmatchedReply(formal, outcome.Unmatched) + "\n\n" + prompt
+				}
+				return OrderFlowResult{
+					State: &st,
+					Path:  PathOrderFlow,
+					Reply: buildOrderFlowReply(outcome.State, prompt, catalog),
+				}
+			}
+		}
+	}
+	return AdvanceOrderFlow(in, persist)
+}
+
 type orderState struct {
 	Step string `json:"step"`
 
@@ -380,11 +536,13 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	}
 
 	clearedOrderForCorrection := false
+	deferOrderFlowAfterBreak := false
 
 	// Active order flow — only when message is really continuing checkout (not greeting/harga/batal).
 	if orderSt, _ := s.getOrderState(ctx, payload.TenantID, convo.ID); orderSt != nil {
 		tone := strOrEmpty(profile.Tone)
 		if ShouldBreakOrderFlow(userText, orderSt.Step, catalog) {
+			deferOrderFlowAfterBreak = shouldDeferOrderFlowAfterStructuredBreak(orderSt.Step, userText)
 			clearedOrderForCorrection = IsUserSalesCorrection(userText)
 			s.clearOrderState(ctx, payload.TenantID, convo.ID)
 			rlog.Info("AI job: order flow cleared for new intent", "prevStep", orderSt.Step, "correction", clearedOrderForCorrection)
@@ -414,34 +572,10 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	}
 	scopeKeywords := ExtractScopeKeywords(strings.Join(scopeParts, " "))
 
-	fallbackKW := []string{
-		"harga", "stok", "produk", "order", "pengiriman", "ukuran", "size",
-		"mau", "tanya", "beli", "ada", "celana", "jeans", "baju", "apparel",
-	}
-	inScope := IsWithinBusinessScope(userText, scopeKeywords, fallbackKW)
-	if !inScope && (IsActiveCheckoutFromHistory(history, userText) || IsAcknowledgmentLike(userText)) {
-		inScope = true
-	}
+	inScope := resolveAutoReplyInScope(userText, scopeKeywords, history)
 
 	orderActiveNow, _ := s.getOrderState(ctx, payload.TenantID, convo.ID)
-	intent := ResolveSalesIntent(userText, history, orderActiveNow != nil, inScope, profile, catalog)
-	classifier := salesIntentToClassifier(intent)
-	// Fallback ke classifier lama untuk edge case intent confidence rendah.
-	if intent.Confidence < 0.72 {
-		legacy := classifyMessage(userText, inScope, profile)
-		if legacy.Label == "sensitive_escalate" || legacy.Label == "order_intent" || legacy.Label == "out_of_scope" {
-			classifier = legacy
-		}
-	}
-	if IsAcknowledgmentLike(userText) {
-		classifier = classifyResult{Label: "in_scope_question", Confidence: 0.85}
-	} else if intent.State == SalesStateCartReady {
-		classifier = classifyResult{Label: "order_intent", Confidence: intent.Confidence}
-	} else if intent.State == SalesStateSensitive {
-		classifier = classifyResult{Label: "sensitive_escalate", Confidence: intent.Confidence}
-	} else if intent.State == SalesStateOutOfScope {
-		classifier = classifyResult{Label: "out_of_scope", Confidence: intent.Confidence}
-	}
+	intent, classifier := resolveAutoReplyClassifier(userText, history, orderActiveNow != nil, inScope, profile, catalog)
 	if ac, ok := ActivityContextFrom(ctx); ok {
 		ac.Classifier = classifier.Label + ":" + intent.State
 		ctx = WithActivityContext(ctx, ac)
@@ -461,7 +595,8 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	)
 
 	// ── Order flow — prioritas sebelum katalog statis ─────────────────────
-	if inScope && (classifier.Label == "order_intent" || IsStructuredOrderList(userText)) {
+	if !shouldSkipOrderFlowRouting(deferOrderFlowAfterBreak, userText, history, catalog) &&
+		shouldEnterOrderFlowRoute(inScope, classifier, userText, history, catalog) {
 		sent, oErr := s.handleOrderFlow(ctx, conn, payload.TenantSchema, payload.TenantID, convo, channel, contact,
 			userText, profile, kbEntries, history, payload.InboundMessageID)
 		return sent, oErr
@@ -479,15 +614,17 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 
 	// ── Katalog WABantu (business_catalog_item) — prioritas sebelum FAQ/LLM ──
 	if inScope {
-		if catReply, ok := replyFromBusinessCatalog(userText, profile, catalog, history); ok {
-			if clearedOrderForCorrection {
-				catReply = prependSalesCorrection(strOrEmpty(profile.Tone) == "formal", catReply)
+		if !shouldDeferCatalogToConsulting(userText, intent, catalog) {
+			if catReply, ok := replyFromBusinessCatalog(userText, profile, catalog, history); ok {
+				if clearedOrderForCorrection {
+					catReply = prependSalesCorrection(strOrEmpty(profile.Tone) == "formal", catReply)
+				}
+				finalReply := applyOutputPolicy(catReply)
+				out := metaNoLLM(reasonAIGenerated, PathCatalogDB)
+				out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
+				err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
+				return err == nil, err
 			}
-			finalReply := applyOutputPolicy(catReply)
-			out := metaNoLLM(reasonAIGenerated, PathCatalogDB)
-			out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-			err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
-			return err == nil, err
 		}
 		if clearedOrderForCorrection {
 			formal := strOrEmpty(profile.Tone) == "formal"
@@ -561,12 +698,14 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	}
 
 	// ── Handle: order intent state machine ───────────────────────────────
-	if classifier.Label == "order_intent" || (IsOrderContinuationMessage(userText) && hasOrderIntentText(userText)) {
+	if !shouldSkipOrderFlowRouting(deferOrderFlowAfterBreak, userText, history, catalog) &&
+		(classifier.Label == "order_intent" || (IsOrderContinuationMessage(userText) && hasOrderIntentText(userText))) {
 		sent, oErr := s.handleOrderFlow(ctx, conn, payload.TenantSchema, payload.TenantID, convo, channel, contact,
 			userText, profile, kbEntries, history, payload.InboundMessageID)
 		return sent, oErr
 	}
-	if inScope && (IsOrderRevisionMessage(userText) ||
+	if !shouldSkipOrderFlowRouting(deferOrderFlowAfterBreak, userText, history, catalog) &&
+		inScope && (IsOrderRevisionMessage(userText) ||
 		(mentionsOrderQty(userText) && IsActiveCheckoutFromHistory(history, userText))) {
 		sent, oErr := s.handleOrderFlow(ctx, conn, payload.TenantSchema, payload.TenantID, convo, channel, contact,
 			userText, profile, kbEntries, history, payload.InboundMessageID)

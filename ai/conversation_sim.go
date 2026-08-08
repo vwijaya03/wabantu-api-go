@@ -37,9 +37,47 @@ func (s *ConversationSimulator) appendHistory(in, out string) {
 	}
 }
 
+func (s *ConversationSimulator) simPersistOrder(st orderState) (string, error) {
+	return "sim-order", nil
+}
+
+func (s *ConversationSimulator) runOrderFlow(userText string, state *orderState) OrderFlowResult {
+	if s.ScopeKW == nil && s.Profile != nil {
+		s.ScopeKW = businessScopeKeywords(s.Profile)
+	}
+	return simOrderFlowAdvance(OrderFlowInput{
+		UserText: userText,
+		State:    state,
+		Catalog:  s.Catalog,
+		History:  s.History,
+		Profile:  s.Profile,
+		KB:       s.KB,
+		ScopeKW:  s.ScopeKW,
+	}, s.simPersistOrder)
+}
+
+func (s *ConversationSimulator) applyOrderFlowResult(out *TurnOutcome, res OrderFlowResult) {
+	out.Path = res.Path
+	out.Reply = res.Reply
+	out.Completed = res.Completed
+	if res.Cleared {
+		s.Order = nil
+	} else if res.State != nil {
+		s.Order = res.State
+	}
+	out.Order = s.Order
+}
+
 // Turn memproses satu pesan pembeli (routing + FSM).
 func (s *ConversationSimulator) Turn(userText string) TurnOutcome {
+	userText = normalizeSimInboundText(userText)
 	out := TurnOutcome{}
+	clearedOrderForCorrection := false
+	deferOrderFlowAfterBreak := false
+
+	if s.ScopeKW == nil && s.Profile != nil {
+		s.ScopeKW = businessScopeKeywords(s.Profile)
+	}
 
 	// Match autoreply.go: third-party buyer lookup denied before other routing.
 	if IsThirdPartyBuyerLookup(userText) {
@@ -51,7 +89,7 @@ func (s *ConversationSimulator) Turn(userText string) TurnOutcome {
 	}
 
 	// Match autoreply.go: status inquiry before greeting and cancel.
-	if IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) || IsOrderRefStatusLookup(userText) {
+	if (IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) || IsOrderRefStatusLookup(userText)) && !wantsOrderContextFromHistory(userText) {
 		out.Path = PathOrderStatus
 		out.Intent = SalesIntent{State: SalesStateConsulting, Topic: SalesTopicOrderStatus, Confidence: 0.9}
 		s.appendHistory(userText, "")
@@ -68,12 +106,29 @@ func (s *ConversationSimulator) Turn(userText string) TurnOutcome {
 		return out
 	}
 
-	// Match autoreply.go: status inquiry before cancel (clarification ≠ cancel command).
-	if IsOrderStatusInquiry(userText) {
+	if IsGreetingFeedback(userText) {
+		out.Path = PathGreeting
+		out.Intent = SalesIntent{State: SalesStateGreeting}
+		out.Reply = GreetingFeedbackReply(userText, strOrEmpty(s.Profile.Tone))
+		s.appendHistory(userText, out.Reply)
+		return out
+	}
+
+	if IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) || IsOrderRefStatusLookup(userText) {
 		out.Path = PathOrderStatus
 		out.Intent = SalesIntent{State: SalesStateConsulting, Topic: SalesTopicOrderStatus, Confidence: 0.9}
 		s.appendHistory(userText, "")
 		return out
+	}
+
+	if IsPaymentQuestion(userText) {
+		if ans, ok := tryPaymentFAQAnswer(userText, s.KB); ok {
+			out.Path = PathPaymentFAQ
+			out.Intent = SalesIntent{State: SalesStateConsulting, Topic: SalesTopicGeneral, Confidence: 0.9}
+			out.Reply = ans
+			s.appendHistory(userText, out.Reply)
+			return out
+		}
 	}
 
 	if IsOrderCancelRequest(userText) || IsDraftOrderCancelRequest(userText) {
@@ -89,102 +144,48 @@ func (s *ConversationSimulator) Turn(userText string) TurnOutcome {
 	}
 
 	orderActive := s.Order != nil
-	inScope := s.inScope(userText) || isCommerceDominant(userText)
-
 	if orderActive {
 		step := s.Order.Step
-		if ShouldBreakOrderFlow(userText, step, nil) {
+		if ShouldBreakOrderFlow(userText, step, s.Catalog) {
+			deferOrderFlowAfterBreak = shouldDeferOrderFlowAfterStructuredBreak(step, userText)
+			clearedOrderForCorrection = IsUserSalesCorrection(userText)
 			s.Order = nil
 			out.BrokeFlow = true
 			orderActive = false
-			out.Path = PathConsulting
-			if IsUserSalesCorrection(userText) {
-				out.Intent = SalesIntent{State: SalesStateCorrection, Topic: SalesTopicGeneral, Confidence: 0.92}
-				out.Reply = orderFlowLoopBreakReply(strOrEmpty(s.Profile.Tone) == "formal")
-			} else {
-				out.Intent = ResolveSalesIntent(userText, s.History, false, s.inScope(userText), s.Profile, s.Catalog)
+			if IsGreetingLike(userText) {
+				out.Path = PathGreeting
+				out.Intent = SalesIntent{State: SalesStateGreeting}
+				out.Reply = GreetingReply(userText, strOrEmpty(s.Profile.Tone), "")
+				s.appendHistory(userText, out.Reply)
+				return out
 			}
-			s.appendHistory(userText, out.Reply)
-			return out
+			// Fall through — match autoreply.go after clearing stale Redis order.
 		} else {
-			res := AdvanceOrderFlow(OrderFlowInput{
-				UserText: userText,
-				State:    s.Order,
-				Catalog:  s.Catalog,
-				History:  s.History,
-				Profile:  s.Profile,
-				KB:       s.KB,
-				ScopeKW:  s.ScopeKW,
-			}, func(st orderState) (string, error) {
-				return "sim-" + st.ProductName, nil
-			})
-			out.Path = res.Path
-			out.Reply = res.Reply
-			out.Completed = res.Completed
+			res := s.runOrderFlow(userText, s.Order)
 			out.Intent = SalesIntent{State: SalesStateCheckout, Topic: SalesTopicGeneral, Confidence: 0.9}
-			if res.Cleared {
-				s.Order = nil
-			} else {
-				s.Order = res.State
-			}
-			out.Order = s.Order
+			s.applyOrderFlowResult(&out, res)
 			s.appendHistory(userText, out.Reply)
 			return out
 		}
 	}
 
-	intent := ResolveSalesIntent(userText, s.History, orderActive, inScope, s.Profile, s.Catalog)
+	inScope := resolveAutoReplyInScope(userText, s.ScopeKW, s.History)
+	if !inScope && isCommerceDominant(userText) {
+		inScope = true
+	}
+
+	intent, classifier := resolveAutoReplyClassifier(userText, s.History, orderActive, inScope, s.Profile, s.Catalog)
 	out.Intent = intent
 
-	if inScope && (IsOrderRevisionMessage(userText) ||
-		(mentionsOrderQty(userText) && IsActiveCheckoutFromHistory(s.History, userText))) {
-		res := AdvanceOrderFlow(OrderFlowInput{
-			UserText: userText,
-			State:    s.Order,
-			Catalog:  s.Catalog,
-			History:  s.History,
-			Profile:  s.Profile,
-			KB:       s.KB,
-			ScopeKW:  s.ScopeKW,
-		}, func(st orderState) (string, error) { return "sim-order", nil })
-		out.Path = res.Path
-		out.Reply = res.Reply
-		out.Completed = res.Completed
-		if res.Cleared {
-			s.Order = nil
-		} else {
-			s.Order = res.State
-		}
-		out.Order = s.Order
+	if !shouldSkipOrderFlowRouting(deferOrderFlowAfterBreak, userText, s.History, s.Catalog) &&
+		shouldEnterOrderFlowRoute(inScope, classifier, userText, s.History, s.Catalog) {
+		res := s.runOrderFlow(userText, s.Order)
+		s.applyOrderFlowResult(&out, res)
 		s.appendHistory(userText, out.Reply)
 		return out
 	}
 
-	cr := salesIntentToClassifier(intent)
-	if cr.Label == "order_intent" || hasPurchaseIntent(userText, s.Catalog) {
-		res := AdvanceOrderFlow(OrderFlowInput{
-			UserText: userText,
-			State:    s.Order,
-			Catalog:  s.Catalog,
-			History:  s.History,
-			Profile:  s.Profile,
-			KB:       s.KB,
-			ScopeKW:  s.ScopeKW,
-		}, func(st orderState) (string, error) { return "sim-order", nil })
-		out.Path = res.Path
-		out.Reply = res.Reply
-		out.Completed = res.Completed
-		if res.Cleared {
-			s.Order = nil
-		} else if res.State != nil {
-			s.Order = res.State
-		}
-		out.Order = s.Order
-		s.appendHistory(userText, out.Reply)
-		return out
-	}
-
-	if IsRecipientPolicyQuestion(userText) {
+	if inScope && IsRecipientPolicyQuestion(userText) {
 		formal := strOrEmpty(s.Profile.Tone) == "formal"
 		out.Path = PathRecipientPolicy
 		out.Reply = replyRecipientPolicyQuestion(userText, s.KB, formal)
@@ -192,19 +193,66 @@ func (s *ConversationSimulator) Turn(userText string) TurnOutcome {
 		return out
 	}
 
-	if IsPaymentQuestion(userText) {
-		if ans, ok := tryPaymentFAQAnswer(userText, s.KB); ok {
-			out.Path = PathPaymentFAQ
-			out.Intent = SalesIntent{State: SalesStateConsulting, Topic: SalesTopicGeneral, Confidence: 0.9}
-			out.Reply = ans
+	if inScope && !shouldDeferCatalogToConsulting(userText, intent, s.Catalog) {
+		if catReply, ok := replyFromBusinessCatalog(userText, s.Profile, s.Catalog, s.History); ok {
+			if clearedOrderForCorrection {
+				catReply = prependSalesCorrection(strOrEmpty(s.Profile.Tone) == "formal", catReply)
+			}
+			out.Path = PathCatalogDB
+			out.Reply = catReply
+			s.appendHistory(userText, out.Reply)
+			return out
+		}
+	}
+	if clearedOrderForCorrection {
+		formal := strOrEmpty(s.Profile.Tone) == "formal"
+		out.Path = PathConsulting
+		out.Reply = salesCorrectionReply(formal)
+		s.appendHistory(userText, out.Reply)
+		return out
+	}
+
+	if classifier.Label == "sensitive_escalate" {
+		out.Path = PathEscalate
+		out.Reply = "escalate"
+		s.appendHistory(userText, out.Reply)
+		return out
+	}
+	if classifier.Label == "out_of_scope" {
+		out.Path = PathOutOfScope
+		out.Reply = outOfScopeReply(s.Profile)
+		s.appendHistory(userText, out.Reply)
+		return out
+	}
+
+	if inScope && IsCatalogBrowsingIntent(userText) {
+		if catReply, ok := replyFromBusinessCatalog(userText, s.Profile, s.Catalog, s.History); ok {
+			out.Path = PathCatalogDB
+			out.Reply = catReply
 			s.appendHistory(userText, out.Reply)
 			return out
 		}
 	}
 
-	if catReply, ok := replyFromBusinessCatalog(userText, s.Profile, s.Catalog, s.History); ok {
-		out.Path = PathCatalogDB
-		out.Reply = catReply
+	if !shouldSkipOrderFlowRouting(deferOrderFlowAfterBreak, userText, s.History, s.Catalog) &&
+		(classifier.Label == "order_intent" || (IsOrderContinuationMessage(userText) && hasOrderIntentText(userText))) {
+		res := s.runOrderFlow(userText, s.Order)
+		s.applyOrderFlowResult(&out, res)
+		s.appendHistory(userText, out.Reply)
+		return out
+	}
+	if !shouldSkipOrderFlowRouting(deferOrderFlowAfterBreak, userText, s.History, s.Catalog) &&
+		inScope && (IsOrderRevisionMessage(userText) ||
+		(mentionsOrderQty(userText) && IsActiveCheckoutFromHistory(s.History, userText))) {
+		res := s.runOrderFlow(userText, s.Order)
+		s.applyOrderFlowResult(&out, res)
+		s.appendHistory(userText, out.Reply)
+		return out
+	}
+	if inScope && IsCasualPraiseLike(userText) {
+		formal := strOrEmpty(s.Profile.Tone) == "formal"
+		out.Path = PathConsulting
+		out.Reply = casualPraiseReply(formal)
 		s.appendHistory(userText, out.Reply)
 		return out
 	}
