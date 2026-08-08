@@ -76,7 +76,7 @@ Peta navigasi untuk menjawab pertanyaan tentang backend WABantu. Mulai dari sini
 
 | File | Isi |
 |------|-----|
-| [DEPLOY_ENCORE_CLOUD.md](./DEPLOY_ENCORE_CLOUD.md) | Deploy Encore Cloud |
+| [DEPLOY_ENCORE_CLOUD.md](./DEPLOY_ENCORE_CLOUD.md) | Deploy Encore Cloud (+ hot-fix `business_profile` dynamic grants) |
 | [DEPLOY_REDIS.md](./DEPLOY_REDIS.md) | Redis production |
 | [STAGING_ACCESS.md](./STAGING_ACCESS.md) | Akses staging |
 

@@ -1346,6 +1346,8 @@ Run `encore check` for API/resource graph validation and `encore test ./...` for
 
 **Step-by-step (Indonesian):** [docs/DEPLOY_ENCORE_CLOUD.md](./docs/DEPLOY_ENCORE_CLOUD.md) · Redis cloud: [docs/DEPLOY_REDIS.md](./docs/DEPLOY_REDIS.md)
 
+**Ops — deploy gagal dynamic grants** (`permission denied for table business_profile`): runbook [Hot-fix 2am](./docs/DEPLOY_ENCORE_CLOUD.md#hot-fix-2am-permission-denied-for-table-business_profile) (`diagnose` → `prune` orphan `t_*` → `fix-cloud-db-grants` → `verify-cloud-deploy-ready`).
+
 ## Environments
 
 Secrets per Encore environment name (`staging`, etc.) via `encore secret set --env=<name>`, or by type (`local`, `dev`, `prod`) via `encore secret set --type <env>`.
