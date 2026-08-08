@@ -7,6 +7,8 @@ Memanggil Cursor SDK (`@cursor/sdk`) untuk patch routing di `ai/autoreply.go` da
 
 ## Lokal (debug)
 
+Butuh **Node.js ≥ 20** (script tidak memakai `await using` supaya tidak terikat Node 24+; workflow CI memakai Node 24).
+
 ```bash
 cd tools/ai-triage-runner
 npm ci
