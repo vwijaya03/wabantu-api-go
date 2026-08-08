@@ -37,46 +37,56 @@ const storeDir = join(tmpdir(), "wabantu-cursor-triage", job.id || process.env.J
 mkdirSync(storeDir, { recursive: true });
 const store = new JsonlLocalAgentStore(storeDir);
 
-try {
-  await using agent = await Agent.create({
-    apiKey,
-    model: { id: "composer-2.5" },
-    local: { cwd: process.cwd(), settingSources: [], store },
-  });
+// Tanpa `await using` (butuh Node 24+) — runner CI masih Node 22.
+// Dispose eksplisit di finally + process.exitCode agar cleanup tetap jalan.
+async function main() {
+  let agent;
+  try {
+    agent = await Agent.create({
+      apiKey,
+      model: { id: "composer-2.5" },
+      local: { cwd: process.cwd(), settingSources: [], store },
+    });
 
-  if (agent.agentId) {
-    writeFileSync("/tmp/cursor_agent_id.txt", agent.agentId);
-    console.error("cursor agent id:", agent.agentId);
-  }
-
-  const run = await agent.send(prompt);
-  for await (const event of run.stream()) {
-    if (event.type === "tool_call" && event.status === "running") {
-      console.error("triage-cursor-fix: tool →", event.name);
-    } else if (event.type === "assistant") {
-      for (const block of event.message?.content || []) {
-        if (block.type === "text" && block.text?.trim()) {
-          console.error("triage-cursor-fix:", block.text.trim().slice(0, 200));
-        }
-      }
-    } else if (event.type === "status") {
-      console.error("triage-cursor-fix: status", event.status);
+    if (agent.agentId) {
+      writeFileSync("/tmp/cursor_agent_id.txt", agent.agentId);
+      console.error("cursor agent id:", agent.agentId);
     }
-  }
 
-  const result = await run.wait();
-  if (result.status === "error") {
-    console.error("Composer run failed:", result.id);
-    process.exit(2);
+    const run = await agent.send(prompt);
+    for await (const event of run.stream()) {
+      if (event.type === "tool_call" && event.status === "running") {
+        console.error("triage-cursor-fix: tool →", event.name);
+      } else if (event.type === "assistant") {
+        for (const block of event.message?.content || []) {
+          if (block.type === "text" && block.text?.trim()) {
+            console.error("triage-cursor-fix:", block.text.trim().slice(0, 200));
+          }
+        }
+      } else if (event.type === "status") {
+        console.error("triage-cursor-fix: status", event.status);
+      }
+    }
+
+    const result = await run.wait();
+    if (result.status === "error") {
+      console.error("Composer run failed:", result.id);
+      return 2;
+    }
+    console.error("triage-cursor-fix: done", result.status);
+    return 0;
+  } catch (err) {
+    if (err instanceof CursorAgentError) {
+      console.error("Cursor startup failed:", err.message, "retryable=", err.isRetryable);
+      return 1;
+    }
+    throw err;
+  } finally {
+    await agent?.[Symbol.asyncDispose]?.();
   }
-  console.error("triage-cursor-fix: done", result.status);
-} catch (err) {
-  if (err instanceof CursorAgentError) {
-    console.error("Cursor startup failed:", err.message, "retryable=", err.isRetryable);
-    process.exit(1);
-  }
-  throw err;
 }
+
+process.exitCode = await main();
 
 function resolveRipgrepPath() {
   const fromEnv = process.env.CURSOR_RIPGREP_PATH?.trim();
