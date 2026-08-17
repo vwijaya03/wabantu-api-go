@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -70,6 +71,15 @@ func handleInboundAI(ctx context.Context, job *InboundAIJob) error {
 		return nil
 	}
 
+	if errors.Is(procErr, ErrAIHandoffPaused) {
+		clearAIAttempt(ctx, job.InboundMessageID)
+		rlog.Info("inbound AI job skipped: handoff to staff",
+			"conversationId", job.ConversationID,
+			"inboundId", job.InboundMessageID,
+		)
+		return nil
+	}
+
 	rlog.Warn("inbound AI job failed",
 		"conversationId", job.ConversationID,
 		"inboundId", job.InboundMessageID,
@@ -98,16 +108,22 @@ func handleInboundAI(ctx context.Context, job *InboundAIJob) error {
 }
 
 func incrementAIAttempt(ctx context.Context, inboundMessageID string) int {
-	rdb := svc.rdb
-	if rdb == nil {
-		return 1
+	if svc == nil || svc.rdb == nil {
+		rlog.Error("AI attempt counter unavailable: Redis client nil",
+			"inboundId", inboundMessageID,
+		)
+		return maxInboundAIAttempts
 	}
 	key := aiAttemptKeyPrefix + inboundMessageID
-	n, err := rdb.Incr(ctx, key).Result()
+	n, err := svc.rdb.Incr(ctx, key).Result()
 	if err != nil {
-		return 1
+		rlog.Error("AI attempt counter Incr failed",
+			"inboundId", inboundMessageID,
+			"err", err,
+		)
+		return maxInboundAIAttempts
 	}
-	_ = rdb.Expire(ctx, key, aiAttemptTTL).Err()
+	_ = svc.rdb.Expire(ctx, key, aiAttemptTTL).Err()
 	return int(n)
 }
 

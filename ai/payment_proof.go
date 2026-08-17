@@ -593,6 +593,31 @@ func parsePaymentAccountsFromText(text string) []paymentAccount {
 	return out
 }
 
+func orderStatusNeedsStockPrecheck(currentStatus, newStatus string) bool {
+	if strings.ToLower(strings.TrimSpace(newStatus)) != "processing" {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(currentStatus)) {
+	case "draft", "confirmed", "paid":
+		return true
+	default:
+		return false
+	}
+}
+
+func loadOrderStockItems(ctx context.Context, q tenantQuerier, tenantSchema, orderID string) ([]inventory.OrderStockItem, error) {
+	var itemsRaw []byte
+	if err := q.QueryRowContext(ctx, fmt.Sprintf(
+		`SELECT COALESCE(items, '[]') FROM "%s"."order" WHERE id = $1::uuid`, tenantSchema), orderID).Scan(&itemsRaw); err != nil {
+		return nil, err
+	}
+	var items []order.OrderItem
+	if err := json.Unmarshal(itemsRaw, &items); err != nil {
+		return nil, err
+	}
+	return aiOrderStockItems(items), nil
+}
+
 func applyPaymentProofResult(
 	ctx context.Context,
 	q tenantQuerier,
@@ -615,7 +640,18 @@ func applyPaymentProofResult(
 	if paymentStatus == "verified" {
 		verifiedAtSQL = "NOW()"
 	}
-	_, err := q.ExecContext(ctx, fmt.Sprintf(`
+
+	stockItems, err := loadOrderStockItems(ctx, q, job.TenantSchema, target.ID)
+	if err != nil {
+		return err
+	}
+	if syncStock && orderStatusNeedsStockPrecheck(target.Status, orderStatus) {
+		if err := inventory.PrecheckOrderStock(ctx, job.TenantSchema, target.ID, stockItems); err != nil {
+			return err
+		}
+	}
+
+	_, err = q.ExecContext(ctx, fmt.Sprintf(`
 		UPDATE "%s"."order" SET
 			payment_status = $2,
 			status = $3,
@@ -641,20 +677,8 @@ func applyPaymentProofResult(
 	}
 
 	if syncStock && orderStatus == "processing" {
-		var itemsRaw []byte
-		_ = q.QueryRowContext(ctx, fmt.Sprintf(
-			`SELECT COALESCE(items, '[]') FROM "%s"."order" WHERE id = $1::uuid`, job.TenantSchema), target.ID).Scan(&itemsRaw)
-		var items []order.OrderItem
-		_ = json.Unmarshal(itemsRaw, &items)
-		stockItems := make([]inventory.OrderStockItem, 0, len(items))
-		for _, it := range items {
-			stockItems = append(stockItems, inventory.OrderStockItem{
-				LineID: it.LineID, CatalogItemID: it.CatalogItemID,
-				WarehouseID: it.WarehouseID, Qty: it.Qty,
-			})
-		}
 		if err := inventory.SyncOrderStock(ctx, job.TenantSchema, target.ID, "processing", stockItems, ""); err != nil {
-			rlog.Warn("payment proof stock sync failed", "orderId", target.ID, "err", err)
+			return fmt.Errorf("payment proof stock sync: %w", err)
 		}
 	}
 

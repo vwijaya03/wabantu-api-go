@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -24,6 +25,9 @@ import (
 )
 
 // ─── Constants ───────────────────────────────────────────────────────────────
+
+// ErrAIHandoffPaused means staff has taken over the conversation; inbound AI must not reply or retry.
+var ErrAIHandoffPaused = errors.New("AI_HANDOFF_PAUSED")
 
 const (
 	reasonAIGenerated       = "ai_generated"
@@ -213,7 +217,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 
 	if !convo.AIHandled {
 		rlog.Warn("AI job: convo.aiHandled=false", "convoId", convo.ID)
-		return false, fmt.Errorf("AI_HANDOFF_PAUSED")
+		return false, ErrAIHandoffPaused
 	}
 	if inbound.Direction != "in" || inbound.Author != "contact" {
 		rlog.Warn("AI job: inbound not a contact inbound")

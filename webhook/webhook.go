@@ -98,27 +98,14 @@ func receiveWebhook(w http.ResponseWriter, r *http.Request) {
 	messages := whatsapp.ParseWebhook(body)
 	ctx := r.Context()
 
-	if sig := r.Header.Get("X-Hub-Signature-256"); sig != "" {
-		phoneNumberID := whatsapp.WebhookPhoneNumberID(body)
-		if phoneNumberID == "" && len(messages) > 0 {
-			phoneNumberID = messages[0].ToPhoneNumberID
-		}
-		if phoneNumberID == "" {
-			rlog.Warn("webhook signature present but phone_number_id missing in payload")
+	if err := verifyInboundWebhookSignature(ctx, body, r.Header.Get("X-Hub-Signature-256"), messages, nil); err != nil {
+		switch err.Error() {
+		case "phone_number_id missing":
 			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		appSecret, err := lookupChannelMetaAppSecret(ctx, phoneNumberID)
-		if err != nil || appSecret == "" {
-			rlog.Warn("webhook signature rejected: channel not found", "phoneNumberId", phoneNumberID, "err", err)
+		default:
 			w.WriteHeader(http.StatusUnauthorized)
-			return
 		}
-		if !whatsapp.VerifyWebhookSignature(body, sig, appSecret) {
-			rlog.Warn("webhook signature verification failed", "phoneNumberId", phoneNumberID)
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
+		return
 	}
 	for _, msg := range messages {
 		if err := ingestMessage(ctx, msg); err != nil {
@@ -193,38 +180,38 @@ func ingestMessage(ctx context.Context, msg whatsapp.InboundMessage) error {
 		rlog.Warn("workflow evaluation failed", "err", wfErr)
 	}
 	if !handled {
-		if pubErr := ai.PublishInboundJob(ctx, &ai.InboundAIJob{
-			TenantSchema:     schema,
-			ConversationID:   convoID,
-			InboundMessageID: messageID,
-			InboundType:      msg.Type,
-		}); pubErr != nil {
-			rlog.Warn("publish AI job failed", "err", pubErr, "messageId", messageID)
-		}
+		publishJobWithRetry(ctx, "ai-inbound", func(ctx context.Context) error {
+			return ai.PublishInboundJob(ctx, &ai.InboundAIJob{
+				TenantSchema:     schema,
+				ConversationID:   convoID,
+				InboundMessageID: messageID,
+				InboundType:      msg.Type,
+			})
+		})
 	}
 
 	if strings.EqualFold(strings.TrimSpace(msg.Type), "image") {
 		tenantID, _ := tenant.TenantIDBySchema(ctx, schema)
-		if pubErr := ai.PublishPaymentProofJob(ctx, &ai.PaymentProofJob{
-			TenantSchema:     schema,
-			TenantID:         tenantID,
-			ConversationID:   convoID,
-			ContactID:        contactID,
-			MessageID:        messageID,
-			InboundMessageID: messageID,
-		}); pubErr != nil {
-			rlog.Warn("publish payment proof job failed", "err", pubErr, "messageId", messageID)
-		}
+		publishJobWithRetry(ctx, "payment-proof", func(ctx context.Context) error {
+			return ai.PublishPaymentProofJob(ctx, &ai.PaymentProofJob{
+				TenantSchema:     schema,
+				TenantID:         tenantID,
+				ConversationID:   convoID,
+				ContactID:        contactID,
+				MessageID:        messageID,
+				InboundMessageID: messageID,
+			})
+		})
 	}
 
 	if inbox.IsPersistableMediaType(msg.Type) {
-		if pubErr := inbox.PublishInboxMediaPersistJob(ctx, &inbox.InboxMediaPersistJob{
-			TenantSchema: schema,
-			MessageID:    messageID,
-			MessageType:  msg.Type,
-		}); pubErr != nil {
-			rlog.Warn("publish inbox media persist job failed", "err", pubErr, "messageId", messageID)
-		}
+		publishJobWithRetry(ctx, "inbox-media-persist", func(ctx context.Context) error {
+			return inbox.PublishInboxMediaPersistJob(ctx, &inbox.InboxMediaPersistJob{
+				TenantSchema: schema,
+				MessageID:    messageID,
+				MessageType:  msg.Type,
+			})
+		})
 	}
 
 	if ok, sErr := ai.ShouldTriggerSummary(ctx, schema, convoID); sErr == nil && ok {
