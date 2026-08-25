@@ -17,6 +17,15 @@ func ensureInventoryModuleSchema(ctx context.Context, schemaName string) error {
 	if isInventorySchemaReadyCached(schemaName) {
 		return nil
 	}
+	// Hot path: avoid SET search_path when inventory DDL is already complete.
+	ready, err := tenantschema.InventoryModuleReady(ctx, tenant.DataDB.Stdlib(), schemaName)
+	if err != nil {
+		return appErrs.Internal(err.Error())
+	}
+	if ready {
+		markInventorySchemaReady(schemaName)
+		return nil
+	}
 	conn, err := tenant.TenantConn(ctx, schemaName)
 	if err != nil {
 		return appErrs.Internal(err.Error())

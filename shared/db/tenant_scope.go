@@ -100,7 +100,9 @@ var tenantTableNames = []string{
 }
 
 var (
-	orderTableRE  = regexp.MustCompile(`(?i)\b(FROM|JOIN|INTO|UPDATE|TABLE)\s+"?order"?\b`)
+	// Match quoted or unquoted reserved table name "order" as a whole identifier.
+	orderQuotedRE   = regexp.MustCompile(`(?i)\b(FROM|JOIN|INTO|UPDATE|TABLE)\s+"order"`)
+	orderUnquotedRE = regexp.MustCompile(`(?i)\b(FROM|JOIN|INTO|UPDATE|TABLE)\s+order\b`)
 	tenantTableRE = make([]*regexp.Regexp, len(tenantTableNames))
 )
 
@@ -119,13 +121,15 @@ func QualifySQL(sch SchemaSQL, sql string) string {
 	for i, table := range tenantTableNames {
 		out = tenantTableRE[i].ReplaceAllString(out, sch.T(table))
 	}
-	out = orderTableRE.ReplaceAllStringFunc(out, func(m string) string {
+	replaceOrder := func(m string) string {
 		parts := strings.Fields(m)
 		if len(parts) < 2 {
 			return m
 		}
 		return parts[0] + " " + sch.T("order")
-	})
+	}
+	out = orderQuotedRE.ReplaceAllStringFunc(out, replaceOrder)
+	out = orderUnquotedRE.ReplaceAllStringFunc(out, replaceOrder)
 	return out
 }
 

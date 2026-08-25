@@ -88,7 +88,19 @@ func ensureEventsSchema(ctx context.Context, schema string) error {
 		eventsSchemaMu.Unlock()
 	}
 
-	_, err, _ := eventsSchemaGroup.Do(schema, func() (any, error) {
+	// Hot path: skip TenantConn / SET search_path when migration already applied.
+	moduleReady, err := tenantschema.EventsModuleReady(ctx, tenant.DataDB.Stdlib(), schema)
+	if err != nil {
+		return appErrs.Internal(err.Error())
+	}
+	if moduleReady {
+		eventsSchemaMu.Lock()
+		eventsSchemaDone[schema] = true
+		eventsSchemaMu.Unlock()
+		return nil
+	}
+
+	_, sfErr, _ := eventsSchemaGroup.Do(schema, func() (any, error) {
 		eventsSchemaMu.Lock()
 		if eventsSchemaDone[schema] {
 			eventsSchemaMu.Unlock()
@@ -105,7 +117,7 @@ func ensureEventsSchema(ctx context.Context, schema string) error {
 		eventsSchemaMu.Unlock()
 		return nil, nil
 	})
-	return err
+	return sfErr
 }
 
 func applyEventsSchemaPatches(ctx context.Context, schema string) error {
