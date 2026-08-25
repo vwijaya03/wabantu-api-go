@@ -12,6 +12,7 @@ import (
 	"encore.dev/rlog"
 	"encore.dev/storage/sqldb"
 
+	appdb "encore.app/wabantu/shared/db"
 	"encore.app/wabantu/shared/types"
 )
 
@@ -173,27 +174,22 @@ type Invoice struct {
 
 // ---------- helpers ----------
 
-func tenantDB(ctx context.Context, schema string) (*sql.DB, error) {
+func tenantConn(ctx context.Context, schema string) (*sql.Conn, error) {
 	if schema == "" {
 		return nil, &errs.Error{Code: errs.PermissionDenied, Message: "tenant context required"}
 	}
-	stdlib := db.Stdlib()
-	_, err := stdlib.ExecContext(ctx, fmt.Sprintf(`SET search_path TO %q`, schema))
-	if err != nil {
-		return nil, err
-	}
-	return stdlib, nil
+	return appdb.TenantConn(ctx, db.Stdlib(), schema)
 }
 
-func ensureSubscription(ctx context.Context, d *sql.DB) (*Subscription, error) {
+func ensureSubscription(ctx context.Context, conn *sql.Conn) (*Subscription, error) {
 	var s Subscription
-	err := d.QueryRowContext(ctx,
+	err := conn.QueryRowContext(ctx,
 		`SELECT id, plan_code, plan_name, is_trial, trial_ends_at, status, provider, provider_ref, created_at, updated_at
 		 FROM subscription ORDER BY created_at DESC LIMIT 1`,
 	).Scan(&s.ID, &s.PlanCode, &s.PlanName, &s.IsTrial, &s.TrialEndsAt, &s.Status, &s.Provider, &s.ProviderRef, &s.CreatedAt, &s.UpdatedAt)
 	if err == sql.ErrNoRows {
 		trial := time.Now().Add(7 * 24 * time.Hour)
-		err = d.QueryRowContext(ctx,
+		err = conn.QueryRowContext(ctx,
 			`INSERT INTO subscription (plan_code, plan_name, is_trial, trial_ends_at, status)
 			 VALUES ('starter','Starter',true,$1,'active')
 			 RETURNING id, plan_code, plan_name, is_trial, trial_ends_at, status, provider, provider_ref, created_at, updated_at`,
@@ -226,15 +222,16 @@ func Overview(ctx context.Context) (*OverviewResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	d, err := tenantDB(ctx, uid.TenantSchema)
+	conn, err := tenantConn(ctx, uid.TenantSchema)
 	if err != nil {
 		return nil, err
 	}
-	sub, err := ensureSubscription(ctx, d)
+	defer appdb.CloseTenantConn(conn)
+	sub, err := ensureSubscription(ctx, conn)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := d.QueryContext(ctx,
+	rows, err := conn.QueryContext(ctx,
 		`SELECT id, invoice_no, plan_code, plan_name, amount_idr, status, issued_at, paid_at, created_at
 		 FROM invoice
 		 WHERE status IN ('paid','issued')
@@ -254,7 +251,7 @@ func Overview(ctx context.Context) (*OverviewResponse, error) {
 	}
 	var pending *Invoice
 	var p Invoice
-	err = d.QueryRowContext(ctx,
+	err = conn.QueryRowContext(ctx,
 		`SELECT id, invoice_no, plan_code, plan_name, amount_idr, status, issued_at, paid_at, created_at
 		 FROM invoice WHERE status='pending' ORDER BY issued_at DESC LIMIT 1`,
 	).Scan(&p.ID, &p.InvoiceNo, &p.PlanCode, &p.PlanName, &p.AmountIDR, &p.Status, &p.IssuedAt, &p.PaidAt, &p.CreatedAt)
@@ -308,20 +305,21 @@ func SelectPlan(ctx context.Context, req *SelectPlanRequest) (*SelectPlanRespons
 	if plan.AmountIDR <= 0 {
 		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "paket gratis tidak perlu checkout"}
 	}
-	d, err := tenantDB(ctx, uid.TenantSchema)
+	conn, err := tenantConn(ctx, uid.TenantSchema)
 	if err != nil {
 		return nil, err
 	}
-	sub, err := ensureSubscription(ctx, d)
+	defer appdb.CloseTenantConn(conn)
+	sub, err := ensureSubscription(ctx, conn)
 	if err != nil {
 		return nil, err
 	}
 	// Replace older unpaid checkouts.
-	_, _ = d.ExecContext(ctx, `UPDATE invoice SET status='void' WHERE status='pending'`)
+	_, _ = conn.ExecContext(ctx, `UPDATE invoice SET status='void' WHERE status='pending'`)
 
 	invNo := fmt.Sprintf("INV-%s-%s", time.Now().Format("20060102"), randStr(6))
 	var inv Invoice
-	err = d.QueryRowContext(ctx,
+	err = conn.QueryRowContext(ctx,
 		`INSERT INTO invoice (invoice_no, plan_code, plan_name, amount_idr, status, issued_at)
 		 VALUES ($1,$2,$3,$4,'pending',now())
 		 RETURNING id, invoice_no, plan_code, plan_name, amount_idr, status, issued_at, paid_at, created_at`,
@@ -352,12 +350,13 @@ func CreateTopUpCheckout(ctx context.Context, req *CreateTopUpRequest) (*CreateT
 		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "top-up tidak valid"}
 	}
 	opt.ValidForPeriod = time.Now().Format("2006-01")
-	d, err := tenantDB(ctx, uid.TenantSchema)
+	conn, err := tenantConn(ctx, uid.TenantSchema)
 	if err != nil {
 		return nil, err
 	}
+	defer appdb.CloseTenantConn(conn)
 	var hasPending bool
-	if err := d.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM invoice WHERE status='pending')`).Scan(&hasPending); err != nil {
+	if err := conn.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM invoice WHERE status='pending')`).Scan(&hasPending); err != nil {
 		return nil, err
 	}
 	if hasPending {
@@ -366,7 +365,7 @@ func CreateTopUpCheckout(ctx context.Context, req *CreateTopUpRequest) (*CreateT
 
 	invNo := fmt.Sprintf("TOPUP-%s-%s", time.Now().Format("20060102"), randStr(6))
 	var inv Invoice
-	err = d.QueryRowContext(ctx,
+	err = conn.QueryRowContext(ctx,
 		`INSERT INTO invoice (invoice_no, plan_code, plan_name, amount_idr, status, issued_at)
 		 VALUES ($1,$2,$3,$4,'pending',now())
 		 RETURNING id, invoice_no, plan_code, plan_name, amount_idr, status, issued_at, paid_at, created_at`,
@@ -390,12 +389,13 @@ func ActivatePaidInvoice(ctx context.Context, p *ActivatePaidInvoiceParams) erro
 	if p.TenantSchema == "" || p.InvoiceID == "" {
 		return &errs.Error{Code: errs.InvalidArgument, Message: "tenantSchema and invoiceId required"}
 	}
-	d, err := tenantDB(ctx, p.TenantSchema)
+	conn, err := tenantConn(ctx, p.TenantSchema)
 	if err != nil {
 		return err
 	}
+	defer appdb.CloseTenantConn(conn)
 	var inv Invoice
-	err = d.QueryRowContext(ctx,
+	err = conn.QueryRowContext(ctx,
 		`SELECT id, invoice_no, plan_code, plan_name, amount_idr, status, issued_at, paid_at, created_at
 		 FROM invoice WHERE id=$1`,
 		p.InvoiceID,
@@ -410,10 +410,10 @@ func ActivatePaidInvoice(ctx context.Context, p *ActivatePaidInvoiceParams) erro
 		return &errs.Error{Code: errs.FailedPrecondition, Message: "invoice tidak bisa diaktifkan"}
 	}
 	if topUp, ok := resolveTopUp(inv.PlanCode); ok {
-		if err := applyPaidTopUp(ctx, d, inv, topUp); err != nil {
+		if err := applyPaidTopUp(ctx, conn, inv, topUp); err != nil {
 			return err
 		}
-		_, err = d.ExecContext(ctx,
+		_, err = conn.ExecContext(ctx,
 			`UPDATE invoice SET status='paid', paid_at=COALESCE(paid_at, now()), issued_at=now()
 			 WHERE id=$1 AND status IN ('pending','paid')`,
 			inv.ID,
@@ -424,11 +424,11 @@ func ActivatePaidInvoice(ctx context.Context, p *ActivatePaidInvoiceParams) erro
 	if !ok {
 		return &errs.Error{Code: errs.Internal, Message: "plan invoice tidak valid"}
 	}
-	sub, err := ensureSubscription(ctx, d)
+	sub, err := ensureSubscription(ctx, conn)
 	if err != nil {
 		return err
 	}
-	_, err = d.ExecContext(ctx,
+	_, err = conn.ExecContext(ctx,
 		`UPDATE subscription SET plan_code=$1, plan_name=$2, is_trial=false, trial_ends_at=NULL,
 		 provider='midtrans', updated_at=now()
 		 WHERE id=$3`,
@@ -437,7 +437,7 @@ func ActivatePaidInvoice(ctx context.Context, p *ActivatePaidInvoiceParams) erro
 	if err != nil {
 		return err
 	}
-	_, err = d.ExecContext(ctx,
+	_, err = conn.ExecContext(ctx,
 		`UPDATE invoice SET status='paid', paid_at=COALESCE(paid_at, now()), issued_at=now()
 		 WHERE id=$1 AND status IN ('pending','paid')`,
 		inv.ID,
@@ -445,10 +445,10 @@ func ActivatePaidInvoice(ctx context.Context, p *ActivatePaidInvoiceParams) erro
 	return err
 }
 
-func applyPaidTopUp(ctx context.Context, d *sql.DB, inv Invoice, topUp TopUpOption) error {
+func applyPaidTopUp(ctx context.Context, conn *sql.Conn, inv Invoice, topUp TopUpOption) error {
 	period := time.Now().Format("2006-01")
 	var exists bool
-	if err := d.QueryRowContext(ctx,
+	if err := conn.QueryRowContext(ctx,
 		`SELECT EXISTS(SELECT 1 FROM quota_topup WHERE invoice_id=$1 AND status='paid')`,
 		inv.ID,
 	).Scan(&exists); err != nil {
@@ -469,7 +469,7 @@ func applyPaidTopUp(ctx context.Context, d *sql.DB, inv Invoice, topUp TopUpOpti
 		if entry.quantity <= 0 {
 			continue
 		}
-		if _, err := d.ExecContext(ctx,
+		if _, err := conn.ExecContext(ctx,
 			`INSERT INTO quota_topup
 			 (invoice_id, topup_code, event_type, period, quantity, amount_idr, status)
 			 VALUES ($1,$2,$3,$4,$5,$6,'paid')`,
@@ -491,11 +491,12 @@ func ListInvoices(ctx context.Context) (*InvoicesResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	d, err := tenantDB(ctx, uid.TenantSchema)
+	conn, err := tenantConn(ctx, uid.TenantSchema)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := d.QueryContext(ctx,
+	defer appdb.CloseTenantConn(conn)
+	rows, err := conn.QueryContext(ctx,
 		`SELECT id, invoice_no, plan_code, plan_name, amount_idr, status, issued_at, paid_at, created_at
 		 FROM invoice ORDER BY issued_at DESC LIMIT 100`)
 	if err != nil {

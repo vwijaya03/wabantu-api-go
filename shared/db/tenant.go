@@ -13,7 +13,7 @@ func QuoteIdent(s string) string {
 }
 
 // TenantConn returns a dedicated *sql.Conn with search_path set to the
-// given tenant schema.  Caller MUST defer conn.Close().
+// given tenant schema.  Caller MUST defer CloseTenantConn(conn).
 func TenantConn(ctx context.Context, pool *sql.DB, schema string) (*sql.Conn, error) {
 	conn, err := pool.Conn(ctx)
 	if err != nil {
@@ -24,4 +24,14 @@ func TenantConn(ctx context.Context, pool *sql.DB, schema string) (*sql.Conn, er
 		return nil, fmt.Errorf("set search_path: %w", err)
 	}
 	return conn, nil
+}
+
+// CloseTenantConn resets session state before returning the connection to the pool.
+func CloseTenantConn(conn *sql.Conn) {
+	if conn == nil {
+		return
+	}
+	_, _ = conn.ExecContext(context.Background(), "RESET search_path")
+	_, _ = conn.ExecContext(context.Background(), "RESET ROLE")
+	conn.Close()
 }

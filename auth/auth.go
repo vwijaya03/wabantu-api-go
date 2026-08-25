@@ -117,6 +117,9 @@ func AuthHandler(ctx context.Context, token string) (encoreAuth.UID, *types.Auth
 	if sess == nil {
 		return "", nil, errs.Unauthenticated("session expired")
 	}
+	if err := reconcileSessionTenant(ctx, sess); err != nil {
+		return "", nil, errs.Unauthenticated("session invalid")
+	}
 
 	return encoreAuth.UID(accountID), buildAuthUser(sess, sessionID), nil
 }

@@ -10,19 +10,15 @@ import (
 	"encore.dev/beta/auth"
 	"encore.dev/storage/sqldb"
 
+	appdb "encore.app/wabantu/shared/db"
 	e "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/types"
 )
 
 var db = sqldb.Named("tenant")
 
-func withTenantDB(ctx context.Context, schema string) (*sql.DB, error) {
-	stdlib := db.Stdlib()
-	_, err := stdlib.ExecContext(ctx, fmt.Sprintf(`SET search_path TO %q`, schema))
-	if err != nil {
-		return nil, fmt.Errorf("set search_path: %w", err)
-	}
-	return stdlib, nil
+func tenantConn(ctx context.Context, schema string) (*sql.Conn, error) {
+	return appdb.TenantConn(ctx, db.Stdlib(), schema)
 }
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -96,10 +92,11 @@ func Overview(ctx context.Context, req *OverviewRequest) (*OverviewResponse, err
 		return nil, err
 	}
 
-	conn, err := withTenantDB(ctx, u.TenantSchema)
+	conn, err := tenantConn(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, err
 	}
+	defer appdb.CloseTenantConn(conn)
 
 	days := req.Days
 	if days < 1 || days > 90 {
@@ -213,7 +210,7 @@ func Overview(ctx context.Context, req *OverviewRequest) (*OverviewResponse, err
 
 // ─── DB helpers ──────────────────────────────────────────────────────────────
 
-func resolveReportingTimezone(ctx context.Context, conn *sql.DB) string {
+func resolveReportingTimezone(ctx context.Context, conn *sql.Conn) string {
 	var tz sql.NullString
 	_ = conn.QueryRowContext(ctx, `
 		SELECT reporting_timezone FROM business_profile
@@ -224,7 +221,7 @@ func resolveReportingTimezone(ctx context.Context, conn *sql.DB) string {
 	return "Asia/Jakarta"
 }
 
-func countMessages(ctx context.Context, conn *sql.DB, since time.Time, direction, author string) (int, error) {
+func countMessages(ctx context.Context, conn *sql.Conn, since time.Time, direction, author string) (int, error) {
 	q := "SELECT COUNT(*) FROM message WHERE created_at >= $1"
 	args := []any{since}
 	n := 2
@@ -242,7 +239,7 @@ func countMessages(ctx context.Context, conn *sql.DB, since time.Time, direction
 	return count, err
 }
 
-func countTodayMessages(ctx context.Context, conn *sql.DB, tz, direction, author string) (int, error) {
+func countTodayMessages(ctx context.Context, conn *sql.Conn, tz, direction, author string) (int, error) {
 	q := `SELECT COUNT(*) FROM message
 		WHERE direction = $1
 		AND created_at >= ((CURRENT_TIMESTAMP AT TIME ZONE $2)::date AT TIME ZONE $2)
@@ -257,21 +254,21 @@ func countTodayMessages(ctx context.Context, conn *sql.DB, tz, direction, author
 	return count, err
 }
 
-func countSince(ctx context.Context, conn *sql.DB, table string, since time.Time) (int, error) {
+func countSince(ctx context.Context, conn *sql.Conn, table string, since time.Time) (int, error) {
 	q := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE created_at >= $1", table)
 	var count int
 	err := conn.QueryRowContext(ctx, q, since).Scan(&count)
 	return count, err
 }
 
-func sumUnread(ctx context.Context, conn *sql.DB) (int, error) {
+func sumUnread(ctx context.Context, conn *sql.Conn) (int, error) {
 	var sum int
 	err := conn.QueryRowContext(ctx, `
 		SELECT COALESCE(SUM(unread_count), 0) FROM conversation`).Scan(&sum)
 	return sum, err
 }
 
-func countOutboundRead(ctx context.Context, conn *sql.DB, since time.Time) (int, error) {
+func countOutboundRead(ctx context.Context, conn *sql.Conn, since time.Time) (int, error) {
 	var count int
 	err := conn.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM message
@@ -279,7 +276,7 @@ func countOutboundRead(ctx context.Context, conn *sql.DB, since time.Time) (int,
 	return count, err
 }
 
-func topQuestions(ctx context.Context, conn *sql.DB, since time.Time, limit int) ([]TopQuestion, error) {
+func topQuestions(ctx context.Context, conn *sql.Conn, since time.Time, limit int) ([]TopQuestion, error) {
 	rows, err := conn.QueryContext(ctx, `
 		SELECT LOWER(TRIM(body)) AS question, COUNT(1) AS cnt
 		FROM message
@@ -307,7 +304,7 @@ func topQuestions(ctx context.Context, conn *sql.DB, since time.Time, limit int)
 	return result, rows.Err()
 }
 
-func avgFirstResponse(ctx context.Context, conn *sql.DB, since time.Time) *float64 {
+func avgFirstResponse(ctx context.Context, conn *sql.Conn, since time.Time) *float64 {
 	var avg sql.NullFloat64
 	_ = conn.QueryRowContext(ctx, `
 		SELECT AVG(EXTRACT(EPOCH FROM (fo.first_out - fi.first_in)))::float AS avg_sec
