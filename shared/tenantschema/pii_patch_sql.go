@@ -3,19 +3,24 @@ package tenantschema
 // PIISchemaPatchSQL is idempotent DDL for encrypted PII columns (run with admin DB role on cloud).
 // Optional-module tables (events, finance, broadcast) are skipped when the table does not exist.
 const PIISchemaPatchSQL = `
-ALTER TABLE contact ADD COLUMN IF NOT EXISTS phone_number_enc TEXT;
-ALTER TABLE contact ADD COLUMN IF NOT EXISTS phone_number_idx VARCHAR(64);
-ALTER TABLE contact ADD COLUMN IF NOT EXISTS display_name_enc TEXT;
-ALTER TABLE contact ADD COLUMN IF NOT EXISTS display_name_idx VARCHAR(64);
-ALTER TABLE contact ADD COLUMN IF NOT EXISTS birth_date_enc TEXT;
-ALTER TABLE contact ADD COLUMN IF NOT EXISTS birth_date DATE;
+DO $pii_contact$
+BEGIN
+    IF to_regclass('contact') IS NOT NULL THEN
+        ALTER TABLE contact ADD COLUMN IF NOT EXISTS phone_number_enc TEXT;
+        ALTER TABLE contact ADD COLUMN IF NOT EXISTS phone_number_idx VARCHAR(64);
+        ALTER TABLE contact ADD COLUMN IF NOT EXISTS display_name_enc TEXT;
+        ALTER TABLE contact ADD COLUMN IF NOT EXISTS display_name_idx VARCHAR(64);
+        ALTER TABLE contact ADD COLUMN IF NOT EXISTS birth_date_enc TEXT;
+        ALTER TABLE contact ADD COLUMN IF NOT EXISTS birth_date DATE;
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_contact_phone_idx
-    ON contact(phone_number_idx)
-    WHERE deleted_at IS NULL AND phone_number_idx IS NOT NULL AND phone_number_idx <> '';
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_contact_phone_idx
+            ON contact(phone_number_idx)
+            WHERE deleted_at IS NULL AND phone_number_idx IS NOT NULL AND phone_number_idx <> '';
 
-ALTER TABLE contact DROP CONSTRAINT IF EXISTS contact_phone_number_key;
-ALTER TABLE contact ALTER COLUMN phone_number DROP NOT NULL;
+        ALTER TABLE contact DROP CONSTRAINT IF EXISTS contact_phone_number_key;
+        ALTER TABLE contact ALTER COLUMN phone_number DROP NOT NULL;
+    END IF;
+END $pii_contact$;
 
 DO $pii$
 BEGIN
