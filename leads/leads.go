@@ -11,6 +11,7 @@ import (
 	"encore.dev/rlog"
 	"encore.dev/storage/sqldb"
 
+	appdb "encore.app/wabantu/shared/db"
 	e "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/pii"
 	"encore.app/wabantu/shared/entitlement"
@@ -25,13 +26,8 @@ var validLeadStatuses = map[string]bool{
 
 var db = sqldb.Named("tenant")
 
-func withTenantDB(ctx context.Context, schema string) (*sql.DB, error) {
-	stdlib := db.Stdlib()
-	_, err := stdlib.ExecContext(ctx, fmt.Sprintf(`SET search_path TO %q`, schema))
-	if err != nil {
-		return nil, fmt.Errorf("set search_path: %w", err)
-	}
-	return stdlib, nil
+func tenantConn(ctx context.Context, schema string) (*sql.Conn, error) {
+	return appdb.TenantConn(ctx, db.Stdlib(), schema)
 }
 
 // Lead matches the NestJS / web-frontend contract.
@@ -100,10 +96,11 @@ func List(ctx context.Context, req *ListRequest) (*ListLeadsResponse, error) {
 		return nil, e.Forbidden("CRM leads requires Business plan or higher")
 	}
 
-	conn, err := withTenantDB(ctx, u.TenantSchema)
+	conn, err := tenantConn(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, err
 	}
+	defer appdb.CloseTenantConn(conn)
 
 	where := "WHERE l.deleted_at IS NULL"
 	var args []any
@@ -112,7 +109,7 @@ func List(ctx context.Context, req *ListRequest) (*ListLeadsResponse, error) {
 		args = append(args, status)
 	}
 
-	piiActive, _ := tenantschema.LeadPIIActiveDB(ctx, conn, u.TenantSchema)
+	piiActive, _ := tenantschema.LeadPIIActive(ctx, conn, u.TenantSchema)
 	var querySQL string
 	if piiActive {
 		querySQL = fmt.Sprintf(`
@@ -171,10 +168,11 @@ func Update(ctx context.Context, id string, req *UpdateRequest) (*Lead, error) {
 		return nil, e.BadRequest("nothing to update")
 	}
 
-	conn, err := withTenantDB(ctx, u.TenantSchema)
+	conn, err := tenantConn(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, err
 	}
+	defer appdb.CloseTenantConn(conn)
 
 	sets := make([]string, 0, 2)
 	args := make([]any, 0, 3)
@@ -228,10 +226,11 @@ func CaptureFromMessage(ctx context.Context, req *CaptureRequest) (*CaptureRespo
 		return nil, e.BadRequest("tenantSchema, contactId, conversationId required")
 	}
 
-	conn, err := withTenantDB(ctx, req.TenantSchema)
+	conn, err := tenantConn(ctx, req.TenantSchema)
 	if err != nil {
 		return nil, err
 	}
+	defer appdb.CloseTenantConn(conn)
 
 	text := strings.TrimSpace(req.Body)
 	if text == "" {
@@ -260,7 +259,7 @@ func CaptureFromMessage(ctx context.Context, req *CaptureRequest) (*CaptureRespo
 	).Scan(&existingID)
 	if err == nil {
 		if req.ContactName != "" {
-			usePII, _ := tenantschema.LeadPIIActiveDB(ctx, conn, req.TenantSchema)
+			usePII, _ := tenantschema.LeadPIIActive(ctx, conn, req.TenantSchema)
 			if usePII {
 				nameEnc, nameIdx, encErr := encryptLeadName(req.ContactName)
 				if encErr == nil {
@@ -284,7 +283,7 @@ func CaptureFromMessage(ctx context.Context, req *CaptureRequest) (*CaptureRespo
 	if phone == "" {
 		phone, _ = leadPhoneFromContact(ctx, conn, req.ContactID)
 	}
-	usePII, _ := tenantschema.LeadPIIActiveDB(ctx, conn, req.TenantSchema)
+	usePII, _ := tenantschema.LeadPIIActive(ctx, conn, req.TenantSchema)
 	var newID string
 	if usePII && pii.ValidateKey(leadEncKey()) == nil {
 		phoneEnc, phoneIdx, encErr := encryptLeadPhone(phone)

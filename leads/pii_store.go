@@ -79,8 +79,8 @@ func scanLeadPII(scanner interface {
 	return l, nil
 }
 
-func leadPhoneFromContact(ctx context.Context, conn *sql.DB, contactID string) (string, error) {
-	active, err := tenantschema.ContactPIIActiveDB(ctx, conn, "")
+func leadPhoneFromContact(ctx context.Context, conn *sql.Conn, contactID string) (string, error) {
+	active, err := tenantschema.ContactPIIActiveConn(ctx, conn, "")
 	if err != nil || !active {
 		var phone string
 		err := conn.QueryRowContext(ctx,

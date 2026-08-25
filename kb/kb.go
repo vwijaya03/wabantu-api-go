@@ -10,6 +10,7 @@ import (
 	"encore.dev/beta/auth"
 	"encore.dev/storage/sqldb"
 
+	appdb "encore.app/wabantu/shared/db"
 	e "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/types"
 	"encore.app/wabantu/tenant"
@@ -17,16 +18,11 @@ import (
 
 var db = sqldb.Named("tenant")
 
-func withTenantDB(ctx context.Context, schema string) (*sql.DB, error) {
+func tenantConn(ctx context.Context, schema string) (*sql.Conn, error) {
 	if err := tenant.EnsureKnowledgeBaseSchema(ctx, schema); err != nil {
 		return nil, e.Internal(err.Error())
 	}
-	stdlib := db.Stdlib()
-	_, err := stdlib.ExecContext(ctx, fmt.Sprintf(`SET search_path TO %q`, schema))
-	if err != nil {
-		return nil, fmt.Errorf("set search_path: %w", err)
-	}
-	return stdlib, nil
+	return appdb.TenantConn(ctx, db.Stdlib(), schema)
 }
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -136,10 +132,11 @@ func List(ctx context.Context, req *ListRequest) (*ListResponse, error) {
 		return nil, err
 	}
 
-	conn, err := withTenantDB(ctx, u.TenantSchema)
+	conn, err := tenantConn(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, err
 	}
+	defer appdb.CloseTenantConn(conn)
 
 	page := req.Page
 	if page < 1 {
@@ -220,10 +217,11 @@ func Create(ctx context.Context, req *CreateRequest) (*CreateResponse, error) {
 		return nil, e.BadRequest("question and answer are required")
 	}
 
-	conn, err := withTenantDB(ctx, u.TenantSchema)
+	conn, err := tenantConn(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, err
 	}
+	defer appdb.CloseTenantConn(conn)
 
 	isActive := true
 	if req.IsActive != nil {
@@ -255,10 +253,11 @@ func Update(ctx context.Context, id string, req *UpdateRequest) (*UpdateResponse
 		return nil, err
 	}
 
-	conn, err := withTenantDB(ctx, u.TenantSchema)
+	conn, err := tenantConn(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, err
 	}
+	defer appdb.CloseTenantConn(conn)
 
 	sets := []string{}
 	args := []any{}
@@ -327,10 +326,11 @@ func Delete(ctx context.Context, id string) (*DeleteResponse, error) {
 		return nil, err
 	}
 
-	conn, err := withTenantDB(ctx, u.TenantSchema)
+	conn, err := tenantConn(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, err
 	}
+	defer appdb.CloseTenantConn(conn)
 
 	res, err := conn.ExecContext(ctx, `
 		UPDATE knowledge_base_entry
