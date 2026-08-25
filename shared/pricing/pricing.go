@@ -3,19 +3,20 @@ package pricing
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strings"
 
 	appdb "encore.app/wabantu/shared/db"
-	"encore.app/wabantu/tenant"
 	apperr "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/tenantschema"
+	"encore.app/wabantu/tenant"
 	"encore.dev"
 )
 
 // EnsureSchema applies idempotent DDL for price types and catalog prices.
 // On Encore Cloud the app DB role cannot run DDL; skip when schema is already present.
-func EnsureSchema(ctx context.Context, conn *sql.Conn, tenantSchema string) error {
-	ready, err := tenantschema.PricingReadyConn(ctx, conn)
+func EnsureSchema(ctx context.Context, q appdb.TenantQuerier, tenantSchema string) error {
+	ready, err := tenantschema.PricingReady(ctx, q, tenantSchema)
 	if err != nil {
 		return err
 	}
@@ -25,8 +26,12 @@ func EnsureSchema(ctx context.Context, conn *sql.Conn, tenantSchema string) erro
 	if encore.Meta().Environment.Cloud != encore.CloudLocal {
 		return tenant.EnsureCloudAdminTenantDDL(ctx, tenantSchema)
 	}
-	_, err = conn.ExecContext(ctx, `
-		CREATE TABLE IF NOT EXISTS business_price_type (
+	sch := appdb.SchemaSQL{Schema: tenantSchema}
+	contact := sch.T("contact")
+	priceType := sch.T("business_price_type")
+	catalogPrice := sch.T("business_catalog_item_price")
+	_, err = q.ExecContext(ctx, fmt.Sprintf(`
+		CREATE TABLE IF NOT EXISTS %s (
 			id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 			code           VARCHAR(40)  NOT NULL,
 			label          VARCHAR(100) NOT NULL,
@@ -39,9 +44,9 @@ func EnsureSchema(ctx context.Context, conn *sql.Conn, tenantSchema string) erro
 			deleted_at     TIMESTAMPTZ
 		);
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_price_type_code
-			ON business_price_type(code) WHERE deleted_at IS NULL;
+			ON %s(code) WHERE deleted_at IS NULL;
 
-		CREATE TABLE IF NOT EXISTS business_catalog_item_price (
+		CREATE TABLE IF NOT EXISTS %s (
 			catalog_item_id UUID          NOT NULL,
 			price_type_id   UUID          NOT NULL,
 			price           NUMERIC(15,4) NOT NULL CHECK (price >= 0),
@@ -49,10 +54,10 @@ func EnsureSchema(ctx context.Context, conn *sql.Conn, tenantSchema string) erro
 			PRIMARY KEY (catalog_item_id, price_type_id)
 		);
 		CREATE INDEX IF NOT EXISTS idx_catalog_item_price_type
-			ON business_catalog_item_price(price_type_id);
+			ON %s(price_type_id);
 
-		ALTER TABLE contact ADD COLUMN IF NOT EXISTS price_type_id UUID;
-	`)
+		ALTER TABLE %s ADD COLUMN IF NOT EXISTS price_type_id UUID;
+	`, priceType, priceType, catalogPrice, catalogPrice, contact))
 	return err
 }
 

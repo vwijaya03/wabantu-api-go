@@ -27,21 +27,16 @@ func EnsurePricingSchema(ctx context.Context, tenantSchema string) error {
 }
 
 func ensurePricingSchema(ctx context.Context, tenantSchema string) error {
-	conn, err := appdb.TenantConn(ctx, tenantDB.Stdlib(), tenantSchema)
-	if err != nil {
+	pool := tenantDB.Stdlib()
+	if err := pricing.EnsureSchema(ctx, pool, tenantSchema); err != nil {
 		return err
 	}
-	defer appdb.CloseTenantConn(conn)
-
-	if err := pricing.EnsureSchema(ctx, conn, tenantSchema); err != nil {
-		return err
-	}
-	return ensureCatalogIndexes(ctx, conn, tenantSchema)
+	return ensureCatalogIndexes(ctx, pool, tenantSchema)
 }
 
 // ensureCatalogIndexes fixes legacy unique index that blocked re-create after soft delete.
-func ensureCatalogIndexes(ctx context.Context, conn *sql.Conn, tenantSchema string) error {
-	exists, err := tenantschema.CatalogIndexReadyConn(ctx, conn)
+func ensureCatalogIndexes(ctx context.Context, q appdb.TenantQuerier, tenantSchema string) error {
+	exists, err := tenantschema.CatalogIndexReady(ctx, q, tenantSchema)
 	if err != nil {
 		return err
 	}
@@ -51,12 +46,14 @@ func ensureCatalogIndexes(ctx context.Context, conn *sql.Conn, tenantSchema stri
 	if encore.Meta().Environment.Cloud != encore.CloudLocal {
 		return tenant.EnsureCloudAdminTenantDDL(ctx, tenantSchema)
 	}
-	_, err = conn.ExecContext(ctx, `
+	sch := appdb.SchemaSQL{Schema: tenantSchema}
+	catalogItem := sch.T("business_catalog_item")
+	_, err = q.ExecContext(ctx, fmt.Sprintf(`
 		DROP INDEX IF EXISTS idx_catalog_source_code;
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_source_code
-			ON business_catalog_item(source, external_code)
+			ON %s(source, external_code)
 			WHERE deleted_at IS NULL;
-	`)
+	`, catalogItem))
 	return err
 }
 

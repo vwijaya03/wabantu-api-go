@@ -270,7 +270,11 @@ func runAlwaysApplyPatches(ctx context.Context, conn *sql.Conn) error {
 	if err := alwaysApplyInventorySettingPatch(ctx, conn); err != nil {
 		return err
 	}
-	if err := alwaysApplyKnowledgeBasePatch(ctx, conn); err != nil {
+	kbSchema, err := tenantSchemaFromConn(ctx, conn)
+	if err != nil {
+		return err
+	}
+	if err := alwaysApplyKnowledgeBasePatch(ctx, conn, kbSchema); err != nil {
 		return err
 	}
 	return alwaysApplyInventoryIndexPatch(ctx, conn)

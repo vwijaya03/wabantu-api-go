@@ -2,10 +2,11 @@ package tenant
 
 import (
 	"context"
-	"database/sql"
+	"fmt"
 
 	"encore.dev"
 
+	appdb "encore.app/wabantu/shared/db"
 	"encore.app/wabantu/shared/tenantschema"
 )
 
@@ -28,26 +29,35 @@ CREATE INDEX IF NOT EXISTS idx_kb_entry_category
 
 // EnsureKnowledgeBaseSchema creates knowledge_base_entry on older tenant schemas (idempotent).
 func EnsureKnowledgeBaseSchema(ctx context.Context, schemaName string) error {
-	conn, err := TenantConn(ctx, schemaName)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-	return alwaysApplyKnowledgeBasePatch(ctx, conn)
+	pool := DataDB.Stdlib()
+	return alwaysApplyKnowledgeBasePatch(ctx, pool, schemaName)
 }
 
-func alwaysApplyKnowledgeBasePatch(ctx context.Context, conn *sql.Conn) error {
-	schemaName, err := tenantSchemaFromConn(ctx, conn)
-	if err != nil {
-		return err
-	}
-	exists, err := tenantschema.TableExists(ctx, conn, schemaName, "knowledge_base_entry")
+func alwaysApplyKnowledgeBasePatch(ctx context.Context, q appdb.TenantQuerier, schemaName string) error {
+	exists, err := tenantschema.TableExists(ctx, q, schemaName, "knowledge_base_entry")
 	if err != nil || exists {
 		return err
 	}
 	if encore.Meta().Environment.Cloud != encore.CloudLocal {
-		return ensureCloudAdminDDLForConn(ctx, conn)
+		return EnsureCloudAdminTenantDDL(ctx, schemaName)
 	}
-	_, err = conn.ExecContext(ctx, knowledgeBaseEntryPatchSQL)
+	sch := appdb.SchemaSQL{Schema: schemaName}
+	kbTable := sch.T("knowledge_base_entry")
+	_, err = q.ExecContext(ctx, fmt.Sprintf(`
+		CREATE TABLE IF NOT EXISTS %s (
+		    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+		    question    VARCHAR(500) NOT NULL,
+		    answer      TEXT         NOT NULL,
+		    category    VARCHAR(60),
+		    is_active   BOOLEAN      NOT NULL DEFAULT true,
+		    source      VARCHAR(20)  NOT NULL DEFAULT 'manual',
+		    created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
+		    updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
+		    deleted_at  TIMESTAMPTZ,
+		    deleted_by  UUID
+		);
+		CREATE INDEX IF NOT EXISTS idx_kb_entry_category
+		    ON %s(category);
+	`, kbTable, kbTable))
 	return err
 }
