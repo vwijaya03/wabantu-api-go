@@ -55,6 +55,19 @@ func EnsureCloudAdminTenantDDL(ctx context.Context, schemaName string) error {
 	return applyCloudAdminTenantDDL(ctx, schemaName)
 }
 
+// prepareCloudSchemaForAdminDDL transfers table ownership to db_tenant_admin before
+// applyCloudAdminTenantDDL. Uses the tenantDDL connection first (reliable encore_container
+// owner transfer), then repair_tenant_schema_grants for anything left.
+func prepareCloudSchemaForAdminDDL(ctx context.Context, conn *sql.Conn, schemaName string) error {
+	if !isEncoreCloud() {
+		return nil
+	}
+	if err := ensureCloudSchemaDeployGrants(ctx, conn, schemaName); err != nil {
+		return err
+	}
+	return RepairTenantSchemaDeployGrants(ctx, schemaName)
+}
+
 // applyCloudAdminTenantDDL runs idempotent admin-owned DDL patches on Encore Cloud.
 func applyCloudAdminTenantDDL(ctx context.Context, schemaName string) error {
 	if !isEncoreCloud() {
