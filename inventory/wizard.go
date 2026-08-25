@@ -80,7 +80,7 @@ func runWizardRecommend(ctx context.Context, u *types.AuthUser, answers WizardAn
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 	if _, err := loadSetting(ctx, conn); err != nil {
 		return nil, err
 	}

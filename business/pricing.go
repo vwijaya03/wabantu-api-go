@@ -21,19 +21,19 @@ type CatalogItemPrice struct {
 }
 
 // EnsurePricingSchema applies idempotent DDL for price types and catalog prices.
-func EnsurePricingSchema(ctx context.Context, conn *sql.Conn) error {
-	return ensurePricingSchema(ctx, conn)
+func EnsurePricingSchema(ctx context.Context, conn *sql.Conn, tenantSchema string) error {
+	return ensurePricingSchema(ctx, conn, tenantSchema)
 }
 
-func ensurePricingSchema(ctx context.Context, conn *sql.Conn) error {
-	if err := pricing.EnsureSchema(ctx, conn); err != nil {
+func ensurePricingSchema(ctx context.Context, conn *sql.Conn, tenantSchema string) error {
+	if err := pricing.EnsureSchema(ctx, conn, tenantSchema); err != nil {
 		return err
 	}
-	return ensureCatalogIndexes(ctx, conn)
+	return ensureCatalogIndexes(ctx, conn, tenantSchema)
 }
 
 // ensureCatalogIndexes fixes legacy unique index that blocked re-create after soft delete.
-func ensureCatalogIndexes(ctx context.Context, conn *sql.Conn) error {
+func ensureCatalogIndexes(ctx context.Context, conn *sql.Conn, tenantSchema string) error {
 	exists, err := tenantschema.CatalogIndexReady(ctx, conn)
 	if err != nil {
 		return err
@@ -42,11 +42,7 @@ func ensureCatalogIndexes(ctx context.Context, conn *sql.Conn) error {
 		return nil
 	}
 	if encore.Meta().Environment.Cloud != encore.CloudLocal {
-		var schemaName string
-		if err := conn.QueryRowContext(ctx, `SELECT current_schema()`).Scan(&schemaName); err != nil {
-			return err
-		}
-		return tenant.EnsureCloudAdminTenantDDL(ctx, schemaName)
+		return tenant.EnsureCloudAdminTenantDDL(ctx, tenantSchema)
 	}
 	_, err = conn.ExecContext(ctx, `
 		DROP INDEX IF EXISTS idx_catalog_source_code;

@@ -21,7 +21,7 @@ func DeleteInvoice(ctx context.Context, id string) error {
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	inv, err := getInvoice(ctx, conn, id)
 	if err != nil {

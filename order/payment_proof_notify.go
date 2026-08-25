@@ -21,7 +21,7 @@ func sendPaymentProofConversationMessage(ctx context.Context, tenantSchema, conv
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	var contactID, channelID string
 	err = conn.QueryRowContext(ctx,

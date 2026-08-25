@@ -21,8 +21,8 @@ func ensureInventoryModuleSchema(ctx context.Context, schemaName string) error {
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	if err := ensureInventoryModuleReady(ctx, conn); err != nil {
+	defer tenant.CloseTenantConn(conn)
+	if err := ensureInventoryModuleReady(ctx, conn, schemaName); err != nil {
 		return err
 	}
 	markInventorySchemaReady(schemaName)
@@ -31,7 +31,7 @@ func ensureInventoryModuleSchema(ctx context.Context, schemaName string) error {
 
 // ensureInventoryModuleReady verifies inventory DDL is complete before reads/writes.
 // On Encore Cloud, inv_* DDL is applied via db_tenant_admin (EnsureCloudAdminTenantDDL).
-func ensureInventoryModuleReady(ctx context.Context, conn *sql.Conn) error {
+func ensureInventoryModuleReady(ctx context.Context, conn *sql.Conn, schemaName string) error {
 	ready, err := tenantschema.InventoryModuleReady(ctx, conn)
 	if err != nil {
 		return appErrs.Internal(err.Error())
@@ -40,10 +40,6 @@ func ensureInventoryModuleReady(ctx context.Context, conn *sql.Conn) error {
 		return nil
 	}
 	if encore.Meta().Environment.Cloud != encore.CloudLocal {
-		var schemaName string
-		if err := conn.QueryRowContext(ctx, `SELECT current_schema()`).Scan(&schemaName); err != nil {
-			return appErrs.Internal(err.Error())
-		}
 		if err := tenant.EnsureCloudAdminTenantDDL(ctx, schemaName); err != nil {
 			return appErrs.Internal(err.Error())
 		}

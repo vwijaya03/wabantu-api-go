@@ -69,7 +69,7 @@ func SyncOrderStock(ctx context.Context, tenantSchema, orderID, status string, i
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	setup, postExpense, _, err := loadSyncSetting(ctx, conn)
 	if err != nil {
@@ -175,7 +175,7 @@ func PrecheckOrderStock(ctx context.Context, tenantSchema, orderID string, items
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	shortages, err := analyzeOrderStockShortageConn(ctx, conn, orderID, items)
 	if err != nil {

@@ -52,6 +52,12 @@ func cloudAdminTenantDDLBlocks() []cloudAdminDDLBlock {
 // EnsureCloudAdminTenantDDL applies all admin-owned tenant DDL on Encore Cloud (idempotent).
 // Safe at signup (RunTenantDDL), migrate (ProcessTenantSchemaMigration), and runtime recovery.
 func EnsureCloudAdminTenantDDL(ctx context.Context, schemaName string) error {
+	if err := ValidateTenantSchemaName(schemaName); err != nil {
+		return err
+	}
+	if err := EnsureTenantSchemaProvisioned(ctx, schemaName); err != nil {
+		return fmt.Errorf("provision tenant schema %s: %w", schemaName, err)
+	}
 	return applyCloudAdminTenantDDL(ctx, schemaName)
 }
 
@@ -101,22 +107,11 @@ func ensureCloudAdminDDLForConn(ctx context.Context, conn *sql.Conn) error {
 	if !isEncoreCloud() {
 		return nil
 	}
-	schemaName, err := currentSchemaName(ctx, conn)
+	schemaName, err := SchemaFromConn(ctx, conn)
 	if err != nil {
 		return err
 	}
-	return applyCloudAdminTenantDDL(ctx, schemaName)
-}
-
-func currentSchemaName(ctx context.Context, conn *sql.Conn) (string, error) {
-	var schemaName string
-	if err := conn.QueryRowContext(ctx, `SELECT current_schema()`).Scan(&schemaName); err != nil {
-		return "", fmt.Errorf("current_schema: %w", err)
-	}
-	if schemaName == "" {
-		return "", fmt.Errorf("current_schema: empty")
-	}
-	return schemaName, nil
+	return EnsureCloudAdminTenantDDL(ctx, schemaName)
 }
 
 func withTenantAdminTx(ctx context.Context, schemaName string, fn func(context.Context, *sql.Tx) error) error {

@@ -13,12 +13,13 @@ import (
 	appdb "encore.app/wabantu/shared/db"
 	e "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/types"
+	"encore.app/wabantu/tenant"
 )
 
-var db = sqldb.Named("tenant")
+var tenantDB = sqldb.Named("tenant")
 
 func tenantConn(ctx context.Context, schema string) (*sql.Conn, error) {
-	return appdb.TenantConn(ctx, db.Stdlib(), schema)
+	return appdb.TenantConn(ctx, tenantDB.Stdlib(), schema)
 }
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -97,6 +98,10 @@ func Overview(ctx context.Context, req *OverviewRequest) (*OverviewResponse, err
 		return nil, err
 	}
 	defer appdb.CloseTenantConn(conn)
+
+	if err := tenant.EnsureTenantSchemaProvisioned(ctx, u.TenantSchema); err != nil {
+		return nil, e.Internal("tenant schema not ready")
+	}
 
 	days := req.Days
 	if days < 1 || days > 90 {

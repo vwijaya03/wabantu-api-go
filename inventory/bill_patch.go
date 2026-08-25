@@ -37,7 +37,7 @@ func UpdateBill(ctx context.Context, id string, p *UpdateBillParams) (*Bill, err
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	existing, err := getBill(ctx, conn, id)
 	if err != nil {

@@ -867,8 +867,8 @@ func normalizeOrderItems(ctx context.Context, schema, contactID string, raw []Or
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	if err := pricing.EnsureSchema(ctx, conn); err != nil {
+	defer tenant.CloseTenantConn(conn)
+	if err := pricing.EnsureSchema(ctx, conn, schema); err != nil {
 		return nil, appErrs.Internal("prepare pricing failed")
 	}
 	priceTypeID, err := pricing.ResolvePriceTypeIDForContact(ctx, conn, contactID)
@@ -950,7 +950,7 @@ func loadCatalogOrderItem(ctx context.Context, schema, priceTypeID, condition st
 	if err != nil {
 		return OrderItem{}, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 	unitPrice, err := pricing.ResolveCatalogUnitPrice(ctx, conn, item.CatalogItemID, priceTypeID)
 	if err != nil {
 		return OrderItem{}, err

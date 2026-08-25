@@ -108,7 +108,7 @@ func GetSetting(ctx context.Context) (*InventorySetting, error) {
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	s, err := loadSetting(ctx, conn)
 	if err != nil {
@@ -141,7 +141,7 @@ func UpdateSetting(ctx context.Context, p *UpdateSettingParams) (*InventorySetti
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	if _, err := loadSetting(ctx, conn); err != nil {
 		return nil, appErrs.Internal(err.Error())
@@ -191,7 +191,7 @@ func CompleteSetup(ctx context.Context) (*InventorySetting, error) {
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	s, err := loadSetting(ctx, conn)
 	if err != nil {
@@ -224,12 +224,16 @@ func CompleteSetup(ctx context.Context) (*InventorySetting, error) {
 
 // loadSetting reads the singleton inv_setting row, creating it lazily if missing.
 func loadSetting(ctx context.Context, conn *sql.Conn) (*InventorySetting, error) {
-	if err := ensureInventoryModuleReady(ctx, conn); err != nil {
+	schemaName, err := tenant.SchemaFromConn(ctx, conn)
+	if err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
+	if err := ensureInventoryModuleReady(ctx, conn, schemaName); err != nil {
 		return nil, err
 	}
 	s := &InventorySetting{}
 	var completedAt sql.NullTime
-	err := conn.QueryRowContext(ctx, `
+	err = conn.QueryRowContext(ctx, `
 		SELECT setup_completed, setup_completed_at, default_costing_method, block_negative_stock, purchase_posts_expense
 		FROM inv_setting
 		ORDER BY created_at
@@ -266,7 +270,7 @@ func ListWarehouses(ctx context.Context, p *ListWarehousesParams) (*ListWarehous
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	if p == nil {
 		p = &ListWarehousesParams{}
@@ -395,7 +399,7 @@ func CreateWarehouse(ctx context.Context, p *WarehouseInput) (*Warehouse, error)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	var dup bool
 	if err := conn.QueryRowContext(ctx,
@@ -433,7 +437,7 @@ func UpdateWarehouse(ctx context.Context, id string, p *WarehouseInput) (*Wareho
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	name := strings.TrimSpace(p.Name)
 	if name == "" {
@@ -480,7 +484,7 @@ func DeleteWarehouse(ctx context.Context, id string) error {
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	var isDefault bool
 	err = conn.QueryRowContext(ctx,
@@ -520,7 +524,7 @@ func ReactivateWarehouse(ctx context.Context, id string) (*Warehouse, error) {
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	row := conn.QueryRowContext(ctx, `
 		UPDATE inv_warehouse

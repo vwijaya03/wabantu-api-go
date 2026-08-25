@@ -27,7 +27,7 @@ func RecordOrderCompletedIncome(ctx context.Context, tenantSchema, createdBy, or
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	resolvedWalletID, err := resolveIncomeWallet(ctx, conn, walletID)
 	if err != nil {
@@ -113,7 +113,7 @@ func CheckCurrentPeriodUnlocked(ctx context.Context, tenantSchema string) error 
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 	today := financeToday(ctx, conn)
 	return ensurePeriodUnlocked(ctx, conn, walletPeriod(today))
 }
@@ -129,7 +129,7 @@ func RemoveOrderIncomeTransaction(ctx context.Context, tenantSchema, orderID str
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	rows, err := conn.QueryContext(ctx, `
 		SELECT DISTINCT wallet_id::text
@@ -212,7 +212,7 @@ func ValidateIncomeWallet(ctx context.Context, tenantSchema, walletID string) er
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 	_, err = resolveIncomeWallet(ctx, conn, walletID)
 	return err
 }

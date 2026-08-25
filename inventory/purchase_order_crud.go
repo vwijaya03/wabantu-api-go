@@ -33,7 +33,7 @@ func DeletePurchaseOrder(ctx context.Context, id string) error {
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	po, err := getPurchaseOrder(ctx, conn, id)
 	if err != nil {
@@ -81,7 +81,7 @@ func UpdatePurchaseOrder(ctx context.Context, id string, p *UpdatePurchaseOrderP
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	po, err := getPurchaseOrder(ctx, conn, id)
 	if err != nil {

@@ -255,7 +255,7 @@ func ListStock(ctx context.Context, p *ListStockParams) (*ListStockResponse, err
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	page, pageSize := p.Page, p.PageSize
 	if page < 1 {
@@ -369,8 +369,8 @@ func ListMovements(ctx context.Context, p *ListMovementsParams) (*ListMovementsR
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	if err := ensureInventoryModuleReady(ctx, conn); err != nil {
+	defer tenant.CloseTenantConn(conn)
+	if err := ensureInventoryModuleReady(ctx, conn, u.TenantSchema); err != nil {
 		return nil, err
 	}
 

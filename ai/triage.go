@@ -355,7 +355,7 @@ func AnalyzeConversation(ctx context.Context, tenantSchema, conversationID, focu
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	sim, err := BuildSimulatorFromTenant(ctx, conn)
 	if err != nil {
@@ -484,7 +484,7 @@ func FetchRecentAIActivityAnomalies(ctx context.Context, tenantSchema string, li
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	rows, err := conn.QueryContext(ctx, `
 		SELECT metadata, created_at

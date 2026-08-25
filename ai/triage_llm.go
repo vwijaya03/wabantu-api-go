@@ -94,7 +94,7 @@ func FetchAITurnsInWindow(ctx context.Context, tenantSchema string, from, to tim
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	messages, err := fetchMessagesInWindow(ctx, conn, from, to, strings.TrimSpace(conversationID), triageLLMMaxMessages)
 	if err != nil {
@@ -245,7 +245,7 @@ func RunLLMTriageScan(ctx context.Context, p LLMScanParams) (*LLMScanRunResult, 
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	businessName := ""
 	if profile, err := loadBusinessProfile(ctx, conn); err == nil && profile != nil {

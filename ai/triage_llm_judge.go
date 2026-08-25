@@ -86,7 +86,7 @@ func JudgeReportTurn(ctx context.Context, tenantSchema string, turn AITriageTurn
 	if err != nil {
 		return TriageJudgeResult{}, err
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	businessName := ""
 	if profile, err := loadBusinessProfile(ctx, conn); err == nil && profile != nil {

@@ -37,8 +37,8 @@ func UpdateStockTransaction(ctx context.Context, id string, p *UpdateStockTransa
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	if err := ensureInventoryModuleReady(ctx, conn); err != nil {
+	defer tenant.CloseTenantConn(conn)
+	if err := ensureInventoryModuleReady(ctx, conn, u.TenantSchema); err != nil {
 		return nil, err
 	}
 

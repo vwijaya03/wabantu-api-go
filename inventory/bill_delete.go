@@ -21,7 +21,7 @@ func DeleteBill(ctx context.Context, id string) error {
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	bill, err := getBill(ctx, conn, id)
 	if err != nil {

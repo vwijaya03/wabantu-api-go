@@ -35,7 +35,7 @@ func RecalculateHPP(ctx context.Context, p *RecalcParams) (*RecalcResponse, erro
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	pairs, err := movementPairs(ctx, conn, strings.TrimSpace(p.CatalogItemID))
 	if err != nil {
