@@ -65,7 +65,7 @@ func SuggestProfileField(ctx context.Context, req *ProfileAISuggestRequest) (*Pr
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer conn.Close()
+	defer closeTenantConn(conn)
 	catalogHint := loadCatalogNameHints(ctx, conn)
 
 	apiKey := strings.TrimSpace(secrets.AnthropicAPIKey)

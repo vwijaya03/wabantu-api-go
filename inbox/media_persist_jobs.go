@@ -11,6 +11,7 @@ import (
 	"encore.dev/pubsub"
 	"encore.dev/rlog"
 
+	appdb "encore.app/wabantu/shared/db"
 	"encore.app/wabantu/shared/mediastorage"
 	"encore.app/wabantu/usage"
 )
@@ -65,7 +66,7 @@ func handleInboxMediaPersistJob(ctx context.Context, job *InboxMediaPersistJob) 
 	if err != nil {
 		return fmt.Errorf("tenant conn: %w", err)
 	}
-	defer conn.Close()
+	defer appdb.CloseTenantConn(conn)
 
 	row, err := loadMessageMediaRow(ctx, conn, job.MessageID)
 	if err != nil {

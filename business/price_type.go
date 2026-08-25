@@ -63,7 +63,7 @@ func ListPriceTypes(ctx context.Context, p *ListPriceTypesParams) (*ListPriceTyp
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	defer closeTenantConn(conn)
 
 	if err := ensurePricingSchema(ctx, conn); err != nil {
 		return nil, apperr.Internal("prepare price types failed")
@@ -134,7 +134,7 @@ func CreatePriceType(ctx context.Context, req *CreatePriceTypeRequest) (*PriceTy
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	defer closeTenantConn(conn)
 	if err := ensurePricingSchema(ctx, conn); err != nil {
 		return nil, apperr.Internal("prepare price types failed")
 	}
@@ -176,7 +176,7 @@ func UpdatePriceType(ctx context.Context, id string, req *UpdatePriceTypeRequest
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	defer closeTenantConn(conn)
 
 	var isSystem bool
 	if err := conn.QueryRowContext(ctx,
@@ -251,7 +251,7 @@ func DeletePriceType(ctx context.Context, id string) error {
 	if err != nil {
 		return apperr.Internal("database connection failed")
 	}
-	defer conn.Close()
+	defer closeTenantConn(conn)
 
 	var isSystem, isDefault bool
 	err = conn.QueryRowContext(ctx, `

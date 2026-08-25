@@ -288,7 +288,7 @@ func ListConversations(ctx context.Context, p *ListConversationsParams) (*ListCo
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer conn.Close()
+	defer appdb.CloseTenantConn(conn)
 
 	limit := clampLimit(p.Limit, 30, 100)
 	hasSearch := strings.TrimSpace(p.Search) != ""
@@ -429,7 +429,7 @@ func UpdateConversation(ctx context.Context, id string, p *UpdateConversationPar
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer conn.Close()
+	defer appdb.CloseTenantConn(conn)
 
 	sets := []string{}
 	args := []interface{}{}
@@ -498,7 +498,7 @@ func GetMessages(ctx context.Context, id string, p *GetMessagesParams) (*GetMess
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer conn.Close()
+	defer appdb.CloseTenantConn(conn)
 
 	take := clampLimit(p.Limit, 50, 100)
 
@@ -616,7 +616,7 @@ func SendMessage(ctx context.Context, id string, p *SendMessageParams) (*SendMes
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer conn.Close()
+	defer appdb.CloseTenantConn(conn)
 
 	var convoContactID, convoChannelID string
 	if err := conn.QueryRowContext(ctx,
@@ -699,8 +699,8 @@ func ListContacts(ctx context.Context, p *ListContactsParams) (*ListContactsResp
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer conn.Close()
-	if err := ensureContactRuntimeSchema(ctx, conn); err != nil {
+	defer appdb.CloseTenantConn(conn)
+	if err := ensureContactRuntimeSchema(ctx, conn, user.TenantSchema); err != nil {
 		rlog.Error("ensure contact schema failed", "err", err)
 		return nil, apperr.Internal("prepare contacts failed")
 	}
@@ -762,8 +762,8 @@ func CreateContact(ctx context.Context, p *CreateContactParams) (*UpdateContactR
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer conn.Close()
-	if err := ensureContactRuntimeSchema(ctx, conn); err != nil {
+	defer appdb.CloseTenantConn(conn)
+	if err := ensureContactRuntimeSchema(ctx, conn, user.TenantSchema); err != nil {
 		return nil, apperr.Internal("prepare contacts failed")
 	}
 
@@ -804,8 +804,8 @@ func GetContact(ctx context.Context, id string) (*GetContactResponse, error) {
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer conn.Close()
-	if err := ensureContactRuntimeSchema(ctx, conn); err != nil {
+	defer appdb.CloseTenantConn(conn)
+	if err := ensureContactRuntimeSchema(ctx, conn, user.TenantSchema); err != nil {
 		return nil, apperr.Internal("prepare contacts failed")
 	}
 
@@ -828,8 +828,8 @@ func UpdateContact(ctx context.Context, id string, p *UpdateContactParams) (*Upd
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer conn.Close()
-	if err := ensureContactRuntimeSchema(ctx, conn); err != nil {
+	defer appdb.CloseTenantConn(conn)
+	if err := ensureContactRuntimeSchema(ctx, conn, user.TenantSchema); err != nil {
 		return nil, apperr.Internal("prepare contacts failed")
 	}
 
@@ -941,8 +941,8 @@ func DeleteContact(ctx context.Context, id string) error {
 	if err != nil {
 		return apperr.Internal("database connection failed")
 	}
-	defer conn.Close()
-	if err := ensureContactRuntimeSchema(ctx, conn); err != nil {
+	defer appdb.CloseTenantConn(conn)
+	if err := ensureContactRuntimeSchema(ctx, conn, user.TenantSchema); err != nil {
 		return apperr.Internal("prepare contacts failed")
 	}
 
@@ -981,8 +981,8 @@ func BatchUpdateContactStatus(ctx context.Context, p *BatchContactStatusParams) 
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer conn.Close()
-	if err := ensureContactRuntimeSchema(ctx, conn); err != nil {
+	defer appdb.CloseTenantConn(conn)
+	if err := ensureContactRuntimeSchema(ctx, conn, user.TenantSchema); err != nil {
 		return nil, apperr.Internal("prepare contacts failed")
 	}
 
@@ -1015,8 +1015,8 @@ func BatchDeleteContacts(ctx context.Context, p *BatchContactDeleteParams) (*Bat
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer conn.Close()
-	if err := ensureContactRuntimeSchema(ctx, conn); err != nil {
+	defer appdb.CloseTenantConn(conn)
+	if err := ensureContactRuntimeSchema(ctx, conn, user.TenantSchema); err != nil {
 		return nil, apperr.Internal("prepare contacts failed")
 	}
 
@@ -1125,18 +1125,17 @@ func cleanTags(tags []string) []string {
 	return out
 }
 
-func ensureContactRuntimeSchema(ctx context.Context, conn *sql.Conn) error {
+func ensureContactRuntimeSchema(ctx context.Context, conn *sql.Conn, tenantSchema string) error {
 	ready, err := tenantschema.ContactRuntimeReady(ctx, conn)
 	if err != nil {
 		return err
 	}
 	if !ready {
 		if encore.Meta().Environment.Cloud != encore.CloudLocal {
-			var schemaName string
-			if err := conn.QueryRowContext(ctx, `SELECT current_schema()`).Scan(&schemaName); err != nil {
-				return err
+			if tenantSchema == "" {
+				return fmt.Errorf("tenant schema is required for cloud contact runtime DDL")
 			}
-			if err := tenant.EnsureCloudAdminTenantDDL(ctx, schemaName); err != nil {
+			if err := tenant.EnsureCloudAdminTenantDDL(ctx, tenantSchema); err != nil {
 				return err
 			}
 		} else {

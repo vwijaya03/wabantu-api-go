@@ -134,7 +134,7 @@ func ingestMessage(ctx context.Context, msg whatsapp.InboundMessage) error {
 	if err != nil {
 		return fmt.Errorf("tenant conn: %w", err)
 	}
-	defer conn.Close()
+	defer appdb.CloseTenantConn(conn)
 
 	// Idempotent: skip if message already stored
 	var exists bool

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"encore.app/wabantu/auth"
+	appdb "encore.app/wabantu/shared/db"
 	apperr "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/inboxrealtime"
 	"encore.app/wabantu/shared/strutil"
@@ -39,7 +40,7 @@ func GetUnreadSummary(ctx context.Context) (*UnreadSummaryResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	defer appdb.CloseTenantConn(conn)
 
 	var sum int
 	if err := conn.QueryRowContext(ctx,
@@ -62,7 +63,7 @@ func MarkConversationRead(ctx context.Context, id string) error {
 	if err != nil {
 		return apperr.Internal("database connection failed")
 	}
-	defer conn.Close()
+	defer appdb.CloseTenantConn(conn)
 
 	res, err := conn.ExecContext(ctx,
 		`UPDATE conversation SET unread_count = 0 WHERE id = $1`, id)
@@ -94,7 +95,7 @@ func HandoffConversation(ctx context.Context, id string, p *HandoffParams) error
 	if err != nil {
 		return apperr.Internal("database connection failed")
 	}
-	defer conn.Close()
+	defer appdb.CloseTenantConn(conn)
 
 	var exists bool
 	if err := conn.QueryRowContext(ctx,
@@ -136,7 +137,7 @@ func ResumeAI(ctx context.Context, id string) error {
 	if err != nil {
 		return apperr.Internal("database connection failed")
 	}
-	defer conn.Close()
+	defer appdb.CloseTenantConn(conn)
 
 	var exists bool
 	if err := conn.QueryRowContext(ctx,
@@ -187,7 +188,7 @@ func BulkHandoffConversation(ctx context.Context, req *BulkIDsParams) error {
 	if err != nil {
 		return apperr.Internal("database connection failed")
 	}
-	defer conn.Close()
+	defer appdb.CloseTenantConn(conn)
 
 	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
@@ -246,7 +247,7 @@ func BulkResumeAI(ctx context.Context, req *BulkIDsParams) error {
 	if err != nil {
 		return apperr.Internal("database connection failed")
 	}
-	defer conn.Close()
+	defer appdb.CloseTenantConn(conn)
 
 	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {

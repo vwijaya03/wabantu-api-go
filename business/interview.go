@@ -431,7 +431,7 @@ func PublishSetupInterview(ctx context.Context, sessionId string, req *SetupInte
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer conn.Close()
+	defer closeTenantConn(conn)
 
 	source := "ai_interview"
 	published, skipped := 0, 0

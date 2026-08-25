@@ -122,6 +122,10 @@ func tConn(ctx context.Context, schema string) (*sql.Conn, error) {
 	return appdb.TenantConn(ctx, tenantDB.Stdlib(), schema)
 }
 
+func closeTenantConn(conn *sql.Conn) {
+	appdb.CloseTenantConn(conn)
+}
+
 func tenantConn(ctx context.Context, user *types.AuthUser) (*sql.Conn, error) {
 	return tenantctx.Conn(ctx, tenantDB.Stdlib(), user)
 }
@@ -161,7 +165,7 @@ func GetProfile(ctx context.Context) (*GetProfileResponse, error) {
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer conn.Close()
+	defer closeTenantConn(conn)
 
 	row := conn.QueryRowContext(ctx,
 		`SELECT `+profileCols+` FROM `+profileTable+` ORDER BY created_at ASC LIMIT 1`)
@@ -197,7 +201,7 @@ func UpdateProfile(ctx context.Context, req *UpdateProfileRequest) (*UpdateProfi
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer conn.Close()
+	defer closeTenantConn(conn)
 
 	var profileID string
 	if err := conn.QueryRowContext(ctx,

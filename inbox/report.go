@@ -10,6 +10,7 @@ import (
 	"encore.dev/rlog"
 
 	apperr "encore.app/wabantu/shared/errs"
+	appdb "encore.app/wabantu/shared/db"
 	"encore.app/wabantu/shared/triagereport"
 )
 
@@ -87,7 +88,7 @@ func ReportMessage(ctx context.Context, id string, p *ReportMessageParams) (*Rep
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer conn.Close()
+	defer appdb.CloseTenantConn(conn)
 
 	msg, err := loadReportableMessage(ctx, conn, messageID)
 	if err != nil {
