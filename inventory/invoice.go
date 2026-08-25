@@ -1,6 +1,7 @@
 package inventory
 
 import (
+	appdb "encore.app/wabantu/shared/db"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -10,7 +11,6 @@ import (
 	"time"
 
 	appErrs "encore.app/wabantu/shared/errs"
-	"encore.app/wabantu/tenant"
 )
 
 // orderLineView mirrors the order.items JSON we need (inventory cannot import order).
@@ -67,12 +67,12 @@ func CreateInvoiceFromOrder(ctx context.Context, orderID string) (*Invoice, erro
 	if err := requireOwner(u); err != nil {
 		return nil, err
 	}
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
-	return createInvoiceFromOrderConn(ctx, conn, u.AccountID, orderID, false)
+	pool := tenantDB()
+	return createInvoiceFromOrderConn(ctx, sch, pool, u.AccountID, orderID, false)
 }
 
 //encore:api auth method=GET path=/api/v1/inventory/invoices
@@ -81,11 +81,11 @@ func ListInvoices(ctx context.Context, p *ListInvoicesParams) (*ListInvoicesResp
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantDB()
 
 	page, pageSize := p.Page, p.PageSize
 	if page < 1 {
@@ -103,12 +103,12 @@ func ListInvoices(ctx context.Context, p *ListInvoicesParams) (*ListInvoicesResp
 		idx++
 	}
 	var total int
-	if err := conn.QueryRowContext(ctx,
+	if err := qrow(ctx, sch, pool,
 		"SELECT COUNT(*) FROM inv_invoice "+where, args...).Scan(&total); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	args = append(args, pageSize, (page-1)*pageSize)
-	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
+	rows, err := qquery(ctx, sch, pool, fmt.Sprintf(`
 		SELECT id, invoice_no, order_id::text, status, transaction_date::text, subtotal, total_cogs, COALESCE(note,''), created_at
 		FROM inv_invoice %s ORDER BY created_at DESC LIMIT $%d OFFSET $%d`, where, idx, idx+1), args...)
 	if err != nil {
@@ -133,20 +133,20 @@ func GetInvoice(ctx context.Context, id string) (*Invoice, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
-	return getInvoice(ctx, conn, id)
+	pool := tenantDB()
+	return getInvoice(ctx, sch, pool, id)
 }
 
 // ---------- helpers ----------
 
-func loadOrderForInvoice(ctx context.Context, conn *sql.Conn, orderID string) (contactID string, lines []orderLineView, subtotal float64, status string, err error) {
+func loadOrderForInvoice(ctx context.Context, sch appdb.SchemaSQL, q querier, orderID string) (contactID string, lines []orderLineView, subtotal float64, status string, err error) {
 	var itemsRaw []byte
 	var cid sql.NullString
-	e := conn.QueryRowContext(ctx, `
+	e := qrow(ctx, sch, q, `
 		SELECT contact_id::text, COALESCE(items,'[]'), subtotal, status
 		FROM "order" WHERE id=$1::uuid AND deleted_at IS NULL`, orderID).Scan(&cid, &itemsRaw, &subtotal, &status)
 	if errors.Is(e, sql.ErrNoRows) {
@@ -161,9 +161,9 @@ func loadOrderForInvoice(ctx context.Context, conn *sql.Conn, orderID string) (c
 	return cid.String, lines, subtotal, status, nil
 }
 
-func orderItemSaleCost(ctx context.Context, conn *sql.Conn, orderID string) (map[string]netEntry, error) {
+func orderItemSaleCost(ctx context.Context, sch appdb.SchemaSQL, q querier, orderID string) (map[string]netEntry, error) {
 	out := map[string]netEntry{}
-	rows, err := conn.QueryContext(ctx, `
+	rows, err := qquery(ctx, sch, q, `
 		SELECT catalog_item_id::text, movement_type, qty, total_cost
 		FROM inv_stock_movement
 		WHERE ref_type='order' AND ref_id=$1::uuid AND movement_type IN ('sale_issue','sale_cancel_restore')`, orderID)
@@ -198,8 +198,8 @@ func weightedItemCost(m map[string]netEntry, item string) float64 {
 	return round4(e.cost / e.qty)
 }
 
-func getInvoice(ctx context.Context, conn *sql.Conn, id string) (*Invoice, error) {
-	inv, err := scanInvoiceHeader(conn.QueryRowContext(ctx, `
+func getInvoice(ctx context.Context, sch appdb.SchemaSQL, q querier, id string) (*Invoice, error) {
+	inv, err := scanInvoiceHeader(qrow(ctx, sch, q, `
 		SELECT id, invoice_no, order_id::text, status, transaction_date::text, subtotal, total_cogs, COALESCE(note,''), created_at
 		FROM inv_invoice WHERE id=$1 AND deleted_at IS NULL`, id).Scan)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -208,7 +208,7 @@ func getInvoice(ctx context.Context, conn *sql.Conn, id string) (*Invoice, error
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	rows, err := conn.QueryContext(ctx, `
+	rows, err := qquery(ctx, sch, q, `
 		SELECT catalog_item_id::text, order_line_id::text, COALESCE(description,''), qty, unit_price, cogs
 		FROM inv_invoice_line WHERE invoice_id=$1 ORDER BY created_at`, id)
 	if err != nil {

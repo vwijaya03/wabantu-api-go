@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	appdb "encore.app/wabantu/shared/db"
 	apperr "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/pricing"
 	"encore.app/wabantu/shared/tenantschema"
@@ -21,11 +22,17 @@ type CatalogItemPrice struct {
 }
 
 // EnsurePricingSchema applies idempotent DDL for price types and catalog prices.
-func EnsurePricingSchema(ctx context.Context, conn *sql.Conn, tenantSchema string) error {
-	return ensurePricingSchema(ctx, conn, tenantSchema)
+func EnsurePricingSchema(ctx context.Context, tenantSchema string) error {
+	return ensurePricingSchema(ctx, tenantSchema)
 }
 
-func ensurePricingSchema(ctx context.Context, conn *sql.Conn, tenantSchema string) error {
+func ensurePricingSchema(ctx context.Context, tenantSchema string) error {
+	conn, err := appdb.TenantConn(ctx, tenantDB.Stdlib(), tenantSchema)
+	if err != nil {
+		return err
+	}
+	defer appdb.CloseTenantConn(conn)
+
 	if err := pricing.EnsureSchema(ctx, conn, tenantSchema); err != nil {
 		return err
 	}
@@ -34,7 +41,7 @@ func ensurePricingSchema(ctx context.Context, conn *sql.Conn, tenantSchema strin
 
 // ensureCatalogIndexes fixes legacy unique index that blocked re-create after soft delete.
 func ensureCatalogIndexes(ctx context.Context, conn *sql.Conn, tenantSchema string) error {
-	exists, err := tenantschema.CatalogIndexReady(ctx, conn)
+	exists, err := tenantschema.CatalogIndexReadyConn(ctx, conn)
 	if err != nil {
 		return err
 	}
@@ -53,7 +60,7 @@ func ensureCatalogIndexes(ctx context.Context, conn *sql.Conn, tenantSchema stri
 	return err
 }
 
-func attachCatalogItemPricesBatch(ctx context.Context, conn *sql.Conn, items []CatalogItem) error {
+func attachCatalogItemPricesBatch(ctx context.Context, ts appdb.TenantScope, items []CatalogItem) error {
 	if len(items) == 0 {
 		return nil
 	}
@@ -63,7 +70,7 @@ func attachCatalogItemPricesBatch(ctx context.Context, conn *sql.Conn, items []C
 		ids[i] = items[i].ID
 		idIndex[items[i].ID] = append(idIndex[items[i].ID], i)
 	}
-	batch, err := loadCatalogItemPricesBatch(ctx, conn, ids)
+	batch, err := loadCatalogItemPricesBatch(ctx, ts, ids)
 	if err != nil {
 		return err
 	}
@@ -75,9 +82,9 @@ func attachCatalogItemPricesBatch(ctx context.Context, conn *sql.Conn, items []C
 	return nil
 }
 
-func loadCatalogItemPricesBatch(ctx context.Context, conn *sql.Conn, ids []string) (map[string][]CatalogItemPrice, error) {
+func loadCatalogItemPricesBatch(ctx context.Context, ts appdb.TenantScope, ids []string) (map[string][]CatalogItemPrice, error) {
 	inClause, args := uuidInClause(ids)
-	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
+	rows, err := ts.QueryContext(ctx, fmt.Sprintf(`
 		SELECT p.catalog_item_id::text, pt.id::text, pt.code, pt.label, p.price
 		FROM business_catalog_item_price p
 		JOIN business_price_type pt
@@ -100,7 +107,7 @@ func loadCatalogItemPricesBatch(ctx context.Context, conn *sql.Conn, ids []strin
 	return out, rows.Err()
 }
 
-func seedDefaultPriceTypes(ctx context.Context, conn *sql.Conn) error {
+func seedDefaultPriceTypes(ctx context.Context, ts appdb.TenantScope) error {
 	type row struct {
 		code, label string
 		order       int
@@ -113,7 +120,7 @@ func seedDefaultPriceTypes(ctx context.Context, conn *sql.Conn) error {
 	}
 	for _, r := range rows {
 		var exists bool
-		if err := conn.QueryRowContext(ctx,
+		if err := ts.QueryRowContext(ctx,
 			`SELECT EXISTS(SELECT 1 FROM business_price_type WHERE code=$1 AND deleted_at IS NULL)`, r.code,
 		).Scan(&exists); err != nil {
 			return err
@@ -121,7 +128,7 @@ func seedDefaultPriceTypes(ctx context.Context, conn *sql.Conn) error {
 		if exists {
 			continue
 		}
-		if _, err := conn.ExecContext(ctx, `
+		if _, err := ts.ExecContext(ctx, `
 			INSERT INTO business_price_type (code, label, display_order, is_default, is_system, is_active)
 			VALUES ($1,$2,$3,$4,$5,true)`,
 			r.code, r.label, r.order, r.isDefault, r.isSystem,
@@ -130,8 +137,7 @@ func seedDefaultPriceTypes(ctx context.Context, conn *sql.Conn) error {
 		}
 	}
 
-	// Backfill umum prices from legacy sell_price column.
-	_, err := conn.ExecContext(ctx, `
+	_, err := ts.ExecContext(ctx, `
 		INSERT INTO business_catalog_item_price (catalog_item_id, price_type_id, price)
 		SELECT c.id, pt.id, c.sell_price
 		FROM business_catalog_item c
@@ -141,20 +147,84 @@ func seedDefaultPriceTypes(ctx context.Context, conn *sql.Conn) error {
 	return err
 }
 
-func resolveDefaultPriceTypeID(ctx context.Context, conn *sql.Conn) (string, error) {
-	return pricing.ResolveDefaultPriceTypeID(ctx, conn)
+func resolveDefaultPriceTypeID(ctx context.Context, ts appdb.TenantScope) (string, error) {
+	var id string
+	err := ts.QueryRowContext(ctx, `
+		SELECT id::text FROM business_price_type
+		WHERE deleted_at IS NULL AND is_active = true
+		ORDER BY is_default DESC, display_order, label
+		LIMIT 1`).Scan(&id)
+	if err == sql.ErrNoRows {
+		return "", apperr.BadRequest("belum ada tipe harga aktif")
+	}
+	if err != nil {
+		return "", apperr.Internal("resolve default price type failed")
+	}
+	return id, nil
 }
 
-func resolvePriceTypeIDForContact(ctx context.Context, conn *sql.Conn, contactID string) (string, error) {
-	return pricing.ResolvePriceTypeIDForContact(ctx, conn, contactID)
+func resolvePriceTypeIDForContact(ctx context.Context, ts appdb.TenantScope, contactID string) (string, error) {
+	contactID = strings.TrimSpace(contactID)
+	if contactID == "" {
+		return resolveDefaultPriceTypeID(ctx, ts)
+	}
+	var priceTypeID sql.NullString
+	err := ts.QueryRowContext(ctx, `
+		SELECT price_type_id::text FROM contact
+		WHERE id = $1::uuid AND deleted_at IS NULL`, contactID,
+	).Scan(&priceTypeID)
+	if err == sql.ErrNoRows {
+		return resolveDefaultPriceTypeID(ctx, ts)
+	}
+	if err != nil {
+		return "", apperr.Internal("load contact price type failed")
+	}
+	if priceTypeID.Valid && strings.TrimSpace(priceTypeID.String) != "" {
+		var active bool
+		if err := ts.QueryRowContext(ctx, `
+			SELECT is_active FROM business_price_type
+			WHERE id = $1::uuid AND deleted_at IS NULL`,
+			priceTypeID.String,
+		).Scan(&active); err == nil && active {
+			return priceTypeID.String, nil
+		}
+	}
+	return resolveDefaultPriceTypeID(ctx, ts)
 }
 
-func resolveCatalogUnitPrice(ctx context.Context, conn *sql.Conn, catalogItemID, priceTypeID string) (float64, error) {
-	return pricing.ResolveCatalogUnitPrice(ctx, conn, catalogItemID, priceTypeID)
+func resolveCatalogUnitPrice(ctx context.Context, ts appdb.TenantScope, catalogItemID, priceTypeID string) (float64, error) {
+	var price sql.NullFloat64
+	err := ts.QueryRowContext(ctx, `
+		SELECT p.price
+		FROM business_catalog_item_price p
+		WHERE p.catalog_item_id = $1::uuid AND p.price_type_id = $2::uuid`,
+		catalogItemID, priceTypeID,
+	).Scan(&price)
+	if err == nil && price.Valid {
+		return price.Float64, nil
+	}
+	if err != nil && err != sql.ErrNoRows {
+		return 0, apperr.Internal("load catalog price failed")
+	}
+
+	err = ts.QueryRowContext(ctx, `
+		SELECT sell_price FROM business_catalog_item
+		WHERE id = $1::uuid AND deleted_at IS NULL`, catalogItemID,
+	).Scan(&price)
+	if err == sql.ErrNoRows {
+		return 0, apperr.NotFound("catalog item not found")
+	}
+	if err != nil {
+		return 0, apperr.Internal("load catalog sell price failed")
+	}
+	if price.Valid {
+		return price.Float64, nil
+	}
+	return 0, nil
 }
 
-func loadCatalogItemPrices(ctx context.Context, conn *sql.Conn, catalogItemID string) ([]CatalogItemPrice, error) {
-	rows, err := conn.QueryContext(ctx, `
+func loadCatalogItemPrices(ctx context.Context, ts appdb.TenantScope, catalogItemID string) ([]CatalogItemPrice, error) {
+	rows, err := ts.QueryContext(ctx, `
 		SELECT pt.id::text, pt.code, pt.label, p.price
 		FROM business_catalog_item_price p
 		JOIN business_price_type pt
@@ -177,7 +247,7 @@ func loadCatalogItemPrices(ctx context.Context, conn *sql.Conn, catalogItemID st
 	return out, rows.Err()
 }
 
-func upsertCatalogItemPrices(ctx context.Context, conn *sql.Conn, catalogItemID string, prices []CatalogItemPrice) error {
+func upsertCatalogItemPrices(ctx context.Context, ts appdb.TenantScope, catalogItemID string, prices []CatalogItemPrice) error {
 	for _, p := range prices {
 		if strings.TrimSpace(p.PriceTypeID) == "" {
 			continue
@@ -185,7 +255,7 @@ func upsertCatalogItemPrices(ctx context.Context, conn *sql.Conn, catalogItemID 
 		if p.Price < 0 {
 			return apperr.BadRequest(fmt.Sprintf("harga tidak boleh negatif untuk tipe %s", p.PriceTypeLabel))
 		}
-		_, err := conn.ExecContext(ctx, `
+		_, err := ts.ExecContext(ctx, `
 			INSERT INTO business_catalog_item_price (catalog_item_id, price_type_id, price)
 			VALUES ($1::uuid, $2::uuid, $3)
 			ON CONFLICT (catalog_item_id, price_type_id)
@@ -196,14 +266,13 @@ func upsertCatalogItemPrices(ctx context.Context, conn *sql.Conn, catalogItemID 
 			return apperr.Internal("upsert catalog price failed")
 		}
 
-		// Keep sell_price in sync with default (umum) price type.
 		var isDefault bool
-		_ = conn.QueryRowContext(ctx,
+		_ = ts.QueryRowContext(ctx,
 			`SELECT is_default FROM business_price_type WHERE id = $1::uuid AND deleted_at IS NULL`,
 			p.PriceTypeID,
 		).Scan(&isDefault)
 		if isDefault {
-			_, _ = conn.ExecContext(ctx, `
+			_, _ = ts.ExecContext(ctx, `
 				UPDATE business_catalog_item SET sell_price = $1, updated_at = now()
 				WHERE id = $2::uuid AND deleted_at IS NULL`, p.Price, catalogItemID)
 		}
@@ -211,8 +280,8 @@ func upsertCatalogItemPrices(ctx context.Context, conn *sql.Conn, catalogItemID 
 	return nil
 }
 
-func attachEffectiveSellPrices(ctx context.Context, conn *sql.Conn, items []CatalogItem, contactID string) error {
-	priceTypeID, err := resolvePriceTypeIDForContact(ctx, conn, contactID)
+func attachEffectiveSellPrices(ctx context.Context, ts appdb.TenantScope, items []CatalogItem, contactID string) error {
+	priceTypeID, err := resolvePriceTypeIDForContact(ctx, ts, contactID)
 	if err != nil {
 		return err
 	}
@@ -225,7 +294,7 @@ func attachEffectiveSellPrices(ctx context.Context, conn *sql.Conn, items []Cata
 	}
 	inClause, inArgs := uuidInClauseFrom(ids, 2)
 	args := append([]any{priceTypeID}, inArgs...)
-	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
+	rows, err := ts.QueryContext(ctx, fmt.Sprintf(`
 		SELECT catalog_item_id::text, price
 		FROM business_catalog_item_price
 		WHERE price_type_id = $1::uuid AND catalog_item_id IN (%s)`, inClause), args...)

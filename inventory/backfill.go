@@ -1,6 +1,7 @@
 package inventory
 
 import (
+	appdb "encore.app/wabantu/shared/db"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -9,7 +10,6 @@ import (
 	"strings"
 
 	appErrs "encore.app/wabantu/shared/errs"
-	"encore.app/wabantu/tenant"
 )
 
 // committedStatusesForSQL returns the committed order statuses (sorted, for stable SQL).
@@ -78,13 +78,13 @@ func BackfillOrders(ctx context.Context, p *BackfillOrdersParams) (*BackfillOrde
 	if err := requireOwner(u); err != nil {
 		return nil, err
 	}
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantDB()
 
-	setup, _, _, err := loadSyncSetting(ctx, conn)
+	setup, _, _, err := loadSyncSetting(ctx, sch, pool)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +99,7 @@ func BackfillOrders(ctx context.Context, p *BackfillOrdersParams) (*BackfillOrde
 		placeholders[i] = fmt.Sprintf("$%d", i+1)
 		args[i] = s
 	}
-	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
+	rows, err := qquery(ctx, sch, pool, fmt.Sprintf(`
 		SELECT o.id::text, o.status, COALESCE(o.items, '[]')
 		FROM "order" o
 		WHERE o.deleted_at IS NULL
@@ -113,7 +113,7 @@ func BackfillOrders(ctx context.Context, p *BackfillOrdersParams) (*BackfillOrde
 		return nil, err
 	}
 
-	batch, err := newBackfillBatch(ctx, conn, rawOrders)
+	batch, err := newBackfillBatch(ctx, sch, pool, rawOrders)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +139,7 @@ func BackfillOrders(ctx context.Context, p *BackfillOrdersParams) (*BackfillOrde
 
 	if !p.Execute {
 		for _, po := range pending {
-			shortages, serr := batch.analyzeShortages(ctx, conn, po.id, po.items)
+			shortages, serr := batch.analyzeShortages(ctx, sch, pool, po.id, po.items)
 			if serr != nil {
 				return nil, serr
 			}
@@ -159,7 +159,7 @@ func BackfillOrders(ctx context.Context, p *BackfillOrdersParams) (*BackfillOrde
 			resp.Failed++
 			msg := err.Error()
 			resp.Failures = append(resp.Failures, fmt.Sprintf("%s: %s", formatOrderRef(po.id), msg))
-			shortages, _ := analyzeOrderStockShortageConn(ctx, conn, po.id, po.items)
+			shortages, _ := analyzeOrderStockShortageConn(ctx, sch, pool, po.id, po.items)
 			resp.Issues = append(resp.Issues, buildBackfillIssue(po.id, po.status, shortages, msg))
 			if len(shortages) > 0 {
 				resp.Insufficient = append(resp.Insufficient, po.id)
@@ -259,16 +259,16 @@ func orderStockSyncDelta(required map[reqKey]float64, netIssued map[reqKey]netEn
 	return false
 }
 
-func orderNeedsStockSync(ctx context.Context, conn *sql.Conn, orderID, status string, items []OrderStockItem, defaultWarehouse string) (bool, error) {
+func orderNeedsStockSync(ctx context.Context, sch appdb.SchemaSQL, q querier, orderID, status string, items []OrderStockItem, defaultWarehouse string) (bool, error) {
 	required := map[reqKey]float64{}
 	if IsCommittedOrderStatus(status) {
 		var err error
-		required, err = resolveOrderRequirements(ctx, conn, items, defaultWarehouse)
+		required, err = resolveOrderRequirements(ctx, sch, q, items, defaultWarehouse)
 		if err != nil {
 			return false, err
 		}
 	}
-	netIssued, err := orderNetIssued(ctx, conn, orderID)
+	netIssued, err := orderNetIssued(ctx, sch, q, orderID)
 	if err != nil {
 		return false, err
 	}

@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	appErrs "encore.app/wabantu/shared/errs"
-	"encore.app/wabantu/tenant"
 )
 
 type ListConfigItemsParams struct {
@@ -35,11 +34,11 @@ func ListConfigItems(ctx context.Context, p *ListConfigItemsParams) (*ListConfig
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantDB()
 
 	if p == nil {
 		p = &ListConfigItemsParams{}
@@ -71,12 +70,12 @@ func ListConfigItems(ctx context.Context, p *ListConfigItemsParams) (*ListConfig
 	}
 
 	var total int
-	if err := conn.QueryRowContext(ctx, `SELECT COUNT(*)`+where, args...).Scan(&total); err != nil {
+	if err := qrow(ctx, sch, pool, `SELECT COUNT(*)`+where, args...).Scan(&total); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 
 	listArgs := append(append([]any{}, args...), pageSize, (page-1)*pageSize)
-	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
+	rows, err := qquery(ctx, sch, pool, fmt.Sprintf(`
 		SELECT ci.id::text, COALESCE(ci.name,''), COALESCE(ci.external_code,''),
 		       COALESCE(s.track_stock, false)
 		%s

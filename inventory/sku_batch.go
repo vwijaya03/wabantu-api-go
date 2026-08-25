@@ -1,13 +1,13 @@
 package inventory
 
 import (
+	appdb "encore.app/wabantu/shared/db"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
 
 	appErrs "encore.app/wabantu/shared/errs"
-	"encore.app/wabantu/tenant"
 )
 
 type BatchTrackStockParams struct {
@@ -33,15 +33,15 @@ func BatchTrackStock(ctx context.Context, p *BatchTrackStockParams) (*BatchTrack
 		return nil, err
 	}
 
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantDB()
 
 	ids := uniqueNonEmpty(p.CatalogItemIDs)
 	if p.All {
-		rows, qerr := conn.QueryContext(ctx, `
+		rows, qerr := qquery(ctx, sch, pool, `
 			SELECT ci.id::text
 			FROM business_catalog_item ci
 			WHERE ci.deleted_at IS NULL
@@ -71,10 +71,10 @@ func BatchTrackStock(ctx context.Context, p *BatchTrackStockParams) (*BatchTrack
 
 	resp := &BatchTrackStockResponse{}
 	for _, id := range ids {
-		if err := validateCatalogItem(ctx, conn, id); err != nil {
+		if err := validateCatalogItem(ctx, sch, pool, id); err != nil {
 			return nil, err
 		}
-		isBundle, berr := catalogItemIsBundle(ctx, conn, id)
+		isBundle, berr := catalogItemIsBundle(ctx, sch, pool, id)
 		if berr != nil {
 			return nil, berr
 		}
@@ -83,15 +83,15 @@ func BatchTrackStock(ctx context.Context, p *BatchTrackStockParams) (*BatchTrack
 			continue
 		}
 		if p.TrackStock {
-			if err := ensureSku(ctx, conn, id); err != nil {
+			if err := ensureSku(ctx, sch, pool, id); err != nil {
 				return nil, appErrs.Internal(err.Error())
 			}
-			if _, err := conn.ExecContext(ctx,
+			if _, err := qexec(ctx, sch, pool,
 				`UPDATE inv_sku SET track_stock = true, updated_at = now() WHERE catalog_item_id = $1`, id); err != nil {
 				return nil, appErrs.Internal(err.Error())
 			}
 		} else {
-			res, err := conn.ExecContext(ctx,
+			res, err := qexec(ctx, sch, pool,
 				`UPDATE inv_sku SET track_stock = false, updated_at = now() WHERE catalog_item_id = $1`, id)
 			if err != nil {
 				return nil, appErrs.Internal(err.Error())
@@ -107,16 +107,16 @@ func BatchTrackStock(ctx context.Context, p *BatchTrackStockParams) (*BatchTrack
 	return resp, nil
 }
 
-func catalogItemIsBundle(ctx context.Context, conn *sql.Conn, catalogItemID string) (bool, error) {
+func catalogItemIsBundle(ctx context.Context, sch appdb.SchemaSQL, q querier, catalogItemID string) (bool, error) {
 	var isBundle bool
-	err := conn.QueryRowContext(ctx, `
+	err := qrow(ctx, sch, q, `
 		SELECT COALESCE(is_bundle, false) FROM inv_sku WHERE catalog_item_id = $1`, catalogItemID).Scan(&isBundle)
 	if err == nil {
 		return isBundle, nil
 	}
 	if errors.Is(err, sql.ErrNoRows) {
 		var hasComponents bool
-		err2 := conn.QueryRowContext(ctx, `
+		err2 := qrow(ctx, sch, q, `
 			SELECT EXISTS(SELECT 1 FROM inv_bundle_component WHERE parent_catalog_item_id = $1)`, catalogItemID).Scan(&hasComponents)
 		if err2 != nil {
 			return false, appErrs.Internal(err2.Error())

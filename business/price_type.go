@@ -59,16 +59,15 @@ func ListPriceTypes(ctx context.Context, p *ListPriceTypesParams) (*ListPriceTyp
 		p.PageSize = 25
 	}
 
-	conn, err := tenantConn(ctx, user)
+	ts, err := openTenantScope(ctx, user.TenantSchema)
 	if err != nil {
 		return nil, err
 	}
-	defer closeTenantConn(conn)
 
-	if err := ensurePricingSchema(ctx, conn, user.TenantSchema); err != nil {
+	if err := ensurePricingSchema(ctx, user.TenantSchema); err != nil {
 		return nil, apperr.Internal("prepare price types failed")
 	}
-	if err := seedDefaultPriceTypes(ctx, conn); err != nil {
+	if err := seedDefaultPriceTypes(ctx, ts); err != nil {
 		return nil, apperr.Internal("seed price types failed")
 	}
 
@@ -81,7 +80,7 @@ func ListPriceTypes(ctx context.Context, p *ListPriceTypesParams) (*ListPriceTyp
 	where := strings.Join(conds, " AND ")
 
 	var total int
-	if err := conn.QueryRowContext(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM business_price_type WHERE %s`, where), args...).Scan(&total); err != nil {
+	if err := ts.QueryRowContext(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM business_price_type WHERE %s`, where), args...).Scan(&total); err != nil {
 		return nil, apperr.Internal("count price types failed")
 	}
 
@@ -90,7 +89,7 @@ func ListPriceTypes(ctx context.Context, p *ListPriceTypesParams) (*ListPriceTyp
 	limit := len(queryArgs) - 1
 	offset := len(queryArgs)
 
-	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
+	rows, err := ts.QueryContext(ctx, fmt.Sprintf(`
 		SELECT id::text, code, label, display_order, is_default, is_system, is_active
 		FROM business_price_type
 		WHERE %s
@@ -130,12 +129,11 @@ func CreatePriceType(ctx context.Context, req *CreatePriceTypeRequest) (*PriceTy
 		return nil, apperr.BadRequest("code umum/reseller sudah dipakai sistem")
 	}
 
-	conn, err := tenantConn(ctx, user)
+	ts, err := openTenantScope(ctx, user.TenantSchema)
 	if err != nil {
 		return nil, err
 	}
-	defer closeTenantConn(conn)
-	if err := ensurePricingSchema(ctx, conn, user.TenantSchema); err != nil {
+	if err := ensurePricingSchema(ctx, user.TenantSchema); err != nil {
 		return nil, apperr.Internal("prepare price types failed")
 	}
 
@@ -146,11 +144,11 @@ func CreatePriceType(ctx context.Context, req *CreatePriceTypeRequest) (*PriceTy
 	isDefault := false
 	if req.IsDefault != nil && *req.IsDefault {
 		isDefault = true
-		_, _ = conn.ExecContext(ctx, `UPDATE business_price_type SET is_default = false WHERE deleted_at IS NULL`)
+		_, _ = ts.ExecContext(ctx, `UPDATE business_price_type SET is_default = false WHERE deleted_at IS NULL`)
 	}
 
 	var row PriceType
-	err = conn.QueryRowContext(ctx, `
+	err = ts.QueryRowContext(ctx, `
 		INSERT INTO business_price_type (code, label, display_order, is_default, is_system, is_active)
 		VALUES ($1,$2,$3,$4,false,true)
 		RETURNING id::text, code, label, display_order, is_default, is_system, is_active`,
@@ -172,14 +170,13 @@ func UpdatePriceType(ctx context.Context, id string, req *UpdatePriceTypeRequest
 		return nil, apperr.Forbidden("only owner can manage price types")
 	}
 
-	conn, err := tenantConn(ctx, user)
+	ts, err := openTenantScope(ctx, user.TenantSchema)
 	if err != nil {
 		return nil, err
 	}
-	defer closeTenantConn(conn)
 
 	var isSystem bool
-	if err := conn.QueryRowContext(ctx,
+	if err := ts.QueryRowContext(ctx,
 		`SELECT is_system FROM business_price_type WHERE id = $1::uuid AND deleted_at IS NULL`, id,
 	).Scan(&isSystem); err == sql.ErrNoRows {
 		return nil, apperr.NotFound("tipe harga tidak ditemukan")
@@ -209,7 +206,7 @@ func UpdatePriceType(ctx context.Context, id string, req *UpdatePriceTypeRequest
 		add("is_active", *req.IsActive)
 	}
 	if req.IsDefault != nil && *req.IsDefault {
-		_, _ = conn.ExecContext(ctx, `UPDATE business_price_type SET is_default = false WHERE deleted_at IS NULL AND id <> $1::uuid`, id)
+		_, _ = ts.ExecContext(ctx, `UPDATE business_price_type SET is_default = false WHERE deleted_at IS NULL AND id <> $1::uuid`, id)
 		add("is_default", true)
 	} else if req.IsDefault != nil && !*req.IsDefault && !isSystem {
 		add("is_default", false)
@@ -225,7 +222,7 @@ func UpdatePriceType(ctx context.Context, id string, req *UpdatePriceTypeRequest
 		WHERE id = $%d AND deleted_at IS NULL
 		RETURNING id::text, code, label, display_order, is_default, is_system, is_active`,
 		strings.Join(sets, ", "), n)
-	err = conn.QueryRowContext(ctx, q, args...).Scan(
+	err = ts.QueryRowContext(ctx, q, args...).Scan(
 		&row.ID, &row.Code, &row.Label, &row.DisplayOrder, &row.IsDefault, &row.IsSystem, &row.IsActive,
 	)
 	if err == sql.ErrNoRows {
@@ -247,14 +244,13 @@ func DeletePriceType(ctx context.Context, id string) error {
 		return apperr.Forbidden("only owner can manage price types")
 	}
 
-	conn, err := tenantConn(ctx, user)
+	ts, err := openTenantScope(ctx, user.TenantSchema)
 	if err != nil {
 		return apperr.Internal("database connection failed")
 	}
-	defer closeTenantConn(conn)
 
 	var isSystem, isDefault bool
-	err = conn.QueryRowContext(ctx, `
+	err = ts.QueryRowContext(ctx, `
 		SELECT is_system, is_default FROM business_price_type
 		WHERE id = $1::uuid AND deleted_at IS NULL`, id,
 	).Scan(&isSystem, &isDefault)
@@ -271,10 +267,10 @@ func DeletePriceType(ctx context.Context, id string) error {
 		return apperr.BadRequest("tipe harga default tidak bisa dihapus; set default ke tipe lain dulu")
 	}
 
-	_, err = conn.ExecContext(ctx, `UPDATE business_price_type SET deleted_at = now() WHERE id = $1::uuid`, id)
+	_, err = ts.ExecContext(ctx, `UPDATE business_price_type SET deleted_at = now() WHERE id = $1::uuid`, id)
 	if err != nil {
 		return apperr.Internal("delete price type failed")
 	}
-	_, _ = conn.ExecContext(ctx, `UPDATE contact SET price_type_id = NULL WHERE price_type_id = $1::uuid`, id)
+	_, _ = ts.ExecContext(ctx, `UPDATE contact SET price_type_id = NULL WHERE price_type_id = $1::uuid`, id)
 	return nil
 }

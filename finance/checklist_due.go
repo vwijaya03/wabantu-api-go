@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	appdb "encore.app/wabantu/shared/db"
 	appErrs "encore.app/wabantu/shared/errs"
 )
 
@@ -55,8 +56,8 @@ func attachDueAnchorDate(t *ChecklistTemplate, anchor sql.NullTime, dom sql.Null
 }
 
 // reconcilePendingChecklistItems removes editable future items so ensureMonthlyBillingItems can recreate due dates.
-func reconcilePendingChecklistItems(ctx context.Context, conn *sql.Conn, templateID, monthStart string) error {
-	_, err := conn.ExecContext(ctx, `
+func reconcilePendingChecklistItems(ctx context.Context, sch appdb.SchemaSQL, q finQuerier, templateID, monthStart string) error {
+	_, err := qexec(ctx, sch, q, `
 		DELETE FROM fin_checklist_item
 		WHERE template_id = $1
 		  AND status = 'pending'
@@ -79,8 +80,8 @@ func resolveMonthlyDueFields(dueDate string, dayOfMonth *int) (anchor string, do
 	return anchor, *dayOfMonth, nil
 }
 
-func currentMonthStart(ctx context.Context, conn *sql.Conn) string {
-	today := financeToday(ctx, conn)
+func currentMonthStart(ctx context.Context, sch appdb.SchemaSQL, q finQuerier) string {
+	today := financeToday(ctx, sch, q)
 	if len(today) >= 7 {
 		return today[:7] + "-01"
 	}

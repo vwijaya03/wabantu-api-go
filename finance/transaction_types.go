@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	appdb "encore.app/wabantu/shared/db"
 	appErrs "encore.app/wabantu/shared/errs"
 )
 
@@ -84,11 +85,11 @@ func ListTransactionTypes(ctx context.Context, p *ListTransactionTypesParams) (*
 		pageSize = 100
 	}
 
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	q := tenantPool()
 
 	where := []string{"deleted_at IS NULL"}
 	args := []any{}
@@ -104,7 +105,7 @@ func ListTransactionTypes(ctx context.Context, p *ListTransactionTypesParams) (*
 	whereSQL := strings.Join(where, " AND ")
 
 	var total int
-	if err := conn.QueryRowContext(ctx,
+	if err := qrow(ctx, sch, q,
 		fmt.Sprintf(`SELECT COUNT(*) FROM fin_transaction_type WHERE %s`, whereSQL), args...,
 	).Scan(&total); err != nil {
 		return nil, appErrs.Internal(err.Error())
@@ -112,7 +113,7 @@ func ListTransactionTypes(ctx context.Context, p *ListTransactionTypesParams) (*
 
 	offset := (page - 1) * pageSize
 	args = append(args, pageSize, offset)
-	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
+	rows, err := qquery(ctx, sch, q, fmt.Sprintf(`
 		SELECT id, code, label, flow, category_kind, show_in_quick, display_order,
 		       is_system, owner_only, is_active
 		FROM fin_transaction_type
@@ -147,14 +148,14 @@ func CreateTransactionType(ctx context.Context, p *CreateTransactionTypeParams) 
 	if err := validateTxnTypeInput(code, p.Label, p.Flow, p.CategoryKind); err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	q := tenantPool()
 
 	var exists bool
-	conn.QueryRowContext(ctx,
+	qrow(ctx, sch, q,
 		`SELECT EXISTS(SELECT 1 FROM fin_transaction_type WHERE code=$1 AND deleted_at IS NULL)`, code,
 	).Scan(&exists)
 	if exists {
@@ -162,7 +163,7 @@ func CreateTransactionType(ctx context.Context, p *CreateTransactionTypeParams) 
 	}
 
 	var id string
-	err = conn.QueryRowContext(ctx, `
+	err = qrow(ctx, sch, q, `
 		INSERT INTO fin_transaction_type
 		 (code, label, flow, category_kind, show_in_quick, display_order, is_system, owner_only, is_active)
 		 VALUES ($1,$2,$3,$4,$5,$6,false,$7,true)
@@ -173,7 +174,7 @@ func CreateTransactionType(ctx context.Context, p *CreateTransactionTypeParams) 
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	return loadTransactionTypeByID(ctx, conn, id)
+	return loadTransactionTypeByID(ctx, sch, q, id)
 }
 
 //encore:api auth method=PUT path=/api/v1/finance/transaction-types/:id tag:owner
@@ -185,14 +186,14 @@ func UpdateTransactionType(ctx context.Context, id string, p *UpdateTransactionT
 	if err := assertOwner(u); err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	q := tenantPool()
 
 	var isSystem bool
-	if err := conn.QueryRowContext(ctx,
+	if err := qrow(ctx, sch, q,
 		`SELECT is_system FROM fin_transaction_type WHERE id=$1 AND deleted_at IS NULL`, id,
 	).Scan(&isSystem); err != nil {
 		return nil, appErrs.NotFound("jenis transaksi tidak ditemukan")
@@ -202,32 +203,32 @@ func UpdateTransactionType(ctx context.Context, id string, p *UpdateTransactionT
 		if strings.TrimSpace(*p.Label) == "" {
 			return nil, appErrs.BadRequest("label tidak boleh kosong")
 		}
-		conn.ExecContext(ctx, `UPDATE fin_transaction_type SET label=$1 WHERE id=$2`, strings.TrimSpace(*p.Label), id)
+		qexec(ctx, sch, q, `UPDATE fin_transaction_type SET label=$1 WHERE id=$2`, strings.TrimSpace(*p.Label), id)
 	}
 	if !isSystem {
 		if p.Flow != nil {
 			if !validTxnFlows[*p.Flow] {
 				return nil, appErrs.BadRequest("alur (flow) tidak valid")
 			}
-			conn.ExecContext(ctx, `UPDATE fin_transaction_type SET flow=$1 WHERE id=$2`, *p.Flow, id)
+			qexec(ctx, sch, q, `UPDATE fin_transaction_type SET flow=$1 WHERE id=$2`, *p.Flow, id)
 		}
 		if p.CategoryKind != nil {
 			if !validCategoryKinds[*p.CategoryKind] {
 				return nil, appErrs.BadRequest("jenis kategori tidak valid")
 			}
-			conn.ExecContext(ctx, `UPDATE fin_transaction_type SET category_kind=$1 WHERE id=$2`, *p.CategoryKind, id)
+			qexec(ctx, sch, q, `UPDATE fin_transaction_type SET category_kind=$1 WHERE id=$2`, *p.CategoryKind, id)
 		}
 	}
 	if p.ShowInQuick != nil {
-		conn.ExecContext(ctx, `UPDATE fin_transaction_type SET show_in_quick=$1 WHERE id=$2`, *p.ShowInQuick, id)
+		qexec(ctx, sch, q, `UPDATE fin_transaction_type SET show_in_quick=$1 WHERE id=$2`, *p.ShowInQuick, id)
 	}
 	if p.DisplayOrder != nil {
-		conn.ExecContext(ctx, `UPDATE fin_transaction_type SET display_order=$1 WHERE id=$2`, *p.DisplayOrder, id)
+		qexec(ctx, sch, q, `UPDATE fin_transaction_type SET display_order=$1 WHERE id=$2`, *p.DisplayOrder, id)
 	}
 	if p.IsActive != nil {
-		conn.ExecContext(ctx, `UPDATE fin_transaction_type SET is_active=$1 WHERE id=$2`, *p.IsActive, id)
+		qexec(ctx, sch, q, `UPDATE fin_transaction_type SET is_active=$1 WHERE id=$2`, *p.IsActive, id)
 	}
-	return loadTransactionTypeByID(ctx, conn, id)
+	return loadTransactionTypeByID(ctx, sch, q, id)
 }
 
 //encore:api auth method=DELETE path=/api/v1/finance/transaction-types/:id tag:owner
@@ -239,15 +240,15 @@ func DeleteTransactionType(ctx context.Context, id string) (*OKResponse, error) 
 	if err := assertOwner(u); err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	q := tenantPool()
 
 	var isSystem bool
 	var code string
-	if err := conn.QueryRowContext(ctx,
+	if err := qrow(ctx, sch, q,
 		`SELECT is_system, code FROM fin_transaction_type WHERE id=$1 AND deleted_at IS NULL`, id,
 	).Scan(&isSystem, &code); err != nil {
 		return nil, appErrs.NotFound("jenis transaksi tidak ditemukan")
@@ -256,13 +257,13 @@ func DeleteTransactionType(ctx context.Context, id string) (*OKResponse, error) 
 		return nil, appErrs.BadRequest("jenis bawaan sistem tidak bisa dihapus")
 	}
 	var inUse bool
-	conn.QueryRowContext(ctx,
+	qrow(ctx, sch, q,
 		`SELECT EXISTS(SELECT 1 FROM fin_transaction WHERE type=$1 AND deleted_at IS NULL LIMIT 1)`, code,
 	).Scan(&inUse)
 	if inUse {
 		return nil, appErrs.BadRequest("jenis masih dipakai transaksi — nonaktifkan saja")
 	}
-	conn.ExecContext(ctx, `UPDATE fin_transaction_type SET deleted_at=now(), is_active=false WHERE id=$1`, id)
+	qexec(ctx, sch, q, `UPDATE fin_transaction_type SET deleted_at=now(), is_active=false WHERE id=$1`, id)
 	return &OKResponse{OK: true}, nil
 }
 
@@ -299,8 +300,8 @@ func scanTransactionTypes(rows *sql.Rows) ([]TransactionType, error) {
 	return out, rows.Err()
 }
 
-func loadTransactionTypeByID(ctx context.Context, conn *sql.Conn, id string) (*TransactionType, error) {
-	row := conn.QueryRowContext(ctx, `
+func loadTransactionTypeByID(ctx context.Context, sch appdb.SchemaSQL, q finQuerier, id string) (*TransactionType, error) {
+	row := qrow(ctx, sch, q, `
 		SELECT id, code, label, flow, category_kind, show_in_quick, display_order,
 		       is_system, owner_only, is_active
 		FROM fin_transaction_type WHERE id=$1 AND deleted_at IS NULL`, id)
@@ -312,8 +313,8 @@ func loadTransactionTypeByID(ctx context.Context, conn *sql.Conn, id string) (*T
 	return &t, nil
 }
 
-func loadTransactionTypeByCode(ctx context.Context, conn *sql.Conn, code string) (*TransactionType, error) {
-	row := conn.QueryRowContext(ctx, `
+func loadTransactionTypeByCode(ctx context.Context, sch appdb.SchemaSQL, q finQuerier, code string) (*TransactionType, error) {
+	row := qrow(ctx, sch, q, `
 		SELECT id, code, label, flow, category_kind, show_in_quick, display_order,
 		       is_system, owner_only, is_active
 		FROM fin_transaction_type

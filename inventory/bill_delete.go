@@ -5,7 +5,6 @@ import (
 
 	"encore.app/wabantu/finance"
 	appErrs "encore.app/wabantu/shared/errs"
-	"encore.app/wabantu/tenant"
 )
 
 //encore:api auth method=DELETE path=/api/v1/inventory/bills/:id
@@ -17,20 +16,20 @@ func DeleteBill(ctx context.Context, id string) error {
 	if err := requireOwner(u); err != nil {
 		return err
 	}
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return appErrs.Internal(err.Error())
+		return err
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantDB()
 
-	bill, err := getBill(ctx, conn, id)
+	bill, err := getBill(ctx, sch, pool, id)
 	if err != nil {
 		return err
 	}
 	if err := finance.CheckPeriodUnlockedForDate(ctx, u.TenantSchema, bill.TransactionDate); err != nil {
 		return err
 	}
-	movs, err := collectMovementsByRef(ctx, conn, "bill", id)
+	movs, err := collectMovementsByRef(ctx, sch, pool, "bill", id)
 	if err != nil {
 		return err
 	}
@@ -38,14 +37,14 @@ func DeleteBill(ctx context.Context, id string) error {
 		return err
 	}
 
-	tx, terr := conn.BeginTx(ctx, nil)
+	tx, terr := pool.BeginTx(ctx, nil)
 	if terr != nil {
 		return appErrs.Internal(terr.Error())
 	}
 	defer tx.Rollback()
 
 	// Revert PO receipts before deleting movements.
-	rows, err := tx.QueryContext(ctx, `
+	rows, err := qquery(ctx, sch, tx, `
 		SELECT purchase_order_line_id::text, qty
 		FROM pur_bill_line WHERE bill_id = $1 AND purchase_order_line_id IS NOT NULL`, id)
 	if err != nil {
@@ -63,11 +62,11 @@ func DeleteBill(ctx context.Context, id string) error {
 	}
 	rows.Close()
 
-	if _, err := purgeMovementsByRef(ctx, tx, "bill", id); err != nil {
+	if _, err := purgeMovementsByRef(ctx, sch, tx, "bill", id); err != nil {
 		return err
 	}
 	for _, r := range revs {
-		if _, err := tx.ExecContext(ctx,
+		if _, err := qexec(ctx, sch, tx,
 			`UPDATE pur_purchase_order_line SET qty_received = GREATEST(0, qty_received - $2) WHERE id = $1`,
 			r.lineID, r.qty); err != nil {
 			return appErrs.Internal(err.Error())
@@ -75,19 +74,19 @@ func DeleteBill(ctx context.Context, id string) error {
 	}
 	if bill.PurchaseOrderID != nil && *bill.PurchaseOrderID != "" {
 		var ordered, received float64
-		if err := tx.QueryRowContext(ctx, `
+		if err := qrow(ctx, sch, tx, `
 			SELECT COALESCE(SUM(qty_ordered),0), COALESCE(SUM(qty_received),0)
 			FROM pur_purchase_order_line WHERE purchase_order_id = $1`,
 			*bill.PurchaseOrderID).Scan(&ordered, &received); err != nil {
 			return appErrs.Internal(err.Error())
 		}
-		if _, err := tx.ExecContext(ctx, `
+		if _, err := qexec(ctx, sch, tx, `
 			UPDATE pur_purchase_order SET status = $2, updated_at = now() WHERE id = $1`,
 			*bill.PurchaseOrderID, poStatusFromReceipts(ordered, received)); err != nil {
 			return appErrs.Internal(err.Error())
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM pur_bill WHERE id = $1`, id); err != nil {
+	if _, err := qexec(ctx, sch, tx, `DELETE FROM pur_bill WHERE id = $1`, id); err != nil {
 		return appErrs.Internal(err.Error())
 	}
 	return tx.Commit()

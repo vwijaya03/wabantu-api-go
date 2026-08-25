@@ -44,15 +44,15 @@ type staffSheetExportData struct {
 	SessionTasks    []sessionAssignment
 }
 
-func loadStaffSheetExportData(ctx context.Context, conn *sql.Conn, eventID string) (staffSheetExportData, error) {
+func loadStaffSheetExportData(ctx context.Context, ts tenantScope, eventID string) (staffSheetExportData, error) {
 	var data staffSheetExportData
-	if err := conn.QueryRowContext(ctx, `
+	if err := ts.QueryRowContext(ctx, `
 		SELECT event_name FROM evt_event WHERE id=$1::uuid AND deleted_at IS NULL`, eventID,
 	).Scan(&data.EventName); err != nil {
 		return staffSheetExportData{}, err
 	}
 
-	rows, err := conn.QueryContext(ctx, `
+	rows, err := ts.QueryContext(ctx, `
 		SELECT p.created_at, `+personNameEncLegacyColsP+`, p.attendance_status,
 		       COALESCE(p.notes,''), p.arrival_time::text, p.departure_time::text,
 		       COALESCE(string_agg(th.therapy_name, ', ' ORDER BY th.display_order, th.therapy_name), '')
@@ -86,7 +86,7 @@ func loadStaffSheetExportData(ctx context.Context, conn *sql.Conn, eventID strin
 		return staffSheetExportData{}, err
 	}
 
-	volRows, err := conn.QueryContext(ctx, `
+	volRows, err := ts.QueryContext(ctx, `
 		SELECT LOWER(vr.role_name), `+personNameEncLegacyColsP+`
 		FROM evt_event_person p
 		JOIN evt_event_volunteer ev ON ev.person_id = p.id
@@ -124,7 +124,7 @@ func loadStaffSheetExportData(ctx context.Context, conn *sql.Conn, eventID strin
 		data.Volunteers = append(data.Volunteers, volunteerSlot{RoleLabel: label, Name: val})
 	}
 
-	assignRows, err := conn.QueryContext(ctx, `
+	assignRows, err := ts.QueryContext(ctx, `
 		SELECT tk.task_name, tk.assignment_type, p.person_type, `+personNameEncLegacyColsP+`,
 		       a.start_time::text, a.end_time::text, COALESCE(a.session_name,'')
 		FROM evt_event_assignment a

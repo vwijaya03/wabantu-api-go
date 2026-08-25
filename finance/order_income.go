@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
+	appdb "encore.app/wabantu/shared/db"
 	appErrs "encore.app/wabantu/shared/errs"
-	"encore.app/wabantu/tenant"
 )
 
 // RecordOrderCompletedIncome creates an approved income transaction when an order is completed.
@@ -23,33 +23,33 @@ func RecordOrderCompletedIncome(ctx context.Context, tenantSchema, createdBy, or
 		return nil
 	}
 
-	conn, err := tenant.TenantConn(ctx, tenantSchema)
+	sch, err := prepareTenant(ctx, tenantSchema)
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantPool()
 
-	resolvedWalletID, err := resolveIncomeWallet(ctx, conn, walletID)
+	resolvedWalletID, err := resolveIncomeWallet(ctx, sch, pool, walletID)
 	if err != nil {
 		return err
 	}
 
 	// Legacy soft-deleted rows bypass the partial unique index on reference_no and can
 	// allow duplicate income rows when an order is completed again.
-	if _, err := conn.ExecContext(ctx, `
+	if _, err := qexec(ctx, sch, pool, `
 		DELETE FROM fin_transaction
 		WHERE reference_no = $1 AND type = 'income' AND deleted_at IS NOT NULL`, orderID); err != nil {
 		return appErrs.Internal(err.Error())
 	}
 
 	var categoryID sql.NullString
-	_ = conn.QueryRowContext(ctx, `
+	_ = qrow(ctx, sch, pool, `
 		SELECT id::text FROM fin_category
 		WHERE name = 'Penjualan Produk' AND deleted_at IS NULL AND is_system = true
 		LIMIT 1`).Scan(&categoryID)
 
-	today := financeToday(ctx, conn)
-	if err := ensurePeriodUnlocked(ctx, conn, walletPeriod(today)); err != nil {
+	today := financeToday(ctx, sch, pool)
+	if err := ensurePeriodUnlocked(ctx, sch, pool, walletPeriod(today)); err != nil {
 		return err
 	}
 
@@ -60,7 +60,7 @@ func RecordOrderCompletedIncome(ctx context.Context, tenantSchema, createdBy, or
 
 	// ON CONFLICT DO NOTHING handles the rare race where two requests complete the same
 	// order simultaneously. RowsAffected == 0 means a concurrent insert won → idempotent.
-	res, err := conn.ExecContext(ctx, `
+	res, err := qexec(ctx, sch, pool, `
 		INSERT INTO fin_transaction
 		 (type, amount, currency, wallet_id, category_id, description, reference_no,
 		  transaction_date, status, tags, created_by)
@@ -81,7 +81,7 @@ func RecordOrderCompletedIncome(ctx context.Context, tenantSchema, createdBy, or
 		return nil // idempotent: income row already exists
 	}
 
-	refreshWallets(ctx, conn, resolvedWalletID, nil)
+	refreshWallets(ctx, sch, pool, resolvedWalletID, nil)
 	return nil
 }
 
@@ -109,13 +109,13 @@ func ResyncOrderCompletedIncome(ctx context.Context, tenantSchema, createdBy, or
 // Call this before persisting an order status change to 'completed' so the order DB write
 // is not committed when the subsequent finance insert would be rejected.
 func CheckCurrentPeriodUnlocked(ctx context.Context, tenantSchema string) error {
-	conn, err := tenant.TenantConn(ctx, tenantSchema)
+	sch, err := prepareTenant(ctx, tenantSchema)
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	defer tenant.CloseTenantConn(conn)
-	today := financeToday(ctx, conn)
-	return ensurePeriodUnlocked(ctx, conn, walletPeriod(today))
+	pool := tenantPool()
+	today := financeToday(ctx, sch, pool)
+	return ensurePeriodUnlocked(ctx, sch, pool, walletPeriod(today))
 }
 
 // RemoveOrderIncomeTransaction deletes income rows linked to an order (reference_no).
@@ -125,13 +125,13 @@ func RemoveOrderIncomeTransaction(ctx context.Context, tenantSchema, orderID str
 		return nil
 	}
 
-	conn, err := tenant.TenantConn(ctx, tenantSchema)
+	sch, err := prepareTenant(ctx, tenantSchema)
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantPool()
 
-	rows, err := conn.QueryContext(ctx, `
+	rows, err := qquery(ctx, sch, pool, `
 		SELECT DISTINCT wallet_id::text
 		FROM fin_transaction
 		WHERE reference_no = $1 AND type = 'income'`, orderID)
@@ -152,7 +152,7 @@ func RemoveOrderIncomeTransaction(ctx context.Context, tenantSchema, orderID str
 		return appErrs.Internal(err.Error())
 	}
 
-	res, err := conn.ExecContext(ctx, `
+	res, err := qexec(ctx, sch, pool, `
 		DELETE FROM fin_transaction
 		WHERE reference_no = $1 AND type = 'income'`, orderID)
 	if err != nil {
@@ -163,16 +163,16 @@ func RemoveOrderIncomeTransaction(ctx context.Context, tenantSchema, orderID str
 	}
 
 	for _, w := range walletIDs {
-		refreshWallets(ctx, conn, w, nil)
+		refreshWallets(ctx, sch, pool, w, nil)
 	}
 	return nil
 }
 
-func resolveIncomeWallet(ctx context.Context, conn *sql.Conn, walletID string) (string, error) {
+func resolveIncomeWallet(ctx context.Context, sch appdb.SchemaSQL, q finQuerier, walletID string) (string, error) {
 	walletID = strings.TrimSpace(walletID)
 	if walletID != "" {
 		var exists bool
-		if err := conn.QueryRowContext(ctx, `
+		if err := qrow(ctx, sch, q, `
 			SELECT EXISTS(
 			  SELECT 1 FROM fin_wallet
 			  WHERE id = $1 AND deleted_at IS NULL AND is_active = true
@@ -184,12 +184,12 @@ func resolveIncomeWallet(ctx context.Context, conn *sql.Conn, walletID string) (
 		}
 		return walletID, nil
 	}
-	return resolveDefaultIncomeWallet(ctx, conn)
+	return resolveDefaultIncomeWallet(ctx, sch, q)
 }
 
-func resolveDefaultIncomeWallet(ctx context.Context, conn *sql.Conn) (string, error) {
+func resolveDefaultIncomeWallet(ctx context.Context, sch appdb.SchemaSQL, q finQuerier) (string, error) {
 	var walletID string
-	err := conn.QueryRowContext(ctx, `
+	err := qrow(ctx, sch, q, `
 		SELECT id::text FROM fin_wallet
 		WHERE deleted_at IS NULL AND is_active = true
 		ORDER BY CASE WHEN type = 'cash' THEN 0 ELSE 1 END, display_order, created_at
@@ -208,11 +208,11 @@ func ValidateIncomeWallet(ctx context.Context, tenantSchema, walletID string) er
 	if strings.TrimSpace(walletID) == "" {
 		return nil
 	}
-	conn, err := tenant.TenantConn(ctx, tenantSchema)
+	sch, err := prepareTenant(ctx, tenantSchema)
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	defer tenant.CloseTenantConn(conn)
-	_, err = resolveIncomeWallet(ctx, conn, walletID)
+	pool := tenantPool()
+	_, err = resolveIncomeWallet(ctx, sch, pool, walletID)
 	return err
 }

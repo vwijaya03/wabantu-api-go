@@ -77,10 +77,8 @@ func attendanceForDB(s string) string {
 	return s
 }
 
-func syncPersonTherapies(ctx context.Context, exec interface {
-	ExecContext(context.Context, string, ...any) (sql.Result, error)
-}, personID string, therapyIDs []string, availableFrom, availableUntil *string) error {
-	_, err := exec.ExecContext(ctx, `DELETE FROM evt_person_therapy WHERE person_id=$1::uuid`, personID)
+func syncPersonTherapies(ctx context.Context, ts tenantScope, personID string, therapyIDs []string, availableFrom, availableUntil *string) error {
+	_, err := ts.ExecContext(ctx, `DELETE FROM evt_person_therapy WHERE person_id=$1::uuid`, personID)
 	if err != nil {
 		return err
 	}
@@ -89,7 +87,7 @@ func syncPersonTherapies(ctx context.Context, exec interface {
 		if tid == "" {
 			continue
 		}
-		_, err := exec.ExecContext(ctx, `
+		_, err := ts.ExecContext(ctx, `
 			INSERT INTO evt_person_therapy (person_id, therapy_id, available_from, available_until)
 			VALUES ($1::uuid,$2::uuid,$3::time,$4::time)
 			ON CONFLICT (person_id, therapy_id) DO UPDATE SET
@@ -102,24 +100,22 @@ func syncPersonTherapies(ctx context.Context, exec interface {
 	return nil
 }
 
-func syncPersonVolunteer(ctx context.Context, exec interface {
-	ExecContext(context.Context, string, ...any) (sql.Result, error)
-}, personID string, roleID *string, isPencatat bool) error {
-	_, err := exec.ExecContext(ctx, `DELETE FROM evt_event_volunteer WHERE person_id=$1::uuid`, personID)
+func syncPersonVolunteer(ctx context.Context, ts tenantScope, personID string, roleID *string, isPencatat bool) error {
+	_, err := ts.ExecContext(ctx, `DELETE FROM evt_event_volunteer WHERE person_id=$1::uuid`, personID)
 	if err != nil {
 		return err
 	}
 	if roleID == nil || strings.TrimSpace(*roleID) == "" {
 		return nil
 	}
-	_, err = exec.ExecContext(ctx, `
+	_, err = ts.ExecContext(ctx, `
 		INSERT INTO evt_event_volunteer (person_id, volunteer_role_id, is_pencatat)
 		VALUES ($1::uuid,$2::uuid,$3)`,
 		personID, strings.TrimSpace(*roleID), isPencatat)
 	return err
 }
 
-func attachPersonExtrasBatch(ctx context.Context, conn *sql.Conn, items []EventPerson) error {
+func attachPersonExtrasBatch(ctx context.Context, ts tenantScope, items []EventPerson) error {
 	if len(items) == 0 {
 		return nil
 	}
@@ -130,7 +126,7 @@ func attachPersonExtrasBatch(ctx context.Context, conn *sql.Conn, items []EventP
 		personIDs[i] = items[i].ID
 	}
 
-	rows, err := conn.QueryContext(ctx, `
+	rows, err := ts.QueryContext(ctx, `
 		SELECT pt.person_id::text, pt.therapy_id::text, t.therapy_name,
 		       pt.available_from::text, pt.available_until::text
 		FROM evt_person_therapy pt
@@ -166,7 +162,7 @@ func attachPersonExtrasBatch(ctx context.Context, conn *sql.Conn, items []EventP
 		return err
 	}
 
-	vrows, err := conn.QueryContext(ctx, `
+	vrows, err := ts.QueryContext(ctx, `
 		SELECT ev.person_id::text, ev.volunteer_role_id::text, COALESCE(vr.role_name,''), ev.is_pencatat
 		FROM evt_event_volunteer ev
 		LEFT JOIN evt_volunteer_role vr ON vr.id = ev.volunteer_role_id AND vr.deleted_at IS NULL
@@ -195,8 +191,8 @@ func attachPersonExtrasBatch(ctx context.Context, conn *sql.Conn, items []EventP
 	return vrows.Err()
 }
 
-func loadPersonExtras(ctx context.Context, conn *sql.Conn, personID string, person *EventPerson) error {
-	rows, err := conn.QueryContext(ctx, `
+func loadPersonExtras(ctx context.Context, ts tenantScope, personID string, person *EventPerson) error {
+	rows, err := ts.QueryContext(ctx, `
 		SELECT pt.therapy_id::text, t.therapy_name
 		FROM evt_person_therapy pt
 		JOIN evt_therapy t ON t.id = pt.therapy_id
@@ -224,7 +220,7 @@ func loadPersonExtras(ctx context.Context, conn *sql.Conn, personID string, pers
 	var rid sql.NullString
 	var roleName string
 	var pencatat bool
-	err = conn.QueryRowContext(ctx, `
+	err = ts.QueryRowContext(ctx, `
 		SELECT ev.volunteer_role_id::text, COALESCE(vr.role_name,''), ev.is_pencatat
 		FROM evt_event_volunteer ev
 		LEFT JOIN evt_volunteer_role vr ON vr.id = ev.volunteer_role_id AND vr.deleted_at IS NULL
@@ -238,7 +234,7 @@ func loadPersonExtras(ctx context.Context, conn *sql.Conn, personID string, pers
 	}
 	person.VolunteerRoleName = roleName
 	person.IsPencatat = pencatat
-	af, au, err := loadPersonPartialTimes(ctx, conn, personID)
+	af, au, err := loadPersonPartialTimes(ctx, ts, personID)
 	if err != nil {
 		return err
 	}
@@ -251,9 +247,9 @@ func loadPersonExtras(ctx context.Context, conn *sql.Conn, personID string, pers
 	return nil
 }
 
-func loadPersonPartialTimes(ctx context.Context, conn *sql.Conn, personID string) (*string, *string, error) {
+func loadPersonPartialTimes(ctx context.Context, ts tenantScope, personID string) (*string, *string, error) {
 	var af, au sql.NullString
-	err := conn.QueryRowContext(ctx, `
+	err := ts.QueryRowContext(ctx, `
 		SELECT available_from::text, available_until::text
 		FROM evt_person_therapy WHERE person_id=$1::uuid LIMIT 1`, personID,
 	).Scan(&af, &au)
@@ -293,14 +289,14 @@ func therapyLookupCandidates(name string) []string {
 }
 
 // resolveTherapyIDByName maps OCR/vision labels (often with extra capacity text) to evt_therapy.id.
-func resolveTherapyIDByName(ctx context.Context, conn *sql.Conn, raw string) (string, error) {
+func resolveTherapyIDByName(ctx context.Context, ts tenantScope, raw string) (string, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return "", appErrs.BadRequest("terapi wajib")
 	}
 	for _, cand := range therapyLookupCandidates(raw) {
 		var id string
-		err := conn.QueryRowContext(ctx, `
+		err := ts.QueryRowContext(ctx, `
 			SELECT id::text FROM evt_therapy
 			WHERE deleted_at IS NULL AND therapy_name ILIKE $1
 			ORDER BY display_order LIMIT 1`, cand).Scan(&id)
@@ -311,7 +307,7 @@ func resolveTherapyIDByName(ctx context.Context, conn *sql.Conn, raw string) (st
 			return "", appErrs.Internal(err.Error())
 		}
 		// e.g. "Terapi 5 Elemen (maksimal 9 orang…)" → DB "Terapi 5 Elemen"
-		err = conn.QueryRowContext(ctx, `
+		err = ts.QueryRowContext(ctx, `
 			SELECT id::text FROM evt_therapy
 			WHERE deleted_at IS NULL AND $1 ILIKE therapy_name || '%'
 			ORDER BY length(therapy_name) DESC, display_order LIMIT 1`, cand).Scan(&id)
@@ -325,10 +321,10 @@ func resolveTherapyIDByName(ctx context.Context, conn *sql.Conn, raw string) (st
 	return "", appErrs.NotFound("terapi tidak dikenali: " + raw)
 }
 
-func resolveTherapyIDsByNames(ctx context.Context, conn *sql.Conn, names []string) ([]string, error) {
+func resolveTherapyIDsByNames(ctx context.Context, ts tenantScope, names []string) ([]string, error) {
 	var ids []string
 	for _, name := range names {
-		id, err := resolveTherapyIDByName(ctx, conn, name)
+		id, err := resolveTherapyIDByName(ctx, ts, name)
 		if err != nil {
 			return nil, err
 		}
@@ -376,13 +372,13 @@ func publicDisplayNotes(notes string) string {
 	return notes
 }
 
-func resolveVolunteerRoleIDByName(ctx context.Context, conn *sql.Conn, name string) (string, error) {
+func resolveVolunteerRoleIDByName(ctx context.Context, ts tenantScope, name string) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return "", appErrs.BadRequest("peran relawan wajib untuk relawan")
 	}
 	var id string
-	err := conn.QueryRowContext(ctx, `
+	err := ts.QueryRowContext(ctx, `
 		SELECT id::text FROM evt_volunteer_role
 		WHERE deleted_at IS NULL AND role_name ILIKE $1
 		ORDER BY display_order LIMIT 1`, name).Scan(&id)

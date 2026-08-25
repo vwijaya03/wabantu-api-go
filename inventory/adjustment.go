@@ -1,6 +1,7 @@
 package inventory
 
 import (
+	appdb "encore.app/wabantu/shared/db"
 	"context"
 	"database/sql"
 	"errors"
@@ -10,7 +11,6 @@ import (
 
 	"encore.app/wabantu/finance"
 	appErrs "encore.app/wabantu/shared/errs"
-	"encore.app/wabantu/tenant"
 )
 
 // querier is satisfied by both *sql.Conn and *sql.Tx.
@@ -46,12 +46,12 @@ func revaluationDelta(onHand, oldTotalValue, newUnitCost float64) (newTotal, del
 
 // ---------- shared DB helpers ----------
 
-func validateWarehouse(ctx context.Context, q querier, id string) error {
+func validateWarehouse(ctx context.Context, sch appdb.SchemaSQL, q querier, id string) error {
 	if strings.TrimSpace(id) == "" {
 		return appErrs.BadRequest("gudang wajib dipilih")
 	}
 	var exists bool
-	if err := q.QueryRowContext(ctx,
+	if err := qrow(ctx, sch, q,
 		`SELECT EXISTS(SELECT 1 FROM inv_warehouse WHERE id = $1 AND deleted_at IS NULL)`, id).Scan(&exists); err != nil {
 		return appErrs.Internal(err.Error())
 	}
@@ -61,12 +61,12 @@ func validateWarehouse(ctx context.Context, q querier, id string) error {
 	return nil
 }
 
-func validateCatalogItem(ctx context.Context, q querier, id string) error {
+func validateCatalogItem(ctx context.Context, sch appdb.SchemaSQL, q querier, id string) error {
 	if strings.TrimSpace(id) == "" {
 		return appErrs.BadRequest("item katalog wajib dipilih")
 	}
 	var exists bool
-	if err := q.QueryRowContext(ctx,
+	if err := qrow(ctx, sch, q,
 		`SELECT EXISTS(SELECT 1 FROM business_catalog_item WHERE id = $1 AND deleted_at IS NULL)`, id).Scan(&exists); err != nil {
 		return appErrs.Internal(err.Error())
 	}
@@ -79,8 +79,8 @@ func validateCatalogItem(ctx context.Context, q querier, id string) error {
 // ensureSku creates the inv_sku config row for an item if it does not exist yet,
 // marking it stock-tracked. This is how an item starts being tracked (via opening
 // balance / adjustment).
-func ensureSku(ctx context.Context, q querier, catalogItemID string) error {
-	_, err := q.ExecContext(ctx, `
+func ensureSku(ctx context.Context, sch appdb.SchemaSQL, q querier, catalogItemID string) error {
+	_, err := qexec(ctx, sch, q, `
 		INSERT INTO inv_sku (catalog_item_id, track_stock)
 		VALUES ($1, true)
 		ON CONFLICT (catalog_item_id) DO NOTHING`, catalogItemID)
@@ -92,11 +92,11 @@ type costingContext struct {
 	blockNegative bool
 }
 
-func loadCostingContext(ctx context.Context, q querier, catalogItemID string) (costingContext, error) {
+func loadCostingContext(ctx context.Context, sch appdb.SchemaSQL, q querier, catalogItemID string) (costingContext, error) {
 	cc := costingContext{method: CostingAverage, blockNegative: true}
 	var defMethod string
 	var block bool
-	err := q.QueryRowContext(ctx,
+	err := qrow(ctx, sch, q,
 		`SELECT default_costing_method, block_negative_stock FROM inv_setting ORDER BY created_at LIMIT 1`).
 		Scan(&defMethod, &block)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -106,7 +106,7 @@ func loadCostingContext(ctx context.Context, q querier, catalogItemID string) (c
 		cc.blockNegative = block
 	}
 	var override sql.NullString
-	oerr := q.QueryRowContext(ctx,
+	oerr := qrow(ctx, sch, q,
 		`SELECT costing_method FROM inv_sku WHERE catalog_item_id = $1`, catalogItemID).Scan(&override)
 	if oerr != nil && !errors.Is(oerr, sql.ErrNoRows) {
 		return cc, appErrs.Internal(oerr.Error())
@@ -176,47 +176,47 @@ func CreateAdjustment(ctx context.Context, p *AdjustmentParams) (*StockOpResult,
 		}
 	}
 
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
-	if err := ensureInventoryModuleReady(ctx, conn, u.TenantSchema); err != nil {
+	pool := tenantDB()
+	if err := ensureInventoryModuleSchema(ctx, u.TenantSchema); err != nil {
 		return nil, err
 	}
 
-	if err := validateCatalogItem(ctx, conn, p.CatalogItemID); err != nil {
+	if err := validateCatalogItem(ctx, sch, pool, p.CatalogItemID); err != nil {
 		return nil, err
 	}
-	if err := validateWarehouse(ctx, conn, p.WarehouseID); err != nil {
+	if err := validateWarehouse(ctx, sch, pool, p.WarehouseID); err != nil {
 		return nil, err
 	}
 
-	tx, err := conn.BeginTx(ctx, nil)
+	tx, err := pool.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer tx.Rollback()
 
-	if err := ensureSku(ctx, tx, p.CatalogItemID); err != nil {
+	if err := ensureSku(ctx, sch, tx, p.CatalogItemID); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	txnID, docNo, err := insertStockTransactionHeader(ctx, tx, TxnKindAdjustment, "", p.Note, u.AccountID)
+	txnID, docNo, err := insertStockTransactionHeader(ctx, sch, tx, TxnKindAdjustment, "", p.Note, u.AccountID)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := tx.ExecContext(ctx, `
+	if _, err := qexec(ctx, sch, tx, `
 		UPDATE inv_stock_transaction
 		SET catalog_item_id = $2, warehouse_id = $3, signed_qty = $4, unit_cost = $5, note = $6, updated_at = now()
 		WHERE id = $1`,
 		txnID, p.CatalogItemID, p.WarehouseID, p.Qty, nullFloat(p.UnitCost), nullStr(p.Note)); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	cc, err := loadCostingContext(ctx, tx, p.CatalogItemID)
+	cc, err := loadCostingContext(ctx, sch, tx, p.CatalogItemID)
 	if err != nil {
 		return nil, err
 	}
-	res, err := PostMovement(ctx, tx, MovementInput{
+	res, err := PostMovement(ctx, sch, tx, MovementInput{
 		CatalogItemID: p.CatalogItemID,
 		WarehouseID:   p.WarehouseID,
 		Type:          mtype,
@@ -278,50 +278,50 @@ func CreateTransfer(ctx context.Context, p *TransferParams) (*StockOpResult, err
 		return nil, appErrs.BadRequest("gudang asal dan tujuan tidak boleh sama")
 	}
 
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
-	if err := ensureInventoryModuleReady(ctx, conn, u.TenantSchema); err != nil {
+	pool := tenantDB()
+	if err := ensureInventoryModuleSchema(ctx, u.TenantSchema); err != nil {
 		return nil, err
 	}
 
-	if err := validateCatalogItem(ctx, conn, p.CatalogItemID); err != nil {
+	if err := validateCatalogItem(ctx, sch, pool, p.CatalogItemID); err != nil {
 		return nil, err
 	}
-	if err := validateWarehouse(ctx, conn, p.FromWarehouseID); err != nil {
+	if err := validateWarehouse(ctx, sch, pool, p.FromWarehouseID); err != nil {
 		return nil, err
 	}
-	if err := validateWarehouse(ctx, conn, p.ToWarehouseID); err != nil {
+	if err := validateWarehouse(ctx, sch, pool, p.ToWarehouseID); err != nil {
 		return nil, err
 	}
 
-	tx, err := conn.BeginTx(ctx, nil)
+	tx, err := pool.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer tx.Rollback()
 
-	if err := ensureSku(ctx, tx, p.CatalogItemID); err != nil {
+	if err := ensureSku(ctx, sch, tx, p.CatalogItemID); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	txnID, docNo, err := insertStockTransactionHeader(ctx, tx, TxnKindTransfer, "", p.Note, u.AccountID)
+	txnID, docNo, err := insertStockTransactionHeader(ctx, sch, tx, TxnKindTransfer, "", p.Note, u.AccountID)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := tx.ExecContext(ctx, `
+	if _, err := qexec(ctx, sch, tx, `
 		UPDATE inv_stock_transaction
 		SET catalog_item_id = $2, from_warehouse_id = $3, to_warehouse_id = $4, signed_qty = $5, note = $6, updated_at = now()
 		WHERE id = $1`,
 		txnID, p.CatalogItemID, p.FromWarehouseID, p.ToWarehouseID, p.Qty, nullStr(p.Note)); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	cc, err := loadCostingContext(ctx, tx, p.CatalogItemID)
+	cc, err := loadCostingContext(ctx, sch, tx, p.CatalogItemID)
 	if err != nil {
 		return nil, err
 	}
-	out, err := PostMovement(ctx, tx, MovementInput{
+	out, err := PostMovement(ctx, sch, tx, MovementInput{
 		CatalogItemID: p.CatalogItemID,
 		WarehouseID:   p.FromWarehouseID,
 		Type:          MovementTransferOut,
@@ -337,7 +337,7 @@ func CreateTransfer(ctx context.Context, p *TransferParams) (*StockOpResult, err
 	if err != nil {
 		return nil, err
 	}
-	in, err := PostMovement(ctx, tx, MovementInput{
+	in, err := PostMovement(ctx, sch, tx, MovementInput{
 		CatalogItemID:    p.CatalogItemID,
 		WarehouseID:      p.ToWarehouseID,
 		Type:             MovementTransferIn,
@@ -402,22 +402,22 @@ func CreateOpeningBalance(ctx context.Context, p *OpeningBalanceParams) (*Openin
 		return nil, appErrs.BadRequest("maksimal 1000 baris per unggahan")
 	}
 
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
-	if err := ensureInventoryModuleReady(ctx, conn, u.TenantSchema); err != nil {
+	pool := tenantDB()
+	if err := ensureInventoryModuleSchema(ctx, u.TenantSchema); err != nil {
 		return nil, err
 	}
 
-	tx, err := conn.BeginTx(ctx, nil)
+	tx, err := pool.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer tx.Rollback()
 
-	txnID, docNo, err := insertStockTransactionHeader(ctx, tx, TxnKindOpeningBalance, "", "Saldo awal", u.AccountID)
+	txnID, docNo, err := insertStockTransactionHeader(ctx, sch, tx, TxnKindOpeningBalance, "", "Saldo awal", u.AccountID)
 	if err != nil {
 		return nil, err
 	}
@@ -428,16 +428,16 @@ func CreateOpeningBalance(ctx context.Context, p *OpeningBalanceParams) (*Openin
 		catalogIDs = append(catalogIDs, e.CatalogItemID)
 		warehouseIDs = append(warehouseIDs, e.WarehouseID)
 	}
-	if err := validateCatalogItemsBatch(ctx, tx, catalogIDs); err != nil {
+	if err := validateCatalogItemsBatch(ctx, sch, tx, catalogIDs); err != nil {
 		return nil, err
 	}
-	if err := validateWarehousesBatch(ctx, tx, warehouseIDs); err != nil {
+	if err := validateWarehousesBatch(ctx, sch, tx, warehouseIDs); err != nil {
 		return nil, err
 	}
 	if err := validateOpeningBalanceEntryPairs(p.Entries); err != nil {
 		return nil, err
 	}
-	if err := validateOpeningBalanceNotRegistered(ctx, tx, p.Entries); err != nil {
+	if err := validateOpeningBalanceNotRegistered(ctx, sch, tx, p.Entries); err != nil {
 		return nil, err
 	}
 	ccl := newCostingContextLoader()
@@ -454,15 +454,15 @@ func CreateOpeningBalance(ctx context.Context, p *OpeningBalanceParams) (*Openin
 		if perr != nil {
 			return nil, fmt.Errorf("baris %d: %w", i+1, perr)
 		}
-		if err := ensureSku(ctx, tx, e.CatalogItemID); err != nil {
+		if err := ensureSku(ctx, sch, tx, e.CatalogItemID); err != nil {
 			return nil, appErrs.Internal(err.Error())
 		}
-		cc, cerr := ccl.load(ctx, tx, e.CatalogItemID)
+		cc, cerr := ccl.load(ctx, sch, tx, e.CatalogItemID)
 		if cerr != nil {
 			return nil, cerr
 		}
 		var lineID string
-		if err := tx.QueryRowContext(ctx, `
+		if err := qrow(ctx, sch, tx, `
 			INSERT INTO inv_stock_transaction_line
 			  (transaction_id, catalog_item_id, warehouse_id, qty, unit_cost, batch_no, expiry_date, sort_order)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
@@ -471,7 +471,7 @@ func CreateOpeningBalance(ctx context.Context, p *OpeningBalanceParams) (*Openin
 			nullStr(e.BatchNo), nullTime(expiry), i).Scan(&lineID); err != nil {
 			return nil, appErrs.Internal(err.Error())
 		}
-		res, merr := PostMovement(ctx, tx, MovementInput{
+		res, merr := PostMovement(ctx, sch, tx, MovementInput{
 			CatalogItemID: e.CatalogItemID,
 			WarehouseID:   e.WarehouseID,
 			Type:          MovementOpening,
@@ -491,7 +491,7 @@ func CreateOpeningBalance(ctx context.Context, p *OpeningBalanceParams) (*Openin
 		if merr != nil {
 			return nil, merr
 		}
-		if _, err := tx.ExecContext(ctx,
+		if _, err := qexec(ctx, sch, tx,
 			`UPDATE inv_stock_transaction_line SET movement_id = $2 WHERE id = $1`, lineID, res.MovementID); err != nil {
 			return nil, appErrs.Internal(err.Error())
 		}
@@ -528,30 +528,30 @@ func CreateRevaluation(ctx context.Context, p *RevaluationParams) (*StockOpResul
 		return nil, err
 	}
 
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
-	if err := ensureInventoryModuleReady(ctx, conn, u.TenantSchema); err != nil {
+	pool := tenantDB()
+	if err := ensureInventoryModuleSchema(ctx, u.TenantSchema); err != nil {
 		return nil, err
 	}
 
-	if err := validateCatalogItem(ctx, conn, p.CatalogItemID); err != nil {
+	if err := validateCatalogItem(ctx, sch, pool, p.CatalogItemID); err != nil {
 		return nil, err
 	}
-	if err := validateWarehouse(ctx, conn, p.WarehouseID); err != nil {
+	if err := validateWarehouse(ctx, sch, pool, p.WarehouseID); err != nil {
 		return nil, err
 	}
 
-	tx, err := conn.BeginTx(ctx, nil)
+	tx, err := pool.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer tx.Rollback()
 
 	var onHand, oldTotal float64
-	err = tx.QueryRowContext(ctx, `
+	err = qrow(ctx, sch, tx, `
 		SELECT on_hand, total_value FROM inv_stock_balance
 		WHERE catalog_item_id = $1 AND warehouse_id = $2 FOR UPDATE`,
 		p.CatalogItemID, p.WarehouseID).Scan(&onHand, &oldTotal)
@@ -562,11 +562,11 @@ func CreateRevaluation(ctx context.Context, p *RevaluationParams) (*StockOpResul
 		return nil, appErrs.Internal(err.Error())
 	}
 
-	txnID, docNo, err := insertStockTransactionHeader(ctx, tx, TxnKindRevaluation, "", p.Note, u.AccountID)
+	txnID, docNo, err := insertStockTransactionHeader(ctx, sch, tx, TxnKindRevaluation, "", p.Note, u.AccountID)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := tx.ExecContext(ctx, `
+	if _, err := qexec(ctx, sch, tx, `
 		UPDATE inv_stock_transaction
 		SET catalog_item_id = $2, warehouse_id = $3, new_unit_cost = $4, note = $5, updated_at = now()
 		WHERE id = $1`,
@@ -576,7 +576,7 @@ func CreateRevaluation(ctx context.Context, p *RevaluationParams) (*StockOpResul
 
 	newTotal, delta := revaluationDelta(onHand, oldTotal, p.NewUnitCost)
 
-	cc, err := loadCostingContext(ctx, tx, p.CatalogItemID)
+	cc, err := loadCostingContext(ctx, sch, tx, p.CatalogItemID)
 	if err != nil {
 		return nil, err
 	}
@@ -584,14 +584,14 @@ func CreateRevaluation(ctx context.Context, p *RevaluationParams) (*StockOpResul
 	if cc.method != CostingAverage {
 		if oldTotal > epsilon {
 			factor := newTotal / oldTotal
-			if _, err := tx.ExecContext(ctx, `
+			if _, err := qexec(ctx, sch, tx, `
 				UPDATE inv_cost_layer SET unit_cost = ROUND(unit_cost * $3, 4)
 				WHERE catalog_item_id = $1 AND warehouse_id = $2 AND qty_remaining > 0`,
 				p.CatalogItemID, p.WarehouseID, factor); err != nil {
 				return nil, appErrs.Internal(err.Error())
 			}
 		} else {
-			if _, err := tx.ExecContext(ctx, `
+			if _, err := qexec(ctx, sch, tx, `
 				UPDATE inv_cost_layer SET unit_cost = $3
 				WHERE catalog_item_id = $1 AND warehouse_id = $2 AND qty_remaining > 0`,
 				p.CatalogItemID, p.WarehouseID, p.NewUnitCost); err != nil {
@@ -600,7 +600,7 @@ func CreateRevaluation(ctx context.Context, p *RevaluationParams) (*StockOpResul
 		}
 	}
 
-	if _, err := tx.ExecContext(ctx, `
+	if _, err := qexec(ctx, sch, tx, `
 		UPDATE inv_stock_balance SET avg_unit_cost = $3, total_value = $4, updated_at = now()
 		WHERE catalog_item_id = $1 AND warehouse_id = $2`,
 		p.CatalogItemID, p.WarehouseID, p.NewUnitCost, newTotal); err != nil {
@@ -612,7 +612,7 @@ func CreateRevaluation(ctx context.Context, p *RevaluationParams) (*StockOpResul
 		dir = dirOut
 	}
 	var movementID string
-	if err := tx.QueryRowContext(ctx, `
+	if err := qrow(ctx, sch, tx, `
 		INSERT INTO inv_stock_movement
 		  (catalog_item_id, warehouse_id, movement_type, direction, qty, unit_cost, total_cost,
 		   qty_after, avg_cost_after, ref_type, ref_id, note, created_by)

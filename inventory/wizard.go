@@ -6,7 +6,6 @@ import (
 
 	appErrs "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/types"
-	"encore.app/wabantu/tenant"
 	"encore.app/wabantu/usage"
 )
 
@@ -76,16 +75,16 @@ func WizardRecommend(ctx context.Context, p *WizardAnswers) (*WizardRecommendRes
 func runWizardRecommend(ctx context.Context, u *types.AuthUser, answers WizardAnswers) (*WizardRecommendResponse, error) {
 	sanitizeWizardAnswers(&answers)
 
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
-	if _, err := loadSetting(ctx, conn); err != nil {
+	pool := tenantDB()
+	if _, err := loadSetting(ctx, sch, pool); err != nil {
 		return nil, err
 	}
 
-	biz := loadBusinessWizardContext(ctx, conn)
+	biz := loadBusinessWizardContext(ctx, sch, pool)
 	rec := ruleRecommendation(answers)
 	tokensUsed := 0
 
@@ -96,7 +95,7 @@ func runWizardRecommend(ctx context.Context, u *types.AuthUser, answers WizardAn
 
 	answersJSON, _ := json.Marshal(answers)
 	recJSON, _ := json.Marshal(rec)
-	if _, err := conn.ExecContext(ctx, `
+	if _, err := qexec(ctx, sch, pool, `
 		UPDATE inv_setting SET wizard_answers = $1, wizard_recommendation = $2, updated_by = $3, updated_at = now()`,
 		answersJSON, recJSON, nullUUID(u.AccountID)); err != nil {
 		return nil, appErrs.Internal(err.Error())

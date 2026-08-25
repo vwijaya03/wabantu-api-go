@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"strings"
 
+	appdb "encore.app/wabantu/shared/db"
 	"encore.app/wabantu/shared/pii"
 	"encore.app/wabantu/shared/tenantschema"
 )
@@ -79,16 +80,16 @@ func scanLeadPII(scanner interface {
 	return l, nil
 }
 
-func leadPhoneFromContact(ctx context.Context, conn *sql.Conn, contactID string) (string, error) {
-	active, err := tenantschema.ContactPIIActiveConn(ctx, conn, "")
+func leadPhoneFromContact(ctx context.Context, ts appdb.TenantScope, schema, contactID string) (string, error) {
+	active, err := tenantschema.ContactPIIActive(ctx, db.Stdlib(), schema)
 	if err != nil || !active {
 		var phone string
-		err := conn.QueryRowContext(ctx,
+		err := ts.QueryRowContext(ctx,
 			`SELECT COALESCE(phone_number,'') FROM contact WHERE id = $1`, contactID).Scan(&phone)
 		return phone, err
 	}
 	var phoneEnc, phoneLegacy sql.NullString
-	err = conn.QueryRowContext(ctx, `
+	err = ts.QueryRowContext(ctx, `
 		SELECT COALESCE(phone_number_enc,''), COALESCE(phone_number,'')
 		FROM contact WHERE id = $1`, contactID).Scan(&phoneEnc, &phoneLegacy)
 	if err != nil {

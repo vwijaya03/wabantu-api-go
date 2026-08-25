@@ -10,6 +10,7 @@ import (
 	"encore.dev/pubsub"
 	"encore.dev/rlog"
 
+	appdb "encore.app/wabantu/shared/db"
 	"encore.app/wabantu/usage"
 )
 
@@ -151,7 +152,7 @@ func SummarizeConversation(ctx context.Context, tenantSchema, convoID string) er
 	conversationText := strings.Join(lines, "\n")
 
 	businessCtx := ""
-	if profile, pErr := loadBusinessProfile(ctx, db); pErr == nil && profile != nil {
+	if profile, pErr := loadBusinessProfile(ctx, tenantScope{q: db, sch: appdb.SchemaSQL{Schema: tenantSchema}}); pErr == nil && profile != nil {
 		businessCtx = fmt.Sprintf(
 			"Konteks bisnis tenant (katalog resmi — pesanan di luar ini TIDAK valid):\n- Nama: %s\n- Produk/layanan: %s\n\n",
 			profile.BusinessName,

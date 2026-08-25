@@ -427,11 +427,10 @@ func PublishSetupInterview(ctx context.Context, sessionId string, req *SetupInte
 		profileUpdated = true
 	}
 
-	conn, err := tConn(ctx, user.TenantSchema)
+	ts, err := openTenantScope(ctx, user.TenantSchema)
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer closeTenantConn(conn)
 
 	source := "ai_interview"
 	published, skipped := 0, 0
@@ -445,7 +444,7 @@ func PublishSetupInterview(ctx context.Context, sessionId string, req *SetupInte
 			continue
 		}
 		cat := item.Category
-		_, err := conn.ExecContext(ctx, `
+		_, err := ts.ExecContext(ctx, `
 			INSERT INTO knowledge_base_entry (question, answer, category, source, is_active)
 			VALUES ($1, $2, $3, $4, true)`,
 			strings.TrimSpace(item.Question),

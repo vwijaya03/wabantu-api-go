@@ -1,14 +1,13 @@
 package inventory
 
 import (
+	appdb "encore.app/wabantu/shared/db"
 	"context"
-	"database/sql"
 	"fmt"
 	"strings"
 
 	"encore.app/wabantu/finance"
 	appErrs "encore.app/wabantu/shared/errs"
-	"encore.app/wabantu/tenant"
 )
 
 //encore:api auth method=DELETE path=/api/v1/inventory/sales-returns/:id
@@ -20,38 +19,39 @@ func DeleteSalesReturn(ctx context.Context, id string) error {
 	if err := requireOwner(u); err != nil {
 		return err
 	}
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return appErrs.Internal(err.Error())
+		return err
 	}
-	defer tenant.CloseTenantConn(conn)
-	return deleteSalesReturnConn(ctx, conn, u.TenantSchema, id)
+	pool := tenantDB()
+	return deleteSalesReturnConn(ctx, sch, pool, u.TenantSchema, id)
 }
 
-func deleteSalesReturnConn(ctx context.Context, conn *sql.Conn, tenantSchema, id string) error {
-	ret, err := getSalesReturn(ctx, conn, id)
+func deleteSalesReturnConn(ctx context.Context, sch appdb.SchemaSQL, q querier, tenantSchema, id string) error {
+	ret, err := getSalesReturn(ctx, sch, q, id)
 	if err != nil {
 		return err
 	}
 	if err := finance.CheckPeriodUnlockedForDate(ctx, tenantSchema, ret.TransactionDate); err != nil {
 		return err
 	}
-	movs, err := collectMovementsByRef(ctx, conn, "sales_return", id)
+	movs, err := collectMovementsByRef(ctx, sch, q, "sales_return", id)
 	if err != nil {
 		return err
 	}
 	if err := finance.RemoveInventoryEntries(ctx, tenantSchema, movementFinanceRefs("ret:"+id, movs)); err != nil {
 		return err
 	}
-	tx, terr := conn.BeginTx(ctx, nil)
+	pool := tenantDB()
+	tx, terr := pool.BeginTx(ctx, nil)
 	if terr != nil {
 		return appErrs.Internal(terr.Error())
 	}
 	defer tx.Rollback()
-	if _, err := purgeMovementsByRef(ctx, tx, "sales_return", id); err != nil {
+	if _, err := purgeMovementsByRef(ctx, sch, tx, "sales_return", id); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM inv_sales_return WHERE id = $1`, id); err != nil {
+	if _, err := qexec(ctx, sch, tx, `DELETE FROM inv_sales_return WHERE id = $1`, id); err != nil {
 		return appErrs.Internal(err.Error())
 	}
 	return tx.Commit()
@@ -74,13 +74,13 @@ func UpdateSalesReturn(ctx context.Context, id string, p *UpdateSalesReturnParam
 	if len(p.Lines) == 0 {
 		return nil, appErrs.BadRequest("minimal 1 baris retur")
 	}
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantDB()
 
-	existing, err := getSalesReturn(ctx, conn, id)
+	existing, err := getSalesReturn(ctx, sch, pool, id)
 	if err != nil {
 		return nil, err
 	}
@@ -92,15 +92,15 @@ func UpdateSalesReturn(ctx context.Context, id string, p *UpdateSalesReturnParam
 		return nil, err
 	}
 
-	contactID, _, _, _, err := loadOrderForInvoice(ctx, conn, orderID)
+	contactID, _, _, _, err := loadOrderForInvoice(ctx, sch, pool, orderID)
 	if err != nil {
 		return nil, err
 	}
-	costByItem, err := orderItemSaleCost(ctx, conn, orderID)
+	costByItem, err := orderItemSaleCost(ctx, sch, pool, orderID)
 	if err != nil {
 		return nil, err
 	}
-	alreadyReturned, err := orderReturnedQty(ctx, conn, orderID)
+	alreadyReturned, err := orderReturnedQty(ctx, sch, pool, orderID)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +122,7 @@ func UpdateSalesReturn(ctx context.Context, id string, p *UpdateSalesReturnParam
 		}
 	}
 
-	movs, err := collectMovementsByRef(ctx, conn, "sales_return", id)
+	movs, err := collectMovementsByRef(ctx, sch, pool, "sales_return", id)
 	if err != nil {
 		return nil, err
 	}
@@ -130,19 +130,19 @@ func UpdateSalesReturn(ctx context.Context, id string, p *UpdateSalesReturnParam
 		return nil, err
 	}
 
-	tx, err := conn.BeginTx(ctx, nil)
+	tx, err := pool.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer tx.Rollback()
 
-	if _, err := purgeMovementsByRef(ctx, tx, "sales_return", id); err != nil {
+	if _, err := purgeMovementsByRef(ctx, sch, tx, "sales_return", id); err != nil {
 		return nil, err
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM inv_sales_return_line WHERE sales_return_id = $1`, id); err != nil {
+	if _, err := qexec(ctx, sch, tx, `DELETE FROM inv_sales_return_line WHERE sales_return_id = $1`, id); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	if _, err := tx.ExecContext(ctx,
+	if _, err := qexec(ctx, sch, tx,
 		`UPDATE inv_sales_return SET note = $2, total_cost = 0, updated_at = now() WHERE id = $1`,
 		id, nullStr(p.Note)); err != nil {
 		return nil, appErrs.Internal(err.Error())
@@ -153,15 +153,15 @@ func UpdateSalesReturn(ctx context.Context, id string, p *UpdateSalesReturnParam
 	for _, l := range p.Lines {
 		wh := strings.TrimSpace(l.WarehouseID)
 		if wh == "" {
-			wh, _ = defaultWarehouseID(ctx, conn)
+			wh, _ = defaultWarehouseID(ctx, sch, pool)
 		}
 		unitCost := weightedItemCost(costByItem, l.CatalogItemID)
-		srcMovement := orderSaleMovementID(ctx, conn, orderID, l.CatalogItemID)
-		cc, cerr := loadCostingContext(ctx, tx, l.CatalogItemID)
+		srcMovement := orderSaleMovementID(ctx, sch, pool, orderID, l.CatalogItemID)
+		cc, cerr := loadCostingContext(ctx, sch, tx, l.CatalogItemID)
 		if cerr != nil {
 			return nil, cerr
 		}
-		res, merr := PostMovement(ctx, tx, MovementInput{
+		res, merr := PostMovement(ctx, sch, tx, MovementInput{
 			CatalogItemID: l.CatalogItemID, WarehouseID: wh,
 			Type: MovementReturnIn, Direction: dirIn, Qty: round4(l.Qty),
 			UnitCost: unitCost, CostingMethod: cc.method, BlockNegative: false,
@@ -173,7 +173,7 @@ func UpdateSalesReturn(ctx context.Context, id string, p *UpdateSalesReturnParam
 		}
 		lineCost := round4(unitCost * l.Qty)
 		totalCost += lineCost
-		if _, err := tx.ExecContext(ctx, `
+		if _, err := qexec(ctx, sch, tx, `
 			INSERT INTO inv_sales_return_line
 			  (sales_return_id, catalog_item_id, warehouse_id, qty, unit_cost, movement_id, source_movement_id)
 			VALUES ($1,$2,$3,$4,$5,$6,$7)`,
@@ -181,7 +181,7 @@ func UpdateSalesReturn(ctx context.Context, id string, p *UpdateSalesReturnParam
 			return nil, appErrs.Internal(err.Error())
 		}
 	}
-	if _, err := tx.ExecContext(ctx,
+	if _, err := qexec(ctx, sch, tx,
 		`UPDATE inv_sales_return SET total_cost=$2, contact_id=$3, updated_at=now() WHERE id=$1`,
 		id, round4(totalCost), nullUUID(contactID)); err != nil {
 		return nil, appErrs.Internal(err.Error())
@@ -190,12 +190,12 @@ func UpdateSalesReturn(ctx context.Context, id string, p *UpdateSalesReturnParam
 		return nil, appErrs.Internal(err.Error())
 	}
 
-	_, postExpense, _, serr := loadSyncSetting(ctx, conn)
+	_, postExpense, _, serr := loadSyncSetting(ctx, sch, pool)
 	if serr == nil && !postExpense && totalCost > 0 {
 		if err := finance.RecordInventoryEntry(ctx, u.TenantSchema, u.AccountID,
 			"ret:"+id, "income", finCatHPP, "Retur penjualan "+returnNo, round2(totalCost), ""); err != nil {
 			return nil, err
 		}
 	}
-	return getSalesReturn(ctx, conn, id)
+	return getSalesReturn(ctx, sch, pool, id)
 }

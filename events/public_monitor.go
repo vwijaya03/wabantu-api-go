@@ -43,16 +43,15 @@ func loadPublicStaffMonitor(ctx context.Context, tenantSlug, eventSlug string) (
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, schema)
+	ts, err := openTenant(ctx, schema)
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
 
 	var eventID, status string
 	var resp PublicStaffMonitorResponse
 	var desc, catering, loc sql.NullString
-	err = conn.QueryRowContext(ctx, `
+	err = ts.QueryRowContext(ctx, `
 		SELECT id::text, event_name, event_description, catering_order_notes, location,
 		       start_date::text, end_date::text, start_time::text, end_time::text, status
 		FROM evt_event
@@ -84,7 +83,7 @@ func loadPublicStaffMonitor(ctx context.Context, tenantSlug, eventSlug string) (
 	resp.TherapyCapacity = dash.TherapyCapacity
 	resp.MealConsumptionCount = dash.MealConsumptionCount
 
-	staff, err := loadPublicStaffMonitorPeople(ctx, conn, eventID)
+	staff, err := loadPublicStaffMonitorPeople(ctx, ts, eventID)
 	if err != nil {
 		return nil, err
 	}
@@ -92,8 +91,8 @@ func loadPublicStaffMonitor(ctx context.Context, tenantSlug, eventSlug string) (
 	return &resp, nil
 }
 
-func loadPublicStaffMonitorPeople(ctx context.Context, conn *sql.Conn, eventID string) ([]PublicStaffMonitorPerson, error) {
-	rows, err := conn.QueryContext(ctx, `
+func loadPublicStaffMonitorPeople(ctx context.Context, ts tenantScope, eventID string) ([]PublicStaffMonitorPerson, error) {
+	rows, err := ts.QueryContext(ctx, `
 		SELECT p.id::text,
 		       COALESCE(p.full_name_enc,''), COALESCE(p.full_name,''),
 		       p.person_type, COALESCE(p.notes,''), p.counts_toward_meals
@@ -130,7 +129,7 @@ func loadPublicStaffMonitorPeople(ctx context.Context, conn *sql.Conn, eventID s
 	for i, s := range scratch {
 		extrasByID[i].ID = s.personID
 	}
-	if err := attachPersonExtrasBatch(ctx, conn, extrasByID); err != nil {
+	if err := attachPersonExtrasBatch(ctx, ts, extrasByID); err != nil {
 		return nil, err
 	}
 

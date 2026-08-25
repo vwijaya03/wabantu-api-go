@@ -32,19 +32,18 @@ func GenerateTimeSlots(ctx context.Context, eventId, therapyId string) (*Generat
 	if err := assertOwner(u); err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	if err := assertEventMutable(ctx, conn, eventId); err != nil {
+	if err := assertEventMutable(ctx, ts, eventId); err != nil {
 		return nil, err
 	}
 
 	var startDate, endDate string
 	var evtStart, evtEnd string
 	var breakStart, breakEnd sql.NullString
-	if err := conn.QueryRowContext(ctx, `
+	if err := ts.QueryRowContext(ctx, `
 		SELECT start_date::text, end_date::text, start_time::text, end_time::text,
 		       break_start_time::text, break_end_time::text
 		FROM evt_event WHERE id=$1::uuid AND deleted_at IS NULL`, eventId,
@@ -57,7 +56,7 @@ func GenerateTimeSlots(ctx context.Context, eventId, therapyId string) (*Generat
 	var schedStart, schedEnd sql.NullString
 	var schedMode, capMode string
 	var maxCap sql.NullInt64
-	if err := conn.QueryRowContext(ctx, `
+	if err := ts.QueryRowContext(ctx, `
 		SELECT id::text, slot_duration_minutes, schedule_start_time::text, schedule_end_time::text,
 		       COALESCE(schedule_mode,'AUTO'), capacity_mode, max_capacity
 		FROM evt_event_therapy WHERE event_id=$1::uuid AND therapy_id=$2::uuid`,
@@ -83,7 +82,7 @@ func GenerateTimeSlots(ctx context.Context, eventId, therapyId string) (*Generat
 	var templateSlots []slotRange
 	if strings.ToUpper(schedMode) == "MANUAL" {
 		var err error
-		templateSlots, err = loadManualDaySlots(ctx, conn, eventTherapyID)
+		templateSlots, err = loadManualDaySlots(ctx, ts, eventTherapyID)
 		if err != nil {
 			return nil, err
 		}
@@ -103,7 +102,7 @@ func GenerateTimeSlots(ctx context.Context, eventId, therapyId string) (*Generat
 		}
 	}
 	for d := sd; !d.After(ed); d = d.AddDate(0, 0, 1) {
-		capacity, err := computeTherapyCapacity(ctx, conn, eventId, therapyId, capMode, maxCap)
+		capacity, err := computeTherapyCapacity(ctx, ts, eventId, therapyId, capMode, maxCap)
 		if err != nil {
 			return nil, err
 		}
@@ -121,7 +120,7 @@ func GenerateTimeSlots(ctx context.Context, eventId, therapyId string) (*Generat
 			if strings.ToUpper(capMode) == "FIXED" && sl.capacity > 0 {
 				slotCapacity = sl.capacity
 			}
-			_, err := conn.ExecContext(ctx, `
+			_, err := ts.ExecContext(ctx, `
 				INSERT INTO evt_time_slot (event_id, therapy_id, slot_date, start_time, end_time, capacity)
 				VALUES ($1::uuid,$2::uuid,$3::date,$4::time,$5::time,$6)
 				ON CONFLICT (event_id, therapy_id, slot_date, start_time) DO UPDATE SET
@@ -134,13 +133,13 @@ func GenerateTimeSlots(ctx context.Context, eventId, therapyId string) (*Generat
 		}
 	}
 	if breakStartPtr != nil && breakEndPtr != nil {
-		if warn, err := cleanupBreakWindowSlots(ctx, conn, eventId, therapyId, *breakStartPtr, *breakEndPtr); err != nil {
+		if warn, err := cleanupBreakWindowSlots(ctx, ts, eventId, therapyId, *breakStartPtr, *breakEndPtr); err != nil {
 			return nil, err
 		} else if warn != "" {
 			warnings = append(warnings, warn)
 		}
 	}
-	auditEvent(ctx, conn, u, "time_slot", eventId, "generate", nil, map[string]any{"therapyId": therapyId, "created": created})
+	auditEvent(ctx, ts, u, "time_slot", eventId, "generate", nil, map[string]any{"therapyId": therapyId, "created": created})
 	resp := &GenerateTimeSlotsResponse{Created: created}
 	if len(warnings) > 0 {
 		resp.Warnings = warnings
@@ -244,9 +243,9 @@ func dayScheduleSegments(dayStart, dayEnd string, breakStart, breakEnd *string) 
 	return segments, nil
 }
 
-func cleanupBreakWindowSlots(ctx context.Context, conn *sql.Conn, eventID, therapyID, breakStart, breakEnd string) (string, error) {
+func cleanupBreakWindowSlots(ctx context.Context, ts tenantScope, eventID, therapyID, breakStart, breakEnd string) (string, error) {
 	var blocked int
-	if err := conn.QueryRowContext(ctx, `
+	if err := ts.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM evt_time_slot
 		WHERE event_id=$1::uuid AND therapy_id=$2::uuid
 		  AND start_time >= $3::time AND start_time < $4::time
@@ -258,7 +257,7 @@ func cleanupBreakWindowSlots(ctx context.Context, conn *sql.Conn, eventID, thera
 	if blocked > 0 {
 		return fmt.Sprintf("%d slot di jendela istirahat masih berisi pasien — pindahkan pasien lalu generate ulang", blocked), nil
 	}
-	_, err := conn.ExecContext(ctx, `
+	_, err := ts.ExecContext(ctx, `
 		DELETE FROM evt_time_slot
 		WHERE event_id=$1::uuid AND therapy_id=$2::uuid
 		  AND start_time >= $3::time AND start_time < $4::time
@@ -280,9 +279,9 @@ func padTime(t string) string {
 
 // therapyMaxCapacity is total bookable seats for a therapy: sum of generated slot capacities,
 // or configured capacity when slots are not generated yet.
-func therapyMaxCapacity(ctx context.Context, conn *sql.Conn, eventID, therapyID, capMode string, maxCap sql.NullInt64) (int, error) {
+func therapyMaxCapacity(ctx context.Context, ts tenantScope, eventID, therapyID, capMode string, maxCap sql.NullInt64) (int, error) {
 	var slotSum int
-	err := conn.QueryRowContext(ctx, `
+	err := ts.QueryRowContext(ctx, `
 		SELECT COALESCE(SUM(capacity), 0) FROM evt_time_slot
 		WHERE event_id=$1::uuid AND therapy_id=$2::uuid`, eventID, therapyID).Scan(&slotSum)
 	if err != nil {
@@ -291,14 +290,14 @@ func therapyMaxCapacity(ctx context.Context, conn *sql.Conn, eventID, therapyID,
 	if slotSum > 0 {
 		return slotSum, nil
 	}
-	return computeTherapyCapacity(ctx, conn, eventID, therapyID, capMode, maxCap)
+	return computeTherapyCapacity(ctx, ts, eventID, therapyID, capMode, maxCap)
 }
 
-func computeTherapyCapacity(ctx context.Context, conn *sql.Conn, eventID, therapyID, mode string, maxCap sql.NullInt64) (int, error) {
+func computeTherapyCapacity(ctx context.Context, ts tenantScope, eventID, therapyID, mode string, maxCap sql.NullInt64) (int, error) {
 	switch strings.ToUpper(mode) {
 	case "SHIJIE_COUNT":
 		var n int
-		err := conn.QueryRowContext(ctx, `
+		err := ts.QueryRowContext(ctx, `
 			SELECT COUNT(*) FROM evt_event_person
 			WHERE event_id=$1::uuid AND person_type='SHIJIE' AND deleted_at IS NULL
 			  AND attendance_status IN ('PRESENT','PARTIAL')`, eventID).Scan(&n)
@@ -310,7 +309,7 @@ func computeTherapyCapacity(ctx context.Context, conn *sql.Conn, eventID, therap
 		return 1, nil
 	default: // THERAPIST_COUNT
 		var n int
-		if err := conn.QueryRowContext(ctx, `
+		if err := ts.QueryRowContext(ctx, `
 			SELECT COUNT(DISTINCT p.id) FROM evt_event_person p
 			JOIN evt_person_therapy pt ON pt.person_id = p.id
 			WHERE p.event_id=$1::uuid AND pt.therapy_id=$2::uuid AND p.deleted_at IS NULL
@@ -352,17 +351,16 @@ func DeleteTimeSlot(ctx context.Context, eventId, slotId string) error {
 	if err := assertOwner(u); err != nil {
 		return err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	if err := assertEventMutable(ctx, conn, eventId); err != nil {
+	if err := assertEventMutable(ctx, ts, eventId); err != nil {
 		return err
 	}
 
 	var booked int
-	err = conn.QueryRowContext(ctx, `
+	err = ts.QueryRowContext(ctx, `
 		SELECT booked_count
 		FROM evt_time_slot
 		WHERE id=$1::uuid AND event_id=$2::uuid`, slotId, eventId,
@@ -377,7 +375,7 @@ func DeleteTimeSlot(ctx context.Context, eventId, slotId string) error {
 		return appErrs.BadRequest("slot sudah terisi pasien, tidak bisa dihapus")
 	}
 	var linkedPatients int
-	if err := conn.QueryRowContext(ctx, `
+	if err := ts.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM evt_patient
 		WHERE slot_id=$1::uuid AND deleted_at IS NULL`, slotId,
 	).Scan(&linkedPatients); err != nil {
@@ -388,19 +386,19 @@ func DeleteTimeSlot(ctx context.Context, eventId, slotId string) error {
 	}
 	// Patient rows are soft-deleted; detach historical references first
 	// so FK on evt_patient.slot_id doesn't block slot deletion.
-	if _, err := conn.ExecContext(ctx, `
+	if _, err := ts.ExecContext(ctx, `
 		UPDATE evt_patient
 		SET slot_id = NULL, updated_at = now()
 		WHERE slot_id=$1::uuid AND deleted_at IS NOT NULL`, slotId); err != nil {
 		return appErrs.Internal(err.Error())
 	}
 
-	if _, err := conn.ExecContext(ctx, `
+	if _, err := ts.ExecContext(ctx, `
 		DELETE FROM evt_time_slot
 		WHERE id=$1::uuid AND event_id=$2::uuid`, slotId, eventId); err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	auditEvent(ctx, conn, u, "time_slot", slotId, "delete", map[string]any{"eventId": eventId}, nil)
+	auditEvent(ctx, ts, u, "time_slot", slotId, "delete", map[string]any{"eventId": eventId}, nil)
 	return nil
 }
 
@@ -416,12 +414,11 @@ func DeleteTimeSlotsBulk(ctx context.Context, eventId string, p *DeleteSlotsPara
 	if p == nil || len(p.SlotIDs) == 0 {
 		return nil, appErrs.BadRequest("pilih minimal satu slot")
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	if err := assertEventMutable(ctx, conn, eventId); err != nil {
+	if err := assertEventMutable(ctx, ts, eventId); err != nil {
 		return nil, err
 	}
 
@@ -435,7 +432,7 @@ func DeleteTimeSlotsBulk(ctx context.Context, eventId string, p *DeleteSlotsPara
 		seen[slotID] = true
 
 		var booked int
-		err := conn.QueryRowContext(ctx, `
+		err := ts.QueryRowContext(ctx, `
 			SELECT booked_count
 			FROM evt_time_slot
 			WHERE id=$1::uuid AND event_id=$2::uuid`, slotID, eventId,
@@ -454,7 +451,7 @@ func DeleteTimeSlotsBulk(ctx context.Context, eventId string, p *DeleteSlotsPara
 			continue
 		}
 		var linkedPatients int
-		if err := conn.QueryRowContext(ctx, `
+		if err := ts.QueryRowContext(ctx, `
 			SELECT COUNT(*) FROM evt_patient
 			WHERE slot_id=$1::uuid AND deleted_at IS NULL`, slotID,
 		).Scan(&linkedPatients); err != nil {
@@ -465,19 +462,19 @@ func DeleteTimeSlotsBulk(ctx context.Context, eventId string, p *DeleteSlotsPara
 			resp.Errors = append(resp.Errors, slotID+": slot masih dipakai data pasien")
 			continue
 		}
-		if _, err := conn.ExecContext(ctx, `
+		if _, err := ts.ExecContext(ctx, `
 			UPDATE evt_patient
 			SET slot_id = NULL, updated_at = now()
 			WHERE slot_id=$1::uuid AND deleted_at IS NOT NULL`, slotID); err != nil {
 			return nil, appErrs.Internal(err.Error())
 		}
-		if _, err := conn.ExecContext(ctx, `
+		if _, err := ts.ExecContext(ctx, `
 			DELETE FROM evt_time_slot
 			WHERE id=$1::uuid AND event_id=$2::uuid`, slotID, eventId); err != nil {
 			return nil, appErrs.Internal(err.Error())
 		}
 		resp.Deleted++
-		auditEvent(ctx, conn, u, "time_slot", slotID, "delete_bulk_item", map[string]any{"eventId": eventId}, nil)
+		auditEvent(ctx, ts, u, "time_slot", slotID, "delete_bulk_item", map[string]any{"eventId": eventId}, nil)
 	}
 	if len(resp.Errors) == 0 {
 		resp.Errors = nil
@@ -491,11 +488,10 @@ func ListTimeSlots(ctx context.Context, eventId string, p *ListSlotsParams) (*Li
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
 	conds := []string{"s.event_id = $1::uuid"}
 	args := []any{eventId}
 	i := 2
@@ -510,7 +506,7 @@ func ListTimeSlots(ctx context.Context, eventId string, p *ListSlotsParams) (*Li
 		i++
 	}
 	where := strings.Join(conds, " AND ")
-	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
+	rows, err := ts.QueryContext(ctx, fmt.Sprintf(`
 		SELECT s.id::text, s.event_id::text, s.therapy_id::text, t.therapy_name,
 		       s.slot_date::text, s.start_time::text, s.end_time::text, s.capacity, s.booked_count
 		FROM evt_time_slot s
@@ -539,9 +535,9 @@ func ListTimeSlots(ctx context.Context, eventId string, p *ListSlotsParams) (*Li
 	return &ListTimeSlotsResponse{Items: items}, nil
 }
 
-func lockAndIncrementSlot(ctx context.Context, tx *sql.Tx, slotID string) error {
+func lockAndIncrementSlot(ctx context.Context, ts tenantScope, slotID string) error {
 	var cap, booked int
-	err := tx.QueryRowContext(ctx, `
+	err := ts.QueryRowContext(ctx, `
 		SELECT capacity, booked_count FROM evt_time_slot WHERE id=$1::uuid FOR UPDATE`, slotID,
 	).Scan(&cap, &booked)
 	if err != nil {
@@ -550,6 +546,6 @@ func lockAndIncrementSlot(ctx context.Context, tx *sql.Tx, slotID string) error 
 	if booked >= cap {
 		return appErrs.BadRequest("slot penuh")
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE evt_time_slot SET booked_count = booked_count + 1 WHERE id=$1::uuid`, slotID)
+	_, err = ts.ExecContext(ctx, `UPDATE evt_time_slot SET booked_count = booked_count + 1 WHERE id=$1::uuid`, slotID)
 	return err
 }

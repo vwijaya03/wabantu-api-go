@@ -1,8 +1,8 @@
 package inventory
 
 import (
+	appdb "encore.app/wabantu/shared/db"
 	"context"
-	"database/sql"
 	"fmt"
 	"strings"
 
@@ -16,13 +16,15 @@ type skuMeta struct {
 }
 
 type skuBundleCache struct {
+	sch     appdb.SchemaSQL
 	q       rowsQuerier
 	sku     map[string]skuMeta
 	bundles map[string][]BundleComponent
 }
 
-func newSkuBundleCache(q rowsQuerier) *skuBundleCache {
+func newSkuBundleCache(sch appdb.SchemaSQL, q rowsQuerier) *skuBundleCache {
 	return &skuBundleCache{
+		sch:     sch,
 		q:       q,
 		sku:     map[string]skuMeta{},
 		bundles: map[string][]BundleComponent{},
@@ -43,7 +45,7 @@ func (c *skuBundleCache) preload(ctx context.Context, catalogIDs []string) error
 	for i, id := range ids {
 		args[i] = id
 	}
-	rows, err := c.q.QueryContext(ctx, fmt.Sprintf(`
+	rows, err := qquery(ctx, c.sch, c.q, fmt.Sprintf(`
 		SELECT catalog_item_id::text, COALESCE(track_stock, false), COALESCE(is_bundle, false)
 		FROM inv_sku WHERE catalog_item_id IN (%s)`, clause), args...)
 	if err != nil {
@@ -75,7 +77,7 @@ func (c *skuBundleCache) preload(ctx context.Context, catalogIDs []string) error
 	for i, id := range bundleParents {
 		args[i] = id
 	}
-	brows, err := c.q.QueryContext(ctx, fmt.Sprintf(`
+	brows, err := qquery(ctx, c.sch, c.q, fmt.Sprintf(`
 		SELECT parent_catalog_item_id::text, child_catalog_item_id::text, qty
 		FROM inv_bundle_component WHERE parent_catalog_item_id IN (%s)`, clause), args...)
 	if err != nil {
@@ -150,7 +152,7 @@ func collectCatalogIDsFromOrders(itemsList ...[]OrderStockItem) []string {
 	return out
 }
 
-func batchOrderNetIssued(ctx context.Context, q rowsQuerier, orderIDs []string) (map[string]map[reqKey]netEntry, error) {
+func batchOrderNetIssued(ctx context.Context, sch appdb.SchemaSQL, q rowsQuerier, orderIDs []string) (map[string]map[reqKey]netEntry, error) {
 	orderIDs = uniqueNonEmpty(orderIDs)
 	out := make(map[string]map[reqKey]netEntry, len(orderIDs))
 	if len(orderIDs) == 0 {
@@ -160,7 +162,7 @@ func batchOrderNetIssued(ctx context.Context, q rowsQuerier, orderIDs []string) 
 	for i, id := range orderIDs {
 		args[i] = id
 	}
-	rows, err := q.QueryContext(ctx, fmt.Sprintf(`
+	rows, err := qquery(ctx, sch, q, fmt.Sprintf(`
 		SELECT ref_id::text, catalog_item_id::text, warehouse_id::text, movement_type, qty, total_cost
 		FROM inv_stock_movement
 		WHERE ref_type='order' AND ref_id IN (%s)
@@ -202,7 +204,7 @@ func batchOrderNetIssued(ctx context.Context, q rowsQuerier, orderIDs []string) 
 	return out, nil
 }
 
-func batchOnHand(ctx context.Context, q rowsQuerier, keys []reqKey) (map[reqKey]float64, error) {
+func batchOnHand(ctx context.Context, sch appdb.SchemaSQL, q rowsQuerier, keys []reqKey) (map[reqKey]float64, error) {
 	uniq := make([]reqKey, 0, len(keys))
 	seen := map[reqKey]struct{}{}
 	for _, k := range keys {
@@ -227,7 +229,7 @@ func batchOnHand(ctx context.Context, q rowsQuerier, keys []reqKey) (map[reqKey]
 		args = append(args, k.item, k.warehouse)
 		idx += 2
 	}
-	rows, err := q.QueryContext(ctx, fmt.Sprintf(`
+	rows, err := qquery(ctx, sch, q, fmt.Sprintf(`
 		SELECT catalog_item_id::text, warehouse_id::text, COALESCE(on_hand, 0)
 		FROM inv_stock_balance
 		WHERE (catalog_item_id, warehouse_id) IN (%s)`, strings.Join(tupleParts, ",")), args...)
@@ -254,7 +256,7 @@ func batchOnHand(ctx context.Context, q rowsQuerier, keys []reqKey) (map[reqKey]
 	return out, nil
 }
 
-func batchItemNames(ctx context.Context, q rowsQuerier, ids []string) (map[string]string, error) {
+func batchItemNames(ctx context.Context, sch appdb.SchemaSQL, q rowsQuerier, ids []string) (map[string]string, error) {
 	ids = uniqueNonEmpty(ids)
 	out := map[string]string{}
 	if len(ids) == 0 {
@@ -264,7 +266,7 @@ func batchItemNames(ctx context.Context, q rowsQuerier, ids []string) (map[strin
 	for i, id := range ids {
 		args[i] = id
 	}
-	rows, err := q.QueryContext(ctx, fmt.Sprintf(`
+	rows, err := qquery(ctx, sch, q, fmt.Sprintf(`
 		SELECT id::text, COALESCE(name, '') FROM business_catalog_item WHERE id IN (%s)`, clause), args...)
 	if err != nil {
 		return nil, appErrsInternal(err)
@@ -283,7 +285,7 @@ func batchItemNames(ctx context.Context, q rowsQuerier, ids []string) (map[strin
 	return out, rows.Err()
 }
 
-func batchWarehouseNames(ctx context.Context, q rowsQuerier, ids []string) (map[string]string, error) {
+func batchWarehouseNames(ctx context.Context, sch appdb.SchemaSQL, q rowsQuerier, ids []string) (map[string]string, error) {
 	ids = uniqueNonEmpty(ids)
 	out := map[string]string{}
 	if len(ids) == 0 {
@@ -293,7 +295,7 @@ func batchWarehouseNames(ctx context.Context, q rowsQuerier, ids []string) (map[
 	for i, id := range ids {
 		args[i] = id
 	}
-	rows, err := q.QueryContext(ctx, fmt.Sprintf(`
+	rows, err := qquery(ctx, sch, q, fmt.Sprintf(`
 		SELECT id::text, COALESCE(name, '') FROM inv_warehouse WHERE id IN (%s)`, clause), args...)
 	if err != nil {
 		return nil, appErrsInternal(err)
@@ -324,12 +326,12 @@ type backfillBatch struct {
 	warehouseNames   map[string]string
 }
 
-func newBackfillBatch(ctx context.Context, conn *sql.Conn, orders []backfillOrderRow) (*backfillBatch, error) {
-	setup, _, block, err := loadSyncSetting(ctx, conn)
+func newBackfillBatch(ctx context.Context, sch appdb.SchemaSQL, q rowsQuerier, orders []backfillOrderRow) (*backfillBatch, error) {
+	setup, _, block, err := loadSyncSetting(ctx, sch, q)
 	if err != nil {
 		return nil, err
 	}
-	defaultWarehouse, err := defaultWarehouseID(ctx, conn)
+	defaultWarehouse, err := defaultWarehouseID(ctx, sch, q)
 	if err != nil {
 		return nil, err
 	}
@@ -341,11 +343,11 @@ func newBackfillBatch(ctx context.Context, conn *sql.Conn, orders []backfillOrde
 		orderIDs = append(orderIDs, o.id)
 	}
 	catalogIDs := collectCatalogIDsFromOrders(allItems...)
-	cache := newSkuBundleCache(conn)
+	cache := newSkuBundleCache(sch, q)
 	if err := cache.preload(ctx, catalogIDs); err != nil {
 		return nil, err
 	}
-	netByOrder, err := batchOrderNetIssued(ctx, conn, orderIDs)
+	netByOrder, err := batchOrderNetIssued(ctx, sch, q, orderIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -375,7 +377,7 @@ func (b *backfillBatch) needsStockSync(orderID, status string, items []OrderStoc
 	return orderStockSyncDelta(required, netIssued)
 }
 
-func (b *backfillBatch) analyzeShortages(ctx context.Context, conn *sql.Conn, orderID string, items []OrderStockItem) ([]StockShortageLine, error) {
+func (b *backfillBatch) analyzeShortages(ctx context.Context, sch appdb.SchemaSQL, q querier, orderID string, items []OrderStockItem) ([]StockShortageLine, error) {
 	if !b.setup || !b.block {
 		return nil, nil
 	}
@@ -393,7 +395,7 @@ func (b *backfillBatch) analyzeShortages(ctx context.Context, conn *sql.Conn, or
 		}
 		needOnHand = append(needOnHand, k)
 	}
-	if err := b.ensureOnHand(ctx, conn, needOnHand); err != nil {
+	if err := b.ensureOnHand(ctx, sch, q, needOnHand); err != nil {
 		return nil, err
 	}
 
@@ -407,7 +409,7 @@ func (b *backfillBatch) analyzeShortages(ctx context.Context, conn *sql.Conn, or
 		}
 		whIDs = append(whIDs, whID)
 	}
-	if err := b.ensureNames(ctx, conn, itemIDs, whIDs); err != nil {
+	if err := b.ensureNames(ctx, sch, q, itemIDs, whIDs); err != nil {
 		return nil, err
 	}
 
@@ -440,7 +442,7 @@ func (b *backfillBatch) analyzeShortages(ctx context.Context, conn *sql.Conn, or
 	return shortages, nil
 }
 
-func (b *backfillBatch) ensureOnHand(ctx context.Context, conn *sql.Conn, keys []reqKey) error {
+func (b *backfillBatch) ensureOnHand(ctx context.Context, sch appdb.SchemaSQL, q querier, keys []reqKey) error {
 	missing := make([]reqKey, 0)
 	for _, k := range keys {
 		if _, ok := b.onHand[k]; !ok {
@@ -450,7 +452,7 @@ func (b *backfillBatch) ensureOnHand(ctx context.Context, conn *sql.Conn, keys [
 	if len(missing) == 0 {
 		return nil
 	}
-	loaded, err := batchOnHand(ctx, conn, missing)
+	loaded, err := batchOnHand(ctx, sch, q, missing)
 	if err != nil {
 		return err
 	}
@@ -460,7 +462,7 @@ func (b *backfillBatch) ensureOnHand(ctx context.Context, conn *sql.Conn, keys [
 	return nil
 }
 
-func (b *backfillBatch) ensureNames(ctx context.Context, conn *sql.Conn, itemIDs, whIDs []string) error {
+func (b *backfillBatch) ensureNames(ctx context.Context, sch appdb.SchemaSQL, q querier, itemIDs, whIDs []string) error {
 	missingItems := make([]string, 0)
 	for _, id := range uniqueNonEmpty(itemIDs) {
 		if _, ok := b.itemNames[id]; !ok {
@@ -468,7 +470,7 @@ func (b *backfillBatch) ensureNames(ctx context.Context, conn *sql.Conn, itemIDs
 		}
 	}
 	if len(missingItems) > 0 {
-		names, err := batchItemNames(ctx, conn, missingItems)
+		names, err := batchItemNames(ctx, sch, q, missingItems)
 		if err != nil {
 			return err
 		}
@@ -488,7 +490,7 @@ func (b *backfillBatch) ensureNames(ctx context.Context, conn *sql.Conn, itemIDs
 		}
 	}
 	if len(missingWh) > 0 {
-		names, err := batchWarehouseNames(ctx, conn, missingWh)
+		names, err := batchWarehouseNames(ctx, sch, q, missingWh)
 		if err != nil {
 			return err
 		}
@@ -506,7 +508,8 @@ func (b *backfillBatch) ensureNames(ctx context.Context, conn *sql.Conn, itemIDs
 
 // singleOrderBatch lazily batch-loads on-hand and names for one order shortage check.
 type singleOrderBatch struct {
-	conn             *sql.Conn
+	sch              appdb.SchemaSQL
+	q                rowsQuerier
 	defaultWarehouse string
 	onHand           map[reqKey]float64
 	itemNames        map[string]string
@@ -521,7 +524,7 @@ func (s *singleOrderBatch) onHandFor(ctx context.Context, keys []reqKey) (map[re
 		}
 	}
 	if len(missing) > 0 {
-		loaded, err := batchOnHand(ctx, s.conn, missing)
+		loaded, err := batchOnHand(ctx, s.sch, s.q, missing)
 		if err != nil {
 			return nil, err
 		}
@@ -540,7 +543,7 @@ func (s *singleOrderBatch) nameForItem(ctx context.Context, id string) (string, 
 	if n, ok := s.itemNames[id]; ok {
 		return n, nil
 	}
-	names, err := batchItemNames(ctx, s.conn, []string{id})
+	names, err := batchItemNames(ctx, s.sch, s.q, []string{id})
 	if err != nil {
 		return "item", err
 	}
@@ -556,7 +559,7 @@ func (s *singleOrderBatch) nameForWarehouse(ctx context.Context, id string) (str
 	if n, ok := s.warehouseNames[id]; ok {
 		return n, nil
 	}
-	names, err := batchWarehouseNames(ctx, s.conn, []string{id})
+	names, err := batchWarehouseNames(ctx, s.sch, s.q, []string{id})
 	if err != nil {
 		return "gudang", err
 	}

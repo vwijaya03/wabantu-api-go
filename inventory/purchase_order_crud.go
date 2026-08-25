@@ -8,7 +8,6 @@ import (
 
 	"encore.app/wabantu/finance"
 	appErrs "encore.app/wabantu/shared/errs"
-	"encore.app/wabantu/tenant"
 )
 
 type UpdatePurchaseOrderParams struct {
@@ -29,13 +28,13 @@ func DeletePurchaseOrder(ctx context.Context, id string) error {
 	if err := requireOwner(u); err != nil {
 		return err
 	}
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return appErrs.Internal(err.Error())
+		return err
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantDB()
 
-	po, err := getPurchaseOrder(ctx, conn, id)
+	po, err := getPurchaseOrder(ctx, sch, pool, id)
 	if err != nil {
 		return err
 	}
@@ -48,7 +47,7 @@ func DeletePurchaseOrder(ctx context.Context, id string) error {
 		}
 	}
 	var billCount int
-	if err := conn.QueryRowContext(ctx,
+	if err := qrow(ctx, sch, pool,
 		`SELECT COUNT(*) FROM pur_bill WHERE purchase_order_id = $1`, id).Scan(&billCount); err != nil {
 		return appErrs.Internal(err.Error())
 	}
@@ -58,7 +57,7 @@ func DeletePurchaseOrder(ctx context.Context, id string) error {
 	if po.Status != "open" && po.Status != "cancelled" {
 		return appErrs.BadRequest("hanya PO terbuka atau dibatalkan yang bisa dihapus")
 	}
-	if _, err := conn.ExecContext(ctx, `DELETE FROM pur_purchase_order WHERE id = $1`, id); err != nil {
+	if _, err := qexec(ctx, sch, pool, `DELETE FROM pur_purchase_order WHERE id = $1`, id); err != nil {
 		return appErrs.Internal(err.Error())
 	}
 	return nil
@@ -77,13 +76,13 @@ func UpdatePurchaseOrder(ctx context.Context, id string, p *UpdatePurchaseOrderP
 		return nil, appErrs.BadRequest("minimal 1 baris item")
 	}
 
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantDB()
 
-	po, err := getPurchaseOrder(ctx, conn, id)
+	po, err := getPurchaseOrder(ctx, sch, pool, id)
 	if err != nil {
 		return nil, err
 	}
@@ -121,25 +120,25 @@ func UpdatePurchaseOrder(ctx context.Context, id string, p *UpdatePurchaseOrderP
 		if strings.TrimSpace(l.WarehouseID) == "" {
 			l.WarehouseID = defaultWarehouse
 		}
-		if err := validateCatalogItem(ctx, conn, l.CatalogItemID); err != nil {
+		if err := validateCatalogItem(ctx, sch, pool, l.CatalogItemID); err != nil {
 			return nil, fmt.Errorf("baris %d: %w", i+1, err)
 		}
-		if err := validateWarehouse(ctx, conn, l.WarehouseID); err != nil {
+		if err := validateWarehouse(ctx, sch, pool, l.WarehouseID); err != nil {
 			return nil, fmt.Errorf("baris %d: %w", i+1, err)
 		}
 		subtotal += l.QtyOrdered * l.UnitCost
 	}
 
-	tx, err := conn.BeginTx(ctx, nil)
+	tx, err := pool.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.ExecContext(ctx, `DELETE FROM pur_purchase_order_line WHERE purchase_order_id = $1`, id); err != nil {
+	if _, err := qexec(ctx, sch, tx, `DELETE FROM pur_purchase_order_line WHERE purchase_order_id = $1`, id); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	if _, err := tx.ExecContext(ctx, `
+	if _, err := qexec(ctx, sch, tx, `
 		UPDATE pur_purchase_order
 		SET supplier_name = $2, contact_id = $3, warehouse_id = $4, transaction_date = $5,
 		    note = $6, subtotal = $7, updated_at = now()
@@ -149,7 +148,7 @@ func UpdatePurchaseOrder(ctx context.Context, id string, p *UpdatePurchaseOrderP
 		return nil, appErrs.Internal(err.Error())
 	}
 	for _, l := range p.Lines {
-		if _, err := tx.ExecContext(ctx, `
+		if _, err := qexec(ctx, sch, tx, `
 			INSERT INTO pur_purchase_order_line
 			  (purchase_order_id, catalog_item_id, warehouse_id, description, qty_ordered, unit_cost)
 			VALUES ($1,$2,$3,$4,$5,$6)`,
@@ -160,7 +159,7 @@ func UpdatePurchaseOrder(ctx context.Context, id string, p *UpdatePurchaseOrderP
 	if err := tx.Commit(); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	return getPurchaseOrder(ctx, conn, id)
+	return getPurchaseOrder(ctx, sch, pool, id)
 }
 
 // purchaseOrderDeletable reports whether a PO can be hard-deleted (pure rule).

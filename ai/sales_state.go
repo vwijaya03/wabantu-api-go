@@ -109,13 +109,35 @@ func isNamedProductPurchaseIntent(userText string, catalog []dbCatalogItem) bool
 		return false
 	}
 	text := strings.ToLower(strings.TrimSpace(userText))
-	if strings.Contains(text, "mau beli") {
+	if isBareNamedProductPurchaseQuestion(userText, text) {
+		return false
+	}
+	if strings.Contains(text, "mau beli") || strings.Contains(text, "pengen beli") {
 		return true
 	}
 	if hasOrderIntentText(userText) && !hasConsultingPurchasePrefix(text) {
 		return true
 	}
 	return false
+}
+
+// isBareNamedProductPurchaseQuestion — "mau beli boxer?" / "pengen beli boxer?" tanpa qty/spesifikasi.
+func isBareNamedProductPurchaseQuestion(userText, text string) bool {
+	if !IsQuestionLike(userText) {
+		return false
+	}
+	if mentionsOrderQty(text) {
+		return false
+	}
+	if orderSizeLineRe.MatchString(text) {
+		return false
+	}
+	for _, spec := range []string{"gram", " kg", "lusin", " kilo", "ons"} {
+		if strings.Contains(text, spec) {
+			return false
+		}
+	}
+	return true
 }
 
 func catalogProductExplicitlyNamed(userText string, it *dbCatalogItem) bool {

@@ -16,10 +16,18 @@ import (
 	appErrs "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/entitlement"
 	"encore.app/wabantu/shared/types"
+	"encore.app/wabantu/tenant"
 	"encore.app/wabantu/usage"
 )
 
 var db = sqldb.Named("tenant")
+
+func openTenantScope(ctx context.Context, schema string) (appdb.TenantScope, error) {
+	if err := tenant.PrepareTenantAccess(ctx, schema); err != nil {
+		return appdb.TenantScope{}, err
+	}
+	return appdb.OpenTenantScope(db.Stdlib(), schema), nil
+}
 
 type Rule struct {
 	ID            string          `json:"id"`
@@ -75,13 +83,12 @@ func ListRules(ctx context.Context) (*ListRulesResponse, error) {
 	if err := entitlement.Require(ctx, u.TenantSchema, entitlement.FeatureWorkflow); err != nil {
 		return nil, err
 	}
-	conn, err := tConn(ctx, u.TenantSchema)
+	ts, err := openTenantScope(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal("database connection failed")
 	}
-	defer appdb.CloseTenantConn(conn)
 
-	rows, err := conn.QueryContext(ctx, `
+	rows, err := ts.QueryContext(ctx, `
 		SELECT id, name, trigger_type, trigger_value, action_type, action_payload,
 		       branch_id, is_active, priority, created_at
 		FROM workflow_rule WHERE deleted_at IS NULL
@@ -132,15 +139,14 @@ func CreateRule(ctx context.Context, req *CreateRuleRequest) (*CreateRuleRespons
 		payload = json.RawMessage(`{}`)
 	}
 
-	conn, err := tConn(ctx, u.TenantSchema)
+	ts, err := openTenantScope(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal("database connection failed")
 	}
-	defer appdb.CloseTenantConn(conn)
 
 	var r Rule
 	var branchID sql.NullString
-	err = conn.QueryRowContext(ctx, `
+	err = ts.QueryRowContext(ctx, `
 		INSERT INTO workflow_rule (name, trigger_type, trigger_value, action_type, action_payload, branch_id, priority)
 		VALUES ($1,$2,$3,$4,$5,$6,$7)
 		RETURNING id, name, trigger_type, trigger_value, action_type, action_payload, branch_id, is_active, priority, created_at`,
@@ -185,15 +191,14 @@ func UpdateRule(ctx context.Context, id string, req *UpdateRuleRequest) (*Update
 		isActive = *req.IsActive
 	}
 
-	conn, err := tConn(ctx, u.TenantSchema)
+	ts, err := openTenantScope(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal("database connection failed")
 	}
-	defer appdb.CloseTenantConn(conn)
 
 	var r Rule
 	var branchID sql.NullString
-	err = conn.QueryRowContext(ctx, `
+	err = ts.QueryRowContext(ctx, `
 		UPDATE workflow_rule
 		SET name = $2, trigger_type = $3, trigger_value = $4,
 		    action_type = $5, action_payload = $6, priority = $7,
@@ -225,12 +230,11 @@ func DeleteRule(ctx context.Context, id string) error {
 	if err := entitlement.Require(ctx, u.TenantSchema, entitlement.FeatureWorkflow); err != nil {
 		return err
 	}
-	conn, err := tConn(ctx, u.TenantSchema)
+	ts, err := openTenantScope(ctx, u.TenantSchema)
 	if err != nil {
 		return appErrs.Internal("database connection failed")
 	}
-	defer appdb.CloseTenantConn(conn)
-	res, err := conn.ExecContext(ctx, `
+	res, err := ts.ExecContext(ctx, `
 		UPDATE workflow_rule SET deleted_at = NOW(), updated_at = NOW() WHERE id = $1 AND deleted_at IS NULL`, id)
 	if err != nil {
 		return appErrs.Internal("delete rule failed")
@@ -251,14 +255,13 @@ func TryRun(ctx context.Context, schema, conversationID, messageBody string) (bo
 		return false, nil
 	}
 
-	conn, err := tConn(ctx, schema)
+	ts, err := openTenantScope(ctx, schema)
 	if err != nil {
 		return false, err
 	}
-	defer appdb.CloseTenantConn(conn)
 
 	bodyLower := strings.ToLower(messageBody)
-	rows, err := conn.QueryContext(ctx, `
+	rows, err := ts.QueryContext(ctx, `
 		SELECT id, trigger_type, trigger_value, action_type, action_payload
 		FROM workflow_rule
 		WHERE deleted_at IS NULL AND is_active = true
@@ -285,7 +288,7 @@ func TryRun(ctx context.Context, schema, conversationID, messageBody string) (bo
 			continue
 		}
 
-		if err := runAction(ctx, conn, schema, conversationID, actionType, payload); err != nil {
+		if err := runAction(ctx, ts, schema, conversationID, actionType, payload); err != nil {
 			rlog.Warn("workflow action failed", "ruleId", id, "err", err)
 			continue
 		}
@@ -295,7 +298,7 @@ func TryRun(ctx context.Context, schema, conversationID, messageBody string) (bo
 	return false, rows.Err()
 }
 
-func runAction(ctx context.Context, conn *sql.Conn, schema, conversationID, actionType string, payload json.RawMessage) error {
+func runAction(ctx context.Context, ts appdb.TenantScope, schema, conversationID, actionType string, payload json.RawMessage) error {
 	var p struct {
 		ReplyText string `json:"replyText"`
 	}
@@ -307,19 +310,19 @@ func runAction(ctx context.Context, conn *sql.Conn, schema, conversationID, acti
 		if text == "" {
 			text = "Terima kasih, tim kami akan segera membantu Anda."
 		}
-		_, err := conn.ExecContext(ctx, `
+		_, err := ts.ExecContext(ctx, `
 			INSERT INTO message (conversation_id, direction, type, body, status, metadata)
 			VALUES ($1, 'outbound', 'text', $2, 'sent', '{"reason":"workflow"}'::jsonb)`,
 			conversationID, text)
 		if err != nil {
 			return err
 		}
-		_, err = conn.ExecContext(ctx, `
+		_, err = ts.ExecContext(ctx, `
 			UPDATE conversation SET last_message_at = NOW(), last_message_preview = $1, ai_handled = true WHERE id = $2`,
 			text, conversationID)
 		return err
 	case "handoff":
-		_, err := conn.ExecContext(ctx, `
+		_, err := ts.ExecContext(ctx, `
 			UPDATE conversation SET ai_handled = false, handoff_reason = 'workflow', status = 'open' WHERE id = $1`,
 			conversationID)
 		return err
@@ -337,8 +340,4 @@ func user(ctx context.Context) (*types.AuthUser, error) {
 		return nil, appErrs.Forbidden("tenant context required")
 	}
 	return u, nil
-}
-
-func tConn(ctx context.Context, schema string) (*sql.Conn, error) {
-	return appdb.TenantConn(ctx, db.Stdlib(), schema)
 }

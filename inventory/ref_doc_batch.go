@@ -1,6 +1,7 @@
 package inventory
 
 import (
+	appdb "encore.app/wabantu/shared/db"
 	"context"
 	"fmt"
 )
@@ -10,7 +11,7 @@ type refDocKey struct {
 	refID   string
 }
 
-func batchResolveRefDocNos(ctx context.Context, q querier, refs []refDocKey) map[refDocKey]string {
+func batchResolveRefDocNos(ctx context.Context, sch appdb.SchemaSQL, q querier, refs []refDocKey) map[refDocKey]string {
 	out := make(map[refDocKey]string, len(refs))
 	if len(refs) == 0 {
 		return out
@@ -41,11 +42,11 @@ func batchResolveRefDocNos(ctx context.Context, q querier, refs []refDocKey) map
 	}
 
 	byID := make(map[string]string)
-	loadRefDocIDs(ctx, q, billIDs, `
+	loadRefDocIDs(ctx, sch, q, billIDs, `
 		SELECT id::text, bill_no FROM pur_bill WHERE id IN (%s)`, byID)
-	loadRefDocIDs(ctx, q, salesReturnIDs, `
+	loadRefDocIDs(ctx, sch, q, salesReturnIDs, `
 		SELECT id::text, return_no FROM inv_sales_return WHERE id IN (%s)`, byID)
-	loadRefDocIDs(ctx, q, stockTxnIDs, `
+	loadRefDocIDs(ctx, sch, q, stockTxnIDs, `
 		SELECT id::text, doc_no FROM inv_stock_transaction WHERE id IN (%s)`, byID)
 
 	for _, r := range pending {
@@ -56,7 +57,7 @@ func batchResolveRefDocNos(ctx context.Context, q querier, refs []refDocKey) map
 	return out
 }
 
-func loadRefDocIDs(ctx context.Context, q querier, ids []string, queryFmt string, out map[string]string) {
+func loadRefDocIDs(ctx context.Context, sch appdb.SchemaSQL, q querier, ids []string, queryFmt string, out map[string]string) {
 	ids = uniqueNonEmpty(ids)
 	if len(ids) == 0 {
 		return
@@ -65,7 +66,7 @@ func loadRefDocIDs(ctx context.Context, q querier, ids []string, queryFmt string
 	for i, id := range ids {
 		args[i] = id
 	}
-	rows, err := q.QueryContext(ctx, fmt.Sprintf(queryFmt, clause), args...)
+	rows, err := qquery(ctx, sch, q, fmt.Sprintf(queryFmt, clause), args...)
 	if err != nil {
 		return
 	}

@@ -66,14 +66,13 @@ func loadPublicPatientSchedule(ctx context.Context, tenantSlug, eventSlug string
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, schema)
+	ts, err := openTenant(ctx, schema)
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
 
 	var eventID, eventName, status string
-	err = conn.QueryRowContext(ctx, `
+	err = ts.QueryRowContext(ctx, `
 		SELECT id::text, event_name, status
 		FROM evt_event
 		WHERE event_slug=$1 AND deleted_at IS NULL`, eventSlug,
@@ -88,7 +87,7 @@ func loadPublicPatientSchedule(ctx context.Context, tenantSlug, eventSlug string
 		return nil, publicNotFound()
 	}
 
-	patients, _, err := queryPatients(ctx, conn, eventID, patientFilterInput{
+	patients, _, err := queryPatients(ctx, ts, eventID, patientFilterInput{
 		Status:  "CONFIRMED",
 		HasSlot: "true",
 	}, maxPatientExportRows, 0)

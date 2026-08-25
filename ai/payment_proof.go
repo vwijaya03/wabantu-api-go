@@ -18,6 +18,7 @@ import (
 	"encore.app/wabantu/inbox"
 	"encore.app/wabantu/inventory"
 	"encore.app/wabantu/order"
+	appdb "encore.app/wabantu/shared/db"
 	"encore.app/wabantu/shared/inboxrealtime"
 	"encore.app/wabantu/usage"
 )
@@ -44,11 +45,10 @@ type paymentProfileSettings struct {
 var accountNumberRe = regexp.MustCompile(`\b\d{8,16}\b`)
 
 func processPaymentProofJob(ctx context.Context, job *PaymentProofJob) error {
-	conn, err := openTenantConn(ctx, job.TenantSchema)
+	ts, err := openTenantScope(ctx, job.TenantSchema)
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
 
 	scope := orderAccessScope{
 		ConversationID: job.ConversationID,
@@ -60,11 +60,11 @@ func processPaymentProofJob(ctx context.Context, job *PaymentProofJob) error {
 
 	if !checkPaymentProofRateLimit(ctx, job.TenantSchema, job.ContactID) {
 		rlog.Info("payment proof rate limited", "contactId", job.ContactID)
-		return sendPaymentProofOutbound(ctx, conn, job,
+		return sendPaymentProofOutbound(ctx, ts, job,
 			"Maaf kak, terlalu banyak pengiriman bukti transfer dalam 1 jam. Coba lagi nanti ya.")
 	}
 
-	target, payableCount, err := resolvePaymentTargetOrder(ctx, conn, job.TenantSchema, scope, job.InboundMessageID)
+	target, payableCount, err := resolvePaymentTargetOrder(ctx, ts, job.TenantSchema, scope, job.InboundMessageID)
 	if err != nil {
 		return err
 	}
@@ -73,7 +73,7 @@ func processPaymentProofJob(ctx context.Context, job *PaymentProofJob) error {
 		return PublishImageContextJob(ctx, imageContextJobFromPaymentProof(job))
 	}
 
-	if handled, err := handleBlockedPaymentProof(ctx, conn, job, target); err != nil {
+	if handled, err := handleBlockedPaymentProof(ctx, ts, job, target); err != nil {
 		return err
 	} else if handled {
 		return nil
@@ -85,15 +85,15 @@ func processPaymentProofJob(ctx context.Context, job *PaymentProofJob) error {
 	}
 	fileHash := sha256Hex(imageBytes)
 
-	if otherID, dup, derr := lookupPaymentProofHashOtherOrder(ctx, conn, job.TenantSchema, fileHash, target.ID); derr != nil {
+	if otherID, dup, derr := lookupPaymentProofHashOtherOrder(ctx, ts, job.TenantSchema, fileHash, target.ID); derr != nil {
 		return derr
 	} else if dup {
 		meta := paymentProofMeta{FileHash: fileHash, Flags: []string{"duplicate_hash"}}
 		dupRef := order.FormatOrderNumber(otherID)
-		return applyPaymentProofResult(ctx, conn, job, target, "rejected", target.Status, meta, false, dupRef)
+		return applyPaymentProofResult(ctx, ts, job, target, "rejected", target.Status, meta, false, dupRef)
 	}
 
-	settings, err := loadPaymentProfileSettings(ctx, conn)
+	settings, err := loadPaymentProfileSettings(ctx, ts)
 	if err != nil {
 		return err
 	}
@@ -101,7 +101,7 @@ func processPaymentProofJob(ctx context.Context, job *PaymentProofJob) error {
 	allowed, _, _ := usage.CheckQuota(ctx, job.TenantSchema, "ai_token")
 	if !allowed {
 		meta := paymentProofMeta{FileHash: fileHash, Flags: []string{"quota_exceeded"}}
-		return applyPaymentProofResult(ctx, conn, job, target, "proof_submitted", target.Status, meta, true, "")
+		return applyPaymentProofResult(ctx, ts, job, target, "proof_submitted", target.Status, meta, true, "")
 	}
 
 	ocr, ocrUsage, ocrErr := aivision.ExtractPaymentProofFromImage(ctx, secrets.AnthropicApiKey, imageBytes, mime)
@@ -124,7 +124,7 @@ func processPaymentProofJob(ctx context.Context, job *PaymentProofJob) error {
 		if settings.Mode == "auto_verify" {
 			meta.Flags = appendPaymentProofFlag(meta.Flags, "ai_review_required")
 		}
-		return applyPaymentProofResult(ctx, conn, job, target, "proof_submitted", target.Status, meta, true, "")
+		return applyPaymentProofResult(ctx, ts, job, target, "proof_submitted", target.Status, meta, true, "")
 	}
 
 	autoVerify := false
@@ -133,7 +133,7 @@ func processPaymentProofJob(ctx context.Context, job *PaymentProofJob) error {
 		if payableCount > 1 {
 			meta.Flags = append(meta.Flags, "multi_order")
 		}
-		kb, _ := loadKBEntries(ctx, conn, 50)
+		kb, _ := loadKBEntries(ctx, ts, 50)
 		accounts := loadPaymentAccountsFromKB(kb)
 		ok, flags := evaluatePaymentProofRules(target, ocr, accounts)
 		meta.Flags = append(meta.Flags, flags...)
@@ -154,23 +154,23 @@ func processPaymentProofJob(ctx context.Context, job *PaymentProofJob) error {
 		paymentStatus = "verified"
 	}
 	meta.Flags = markPaymentProofAIReviewFlags(settings.Mode, autoVerify, paymentStatus, meta.Flags)
-	return applyPaymentProofResult(ctx, conn, job, target, paymentStatus, newStatus, meta, autoVerify, "")
+	return applyPaymentProofResult(ctx, ts, job, target, paymentStatus, newStatus, meta, autoVerify, "")
 }
 
-func resolvePaymentTargetOrder(ctx context.Context, q tenantQuerier, tenantSchema string, scope orderAccessScope, messageID string) (*persistedOrder, int, error) {
-	count, err := countPayableOrdersForContact(ctx, q, tenantSchema, scope)
+func resolvePaymentTargetOrder(ctx context.Context, ts tenantScopedQuerier, tenantSchema string, scope orderAccessScope, messageID string) (*persistedOrder, int, error) {
+	count, err := countPayableOrdersForContact(ctx, ts, tenantSchema, scope)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	msg, _ := loadMessage(ctx, q, messageID)
+	msg, _ := loadMessage(ctx, ts, messageID)
 	userText := ""
 	if msg != nil {
 		userText = strings.TrimSpace(msg.Body)
 	}
 
 	if ref := parseOrderRefFromMessage(userText); ref != "" {
-		o, denied, err := loadOrderByRefForContact(ctx, q, tenantSchema, scope, ref)
+		o, denied, err := loadOrderByRefForContact(ctx, ts, tenantSchema, scope, ref)
 		if err != nil {
 			return nil, count, err
 		}
@@ -180,18 +180,18 @@ func resolvePaymentTargetOrder(ctx context.Context, q tenantQuerier, tenantSchem
 		return o, count, nil
 	}
 
-	target, err := loadPaymentTargetOrder(ctx, q, tenantSchema, scope)
+	target, err := loadPaymentTargetOrder(ctx, ts, tenantSchema, scope)
 	if err != nil {
 		return nil, 0, err
 	}
 	if target != nil {
 		return target, count, nil
 	}
-	history, _ := loadHistory(ctx, q, scope.ConversationID, 12)
+	history, _ := loadHistory(ctx, ts, scope.ConversationID, 12)
 	if !IsActiveCheckoutFromHistory(history, userText) {
 		return nil, count, nil
 	}
-	latest, err := loadLatestOrderForContact(ctx, q, tenantSchema, scope)
+	latest, err := loadLatestOrderForContact(ctx, ts, tenantSchema, scope)
 	if err != nil || latest == nil {
 		return nil, count, err
 	}
@@ -249,7 +249,7 @@ func isOrderPaymentProofBlocked(o *persistedOrder) bool {
 	return order.IsPaymentProofBlocked(order.ParsePaymentProofMeta(o.PaymentProofMetaJSON))
 }
 
-func handleBlockedPaymentProof(ctx context.Context, q tenantQuerier, job *PaymentProofJob, target *persistedOrder) (bool, error) {
+func handleBlockedPaymentProof(ctx context.Context, ts tenantScopedQuerier, job *PaymentProofJob, target *persistedOrder) (bool, error) {
 	meta := order.ParsePaymentProofMeta(target.PaymentProofMetaJSON)
 	if !order.IsPaymentProofBlocked(meta) {
 		return false, nil
@@ -265,13 +265,14 @@ func handleBlockedPaymentProof(ctx context.Context, q tenantQuerier, job *Paymen
 	)
 	meta.BlockedNotified = true
 	metaJSON, _ := json.Marshal(meta)
-	_, err := q.ExecContext(ctx, fmt.Sprintf(`
-		UPDATE "%s"."order" SET payment_proof_meta = $2::jsonb, updated_at = NOW()
-		WHERE id = $1::uuid AND deleted_at IS NULL`, job.TenantSchema), target.ID, string(metaJSON))
+	sch := appdb.SchemaSQL{Schema: job.TenantSchema}
+	_, err := ts.ExecContext(ctx, fmt.Sprintf(`
+		UPDATE %s SET payment_proof_meta = $2::jsonb, updated_at = NOW()
+		WHERE id = $1::uuid AND deleted_at IS NULL`, sch.T("order")), target.ID, string(metaJSON))
 	if err != nil {
 		return true, err
 	}
-	if err := sendPaymentProofOutbound(ctx, q, job, msg); err != nil {
+	if err := sendPaymentProofOutbound(ctx, ts, job, msg); err != nil {
 		return true, err
 	}
 	return true, nil
@@ -344,13 +345,13 @@ func countPayableOrdersForContact(ctx context.Context, q tenantQuerier, tenantSc
 	return n, err
 }
 
-func loadPaymentProfileSettings(ctx context.Context, q tenantQuerier) (paymentProfileSettings, error) {
+func loadPaymentProfileSettings(ctx context.Context, ts tenantScopedQuerier) (paymentProfileSettings, error) {
 	var mode string
 	var minConf float64
-	err := q.QueryRowContext(ctx, `
+	err := ts.QueryRowContext(ctx, fmt.Sprintf(`
 		SELECT COALESCE(payment_verification_mode, 'manual'),
 		       COALESCE(payment_auto_verify_min_confidence, 0.95)
-		FROM business_profile LIMIT 1`).Scan(&mode, &minConf)
+		FROM %s LIMIT 1`, ts.T("business_profile"))).Scan(&mode, &minConf)
 	if err == sql.ErrNoRows {
 		return paymentProfileSettings{Mode: "manual", MinConf: 0.95}, nil
 	}
@@ -620,7 +621,7 @@ func loadOrderStockItems(ctx context.Context, q tenantQuerier, tenantSchema, ord
 
 func applyPaymentProofResult(
 	ctx context.Context,
-	q tenantQuerier,
+	ts tenantScopedQuerier,
 	job *PaymentProofJob,
 	target *persistedOrder,
 	paymentStatus, orderStatus string,
@@ -641,7 +642,7 @@ func applyPaymentProofResult(
 		verifiedAtSQL = "NOW()"
 	}
 
-	stockItems, err := loadOrderStockItems(ctx, q, job.TenantSchema, target.ID)
+	stockItems, err := loadOrderStockItems(ctx, ts, job.TenantSchema, target.ID)
 	if err != nil {
 		return err
 	}
@@ -651,7 +652,7 @@ func applyPaymentProofResult(
 		}
 	}
 
-	_, err = q.ExecContext(ctx, fmt.Sprintf(`
+	_, err = ts.ExecContext(ctx, fmt.Sprintf(`
 		UPDATE "%s"."order" SET
 			payment_status = $2,
 			status = $3,
@@ -671,7 +672,7 @@ func applyPaymentProofResult(
 	ref := order.FormatOrderNumber(target.ID)
 	body := paymentProofBuyerMessage(ref, paymentStatus, prevPaymentStatus, duplicateOtherRef)
 	if body != "" {
-		if err := sendPaymentProofOutbound(ctx, q, job, body); err != nil {
+		if err := sendPaymentProofOutbound(ctx, ts, job, body); err != nil {
 			return err
 		}
 	}
@@ -713,27 +714,27 @@ func paymentProofBuyerMessage(ref, paymentStatus, prevPaymentStatus, duplicateOt
 	}
 }
 
-func sendPaymentProofOutbound(ctx context.Context, q tenantQuerier, job *PaymentProofJob, text string) error {
+func sendPaymentProofOutbound(ctx context.Context, ts tenantScopedQuerier, job *PaymentProofJob, text string) error {
 	if svc == nil {
 		return fmt.Errorf("ai service not initialized")
 	}
-	convo, err := loadConversation(ctx, q, job.ConversationID)
+	convo, err := loadConversation(ctx, ts, job.ConversationID)
 	if err != nil {
 		return err
 	}
 	if convo == nil {
 		return fmt.Errorf("conversation not found")
 	}
-	contact, err := loadContact(ctx, q, convo.ContactID)
+	contact, err := loadContact(ctx, ts, convo.ContactID)
 	if err != nil {
 		return err
 	}
-	channel, err := loadChannel(ctx, q, convo.ChannelID)
+	channel, err := loadChannel(ctx, ts, convo.ChannelID)
 	if err != nil {
 		return err
 	}
 	meta := metaNoLLM(reasonAIGenerated, PathPaymentProof)
-	return svc.sendAiMessage(ctx, q, job.TenantID, convo, channel, contact, text, "system", meta)
+	return svc.sendAiMessage(ctx, ts, job.TenantID, convo, channel, contact, text, "system", meta)
 }
 
 func checkPaymentProofRateLimit(ctx context.Context, tenantSchema, contactID string) bool {

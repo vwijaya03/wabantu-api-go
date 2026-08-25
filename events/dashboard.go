@@ -81,18 +81,17 @@ func resolveTherapyMaxFromMaps(
 }
 
 func loadEventDashboard(ctx context.Context, tenantSchema, eventId string) (*EventDashboard, error) {
-	conn, err := tenantConn(ctx, tenantSchema)
+	ts, err := openTenant(ctx, tenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	if err := assertEventExists(ctx, conn, eventId); err != nil {
+	if err := assertEventExists(ctx, ts, eventId); err != nil {
 		return nil, err
 	}
 
 	d := EventDashboard{EventID: eventId, PeopleByType: map[string]int{}}
 
-	_ = conn.QueryRowContext(ctx, `
+	_ = ts.QueryRowContext(ctx, `
 		SELECT
 		  COUNT(*) FILTER (WHERE reservation_status IN ('CONFIRMED','COMPLETED')),
 		  COUNT(*) FILTER (WHERE reservation_status='COMPLETED'),
@@ -101,7 +100,7 @@ func loadEventDashboard(ctx context.Context, tenantSchema, eventId string) (*Eve
 	).Scan(&d.PatientsRegistered, &d.PatientsCompleted, &d.PatientsCancelled)
 
 	patientCounts := map[string]int{}
-	pcountRows, err := conn.QueryContext(ctx, `
+	pcountRows, err := ts.QueryContext(ctx, `
 		SELECT therapy_id::text, COUNT(*)
 		FROM evt_patient
 		WHERE event_id=$1::uuid AND deleted_at IS NULL
@@ -128,7 +127,7 @@ func loadEventDashboard(ctx context.Context, tenantSchema, eventId string) (*Eve
 	}
 
 	slotSums := map[string]int{}
-	slotSumRows, err := conn.QueryContext(ctx, `
+	slotSumRows, err := ts.QueryContext(ctx, `
 		SELECT therapy_id::text, COALESCE(SUM(capacity), 0)::int
 		FROM evt_time_slot
 		WHERE event_id=$1::uuid
@@ -154,7 +153,7 @@ func loadEventDashboard(ctx context.Context, tenantSchema, eventId string) (*Eve
 	}
 
 	therapistCounts := map[string]int{}
-	therapistRows, err := conn.QueryContext(ctx, `
+	therapistRows, err := ts.QueryContext(ctx, `
 		SELECT pt.therapy_id::text, COUNT(DISTINCT p.id)::int
 		FROM evt_event_person p
 		JOIN evt_person_therapy pt ON pt.person_id = p.id
@@ -183,13 +182,13 @@ func loadEventDashboard(ctx context.Context, tenantSchema, eventId string) (*Eve
 	}
 
 	var shijieCount int
-	_ = conn.QueryRowContext(ctx, `
+	_ = ts.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM evt_event_person
 		WHERE event_id=$1::uuid AND person_type='SHIJIE' AND deleted_at IS NULL
 		  AND attendance_status IN ('PRESENT','PARTIAL')`, eventId,
 	).Scan(&shijieCount)
 
-	rows, err := conn.QueryContext(ctx, `
+	rows, err := ts.QueryContext(ctx, `
 		SELECT et.therapy_id::text, t.therapy_name, et.capacity_mode, et.max_capacity
 		FROM evt_event_therapy et
 		JOIN evt_therapy t ON t.id = et.therapy_id
@@ -216,7 +215,7 @@ func loadEventDashboard(ctx context.Context, tenantSchema, eventId string) (*Eve
 		return nil, appErrs.Internal(err.Error())
 	}
 
-	typeRows, err := conn.QueryContext(ctx, `
+	typeRows, err := ts.QueryContext(ctx, `
 		SELECT person_type, COUNT(*) FROM evt_event_person
 		WHERE event_id=$1::uuid AND deleted_at IS NULL
 		GROUP BY person_type`, eventId)
@@ -240,14 +239,14 @@ func loadEventDashboard(ctx context.Context, tenantSchema, eventId string) (*Eve
 		return nil, appErrs.Internal(err.Error())
 	}
 
-	_ = conn.QueryRowContext(ctx, `
+	_ = ts.QueryRowContext(ctx, `
 		SELECT COUNT(DISTINCT person_id) FROM (
 		  SELECT id AS person_id FROM evt_event_person WHERE event_id=$1::uuid AND deleted_at IS NULL
 		  UNION
 		  SELECT person_id FROM evt_event_assignment WHERE event_id=$1::uuid AND deleted_at IS NULL
 		) u`, eventId).Scan(&d.UniquePeopleCount)
 
-	_ = conn.QueryRowContext(ctx, `
+	_ = ts.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM evt_event_person
 		WHERE event_id=$1::uuid AND deleted_at IS NULL AND counts_toward_meals = true`, eventId,
 	).Scan(&d.MealConsumptionCount)
@@ -260,12 +259,11 @@ func GetEventSchedule(ctx context.Context, eventId string, p *ListSlotsParams) (
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	if err := assertEventExists(ctx, conn, eventId); err != nil {
+	if err := assertEventExists(ctx, ts, eventId); err != nil {
 		return nil, err
 	}
 
@@ -279,7 +277,7 @@ func GetEventSchedule(ctx context.Context, eventId string, p *ListSlotsParams) (
 		filters.TherapyID = p.TherapyID
 		filters.SlotDate = p.Date
 	}
-	patients, _, err := queryPatients(ctx, conn, eventId, filters, maxPatientExportRows, 0)
+	patients, _, err := queryPatients(ctx, ts, eventId, filters, maxPatientExportRows, 0)
 	if err != nil {
 		var encErr *encoreerrs.Error
 		if errors.As(err, &encErr) {

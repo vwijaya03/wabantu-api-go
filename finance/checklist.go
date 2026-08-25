@@ -79,13 +79,13 @@ func ListChecklistTemplates(ctx context.Context) (*ChecklistListResponse, error)
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	q := tenantPool()
 
-	rows, err := conn.QueryContext(ctx, `
+	rows, err := qquery(ctx, sch, q, `
 		SELECT id, COALESCE(title_enc,''), title, description, amount_hint, category_id, wallet_id,
 		       frequency, day_of_month, due_anchor_date, is_active, display_order, created_at
 		FROM fin_checklist_template WHERE is_active=true ORDER BY display_order, created_at`)
@@ -94,7 +94,7 @@ func ListChecklistTemplates(ctx context.Context) (*ChecklistListResponse, error)
 	}
 	defer rows.Close()
 
-	ref := financeNow(ctx, conn)
+	ref := financeNow(ctx, sch, q)
 	var tpls []ChecklistTemplate
 	for rows.Next() {
 		var t ChecklistTemplate
@@ -161,18 +161,18 @@ func CreateChecklistTemplate(ctx context.Context, p *CreateChecklistTemplatePara
 		dueAnchor = &anchor
 		dayOfMonth = &dom
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	q := tenantPool()
 
 	titleEnc, storeTitle, encErr := encryptFinanceTitle(p.Title)
 	if encErr != nil {
 		return nil, appErrs.Internal(encErr.Error())
 	}
 	var id string
-	err = conn.QueryRowContext(ctx,
+	err = qrow(ctx, sch, q,
 		`INSERT INTO fin_checklist_template
 		 (title, title_enc, description, amount_hint, category_id, wallet_id, frequency, day_of_month, due_anchor_date, display_order, created_by)
 		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
@@ -203,12 +203,12 @@ func DeleteChecklistTemplate(ctx context.Context, id string) (*OKResponse, error
 	if err := assertOwner(u); err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	conn.ExecContext(ctx, `UPDATE fin_checklist_template SET is_active=false WHERE id=$1`, id)
+	q := tenantPool()
+	qexec(ctx, sch, q, `UPDATE fin_checklist_template SET is_active=false WHERE id=$1`, id)
 	return &OKResponse{OK: true}, nil
 }
 
@@ -220,25 +220,25 @@ func GetTodayChecklist(ctx context.Context) (*TodayChecklistResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	q := tenantPool()
 
-	now := financeNow(ctx, conn)
+	now := financeNow(ctx, sch, q)
 	today := now.Format("2006-01-02")
 	dom := now.Day()
 
 	// Ensure checklist items exist for today (bulk INSERT — never Exec inside open Rows on same Conn)
-	if _, err := conn.ExecContext(ctx, `
+	if _, err := qexec(ctx, sch, q, `
 		INSERT INTO fin_checklist_item (template_id, due_date)
 		SELECT id, $1::date FROM fin_checklist_template
 		WHERE is_active = true AND frequency = 'daily'
 		ON CONFLICT (template_id, due_date) DO NOTHING`, today); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	if _, err := conn.ExecContext(ctx, `
+	if _, err := qexec(ctx, sch, q, `
 		INSERT INTO fin_checklist_item (template_id, due_date)
 		SELECT id, $1::date FROM fin_checklist_template
 		WHERE is_active = true AND frequency = 'monthly'
@@ -248,7 +248,7 @@ func GetTodayChecklist(ctx context.Context) (*TodayChecklistResponse, error) {
 	}
 
 	// Fetch items
-	itemRows, err := conn.QueryContext(ctx, `
+	itemRows, err := qquery(ctx, sch, q, `
 		SELECT i.id, i.template_id, t.title, i.due_date::text, i.status,
 		       i.transaction_id, i.completed_by, i.completed_at, i.note,
 		       t.amount_hint, t.category_id, t.wallet_id
@@ -313,17 +313,17 @@ func ChecklistAction(ctx context.Context, p *ChecklistActionParams) (*ChecklistI
 	if p.Action != "done" && p.Action != "skip" {
 		return nil, appErrs.BadRequest("action harus done atau skip")
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	q := tenantPool()
 
 	status := "done"
 	if p.Action == "skip" {
 		status = "skipped"
 	}
-	_, err = conn.ExecContext(ctx,
+	_, err = qexec(ctx, sch, q,
 		`UPDATE fin_checklist_item SET status=$1, completed_by=$2, completed_at=now(),
 		 note=COALESCE($3,note), transaction_id=COALESCE($4::uuid,transaction_id)
 		 WHERE id=$5`,

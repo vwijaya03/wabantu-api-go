@@ -11,9 +11,7 @@ import (
 	"encore.dev/rlog"
 	"encore.dev/storage/sqldb"
 
-	appdb "encore.app/wabantu/shared/db"
 	apperr "encore.app/wabantu/shared/errs"
-	"encore.app/wabantu/shared/tenantctx"
 	"encore.app/wabantu/shared/types"
 )
 
@@ -118,18 +116,6 @@ func currentUser() (*types.AuthUser, error) {
 	return data, nil
 }
 
-func tConn(ctx context.Context, schema string) (*sql.Conn, error) {
-	return appdb.TenantConn(ctx, tenantDB.Stdlib(), schema)
-}
-
-func closeTenantConn(conn *sql.Conn) {
-	appdb.CloseTenantConn(conn)
-}
-
-func tenantConn(ctx context.Context, user *types.AuthUser) (*sql.Conn, error) {
-	return tenantctx.Conn(ctx, tenantDB.Stdlib(), user)
-}
-
 func scanProfile(scanner interface{ Scan(...any) error }) (ProfileResponse, error) {
 	var p ProfileResponse
 	err := scanner.Scan(
@@ -161,17 +147,16 @@ func GetProfile(ctx context.Context) (*GetProfileResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tConn(ctx, user.TenantSchema)
+	ts, err := openTenantScope(ctx, user.TenantSchema)
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer closeTenantConn(conn)
 
-	row := conn.QueryRowContext(ctx,
+	row := ts.QueryRowContext(ctx,
 		`SELECT `+profileCols+` FROM `+profileTable+` ORDER BY created_at ASC LIMIT 1`)
 	p, err := scanProfile(row)
 	if err == sql.ErrNoRows {
-		row = conn.QueryRowContext(ctx,
+		row = ts.QueryRowContext(ctx,
 			`INSERT INTO `+profileTable+` (business_name, reporting_timezone)
 			 VALUES ($1, $2)
 			 RETURNING `+profileCols,
@@ -197,14 +182,13 @@ func UpdateProfile(ctx context.Context, req *UpdateProfileRequest) (*UpdateProfi
 		return nil, apperr.Forbidden("only owner can update profile")
 	}
 
-	conn, err := tConn(ctx, user.TenantSchema)
+	ts, err := openTenantScope(ctx, user.TenantSchema)
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer closeTenantConn(conn)
 
 	var profileID string
-	if err := conn.QueryRowContext(ctx,
+	if err := ts.QueryRowContext(ctx,
 		`SELECT id FROM `+profileTable+` ORDER BY created_at ASC LIMIT 1`,
 	).Scan(&profileID); err != nil {
 		return nil, apperr.NotFound("profile not found")
@@ -278,7 +262,7 @@ func UpdateProfile(ctx context.Context, req *UpdateProfileRequest) (*UpdateProfi
 		`UPDATE `+profileTable+` SET %s WHERE id = $%d RETURNING %s`,
 		strings.Join(sets, ", "), idx, profileCols,
 	)
-	p, err := scanProfile(conn.QueryRowContext(ctx, q, args...))
+	p, err := scanProfile(ts.QueryRowContext(ctx, q, args...))
 	if err != nil {
 		rlog.Error("update profile failed", "err", err)
 		return nil, apperr.Internal("failed to update profile")

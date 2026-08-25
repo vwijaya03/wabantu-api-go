@@ -1,6 +1,7 @@
 package inventory
 
 import (
+	appdb "encore.app/wabantu/shared/db"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -210,10 +211,10 @@ func parseAIWizardRecommendation(raw string) (aiWizardRecommendation, error) {
 	return out, nil
 }
 
-func loadBusinessWizardContext(ctx context.Context, conn *sql.Conn) businessWizardContext {
+func loadBusinessWizardContext(ctx context.Context, sch appdb.SchemaSQL, q querier) businessWizardContext {
 	var biz businessWizardContext
 	var desc, products sql.NullString
-	err := conn.QueryRowContext(ctx, `
+	err := qrow(ctx, sch, q, `
 		SELECT COALESCE(business_name, ''), description, products_services
 		FROM business_profile
 		ORDER BY created_at
@@ -227,7 +228,7 @@ func loadBusinessWizardContext(ctx context.Context, conn *sql.Conn) businessWiza
 	if products.Valid {
 		biz.Products = strings.TrimSpace(products.String)
 	}
-	rows, err := conn.QueryContext(ctx, `
+	rows, err := qquery(ctx, sch, q, `
 		SELECT name FROM business_catalog_item
 		WHERE is_active = true AND COALESCE(TRIM(name), '') <> ''
 		ORDER BY updated_at DESC NULLS LAST

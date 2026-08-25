@@ -73,11 +73,10 @@ func ListEventPeople(ctx context.Context, eventId string, p *ListPeopleParams) (
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
 	if p == nil {
 		p = &ListPeopleParams{}
 	}
@@ -129,7 +128,7 @@ func ListEventPeople(ctx context.Context, eventId string, p *ListPeopleParams) (
 		if err := rows.Err(); err != nil {
 			return nil, appErrs.Internal(err.Error())
 		}
-		if err := attachPersonExtrasBatch(ctx, conn, items); err != nil {
+		if err := attachPersonExtrasBatch(ctx, ts, items); err != nil {
 			return nil, appErrs.Internal(err.Error())
 		}
 		for idx := range items {
@@ -144,7 +143,7 @@ func ListEventPeople(ctx context.Context, eventId string, p *ListPeopleParams) (
 	}
 
 	if inMemorySort {
-		rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
+		rows, err := ts.QueryContext(ctx, fmt.Sprintf(`
 		SELECT p.id::text, p.event_id::text,
 		       COALESCE(p.full_name_enc,''), COALESCE(p.full_name,''),
 		       p.person_type, p.attendance_status,
@@ -173,11 +172,11 @@ func ListEventPeople(ctx context.Context, eventId string, p *ListPeopleParams) (
 	}
 
 	var total int
-	if err := conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM evt_event_person p WHERE `+where, args...).Scan(&total); err != nil {
+	if err := ts.QueryRowContext(ctx, `SELECT COUNT(*) FROM evt_event_person p WHERE `+where, args...).Scan(&total); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	args = append(args, lim, off)
-	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
+	rows, err := ts.QueryContext(ctx, fmt.Sprintf(`
 		SELECT p.id::text, p.event_id::text,
 		       COALESCE(p.full_name_enc,''), COALESCE(p.full_name,''),
 		       p.person_type, p.attendance_status,
@@ -208,17 +207,16 @@ func CreateEventPerson(ctx context.Context, eventId string, p *UpsertPersonParam
 	if err := validatePerson(p); err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	if err := assertEventMutable(ctx, conn, eventId); err != nil {
+	if err := assertEventMutable(ctx, ts, eventId); err != nil {
 		return nil, err
 	}
 
 	if rid := strings.TrimSpace(p.RosterID); rid != "" {
-		rp, err := rosterEntryToPersonParams(ctx, conn, rid)
+		rp, err := rosterEntryToPersonParams(ctx, ts, rid)
 		if err != nil {
 			return nil, err
 		}
@@ -242,11 +240,12 @@ func CreateEventPerson(ctx context.Context, eventId string, p *UpsertPersonParam
 		}
 	}
 
-	tx, err := conn.BeginTx(ctx, nil)
+	tx, err := ts.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer tx.Rollback()
+	txTS := ts.WithQ(tx)
 
 	var personID string
 	pt := resolvePersonType(p)
@@ -255,7 +254,7 @@ func CreateEventPerson(ctx context.Context, eventId string, p *UpsertPersonParam
 	if encErr != nil {
 		return nil, appErrs.Internal(encErr.Error())
 	}
-	err = tx.QueryRowContext(ctx, `
+	err = txTS.QueryRowContext(ctx, `
 		INSERT INTO evt_event_person (event_id, full_name, full_name_enc, normalized_name, person_type, attendance_status, arrival_time, departure_time, notes, counts_toward_meals)
 		VALUES ($1::uuid,$2,$3,$4,$5,$6,$7::time,$8::time,$9,$10) RETURNING id::text`,
 		eventId, piiPlaceholder(nameEnc), nameEnc, nameIdx, pt, att,
@@ -268,12 +267,12 @@ func CreateEventPerson(ctx context.Context, eventId string, p *UpsertPersonParam
 
 	therapyIDs := personTherapyIDs(p)
 	if isTherapyStaffPersonType(pt) {
-		if err := syncPersonTherapies(ctx, tx, personID, therapyIDs, p.AvailableFrom, p.AvailableUntil); err != nil {
+		if err := syncPersonTherapies(ctx, txTS, personID, therapyIDs, p.AvailableFrom, p.AvailableUntil); err != nil {
 			return nil, appErrs.Internal(err.Error())
 		}
 	}
 	if pt == "VOLUNTEER" {
-		if err := syncPersonVolunteer(ctx, tx, personID, p.VolunteerRoleID, p.IsPencatat); err != nil {
+		if err := syncPersonVolunteer(ctx, txTS, personID, p.VolunteerRoleID, p.IsPencatat); err != nil {
 			return nil, appErrs.Internal(err.Error())
 		}
 	}
@@ -281,9 +280,9 @@ func CreateEventPerson(ctx context.Context, eventId string, p *UpsertPersonParam
 		return nil, appErrs.Internal(err.Error())
 	}
 	if shouldSaveToRoster(p) {
-		_, _ = upsertStaffRoster(ctx, conn, p)
+		_, _ = upsertStaffRoster(ctx, ts, p)
 	}
-	auditEvent(ctx, conn, u, "event_person", personID, "create", nil, p)
+	auditEvent(ctx, ts, u, "event_person", personID, "create", nil, p)
 	out := &EventPerson{
 		ID: personID, EventID: eventId, FullName: p.FullName,
 		PersonType: pt, AttendanceStatus: att,
@@ -320,12 +319,11 @@ func UpdateEventPerson(ctx context.Context, eventId, personId string, p *UpsertP
 	if err := validatePerson(p); err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	if err := assertEventMutable(ctx, conn, eventId); err != nil {
+	if err := assertEventMutable(ctx, ts, eventId); err != nil {
 		return nil, err
 	}
 	pt := resolvePersonType(p)
@@ -334,7 +332,7 @@ func UpdateEventPerson(ctx context.Context, eventId, personId string, p *UpsertP
 	if encErr != nil {
 		return nil, appErrs.Internal(encErr.Error())
 	}
-	_, err = conn.ExecContext(ctx, `
+	_, err = ts.ExecContext(ctx, `
 		UPDATE evt_event_person SET full_name=$1, full_name_enc=$2, normalized_name=$3,
 		  person_type=$4, attendance_status=$5,
 		  arrival_time=$6::time, departure_time=$7::time, notes=$8,
@@ -348,21 +346,21 @@ func UpdateEventPerson(ctx context.Context, eventId, personId string, p *UpsertP
 	}
 	therapyIDs := personTherapyIDs(p)
 	if isTherapyStaffPersonType(pt) {
-		if err := syncPersonTherapies(ctx, conn, personId, therapyIDs, p.AvailableFrom, p.AvailableUntil); err != nil {
+		if err := syncPersonTherapies(ctx, ts, personId, therapyIDs, p.AvailableFrom, p.AvailableUntil); err != nil {
 			return nil, appErrs.Internal(err.Error())
 		}
-		_, _ = conn.ExecContext(ctx, `DELETE FROM evt_event_volunteer WHERE person_id=$1::uuid`, personId)
+		_, _ = ts.ExecContext(ctx, `DELETE FROM evt_event_volunteer WHERE person_id=$1::uuid`, personId)
 	}
 	if pt == "VOLUNTEER" {
-		if err := syncPersonVolunteer(ctx, conn, personId, p.VolunteerRoleID, p.IsPencatat); err != nil {
+		if err := syncPersonVolunteer(ctx, ts, personId, p.VolunteerRoleID, p.IsPencatat); err != nil {
 			return nil, appErrs.Internal(err.Error())
 		}
-		_, _ = conn.ExecContext(ctx, `DELETE FROM evt_person_therapy WHERE person_id=$1::uuid`, personId)
+		_, _ = ts.ExecContext(ctx, `DELETE FROM evt_person_therapy WHERE person_id=$1::uuid`, personId)
 	}
 	if shouldSaveToRoster(p) {
-		_, _ = upsertStaffRoster(ctx, conn, p)
+		_, _ = upsertStaffRoster(ctx, ts, p)
 	}
-	auditEvent(ctx, conn, u, "event_person", personId, "update", nil, p)
+	auditEvent(ctx, ts, u, "event_person", personId, "update", nil, p)
 	resp, _ := ListEventPeople(ctx, eventId, &ListPeopleParams{Page: 1, PageSize: 1000})
 	for _, it := range resp.Items {
 		if it.ID == personId {
@@ -381,21 +379,20 @@ func DeleteEventPerson(ctx context.Context, eventId, personId string) error {
 	if err := assertOwner(u); err != nil {
 		return err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	if err := assertEventMutable(ctx, conn, eventId); err != nil {
+	if err := assertEventMutable(ctx, ts, eventId); err != nil {
 		return err
 	}
-	_, err = conn.ExecContext(ctx, `
+	_, err = ts.ExecContext(ctx, `
 		UPDATE evt_event_person SET deleted_at=now()
 		WHERE id=$1::uuid AND event_id=$2::uuid AND deleted_at IS NULL`, personId, eventId)
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	auditEvent(ctx, conn, u, "event_person", personId, "delete", nil, nil)
+	auditEvent(ctx, ts, u, "event_person", personId, "delete", nil, nil)
 	return nil
 }
 
@@ -409,8 +406,8 @@ type DeletePeopleResponse struct {
 	Errors  []string `json:"errors,omitempty"`
 }
 
-func deleteEventPersonInTx(ctx context.Context, tx *sql.Tx, eventId, personId string) error {
-	res, err := tx.ExecContext(ctx, `
+func deleteEventPersonInTx(ctx context.Context, ts tenantScope, eventId, personId string) error {
+	res, err := ts.ExecContext(ctx, `
 		UPDATE evt_event_person SET deleted_at=now(), updated_at=now()
 		WHERE id=$1::uuid AND event_id=$2::uuid AND deleted_at IS NULL`, personId, eventId)
 	if err != nil {
@@ -435,12 +432,11 @@ func DeleteEventPeopleBulk(ctx context.Context, eventId string, p *DeletePeopleP
 	if p == nil || len(p.PersonIDs) == 0 {
 		return nil, appErrs.BadRequest("pilih minimal satu staf")
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	if err := assertEventMutable(ctx, conn, eventId); err != nil {
+	if err := assertEventMutable(ctx, ts, eventId); err != nil {
 		return nil, err
 	}
 
@@ -453,11 +449,12 @@ func DeleteEventPeopleBulk(ctx context.Context, eventId string, p *DeletePeopleP
 		}
 		seen[personID] = true
 
-		tx, err := conn.BeginTx(ctx, nil)
+		tx, err := ts.BeginTx(ctx, nil)
 		if err != nil {
 			return nil, appErrs.Internal(err.Error())
 		}
-		if err := deleteEventPersonInTx(ctx, tx, eventId, personID); err != nil {
+		txTS := ts.WithQ(tx)
+		if err := deleteEventPersonInTx(ctx, txTS, eventId, personID); err != nil {
 			_ = tx.Rollback()
 			resp.Failed++
 			if encErr, ok := err.(*encoreerrs.Error); ok && encErr.Code == encoreerrs.NotFound {
@@ -473,7 +470,7 @@ func DeleteEventPeopleBulk(ctx context.Context, eventId string, p *DeletePeopleP
 			continue
 		}
 		resp.Deleted++
-		auditEvent(ctx, conn, u, "event_person", personID, "delete_bulk_item", map[string]any{"eventId": eventId}, nil)
+		auditEvent(ctx, ts, u, "event_person", personID, "delete_bulk_item", map[string]any{"eventId": eventId}, nil)
 	}
 	if len(resp.Errors) == 0 {
 		resp.Errors = nil
@@ -552,11 +549,10 @@ func ListAssignments(ctx context.Context, eventId string, p *ListAssignmentsPara
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
 	if p == nil {
 		p = &ListAssignmentsParams{}
 	}
@@ -588,7 +584,7 @@ func ListAssignments(ctx context.Context, eventId string, p *ListAssignmentsPara
 		JOIN evt_task tk ON tk.id = a.task_id
 		JOIN evt_event_person p ON p.id = a.person_id
 		WHERE %s`, where)
-	if err := conn.QueryRowContext(ctx, countQ, args...).Scan(&total); err != nil {
+	if err := ts.QueryRowContext(ctx, countQ, args...).Scan(&total); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 
@@ -634,7 +630,7 @@ func ListAssignments(ctx context.Context, eventId string, p *ListAssignmentsPara
 		JOIN evt_task tk ON tk.id = a.task_id
 		JOIN evt_event_person p ON p.id = a.person_id
 		WHERE %s %s`, where, orderBy)
-		rows, err := conn.QueryContext(ctx, listQ, args...)
+		rows, err := ts.QueryContext(ctx, listQ, args...)
 		if err != nil {
 			return nil, appErrs.Internal(err.Error())
 		}
@@ -666,7 +662,7 @@ func ListAssignments(ctx context.Context, eventId string, p *ListAssignmentsPara
 		WHERE %s
 		%s
 		LIMIT $%d OFFSET $%d`, where, orderBy, i, i+1)
-	rows, err := conn.QueryContext(ctx, listQ, args...)
+	rows, err := ts.QueryContext(ctx, listQ, args...)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
@@ -687,30 +683,29 @@ func CreateAssignment(ctx context.Context, eventId string, p *UpsertAssignmentPa
 	if err := assertOwner(u); err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	if err := assertEventMutable(ctx, conn, eventId); err != nil {
+	if err := assertEventMutable(ctx, ts, eventId); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(p.TaskID) == "" || strings.TrimSpace(p.PersonID) == "" {
 		return nil, appErrs.BadRequest("tugas dan orang wajib dipilih")
 	}
 	var personOK, taskOK bool
-	if err := conn.QueryRowContext(ctx, `
+	if err := ts.QueryRowContext(ctx, `
 		SELECT EXISTS(SELECT 1 FROM evt_event_person WHERE id=$1::uuid AND event_id=$2::uuid AND deleted_at IS NULL)`,
 		p.PersonID, eventId).Scan(&personOK); err != nil || !personOK {
 		return nil, appErrs.BadRequest("orang tidak ditemukan di acara ini")
 	}
-	if err := conn.QueryRowContext(ctx, `
+	if err := ts.QueryRowContext(ctx, `
 		SELECT EXISTS(SELECT 1 FROM evt_task WHERE id=$1::uuid AND deleted_at IS NULL)`,
 		p.TaskID).Scan(&taskOK); err != nil || !taskOK {
 		return nil, appErrs.BadRequest("tugas tidak valid")
 	}
 	var id string
-	err = conn.QueryRowContext(ctx, `
+	err = ts.QueryRowContext(ctx, `
 		INSERT INTO evt_event_assignment (event_id, task_id, person_id, start_time, end_time, session_name)
 		VALUES ($1::uuid,$2::uuid,$3::uuid,$4::time,$5::time,$6) RETURNING id::text`,
 		eventId, p.TaskID, p.PersonID,
@@ -719,7 +714,7 @@ func CreateAssignment(ctx context.Context, eventId string, p *UpsertAssignmentPa
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	auditEvent(ctx, conn, u, "assignment", id, "create", nil, p)
+	auditEvent(ctx, ts, u, "assignment", id, "create", nil, p)
 	return &Assignment{ID: id, EventID: eventId, TaskID: p.TaskID, PersonID: p.PersonID}, nil
 }
 
@@ -735,15 +730,14 @@ func UpdateAssignment(ctx context.Context, eventId, assignmentId string, p *Upse
 	if strings.TrimSpace(p.TaskID) == "" || strings.TrimSpace(p.PersonID) == "" {
 		return nil, appErrs.BadRequest("tugas dan orang wajib dipilih")
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	if err := assertEventMutable(ctx, conn, eventId); err != nil {
+	if err := assertEventMutable(ctx, ts, eventId); err != nil {
 		return nil, err
 	}
-	res, err := conn.ExecContext(ctx, `
+	res, err := ts.ExecContext(ctx, `
 		UPDATE evt_event_assignment SET
 		  task_id=$1::uuid, person_id=$2::uuid,
 		  start_time=$3::time, end_time=$4::time, session_name=$5,
@@ -759,11 +753,11 @@ func UpdateAssignment(ctx context.Context, eventId, assignmentId string, p *Upse
 	if n == 0 {
 		return nil, appErrs.NotFound("penugasan tidak ditemukan")
 	}
-	auditEvent(ctx, conn, u, "assignment", assignmentId, "update", nil, p)
+	auditEvent(ctx, ts, u, "assignment", assignmentId, "update", nil, p)
 	var a Assignment
 	var st, en, sn sql.NullString
 	var nameEnc, nameLegacy string
-	err = conn.QueryRowContext(ctx, `
+	err = ts.QueryRowContext(ctx, `
 		SELECT a.id::text, a.event_id::text, a.task_id::text, tk.task_name,
 		       a.person_id::text, `+personNameEncLegacyColsP+`, a.start_time::text, a.end_time::text, a.session_name
 		FROM evt_event_assignment a
@@ -798,21 +792,20 @@ func DeleteAssignment(ctx context.Context, eventId, assignmentId string) error {
 	if err := assertOwner(u); err != nil {
 		return err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	if err := assertEventMutable(ctx, conn, eventId); err != nil {
+	if err := assertEventMutable(ctx, ts, eventId); err != nil {
 		return err
 	}
-	_, err = conn.ExecContext(ctx, `
+	_, err = ts.ExecContext(ctx, `
 		UPDATE evt_event_assignment SET deleted_at=now()
 		WHERE id=$1::uuid AND event_id=$2::uuid`, assignmentId, eventId)
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	auditEvent(ctx, conn, u, "assignment", assignmentId, "delete", nil, nil)
+	auditEvent(ctx, ts, u, "assignment", assignmentId, "delete", nil, nil)
 	return nil
 }
 

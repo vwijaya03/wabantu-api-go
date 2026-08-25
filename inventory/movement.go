@@ -1,6 +1,7 @@
 package inventory
 
 import (
+	appdb "encore.app/wabantu/shared/db"
 	"context"
 	"database/sql"
 	"fmt"
@@ -8,7 +9,6 @@ import (
 	"time"
 
 	appErrs "encore.app/wabantu/shared/errs"
-	"encore.app/wabantu/tenant"
 )
 
 // Movement types (stored in inv_stock_movement.movement_type).
@@ -66,9 +66,9 @@ type MovementResult struct {
 // PostMovement applies one stock movement atomically inside the caller's tx:
 // updates cost layers (FIFO/LIFO), the balance snapshot, and appends the ledger
 // row. The caller's tx connection MUST already have search_path set to the tenant
-// schema (see tenant.TenantConn). Composable so Bill/Order can post several
+// schema-qualified SQL via qualSQL. Composable so Bill/Order can post several
 // movements + finance entries in one transaction.
-func PostMovement(ctx context.Context, tx *sql.Tx, in MovementInput) (*MovementResult, error) {
+func PostMovement(ctx context.Context, sch appdb.SchemaSQL, tx *sql.Tx, in MovementInput) (*MovementResult, error) {
 	if in.Qty <= epsilon {
 		return nil, appErrs.BadRequest("qty harus lebih dari 0")
 	}
@@ -78,7 +78,7 @@ func PostMovement(ctx context.Context, tx *sql.Tx, in MovementInput) (*MovementR
 	method := effectiveCostingMethod(in.CostingMethod, "")
 
 	var b BalanceState
-	err := tx.QueryRowContext(ctx, `
+	err := qrow(ctx, sch, tx, `
 		SELECT on_hand, avg_unit_cost, total_value
 		FROM inv_stock_balance
 		WHERE catalog_item_id = $1 AND warehouse_id = $2
@@ -105,7 +105,7 @@ func PostMovement(ctx context.Context, tx *sql.Tx, in MovementInput) (*MovementR
 				}
 			}
 		} else {
-			layers, lerr := loadLayers(ctx, tx, in.CatalogItemID, in.WarehouseID, method)
+			layers, lerr := loadLayers(ctx, sch, tx, in.CatalogItemID, in.WarehouseID, method)
 			if lerr != nil {
 				return nil, lerr
 			}
@@ -119,7 +119,7 @@ func PostMovement(ctx context.Context, tx *sql.Tx, in MovementInput) (*MovementR
 				cost = round4(cost + shortfall*b.AvgCost) // best-effort cost for uncovered qty
 			}
 			for _, d := range draws {
-				if _, derr := tx.ExecContext(ctx,
+				if _, derr := qexec(ctx, sch, tx,
 					`UPDATE inv_cost_layer SET qty_remaining = qty_remaining - $2 WHERE id = $1`,
 					d.LayerID, d.Qty); derr != nil {
 					return nil, derr
@@ -135,7 +135,7 @@ func PostMovement(ctx context.Context, tx *sql.Tx, in MovementInput) (*MovementR
 	}
 
 	var movementID string
-	err = tx.QueryRowContext(ctx, `
+	err = qrow(ctx, sch, tx, `
 		INSERT INTO inv_stock_movement
 		  (catalog_item_id, warehouse_id, movement_type, direction, qty, unit_cost, total_cost,
 		   qty_after, avg_cost_after, batch_no, expiry_date, ref_type, ref_id, ref_line_id,
@@ -154,7 +154,7 @@ func PostMovement(ctx context.Context, tx *sql.Tx, in MovementInput) (*MovementR
 	// FIFO/LIFO incoming stock creates a new cost layer. AVERAGE relies on the
 	// snapshot average and intentionally keeps no layers.
 	if in.Direction == dirIn && method != CostingAverage {
-		if _, err := tx.ExecContext(ctx, `
+		if _, err := qexec(ctx, sch, tx, `
 			INSERT INTO inv_cost_layer
 			  (catalog_item_id, warehouse_id, qty_remaining, unit_cost, batch_no, expiry_date, source_movement_id, received_at)
 			VALUES ($1,$2,$3,$4,$5,$6,$7, now())`,
@@ -164,7 +164,7 @@ func PostMovement(ctx context.Context, tx *sql.Tx, in MovementInput) (*MovementR
 		}
 	}
 
-	if _, err := tx.ExecContext(ctx, `
+	if _, err := qexec(ctx, sch, tx, `
 		INSERT INTO inv_stock_balance (catalog_item_id, warehouse_id, on_hand, avg_unit_cost, total_value, updated_at)
 		VALUES ($1,$2,$3,$4,$5, now())
 		ON CONFLICT (catalog_item_id, warehouse_id)
@@ -183,12 +183,12 @@ func PostMovement(ctx context.Context, tx *sql.Tx, in MovementInput) (*MovementR
 	}, nil
 }
 
-func loadLayers(ctx context.Context, tx *sql.Tx, itemID, warehouseID, method string) ([]Layer, error) {
+func loadLayers(ctx context.Context, sch appdb.SchemaSQL, tx *sql.Tx, itemID, warehouseID, method string) ([]Layer, error) {
 	order := "received_at ASC, id ASC"
 	if method == CostingLIFO {
 		order = "received_at DESC, id DESC"
 	}
-	rows, err := tx.QueryContext(ctx, fmt.Sprintf(`
+	rows, err := qquery(ctx, sch, tx, fmt.Sprintf(`
 		SELECT id, qty_remaining, unit_cost, COALESCE(batch_no, '')
 		FROM inv_cost_layer
 		WHERE catalog_item_id = $1 AND warehouse_id = $2 AND qty_remaining > 0
@@ -251,11 +251,11 @@ func ListStock(ctx context.Context, p *ListStockParams) (*ListStockResponse, err
 	if err := ensureInventoryModuleSchema(ctx, u.TenantSchema); err != nil {
 		return nil, err
 	}
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantDB()
 
 	page, pageSize := p.Page, p.PageSize
 	if page < 1 {
@@ -285,7 +285,7 @@ func ListStock(ctx context.Context, p *ListStockParams) (*ListStockResponse, err
 	}
 
 	var total int
-	if err := conn.QueryRowContext(ctx, fmt.Sprintf(`
+	if err := qrow(ctx, sch, pool, fmt.Sprintf(`
 		SELECT COUNT(*)
 		FROM inv_stock_balance b
 		JOIN business_catalog_item ci ON ci.id = b.catalog_item_id
@@ -295,7 +295,7 @@ func ListStock(ctx context.Context, p *ListStockParams) (*ListStockResponse, err
 	}
 
 	args = append(args, pageSize, (page-1)*pageSize)
-	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
+	rows, err := qquery(ctx, sch, pool, fmt.Sprintf(`
 		SELECT b.catalog_item_id, ci.name, ci.external_code, b.warehouse_id, w.name,
 		       b.on_hand, b.reserved, b.avg_unit_cost, b.total_value
 		FROM inv_stock_balance b
@@ -365,12 +365,12 @@ func ListMovements(ctx context.Context, p *ListMovementsParams) (*ListMovementsR
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
-	if err := ensureInventoryModuleReady(ctx, conn, u.TenantSchema); err != nil {
+	pool := tenantDB()
+	if err := ensureInventoryModuleSchema(ctx, u.TenantSchema); err != nil {
 		return nil, err
 	}
 
@@ -389,13 +389,13 @@ func ListMovements(ctx context.Context, p *ListMovementsParams) (*ListMovementsR
 	where, args, idx := buildMovementListWhere(p)
 
 	var total int
-	if err := conn.QueryRowContext(ctx, fmt.Sprintf(
+	if err := qrow(ctx, sch, pool, fmt.Sprintf(
 		`SELECT COUNT(*) FROM inv_stock_movement m %s`, where), args...).Scan(&total); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 
 	args = append(args, pageSize, (page-1)*pageSize)
-	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
+	rows, err := qquery(ctx, sch, pool, fmt.Sprintf(`
 		SELECT m.id, m.catalog_item_id, COALESCE(ci.name, ''), m.warehouse_id, COALESCE(w.name, ''),
 		       m.movement_type, m.direction, m.qty, m.unit_cost, m.total_cost, m.qty_after,
 		       m.batch_no, m.ref_type, m.ref_id::text, m.note, m.created_at
@@ -447,7 +447,7 @@ func ListMovements(ctx context.Context, p *ListMovementsParams) (*ListMovementsR
 		return nil, appErrs.Internal(err.Error())
 	}
 
-	refDocs := batchResolveRefDocNos(ctx, conn, refKeys)
+	refDocs := batchResolveRefDocNos(ctx, sch, pool, refKeys)
 	out := make([]MovementRow, 0, len(scanned))
 	for _, entry := range scanned {
 		m := entry.row

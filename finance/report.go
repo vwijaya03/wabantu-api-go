@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"encore.app/wabantu/shared/async"
+	appdb "encore.app/wabantu/shared/db"
 	appErrs "encore.app/wabantu/shared/errs"
 
 	"github.com/lvillar/gofpdf"
@@ -71,16 +72,16 @@ func CreateReportJob(ctx context.Context, p *CreateReportJobParams) (*ReportJob,
 		return nil, appErrs.BadRequest("tipe laporan tidak valid")
 	}
 
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	q := tenantPool()
 
 	switch p.Type {
 	case "monthly":
 		if p.Period == "" && p.StartDate == "" {
-			p.Period = financePeriod(ctx, conn)
+			p.Period = financePeriod(ctx, sch, q)
 		}
 		if p.Period != "" {
 			t, err := time.Parse("2006-01", p.Period)
@@ -112,7 +113,7 @@ func CreateReportJob(ctx context.Context, p *CreateReportJobParams) (*ReportJob,
 	params := string(paramsBytes)
 
 	var id string
-	err = conn.QueryRowContext(ctx,
+	err = qrow(ctx, sch, q,
 		`INSERT INTO fin_report_job (type, params, status, error_msg, created_by)
 		 VALUES ($1,$2,'processing','Menyiapkan export...',$3) RETURNING id`,
 		p.Type, params, u.AccountID,
@@ -125,7 +126,7 @@ func CreateReportJob(ctx context.Context, p *CreateReportJobParams) (*ReportJob,
 		processReportJobAsync(u.TenantSchema, id, p)
 	})
 
-	now := financeNow(ctx, conn)
+	now := financeNow(ctx, sch, q)
 	return &ReportJob{
 		ID:        id,
 		Type:      p.Type,
@@ -142,22 +143,22 @@ func GetReportJob(ctx context.Context, id string) (*ReportJob, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	q := tenantPool()
 
 	var j ReportJob
 	var dlURL, errMsg *string
-	q := `SELECT id, type, COALESCE(params->>'format', ''), status, download_url, error_msg, created_at, updated_at
+	querySQL := `SELECT id, type, COALESCE(params->>'format', ''), status, download_url, error_msg, created_at, updated_at
 		 FROM fin_report_job WHERE id=$1`
 	args := []any{id}
 	if !isOwner(u) {
-		q += ` AND created_by=$2`
+		querySQL += ` AND created_by=$2`
 		args = append(args, u.AccountID)
 	}
-	err = conn.QueryRowContext(ctx, q, args...).Scan(&j.ID, &j.Type, &j.Format, &j.Status, &dlURL, &errMsg, &j.CreatedAt, &j.UpdatedAt)
+	err = qrow(ctx, sch, q, querySQL, args...).Scan(&j.ID, &j.Type, &j.Format, &j.Status, &dlURL, &errMsg, &j.CreatedAt, &j.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, appErrs.NotFound("job tidak ditemukan")
@@ -176,15 +177,15 @@ func ListReportJobs(ctx context.Context) (*ReportJobListResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	q := tenantPool()
 
-	expireStaleReportJobs(ctx, conn, u.AccountID)
+	expireStaleReportJobs(ctx, sch, q, u.AccountID)
 
-	rows, err := conn.QueryContext(ctx,
+	rows, err := qquery(ctx, sch, q,
 		`SELECT id, type, COALESCE(params->>'format', ''), status, download_url, error_msg, created_at, updated_at
 		 FROM fin_report_job WHERE created_by=$1 ORDER BY created_at DESC LIMIT 20`,
 		u.AccountID)
@@ -216,47 +217,47 @@ func processReportJobAsync(schema, jobID string, p *CreateReportJobParams) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
-	conn, err := tenantConn(ctx, schema)
+	sch, err := prepareTenant(ctx, schema)
 	if err != nil {
 		return
 	}
-	defer conn.Close()
+	q := tenantPool()
 
-	processReportJob(ctx, conn, jobID, p)
+	processReportJob(ctx, sch, q, jobID, p)
 }
 
-func processReportJob(ctx context.Context, conn *sql.Conn, jobID string, p *CreateReportJobParams) (status string) {
+func processReportJob(ctx context.Context, sch appdb.SchemaSQL, q finQuerier, jobID string, p *CreateReportJobParams) (status string) {
 	status = "failed"
 	defer func() {
 		if r := recover(); r != nil {
-			failReportJob(ctx, conn, jobID, fmt.Sprintf("export report failed: %v", r))
+			failReportJob(ctx, sch, q, jobID, fmt.Sprintf("export report failed: %v", r))
 			status = "failed"
 		}
 	}()
 
-	_, _ = conn.ExecContext(ctx, `SET statement_timeout TO '15000ms'`)
-	defer conn.ExecContext(context.Background(), `RESET statement_timeout`)
+	_, _ = qexec(ctx, sch, q, `SET statement_timeout TO '15000ms'`)
+	defer qexec(context.Background(), sch, q, `RESET statement_timeout`)
 
-	updateReportJobProgress(ctx, conn, jobID, "Memuat transaksi...")
-	report, err := loadFinanceReport(ctx, conn, p, func(msg string) {
-		updateReportJobProgress(ctx, conn, jobID, msg)
+	updateReportJobProgress(ctx, sch, q, jobID, "Memuat transaksi...")
+	report, err := loadFinanceReport(ctx, sch, q, p, func(msg string) {
+		updateReportJobProgress(ctx, sch, q, jobID, msg)
 	})
 	if err != nil {
-		failReportJob(ctx, conn, jobID, err.Error())
+		failReportJob(ctx, sch, q, jobID, err.Error())
 		return status
 	}
 
-	updateReportJobProgress(ctx, conn, jobID, fmt.Sprintf("Membuat %s untuk %d transaksi...", strings.ToUpper(p.Format), len(report.Rows)))
+	updateReportJobProgress(ctx, sch, q, jobID, fmt.Sprintf("Membuat %s untuk %d transaksi...", strings.ToUpper(p.Format), len(report.Rows)))
 	dataURL, err := reportDataURL(p, report)
 	if err != nil {
-		failReportJob(ctx, conn, jobID, err.Error())
+		failReportJob(ctx, sch, q, jobID, err.Error())
 		return status
 	}
-	updateReportJobProgress(ctx, conn, jobID, "Menyimpan hasil export...")
-	if _, err := conn.ExecContext(ctx,
+	updateReportJobProgress(ctx, sch, q, jobID, "Menyimpan hasil export...")
+	if _, err := qexec(ctx, sch, q,
 		`UPDATE fin_report_job SET status='done', download_url=$1, error_msg=NULL, updated_at=now() WHERE id=$2`,
 		dataURL, jobID); err != nil {
-		failReportJob(ctx, conn, jobID, "gagal menyimpan hasil export: "+err.Error())
+		failReportJob(ctx, sch, q, jobID, "gagal menyimpan hasil export: "+err.Error())
 		return status
 	}
 	return "done"
@@ -283,11 +284,11 @@ type financeReportData struct {
 	Net          float64
 }
 
-func loadFinanceReport(ctx context.Context, conn *sql.Conn, p *CreateReportJobParams, progress func(string)) (financeReportData, error) {
+func loadFinanceReport(ctx context.Context, sch appdb.SchemaSQL, q finQuerier, p *CreateReportJobParams, progress func(string)) (financeReportData, error) {
 	report := financeReportData{
 		Title:       "Laporan Keuangan",
 		PeriodLabel: reportPeriodLabel(p),
-		GeneratedAt: formatReportDateTime(financeNow(ctx, conn)),
+		GeneratedAt: formatReportDateTime(financeNow(ctx, sch, q)),
 		Rows:        []financeReportRow{},
 	}
 
@@ -296,7 +297,7 @@ func loadFinanceReport(ctx context.Context, conn *sql.Conn, p *CreateReportJobPa
 		if progress != nil {
 			progress(fmt.Sprintf("Memuat transaksi... %d baris", len(report.Rows)))
 		}
-		rows, err := queryFinanceReportRows(ctx, conn, p, batchSize, offset)
+		rows, err := queryFinanceReportRows(ctx, sch, q, p, batchSize, offset)
 		if err != nil {
 			return financeReportData{}, err
 		}
@@ -312,9 +313,9 @@ func loadFinanceReport(ctx context.Context, conn *sql.Conn, p *CreateReportJobPa
 	return report, nil
 }
 
-func queryFinanceReportRows(ctx context.Context, conn *sql.Conn, p *CreateReportJobParams, limit, offset int) (*sql.Rows, error) {
+func queryFinanceReportRows(ctx context.Context, sch appdb.SchemaSQL, q finQuerier, p *CreateReportJobParams, limit, offset int) (*sql.Rows, error) {
 	if p.Type == "all_time" {
-		return conn.QueryContext(ctx, `
+		return qquery(ctx, sch, q, `
 			SELECT t.transaction_date, t.type,
 			       COALESCE(tt.flow,
 			         CASE WHEN t.type IN ('income','dividend','interest','cashback','investment_sell') THEN 'income'
@@ -334,7 +335,7 @@ func queryFinanceReportRows(ctx context.Context, conn *sql.Conn, p *CreateReport
 			LIMIT $1 OFFSET $2`, limit, offset)
 	}
 
-	return conn.QueryContext(ctx, `
+	return qquery(ctx, sch, q, `
 		SELECT t.transaction_date, t.type,
 		       COALESCE(tt.flow,
 		         CASE WHEN t.type IN ('income','dividend','interest','cashback','investment_sell') THEN 'income'
@@ -384,28 +385,28 @@ func appendFinanceReportRows(rows *sql.Rows, report *financeReportData) (int, er
 	return count, nil
 }
 
-func failReportJob(ctx context.Context, conn *sql.Conn, jobID, msg string) {
+func failReportJob(ctx context.Context, sch appdb.SchemaSQL, q finQuerier, jobID, msg string) {
 	if strings.TrimSpace(msg) == "" {
 		msg = "export report failed"
 	}
 	updateCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	_, _ = conn.ExecContext(updateCtx,
+	_, _ = qexec(updateCtx, sch, q,
 		`UPDATE fin_report_job SET status='failed', error_msg=$1, updated_at=now() WHERE id=$2`,
 		msg, jobID)
 }
 
-func updateReportJobProgress(ctx context.Context, conn *sql.Conn, jobID, msg string) {
+func updateReportJobProgress(ctx context.Context, sch appdb.SchemaSQL, q finQuerier, jobID, msg string) {
 	if strings.TrimSpace(msg) == "" {
 		return
 	}
-	_, _ = conn.ExecContext(ctx,
+	_, _ = qexec(ctx, sch, q,
 		`UPDATE fin_report_job SET error_msg=$1, updated_at=now() WHERE id=$2 AND status='processing'`,
 		msg, jobID)
 }
 
-func expireStaleReportJobs(ctx context.Context, conn *sql.Conn, accountID string) {
-	_, _ = conn.ExecContext(ctx,
+func expireStaleReportJobs(ctx context.Context, sch appdb.SchemaSQL, q finQuerier, accountID string) {
+	_, _ = qexec(ctx, sch, q,
 		`UPDATE fin_report_job
 		 SET status='failed',
 		     error_msg='export sebelumnya tidak selesai, silakan ulangi export',

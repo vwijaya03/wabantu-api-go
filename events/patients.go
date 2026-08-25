@@ -95,12 +95,11 @@ func ListPatients(ctx context.Context, eventId string, p *ListPatientsParams) (*
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	if err := assertEventExists(ctx, conn, eventId); err != nil {
+	if err := assertEventExists(ctx, ts, eventId); err != nil {
 		return nil, err
 	}
 	page, pageSize := paginate(p.Page, p.PageSize)
@@ -113,7 +112,7 @@ func ListPatients(ctx context.Context, eventId string, p *ListPatientsParams) (*
 			SortBy: p.SortBy, SortDir: p.SortDir,
 		}
 	}
-	items, total, err := queryPatients(ctx, conn, eventId, filters, lim, off)
+	items, total, err := queryPatients(ctx, ts, eventId, filters, lim, off)
 	if err != nil {
 		var encErr *encoreerrs.Error
 		if errors.As(err, &encErr) {
@@ -137,23 +136,23 @@ func UpdatePatientStatus(ctx context.Context, eventId, patientId string, p *Upse
 	if st != "CONFIRMED" && st != "CANCELLED" && st != "COMPLETED" {
 		return appErrs.BadRequest("status reservasi tidak valid")
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	if err := assertEventMutable(ctx, conn, eventId); err != nil {
+	if err := assertEventMutable(ctx, ts, eventId); err != nil {
 		return err
 	}
-	tx, err := conn.BeginTx(ctx, nil)
+	tx, err := ts.BeginTx(ctx, nil)
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
 	defer tx.Rollback()
+	txTS := ts.WithQ(tx)
 
 	var oldStatus string
 	var slotID sql.NullString
-	err = tx.QueryRowContext(ctx, `
+	err = txTS.QueryRowContext(ctx, `
 		SELECT reservation_status, slot_id::text FROM evt_patient
 		WHERE id=$1::uuid AND event_id=$2::uuid AND deleted_at IS NULL`,
 		patientId, eventId).Scan(&oldStatus, &slotID)
@@ -165,12 +164,12 @@ func UpdatePatientStatus(ctx context.Context, eventId, patientId string, p *Upse
 	}
 
 	if st == "CANCELLED" && oldStatus == "CONFIRMED" && slotID.Valid {
-		_, _ = tx.ExecContext(ctx, `
+		_, _ = txTS.ExecContext(ctx, `
 			UPDATE evt_time_slot SET booked_count = GREATEST(0, booked_count - 1)
 			WHERE id=$1::uuid`, slotID.String)
 	}
 
-	_, err = tx.ExecContext(ctx, `
+	_, err = txTS.ExecContext(ctx, `
 		UPDATE evt_patient SET reservation_status=$1, updated_at=now()
 		WHERE id=$2::uuid AND event_id=$3::uuid`, st, patientId, eventId)
 	if err != nil {
@@ -179,7 +178,7 @@ func UpdatePatientStatus(ctx context.Context, eventId, patientId string, p *Upse
 	if err := tx.Commit(); err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	auditEvent(ctx, conn, u, "patient", patientId, "status", oldStatus, st)
+	auditEvent(ctx, ts, u, "patient", patientId, "status", oldStatus, st)
 	return nil
 }
 
@@ -214,16 +213,15 @@ func UpdateEventPatient(ctx context.Context, eventId, patientId string, p *Updat
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	if err := assertEventMutable(ctx, conn, eventId); err != nil {
+	if err := assertEventMutable(ctx, ts, eventId); err != nil {
 		return nil, err
 	}
 	var therapyLinked bool
-	if err := conn.QueryRowContext(ctx, `
+	if err := ts.QueryRowContext(ctx, `
 		SELECT EXISTS(SELECT 1 FROM evt_event_therapy WHERE event_id=$1::uuid AND therapy_id=$2::uuid)`,
 		eventId, p.TherapyID).Scan(&therapyLinked); err != nil || !therapyLinked {
 		return nil, appErrs.BadRequest("terapi tidak tersedia untuk acara ini")
@@ -235,13 +233,14 @@ func UpdateEventPatient(ctx context.Context, eventId, patientId string, p *Updat
 	if st != "CONFIRMED" && st != "CANCELLED" && st != "COMPLETED" {
 		return nil, appErrs.BadRequest("status reservasi tidak valid")
 	}
-	tx, err := conn.BeginTx(ctx, nil)
+	tx, err := ts.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer tx.Rollback()
+	txTS := ts.WithQ(tx)
 
-	_, err = tx.ExecContext(ctx, `
+	_, err = txTS.ExecContext(ctx, `
 		UPDATE evt_patient SET
 		  full_name_enc=$1, birth_date_enc=$2,
 		  normalized_name=$3, normalized_birthdate=$4,
@@ -253,18 +252,18 @@ func UpdateEventPatient(ctx context.Context, eventId, patientId string, p *Updat
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	_ = tryAssignPatientSlot(ctx, tx, eventId, patientId, p.TherapyID, p.PreferredTime, false)
+	_ = tryAssignPatientSlot(ctx, txTS, eventId, patientId, p.TherapyID, p.PreferredTime, false)
 	if err := tx.Commit(); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 
 	var therapyName string
-	_ = conn.QueryRowContext(ctx, `SELECT therapy_name FROM evt_therapy WHERE id=$1::uuid`, p.TherapyID).Scan(&therapyName)
+	_ = ts.QueryRowContext(ctx, `SELECT therapy_name FROM evt_therapy WHERE id=$1::uuid`, p.TherapyID).Scan(&therapyName)
 
 	var slotLabel string
 	var slotID *string
 	var slotIDNull, sd, stime, etime sql.NullString
-	_ = conn.QueryRowContext(ctx, `
+	_ = ts.QueryRowContext(ctx, `
 		SELECT pat.slot_id::text, s.slot_date::text, s.start_time::text, s.end_time::text
 		FROM evt_patient pat
 		LEFT JOIN evt_time_slot s ON s.id = pat.slot_id
@@ -297,10 +296,10 @@ type DeletePatientsResponse struct {
 	Errors  []string `json:"errors,omitempty"`
 }
 
-func deleteEventPatientInTx(ctx context.Context, tx *sql.Tx, eventId, patientId string) error {
+func deleteEventPatientInTx(ctx context.Context, ts tenantScope, eventId, patientId string) error {
 	var slotID sql.NullString
 	var status string
-	err := tx.QueryRowContext(ctx, `
+	err := ts.QueryRowContext(ctx, `
 		SELECT reservation_status, slot_id::text FROM evt_patient
 		WHERE id=$1::uuid AND event_id=$2::uuid AND deleted_at IS NULL`, patientId, eventId).Scan(&status, &slotID)
 	if err == sql.ErrNoRows {
@@ -310,11 +309,11 @@ func deleteEventPatientInTx(ctx context.Context, tx *sql.Tx, eventId, patientId 
 		return appErrs.Internal(err.Error())
 	}
 	if status == "CONFIRMED" && slotID.Valid {
-		_, _ = tx.ExecContext(ctx, `
+		_, _ = ts.ExecContext(ctx, `
 			UPDATE evt_time_slot SET booked_count = GREATEST(0, booked_count - 1)
 			WHERE id=$1::uuid`, slotID.String)
 	}
-	_, err = tx.ExecContext(ctx, `
+	_, err = ts.ExecContext(ctx, `
 		UPDATE evt_patient SET deleted_at=now(), updated_at=now()
 		WHERE id=$1::uuid AND event_id=$2::uuid`, patientId, eventId)
 	if err != nil {
@@ -332,26 +331,26 @@ func DeleteEventPatient(ctx context.Context, eventId, patientId string) error {
 	if err := assertOwner(u); err != nil {
 		return err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	if err := assertEventMutable(ctx, conn, eventId); err != nil {
+	if err := assertEventMutable(ctx, ts, eventId); err != nil {
 		return err
 	}
-	tx, err := conn.BeginTx(ctx, nil)
+	tx, err := ts.BeginTx(ctx, nil)
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
 	defer tx.Rollback()
-	if err := deleteEventPatientInTx(ctx, tx, eventId, patientId); err != nil {
+	txTS := ts.WithQ(tx)
+	if err := deleteEventPatientInTx(ctx, txTS, eventId, patientId); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	auditEvent(ctx, conn, u, "patient", patientId, "delete", nil, nil)
+	auditEvent(ctx, ts, u, "patient", patientId, "delete", nil, nil)
 	return nil
 }
 
@@ -367,12 +366,11 @@ func DeletePatientsBulk(ctx context.Context, eventId string, p *DeletePatientsPa
 	if p == nil || len(p.PatientIDs) == 0 {
 		return nil, appErrs.BadRequest("pilih minimal satu pasien")
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	if err := assertEventMutable(ctx, conn, eventId); err != nil {
+	if err := assertEventMutable(ctx, ts, eventId); err != nil {
 		return nil, err
 	}
 
@@ -385,11 +383,12 @@ func DeletePatientsBulk(ctx context.Context, eventId string, p *DeletePatientsPa
 		}
 		seen[patientID] = true
 
-		tx, err := conn.BeginTx(ctx, nil)
+		tx, err := ts.BeginTx(ctx, nil)
 		if err != nil {
 			return nil, appErrs.Internal(err.Error())
 		}
-		if err := deleteEventPatientInTx(ctx, tx, eventId, patientID); err != nil {
+		txTS := ts.WithQ(tx)
+		if err := deleteEventPatientInTx(ctx, txTS, eventId, patientID); err != nil {
 			_ = tx.Rollback()
 			resp.Failed++
 			if encErr, ok := err.(*encoreerrs.Error); ok && encErr.Code == encoreerrs.NotFound {
@@ -405,7 +404,7 @@ func DeletePatientsBulk(ctx context.Context, eventId string, p *DeletePatientsPa
 			continue
 		}
 		resp.Deleted++
-		auditEvent(ctx, conn, u, "patient", patientID, "delete_bulk_item", map[string]any{"eventId": eventId}, nil)
+		auditEvent(ctx, ts, u, "patient", patientID, "delete_bulk_item", map[string]any{"eventId": eventId}, nil)
 	}
 	if len(resp.Errors) == 0 {
 		resp.Errors = nil
@@ -428,13 +427,12 @@ func createPatientForEvent(
 	requirePublished bool,
 	assignSlot bool,
 ) (string, error) {
-	conn, err := tenantConn(ctx, tenantSchema)
+	ts, err := openTenant(ctx, tenantSchema)
 	if err != nil {
 		return "", appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
 
-	contactFields, err := resolvePatientContact(ctx, conn, p)
+	contactFields, err := resolvePatientContact(ctx, ts, p)
 	if err != nil {
 		return "", err
 	}
@@ -463,19 +461,19 @@ func createPatientForEvent(
 	}
 
 	if requirePublished {
-		if err := assertEventMutable(ctx, conn, eventID); err != nil {
+		if err := assertEventMutable(ctx, ts, eventID); err != nil {
 			return "", err
 		}
-	} else if err := assertEventExists(ctx, conn, eventID); err != nil {
+	} else if err := assertEventExists(ctx, ts, eventID); err != nil {
 		return "", err
-	} else if err := assertEventMutable(ctx, conn, eventID); err != nil {
+	} else if err := assertEventMutable(ctx, ts, eventID); err != nil {
 		return "", err
 	}
 
 	if requirePublished {
 		var status string
 		var openAt, closeAt sql.NullTime
-		if err := conn.QueryRowContext(ctx, `
+		if err := ts.QueryRowContext(ctx, `
 			SELECT status, registration_open_at, registration_close_at
 			FROM evt_event WHERE id=$1::uuid AND deleted_at IS NULL`, eventID,
 		).Scan(&status, &openAt, &closeAt); err == sql.ErrNoRows {
@@ -492,7 +490,7 @@ func createPatientForEvent(
 	}
 
 	var therapyLinked bool
-	if err := conn.QueryRowContext(ctx, `
+	if err := ts.QueryRowContext(ctx, `
 		SELECT EXISTS(
 		  SELECT 1 FROM evt_event_therapy WHERE event_id=$1::uuid AND therapy_id=$2::uuid
 		)`, eventID, therapyID).Scan(&therapyLinked); err != nil {
@@ -503,7 +501,7 @@ func createPatientForEvent(
 	}
 
 	var dup bool
-	if err := conn.QueryRowContext(ctx, `
+	if err := ts.QueryRowContext(ctx, `
 		SELECT EXISTS(
 		  SELECT 1 FROM evt_patient
 		  WHERE event_id=$1::uuid AND normalized_name=$2 AND normalized_birthdate=$3
@@ -515,19 +513,20 @@ func createPatientForEvent(
 		return "", appErrs.BadRequest("pasien sudah terdaftar untuk acara ini")
 	}
 
-	tx, err := conn.BeginTx(ctx, nil)
+	tx, err := ts.BeginTx(ctx, nil)
 	if err != nil {
 		return "", appErrs.Internal(err.Error())
 	}
 	defer tx.Rollback()
+	txTS := ts.WithQ(tx)
 
 	var slotID interface{}
 	if assignSlot {
-		sid, err := pickSlotForRegistration(ctx, tx, eventID, therapyID, strings.TrimSpace(preferred), requirePublished)
+		sid, err := pickSlotForRegistration(ctx, txTS, eventID, therapyID, strings.TrimSpace(preferred), requirePublished)
 		if err != nil {
 			return "", err
 		}
-		if err := lockAndIncrementSlot(ctx, tx, sid); err != nil {
+		if err := lockAndIncrementSlot(ctx, txTS, sid); err != nil {
 			return "", err
 		}
 		slotID = sid
@@ -539,7 +538,7 @@ func createPatientForEvent(
 	}
 
 	var patientID string
-	err = tx.QueryRowContext(ctx, `
+	err = txTS.QueryRowContext(ctx, `
 		INSERT INTO evt_patient (
 		  event_id, therapy_id, contact_id, full_name_enc, birth_date_enc,
 		  normalized_name, normalized_birthdate, complaint, preferred_time,
@@ -562,6 +561,6 @@ func createPatientForEvent(
 	if requirePublished {
 		action = "public_register"
 	}
-	auditEvent(ctx, conn, nil, "patient", patientID, action, nil, map[string]any{"eventId": eventID})
+	auditEvent(ctx, ts, nil, "patient", patientID, action, nil, map[string]any{"eventId": eventID})
 	return patientID, nil
 }

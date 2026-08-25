@@ -6,24 +6,25 @@ import (
 	"fmt"
 	"strings"
 
+	appdb "encore.app/wabantu/shared/db"
 	appErrs "encore.app/wabantu/shared/errs"
 )
 
-func applyMovementSnapshots(ctx context.Context, tx *sql.Tx, snaps []ReplaySnapshot) error {
+func applyMovementSnapshots(ctx context.Context, sch appdb.SchemaSQL, tx *sql.Tx, snaps []ReplaySnapshot) error {
 	const chunk = 100
 	for i := 0; i < len(snaps); i += chunk {
 		end := i + chunk
 		if end > len(snaps) {
 			end = len(snaps)
 		}
-		if err := applyMovementSnapshotsChunk(ctx, tx, snaps[i:end]); err != nil {
+		if err := applyMovementSnapshotsChunk(ctx, sch, tx, snaps[i:end]); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func applyMovementSnapshotsChunk(ctx context.Context, tx *sql.Tx, snaps []ReplaySnapshot) error {
+func applyMovementSnapshotsChunk(ctx context.Context, sch appdb.SchemaSQL, tx *sql.Tx, snaps []ReplaySnapshot) error {
 	if len(snaps) == 0 {
 		return nil
 	}
@@ -45,7 +46,7 @@ func applyMovementSnapshotsChunk(ctx context.Context, tx *sql.Tx, snaps []Replay
 		args = append(args, s.MovementID, s.TotalCost, s.UnitCost, s.QtyAfter, s.AvgAfter)
 	}
 	b.WriteString(`) AS d(id, total_cost, unit_cost, qty_after, avg_cost_after) WHERE m.id = d.id`)
-	if _, err := tx.ExecContext(ctx, b.String(), args...); err != nil {
+	if _, err := qexec(ctx, sch, tx, b.String(), args...); err != nil {
 		return appErrs.Internal(err.Error())
 	}
 	return nil

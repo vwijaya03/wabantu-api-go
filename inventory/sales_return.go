@@ -1,6 +1,7 @@
 package inventory
 
 import (
+	appdb "encore.app/wabantu/shared/db"
 	"context"
 	"database/sql"
 	"errors"
@@ -10,7 +11,6 @@ import (
 
 	"encore.app/wabantu/finance"
 	appErrs "encore.app/wabantu/shared/errs"
-	"encore.app/wabantu/tenant"
 )
 
 // returnableQty is the quantity still allowed to be returned (pure).
@@ -86,12 +86,12 @@ func CreateSalesReturn(ctx context.Context, p *CreateSalesReturnParams) (*SalesR
 		return nil, err
 	}
 
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
-	return createSalesReturnConn(ctx, conn, u.TenantSchema, u.AccountID, p)
+	pool := tenantDB()
+	return createSalesReturnConn(ctx, sch, pool, u.TenantSchema, u.AccountID, p)
 }
 
 //encore:api auth method=GET path=/api/v1/inventory/sales-returns
@@ -100,11 +100,11 @@ func ListSalesReturns(ctx context.Context, p *ListSalesReturnsParams) (*ListSale
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantDB()
 
 	page, pageSize := p.Page, p.PageSize
 	if page < 1 {
@@ -122,12 +122,12 @@ func ListSalesReturns(ctx context.Context, p *ListSalesReturnsParams) (*ListSale
 		idx++
 	}
 	var total int
-	if err := conn.QueryRowContext(ctx,
+	if err := qrow(ctx, sch, pool,
 		fmt.Sprintf(`SELECT COUNT(*) FROM inv_sales_return %s`, where), args...).Scan(&total); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	args = append(args, pageSize, (page-1)*pageSize)
-	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
+	rows, err := qquery(ctx, sch, pool, fmt.Sprintf(`
 		SELECT id, return_no, order_id::text, status, transaction_date::text, COALESCE(note,''), total_cost, created_at
 		FROM inv_sales_return %s
 		ORDER BY created_at DESC LIMIT $%d OFFSET $%d`, where, idx, idx+1), args...)
@@ -153,19 +153,19 @@ func GetSalesReturn(ctx context.Context, id string) (*SalesReturn, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
-	return getSalesReturn(ctx, conn, id)
+	pool := tenantDB()
+	return getSalesReturn(ctx, sch, pool, id)
 }
 
 // ---------- helpers ----------
 
-func orderReturnedQty(ctx context.Context, conn *sql.Conn, orderID string) (map[string]float64, error) {
+func orderReturnedQty(ctx context.Context, sch appdb.SchemaSQL, q querier, orderID string) (map[string]float64, error) {
 	out := map[string]float64{}
-	rows, err := conn.QueryContext(ctx, `
+	rows, err := qquery(ctx, sch, q, `
 		SELECT srl.catalog_item_id::text, COALESCE(SUM(srl.qty),0)
 		FROM inv_sales_return sr
 		JOIN inv_sales_return_line srl ON srl.sales_return_id = sr.id
@@ -186,9 +186,9 @@ func orderReturnedQty(ctx context.Context, conn *sql.Conn, orderID string) (map[
 	return out, rows.Err()
 }
 
-func orderSaleMovementID(ctx context.Context, conn *sql.Conn, orderID, catalogItemID string) string {
+func orderSaleMovementID(ctx context.Context, sch appdb.SchemaSQL, q querier, orderID, catalogItemID string) string {
 	var id sql.NullString
-	_ = conn.QueryRowContext(ctx, `
+	_ = qrow(ctx, sch, q, `
 		SELECT id::text FROM inv_stock_movement
 		WHERE ref_type='order' AND ref_id=$1::uuid AND catalog_item_id=$2 AND movement_type='sale_issue'
 		ORDER BY created_at DESC LIMIT 1`, orderID, catalogItemID).Scan(&id)
@@ -198,8 +198,8 @@ func orderSaleMovementID(ctx context.Context, conn *sql.Conn, orderID, catalogIt
 	return ""
 }
 
-func getSalesReturn(ctx context.Context, conn *sql.Conn, id string) (*SalesReturn, error) {
-	r, err := scanSalesReturnHeader(conn.QueryRowContext(ctx, `
+func getSalesReturn(ctx context.Context, sch appdb.SchemaSQL, q querier, id string) (*SalesReturn, error) {
+	r, err := scanSalesReturnHeader(qrow(ctx, sch, q, `
 		SELECT id, return_no, order_id::text, status, transaction_date::text, COALESCE(note,''), total_cost, created_at
 		FROM inv_sales_return WHERE id=$1 AND deleted_at IS NULL`, id).Scan)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -208,7 +208,7 @@ func getSalesReturn(ctx context.Context, conn *sql.Conn, id string) (*SalesRetur
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	rows, err := conn.QueryContext(ctx, `
+	rows, err := qquery(ctx, sch, q, `
 		SELECT srl.catalog_item_id::text, COALESCE(ci.name,''), srl.warehouse_id::text, srl.qty, srl.unit_cost
 		FROM inv_sales_return_line srl
 		LEFT JOIN business_catalog_item ci ON ci.id = srl.catalog_item_id

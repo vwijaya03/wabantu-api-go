@@ -9,7 +9,21 @@ import (
 	appdb "encore.app/wabantu/shared/db"
 )
 
-// CloseTenantConn resets session state before returning a tenant connection to the pool.
+// PrepareTenantAccess validates the schema name and schedules lazy migration.
+// Use for DML that uses schema-qualified table names (no SET search_path).
+func PrepareTenantAccess(ctx context.Context, schemaName string) error {
+	if err := ValidateTenantSchemaName(schemaName); err != nil {
+		return err
+	}
+	go maybeLazyMigrateFromSchema(context.Background(), schemaName)
+	return nil
+}
+
+// tenantSchemaFromConn resolves tenant schema from a connection with search_path set.
+func tenantSchemaFromConn(ctx context.Context, conn *sql.Conn) (string, error) {
+	return SchemaFromConn(ctx, conn)
+}
+
 func CloseTenantConn(conn *sql.Conn) {
 	appdb.CloseTenantConn(conn)
 }

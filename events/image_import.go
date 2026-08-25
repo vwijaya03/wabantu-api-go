@@ -311,12 +311,11 @@ func CommitStaffImageImport(ctx context.Context, eventId, jobId string, p *Commi
 	if err := assertOwner(u); err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	if err := assertEventMutable(ctx, conn, eventId); err != nil {
+	if err := assertEventMutable(ctx, ts, eventId); err != nil {
 		return nil, err
 	}
 	st, err := loadStaffStaging(ctx, jobId, u.TenantSchema)
@@ -340,7 +339,7 @@ func CommitStaffImageImport(ctx context.Context, eventId, jobId string, p *Commi
 		params.AttendanceStatus = att
 		params.Notes = notes
 		if roleUsesTherapies(it.Role) {
-			ids, err := resolveTherapyIDsByNames(ctx, conn, it.TherapyNames)
+			ids, err := resolveTherapyIDsByNames(ctx, ts, it.TherapyNames)
 			if err != nil {
 				skipped++
 				continue
@@ -348,7 +347,7 @@ func CommitStaffImageImport(ctx context.Context, eventId, jobId string, p *Commi
 			params.TherapyIDs = ids
 		}
 		if strings.EqualFold(it.Role, "relawan") || strings.EqualFold(it.Role, "volunteer") {
-			rid, err := resolveVolunteerRoleIDByName(ctx, conn, it.VolunteerRoleName)
+			rid, err := resolveVolunteerRoleIDByName(ctx, ts, it.VolunteerRoleName)
 			if err != nil {
 				skipped++
 				continue
@@ -392,12 +391,11 @@ func previewStaffImages(ctx context.Context, u *types.AuthUser, eventID string, 
 	if err := ensureAnthropicForImageImport(); err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	if err := assertEventExists(ctx, conn, eventID); err != nil {
+	if err := assertEventExists(ctx, ts, eventID); err != nil {
 		return nil, err
 	}
 	if err := validateImageBatch(files); err != nil {
@@ -493,12 +491,11 @@ func CommitPatientImageImport(ctx context.Context, eventId, jobId string, p *Com
 	if err := assertOwner(u); err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	if err := assertEventMutable(ctx, conn, eventId); err != nil {
+	if err := assertEventMutable(ctx, ts, eventId); err != nil {
 		return nil, err
 	}
 	st, err := loadPatientStaging(ctx, jobId, u.TenantSchema)
@@ -515,7 +512,7 @@ func CommitPatientImageImport(ctx context.Context, eventId, jobId string, p *Com
 			skipped++
 			continue
 		}
-		therapyID, err := resolveTherapyIDByName(ctx, conn, it.TherapyName)
+		therapyID, err := resolveTherapyIDByName(ctx, ts, it.TherapyName)
 		if err != nil {
 			skipped++
 			continue
@@ -545,12 +542,11 @@ func previewPatientImages(ctx context.Context, u *types.AuthUser, eventID string
 	if err := ensureAnthropicForImageImport(); err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	if err := assertEventExists(ctx, conn, eventID); err != nil {
+	if err := assertEventExists(ctx, ts, eventID); err != nil {
 		return nil, err
 	}
 	if err := validateImageBatch(files); err != nil {
@@ -638,11 +634,10 @@ func CommitTherapyImageImport(ctx context.Context, jobId string, p *CommitTherap
 	if err := assertOwner(u); err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
 	st, err := loadTherapyStaging(ctx, jobId, u.TenantSchema)
 	if err != nil {
 		return nil, err
@@ -658,14 +653,14 @@ func CommitTherapyImageImport(ctx context.Context, jobId string, p *CommitTherap
 			continue
 		}
 		var exists bool
-		_ = conn.QueryRowContext(ctx, `
+		_ = ts.QueryRowContext(ctx, `
 			SELECT EXISTS(SELECT 1 FROM evt_therapy WHERE deleted_at IS NULL AND therapy_name ILIKE $1)`,
 			strings.TrimSpace(it.TherapyName)).Scan(&exists)
 		if exists {
 			skipped++
 			continue
 		}
-		_, err := conn.ExecContext(ctx, `
+		_, err := ts.ExecContext(ctx, `
 			INSERT INTO evt_therapy (therapy_name, description, display_order)
 			VALUES ($1,$2, (SELECT COALESCE(MAX(display_order),0)+1 FROM evt_therapy))`,
 			it.TherapyName, nullStr(it.Description))

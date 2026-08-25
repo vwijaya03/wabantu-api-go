@@ -588,7 +588,7 @@ func orderFlowCancelReply(tone string) string {
 // persistDraftOrder inserts a draft row into tenant.order after the flow collects enough data.
 func persistDraftOrder(
 	ctx context.Context,
-	tq tenantQuerier,
+	tq tenantScopedQuerier,
 	tenantSchema string,
 	convoID, contactID string,
 	st orderState,
@@ -684,7 +684,7 @@ func persistDraftOrder(
 
 func persistDraftOrderMulti(
 	ctx context.Context,
-	tq tenantQuerier,
+	tq tenantScopedQuerier,
 	tenantSchema string,
 	convoID, contactID string,
 	st orderState,

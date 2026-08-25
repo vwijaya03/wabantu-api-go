@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	appdb "encore.app/wabantu/shared/db"
 	appErrs "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/usage"
 )
@@ -179,10 +180,10 @@ func resolveTradeFee(gross float64, fee float64, feePercent *float64) (float64, 
 	return fee, nil
 }
 
-func loadAssetUnitConfig(ctx context.Context, conn *sql.Conn, assetID string) (mult float64, err error) {
+func loadAssetUnitConfig(ctx context.Context, sch appdb.SchemaSQL, q finQuerier, assetID string) (mult float64, err error) {
 	var assetType, unitName string
 	var stored sql.NullFloat64
-	err = conn.QueryRowContext(ctx,
+	err = qrow(ctx, sch, q,
 		`SELECT type, unit_name, unit_multiplier FROM fin_asset WHERE id=$1`, assetID,
 	).Scan(&assetType, &unitName, &stored)
 	if err != nil {
@@ -195,19 +196,19 @@ func loadAssetUnitConfig(ctx context.Context, conn *sql.Conn, assetID string) (m
 	return resolveUnitMultiplier(assetType, unitName, m), nil
 }
 
-func finAssetTableReady(ctx context.Context, conn *sql.Conn) bool {
+func finAssetTableReady(ctx context.Context, sch appdb.SchemaSQL, q finQuerier) bool {
 	var name sql.NullString
-	_ = conn.QueryRowContext(ctx, `SELECT to_regclass('fin_asset')::text`).Scan(&name)
+	_ = qrow(ctx, sch, q, `SELECT to_regclass($1)::text`, sch.T("fin_asset")).Scan(&name)
 	return name.Valid && strings.TrimSpace(name.String) != ""
 }
 
 // loadAssetMetrics: asset_qty = jumlah dalam unit_name (mis. lot); harga = per price_unit_name (mis. lembar).
-func loadAssetMetrics(ctx context.Context, conn *sql.Conn, assetID string, unitMult float64) (qtyHeld, avgBuy, totalCost, dividend float64, latestPrice sql.NullFloat64) {
+func loadAssetMetrics(ctx context.Context, sch appdb.SchemaSQL, q finQuerier, assetID string, unitMult float64) (qtyHeld, avgBuy, totalCost, dividend float64, latestPrice sql.NullFloat64) {
 	if unitMult <= 0 {
 		unitMult = 1
 	}
 	var buyQty, buyAmt, sellQty float64
-	_ = conn.QueryRowContext(ctx, `
+	_ = qrow(ctx, sch, q, `
 		SELECT
 		  COALESCE(SUM(CASE WHEN type='investment_buy' THEN asset_qty ELSE 0 END),0),
 		  COALESCE(SUM(CASE WHEN type='investment_buy' THEN amount ELSE 0 END),0),
@@ -225,7 +226,7 @@ func loadAssetMetrics(ctx context.Context, conn *sql.Conn, assetID string, unitM
 	}
 	totalCost = avgBuy * qtyBase
 
-	_ = conn.QueryRowContext(ctx,
+	_ = qrow(ctx, sch, q,
 		`SELECT price FROM fin_asset_price WHERE asset_id=$1 ORDER BY recorded_at DESC LIMIT 1`, assetID,
 	).Scan(&latestPrice)
 	return qtyHeld, avgBuy, totalCost, dividend, latestPrice
@@ -238,7 +239,7 @@ type assetRow struct {
 	mult   float64
 }
 
-func enrichAssetPortfolio(ctx context.Context, conn *sql.Conn, r assetRow) AssetWithPortfolio {
+func enrichAssetPortfolio(ctx context.Context, sch appdb.SchemaSQL, q finQuerier, r assetRow) AssetWithPortfolio {
 	aw := r.aw
 	if r.ticker.Valid {
 		aw.Ticker = &r.ticker.String
@@ -251,7 +252,7 @@ func enrichAssetPortfolio(ctx context.Context, conn *sql.Conn, r assetRow) Asset
 	aw.UnitMultiplier = fmt.Sprintf("%.0f", mult)
 	aw.PriceUnitName = resolvePriceUnitName(aw.Type, aw.UnitName, aw.PriceUnitName)
 
-	qtyHeld, avgBuy, totalCost, dividend, latestPrice := loadAssetMetrics(ctx, conn, aw.ID, mult)
+	qtyHeld, avgBuy, totalCost, dividend, latestPrice := loadAssetMetrics(ctx, sch, q, aw.ID, mult)
 	qtyBase := qtyHeld * mult
 	aw.QtyHeld = fmt.Sprintf("%.6f", qtyHeld)
 	aw.QtyHeldBase = fmt.Sprintf("%.6f", qtyBase)
@@ -299,19 +300,19 @@ func aggregatePortfolioTotals(assets []AssetWithPortfolio) (totalCost, totalValu
 	return totalCost, totalValue, totalDiv
 }
 
-func queryActiveAssets(ctx context.Context, conn *sql.Conn, search string) ([]assetRow, error) {
-	q := `
+func queryActiveAssets(ctx context.Context, sch appdb.SchemaSQL, q finQuerier, search string) ([]assetRow, error) {
+	querySQL := `
 		SELECT a.id, a.name, a.ticker, a.type, a.unit_name, a.wallet_id, a.notes, a.is_active, a.created_at,
 		       COALESCE(a.unit_multiplier, 1), COALESCE(a.price_unit_name, '')
 		FROM fin_asset a WHERE a.is_active=true`
 	args := []any{}
 	if s := strings.TrimSpace(search); s != "" {
-		q += ` AND (a.name ILIKE $1 OR COALESCE(a.ticker, '') ILIKE $1)`
+		querySQL += ` AND (a.name ILIKE $1 OR COALESCE(a.ticker, '') ILIKE $1)`
 		args = append(args, "%"+s+"%")
 	}
-	q += ` ORDER BY a.name`
+	querySQL += ` ORDER BY a.name`
 
-	rows, err := conn.QueryContext(ctx, q, args...)
+	rows, err := qquery(ctx, sch, q, querySQL, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -338,11 +339,11 @@ func GetPortfolio(ctx context.Context, p *GetPortfolioParams) (*PortfolioSummary
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	q := tenantPool()
 
 	page := 1
 	pageSize := 20
@@ -357,7 +358,7 @@ func GetPortfolio(ctx context.Context, p *GetPortfolioParams) (*PortfolioSummary
 		search = strings.TrimSpace(p.Search)
 	}
 
-	if !finAssetTableReady(ctx, conn) {
+	if !finAssetTableReady(ctx, sch, q) {
 		return &PortfolioSummary{
 			TotalCost: "0.00", CurrentValue: "0.00", UnrealizedPnL: "0.00",
 			UnrealizedPct: "0.00", TotalDividend: "0.00",
@@ -366,14 +367,14 @@ func GetPortfolio(ctx context.Context, p *GetPortfolioParams) (*PortfolioSummary
 		}, nil
 	}
 
-	pending, err := queryActiveAssets(ctx, conn, search)
+	pending, err := queryActiveAssets(ctx, sch, q, search)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 
 	var enriched []AssetWithPortfolio
 	for _, r := range pending {
-		enriched = append(enriched, enrichAssetPortfolio(ctx, conn, r))
+		enriched = append(enriched, enrichAssetPortfolio(ctx, sch, q, r))
 	}
 	if enriched == nil {
 		enriched = []AssetWithPortfolio{}
@@ -437,13 +438,13 @@ func CreateAsset(ctx context.Context, p *CreateAssetParams) (*Asset, error) {
 		return nil, appErrs.BadRequest("dompet wajib dipilih")
 	}
 
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	q := tenantPool()
 
-	if err := assertWalletAccessible(ctx, conn, u, p.WalletID); err != nil {
+	if err := assertWalletAccessible(ctx, sch, q, u, p.WalletID); err != nil {
 		return nil, err
 	}
 
@@ -457,7 +458,7 @@ func CreateAsset(ctx context.Context, p *CreateAssetParams) (*Asset, error) {
 	}
 
 	var id string
-	err = conn.QueryRowContext(ctx,
+	err = qrow(ctx, sch, q,
 		`INSERT INTO fin_asset (name,ticker,type,unit_name,unit_multiplier,price_unit_name,wallet_id,notes,created_by)
 		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
 		strings.TrimSpace(p.Name), p.Ticker, p.Type, p.UnitName, mult, priceUnit,
@@ -466,7 +467,7 @@ func CreateAsset(ctx context.Context, p *CreateAssetParams) (*Asset, error) {
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	auditFinance(ctx, conn, u, "asset", id, "create", nil, p)
+	auditFinance(ctx, sch, q, u, "asset", id, "create", nil, p)
 	return &Asset{
 		ID: id, Name: p.Name, Ticker: p.Ticker, Type: p.Type,
 		UnitName: p.UnitName, UnitMultiplier: fmt.Sprintf("%.0f", mult),
@@ -491,14 +492,14 @@ func UpdateAsset(ctx context.Context, id string, p *UpdateAssetParams) (*Asset, 
 		return nil, appErrs.BadRequest("tidak ada perubahan")
 	}
 
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	q := tenantPool()
 
 	var isActive bool
-	if err := conn.QueryRowContext(ctx,
+	if err := qrow(ctx, sch, q,
 		`SELECT is_active FROM fin_asset WHERE id=$1`, id,
 	).Scan(&isActive); err == sql.ErrNoRows {
 		return nil, appErrs.NotFound("aset tidak ditemukan")
@@ -521,13 +522,13 @@ func UpdateAsset(ctx context.Context, id string, p *UpdateAssetParams) (*Asset, 
 
 	if p.WalletID != nil && strings.TrimSpace(*p.WalletID) != "" {
 		var txnCount int
-		_ = conn.QueryRowContext(ctx,
+		_ = qrow(ctx, sch, q,
 			`SELECT COUNT(*) FROM fin_transaction WHERE asset_id=$1 AND deleted_at IS NULL`, id,
 		).Scan(&txnCount)
 		if txnCount > 0 {
 			return nil, appErrs.BadRequest("dompet tidak dapat diubah karena aset sudah memiliki transaksi")
 		}
-		if err := assertWalletAccessible(ctx, conn, u, *p.WalletID); err != nil {
+		if err := assertWalletAccessible(ctx, sch, q, u, *p.WalletID); err != nil {
 			return nil, err
 		}
 	}
@@ -587,20 +588,20 @@ func UpdateAsset(ctx context.Context, id string, p *UpdateAssetParams) (*Asset, 
 	}
 
 	args = append(args, id)
-	_, err = conn.ExecContext(ctx,
+	_, err = qexec(ctx, sch, q,
 		fmt.Sprintf(`UPDATE fin_asset SET %s WHERE id=$%d AND is_active=true`, strings.Join(sets, ","), i),
 		args...,
 	)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	auditFinance(ctx, conn, u, "asset", id, "edit", nil, p)
+	auditFinance(ctx, sch, q, u, "asset", id, "edit", nil, p)
 
 	var a Asset
 	var ticker, notes sql.NullString
 	var mult float64
 	var priceUnit sql.NullString
-	err = conn.QueryRowContext(ctx,
+	err = qrow(ctx, sch, q,
 		`SELECT id, name, ticker, type, unit_name, wallet_id, notes, is_active, created_at,
 		        COALESCE(unit_multiplier, 1), price_unit_name
 		 FROM fin_asset WHERE id=$1`, id,
@@ -635,14 +636,14 @@ func DeleteAsset(ctx context.Context, id string) (*OKResponse, error) {
 		return nil, appErrs.BadRequest("aset tidak valid")
 	}
 
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	q := tenantPool()
 
 	var isActive bool
-	if err := conn.QueryRowContext(ctx, `SELECT is_active FROM fin_asset WHERE id=$1`, id).Scan(&isActive); err == sql.ErrNoRows {
+	if err := qrow(ctx, sch, q, `SELECT is_active FROM fin_asset WHERE id=$1`, id).Scan(&isActive); err == sql.ErrNoRows {
 		return nil, appErrs.NotFound("aset tidak ditemukan")
 	} else if err != nil {
 		return nil, appErrs.Internal(err.Error())
@@ -651,23 +652,23 @@ func DeleteAsset(ctx context.Context, id string) (*OKResponse, error) {
 		return &OKResponse{OK: true}, nil
 	}
 
-	mult, err := loadAssetUnitConfig(ctx, conn, id)
+	mult, err := loadAssetUnitConfig(ctx, sch, q, id)
 	if err == sql.ErrNoRows {
 		return nil, appErrs.NotFound("aset tidak ditemukan")
 	} else if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	qtyHeld, _, _, _, _ := loadAssetMetrics(ctx, conn, id, mult)
+	qtyHeld, _, _, _, _ := loadAssetMetrics(ctx, sch, q, id, mult)
 	if qtyHeld > 1e-6 {
 		return nil, appErrs.BadRequest("aset masih memiliki kepemilikan. Catat penjualan terlebih dahulu sebelum menghapus.")
 	}
 
-	_, err = conn.ExecContext(ctx,
+	_, err = qexec(ctx, sch, q,
 		`UPDATE fin_asset SET is_active=false, updated_at=now() WHERE id=$1`, id)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	auditFinance(ctx, conn, u, "asset", id, "delete", nil, nil)
+	auditFinance(ctx, sch, q, u, "asset", id, "delete", nil, nil)
 	return &OKResponse{OK: true}, nil
 }
 
@@ -683,14 +684,14 @@ func UpdateAssetPrice(ctx context.Context, p *UpdateAssetPriceParams) (*AssetPri
 	if p.Price <= 0 {
 		return nil, appErrs.BadRequest("harga harus lebih dari 0")
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	q := tenantPool()
 
 	var id string
-	err = conn.QueryRowContext(ctx,
+	err = qrow(ctx, sch, q,
 		`INSERT INTO fin_asset_price (asset_id, price, recorded_by) VALUES ($1,$2,$3) RETURNING id`,
 		p.AssetID, p.Price, u.AccountID,
 	).Scan(&id)
@@ -727,19 +728,19 @@ func RecordInvestmentTrade(ctx context.Context, id string, p *RecordInvestmentTr
 	if p.PricePerUnit <= 0 {
 		return nil, appErrs.BadRequest("harga per unit harus lebih dari 0")
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	q := tenantPool()
 
 	if p.TransactionDate == "" {
-		p.TransactionDate = financeToday(ctx, conn)
+		p.TransactionDate = financeToday(ctx, sch, q)
 	}
 
 	var walletID, assetName string
 	var isActive bool
-	err = conn.QueryRowContext(ctx,
+	err = qrow(ctx, sch, q,
 		`SELECT wallet_id, name, is_active FROM fin_asset WHERE id=$1`, id,
 	).Scan(&walletID, &assetName, &isActive)
 	if err == sql.ErrNoRows {
@@ -751,7 +752,7 @@ func RecordInvestmentTrade(ctx context.Context, id string, p *RecordInvestmentTr
 	if !isActive {
 		return nil, appErrs.BadRequest("aset tidak aktif")
 	}
-	if err := assertWalletAccessible(ctx, conn, u, walletID); err != nil {
+	if err := assertWalletAccessible(ctx, sch, q, u, walletID); err != nil {
 		return nil, err
 	}
 
@@ -759,16 +760,16 @@ func RecordInvestmentTrade(ctx context.Context, id string, p *RecordInvestmentTr
 	if side == "sell" {
 		txnType = "investment_sell"
 	}
-	if _, err := loadTransactionTypeByCode(ctx, conn, txnType); err != nil {
+	if _, err := loadTransactionTypeByCode(ctx, sch, q, txnType); err != nil {
 		return nil, err
 	}
 
-	unitMult, err := loadAssetUnitConfig(ctx, conn, id)
+	unitMult, err := loadAssetUnitConfig(ctx, sch, q, id)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 
-	qtyHeld, _, _, _, _ := loadAssetMetrics(ctx, conn, id, unitMult)
+	qtyHeld, _, _, _, _ := loadAssetMetrics(ctx, sch, q, id, unitMult)
 	if side == "sell" && p.Quantity > qtyHeld+1e-6 {
 		return nil, appErrs.BadRequest("jumlah jual melebihi kepemilikan")
 	}
@@ -790,13 +791,13 @@ func RecordInvestmentTrade(ctx context.Context, id string, p *RecordInvestmentTr
 	}
 
 	period := walletPeriod(p.TransactionDate)
-	if err := ensurePeriodUnlocked(ctx, conn, period); err != nil {
+	if err := ensurePeriodUnlocked(ctx, sch, q, period); err != nil {
 		return nil, err
 	}
 
 	status := "approved"
 	if !isOwner(u) {
-		cfg, err := loadApprovalConfig(ctx, conn)
+		cfg, err := loadApprovalConfig(ctx, sch, q)
 		if err != nil {
 			return nil, appErrs.Internal(err.Error())
 		}
@@ -816,7 +817,7 @@ func RecordInvestmentTrade(ctx context.Context, id string, p *RecordInvestmentTr
 	}
 
 	var txnID string
-	err = conn.QueryRowContext(ctx,
+	err = qrow(ctx, sch, q,
 		`INSERT INTO fin_transaction
 		 (type,amount,currency,wallet_id,description,transaction_date,status,
 		  asset_id,asset_qty,asset_price_per_unit,asset_fee,created_by)
@@ -830,12 +831,12 @@ func RecordInvestmentTrade(ctx context.Context, id string, p *RecordInvestmentTr
 	}
 
 	if status == "approved" {
-		refreshWallets(ctx, conn, walletID, nil)
+		refreshWallets(ctx, sch, q, walletID, nil)
 	}
 	usage.RecordEvent(ctx, u.TenantSchema, "fin_transaction_created", 1, nil)
-	auditFinance(ctx, conn, u, "transaction", txnID, "create", nil, p)
+	auditFinance(ctx, sch, q, u, "transaction", txnID, "create", nil, p)
 
-	newQty, _, _, _, _ := loadAssetMetrics(ctx, conn, id, unitMult)
+	newQty, _, _, _, _ := loadAssetMetrics(ctx, sch, q, id, unitMult)
 	return &RecordInvestmentTradeResponse{
 		TransactionID: txnID,
 		QtyHeld:       fmt.Sprintf("%.6f", newQty),
@@ -859,19 +860,19 @@ func RecordAssetDividend(ctx context.Context, id string, p *RecordAssetDividendP
 	if p.Amount <= 0 {
 		return nil, appErrs.BadRequest("jumlah dividen harus lebih dari 0")
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	q := tenantPool()
 
 	if p.TransactionDate == "" {
-		p.TransactionDate = financeToday(ctx, conn)
+		p.TransactionDate = financeToday(ctx, sch, q)
 	}
 
 	var walletID, assetName string
 	var isActive bool
-	err = conn.QueryRowContext(ctx,
+	err = qrow(ctx, sch, q,
 		`SELECT wallet_id, name, is_active FROM fin_asset WHERE id=$1`, id,
 	).Scan(&walletID, &assetName, &isActive)
 	if err == sql.ErrNoRows {
@@ -883,21 +884,21 @@ func RecordAssetDividend(ctx context.Context, id string, p *RecordAssetDividendP
 	if !isActive {
 		return nil, appErrs.BadRequest("aset tidak aktif")
 	}
-	if err := assertWalletAccessible(ctx, conn, u, walletID); err != nil {
+	if err := assertWalletAccessible(ctx, sch, q, u, walletID); err != nil {
 		return nil, err
 	}
-	if _, err := loadTransactionTypeByCode(ctx, conn, "dividend"); err != nil {
+	if _, err := loadTransactionTypeByCode(ctx, sch, q, "dividend"); err != nil {
 		return nil, err
 	}
 
 	period := walletPeriod(p.TransactionDate)
-	if err := ensurePeriodUnlocked(ctx, conn, period); err != nil {
+	if err := ensurePeriodUnlocked(ctx, sch, q, period); err != nil {
 		return nil, err
 	}
 
 	status := "approved"
 	if !isOwner(u) {
-		cfg, err := loadApprovalConfig(ctx, conn)
+		cfg, err := loadApprovalConfig(ctx, sch, q)
 		if err != nil {
 			return nil, appErrs.Internal(err.Error())
 		}
@@ -913,7 +914,7 @@ func RecordAssetDividend(ctx context.Context, id string, p *RecordAssetDividendP
 	}
 
 	var txnID string
-	err = conn.QueryRowContext(ctx,
+	err = qrow(ctx, sch, q,
 		`INSERT INTO fin_transaction
 		 (type,amount,currency,wallet_id,description,transaction_date,status,asset_id,created_by)
 		 VALUES ('dividend',$1,'IDR',$2,$3,$4,$5,$6,$7)
@@ -925,10 +926,10 @@ func RecordAssetDividend(ctx context.Context, id string, p *RecordAssetDividendP
 	}
 
 	if status == "approved" {
-		refreshWallets(ctx, conn, walletID, nil)
+		refreshWallets(ctx, sch, q, walletID, nil)
 	}
 	usage.RecordEvent(ctx, u.TenantSchema, "fin_transaction_created", 1, nil)
-	auditFinance(ctx, conn, u, "transaction", txnID, "create", nil, p)
+	auditFinance(ctx, sch, q, u, "transaction", txnID, "create", nil, p)
 
 	return &RecordAssetDividendResponse{
 		TransactionID: txnID,
@@ -946,13 +947,13 @@ func ListAssetTrades(ctx context.Context, id string) (*AssetTradesResponse, erro
 	if strings.TrimSpace(id) == "" {
 		return nil, appErrs.BadRequest("aset tidak valid")
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	q := tenantPool()
 
-	rows, err := conn.QueryContext(ctx, `
+	rows, err := qquery(ctx, sch, q, `
 		SELECT id, type, COALESCE(asset_qty,0), COALESCE(asset_price_per_unit,0), COALESCE(asset_fee,0),
 		       amount, transaction_date::text, description, status
 		FROM fin_transaction
@@ -1000,15 +1001,15 @@ func DeleteAssetTrade(ctx context.Context, id string, txnId string) (*OKResponse
 		return nil, appErrs.BadRequest("parameter tidak valid")
 	}
 
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	q := tenantPool()
 
 	var walletID, txType, txDate string
 	var toWalletID sql.NullString
-	err = conn.QueryRowContext(ctx, `
+	err = qrow(ctx, sch, q, `
 		SELECT wallet_id, to_wallet_id, type, transaction_date::text
 		FROM fin_transaction
 		WHERE id=$1 AND asset_id=$2 AND deleted_at IS NULL`, txnId, id,
@@ -1023,11 +1024,11 @@ func DeleteAssetTrade(ctx context.Context, id string, txnId string) (*OKResponse
 		return nil, appErrs.BadRequest("hanya transaksi investasi yang dapat dihapus dari sini")
 	}
 
-	if err := ensurePeriodUnlocked(ctx, conn, walletPeriod(txDate)); err != nil {
+	if err := ensurePeriodUnlocked(ctx, sch, q, walletPeriod(txDate)); err != nil {
 		return nil, err
 	}
 
-	_, err = conn.ExecContext(ctx,
+	_, err = qexec(ctx, sch, q,
 		`UPDATE fin_transaction SET deleted_at=now(), deleted_by=$1 WHERE id=$2`, u.AccountID, txnId)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
@@ -1036,8 +1037,8 @@ func DeleteAssetTrade(ctx context.Context, id string, txnId string) (*OKResponse
 	if toWalletID.Valid && toWalletID.String != "" {
 		toPtr = &toWalletID.String
 	}
-	refreshWallets(ctx, conn, walletID, toPtr)
-	auditFinance(ctx, conn, u, "transaction", txnId, "delete", nil, nil)
+	refreshWallets(ctx, sch, q, walletID, toPtr)
+	auditFinance(ctx, sch, q, u, "transaction", txnId, "delete", nil, nil)
 	return &OKResponse{OK: true}, nil
 }
 
@@ -1050,13 +1051,13 @@ func GetAssetPriceHistory(ctx context.Context, id string) (*AssetPriceListRespon
 	if err := assertOwner(u); err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	q := tenantPool()
 
-	rows, err := conn.QueryContext(ctx,
+	rows, err := qquery(ctx, sch, q,
 		`SELECT id, asset_id, price, recorded_at, source
 		 FROM fin_asset_price WHERE asset_id=$1 ORDER BY recorded_at DESC LIMIT 30`, id)
 	if err != nil {

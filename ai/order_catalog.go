@@ -39,25 +39,26 @@ func warehouseBuyerLabel(customerLabel, warehouseName string) string {
 
 // enrichCatalogStock annotates catalog items with per-warehouse available stock when the
 // inventory module is active for the tenant. Best-effort: any error leaves the catalog as-is.
-func enrichCatalogStock(ctx context.Context, q tenantQuerier, catalog []dbCatalogItem) {
+func enrichCatalogStock(ctx context.Context, ts tenantScopedQuerier, catalog []dbCatalogItem) {
 	if len(catalog) == 0 {
 		return
 	}
 	var setup bool
-	if err := q.QueryRowContext(ctx,
-		`SELECT setup_completed FROM inv_setting ORDER BY created_at LIMIT 1`).Scan(&setup); err != nil || !setup {
+	if err := ts.QueryRowContext(ctx, fmt.Sprintf(
+		`SELECT setup_completed FROM %s ORDER BY created_at LIMIT 1`, ts.T("inv_setting"))).Scan(&setup); err != nil || !setup {
 		return
 	}
-	rows, err := q.QueryContext(ctx, `
+	rows, err := ts.QueryContext(ctx, fmt.Sprintf(`
 		SELECT s.catalog_item_id::text, w.id::text, COALESCE(w.customer_label, ''), w.name,
 		       w.is_default, w.display_order,
 		       COALESCE(GREATEST(b.on_hand - b.reserved, 0), 0)
-		FROM inv_sku s
-		INNER JOIN inv_stock_balance b ON b.catalog_item_id = s.catalog_item_id
-		INNER JOIN inv_warehouse w ON w.id = b.warehouse_id
+		FROM %s s
+		INNER JOIN %s b ON b.catalog_item_id = s.catalog_item_id
+		INNER JOIN %s w ON w.id = b.warehouse_id
 		WHERE s.track_stock = true AND s.is_bundle = false
 		  AND w.deleted_at IS NULL AND w.is_active = true
-		ORDER BY s.catalog_item_id, w.is_default DESC, w.display_order, w.name`)
+		ORDER BY s.catalog_item_id, w.is_default DESC, w.display_order, w.name`,
+		ts.T("inv_sku"), ts.T("inv_stock_balance"), ts.T("inv_warehouse")))
 	if err != nil {
 		return
 	}
@@ -104,16 +105,16 @@ var (
 	colorHintRe    = regexp.MustCompile(`(?i)(warna|color|colour)\s*[:\-]?\s*([a-z]+)`)
 )
 
-func loadActiveCatalog(ctx context.Context, q tenantQuerier, limit int) ([]dbCatalogItem, error) {
+func loadActiveCatalog(ctx context.Context, ts tenantScopedQuerier, limit int) ([]dbCatalogItem, error) {
 	if limit < 1 || limit > 100 {
 		limit = 40
 	}
-	rows, err := q.QueryContext(ctx, `
+	rows, err := ts.QueryContext(ctx, fmt.Sprintf(`
 		SELECT id::text, external_code, name,
 		       COALESCE(sell_price, 0), COALESCE(sell_unit, 'pcs')
-		FROM business_catalog_item
+		FROM %s
 		WHERE deleted_at IS NULL AND is_active = true
-		ORDER BY name ASC LIMIT $1`, limit)
+		ORDER BY name ASC LIMIT $1`, ts.T("business_catalog_item")), limit)
 	if err != nil {
 		return nil, err
 	}

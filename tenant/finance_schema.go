@@ -340,7 +340,11 @@ UPDATE fin_asset SET unit_name = 'coin', unit_multiplier = 1, price_unit_name = 
 `
 
 func runFinanceSchemaAndSeed(ctx context.Context, conn *sql.Conn) error {
-	ready, err := tenantschema.FinanceModuleReady(ctx, conn)
+	schemaName, err := tenantSchemaFromConn(ctx, conn)
+	if err != nil {
+		return err
+	}
+	ready, err := tenantschema.FinanceModuleReady(ctx, conn, schemaName)
 	if err != nil {
 		return fmt.Errorf("finance schema check: %w", err)
 	}
@@ -349,7 +353,7 @@ func runFinanceSchemaAndSeed(ctx context.Context, conn *sql.Conn) error {
 			if err := ensureCloudAdminDDLForConn(ctx, conn); err != nil {
 				return fmt.Errorf("finance cloud DDL: %w", err)
 			}
-			ready, err = tenantschema.FinanceModuleReady(ctx, conn)
+			ready, err = tenantschema.FinanceModuleReady(ctx, conn, schemaName)
 			if err != nil {
 				return fmt.Errorf("finance schema recheck: %w", err)
 			}

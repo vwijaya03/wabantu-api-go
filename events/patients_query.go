@@ -123,7 +123,7 @@ func paginatePatientSlice(items []Patient, limit, offset int) ([]Patient, int) {
 	return items[offset:end], total
 }
 
-func queryPatients(ctx context.Context, conn *sql.Conn, eventID string, f patientFilterInput, limit, offset int) ([]Patient, int, error) {
+func queryPatients(ctx context.Context, ts tenantScope, eventID string, f patientFilterInput, limit, offset int) ([]Patient, int, error) {
 	if err := validatePatientFilters(f); err != nil {
 		return nil, 0, err
 	}
@@ -145,7 +145,7 @@ func queryPatients(ctx context.Context, conn *sql.Conn, eventID string, f patien
 	inMemorySort := patientSortNeedsInMemory(f.SortBy)
 
 	if nameQ != "" || inMemorySort {
-		rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
+		rows, err := ts.QueryContext(ctx, fmt.Sprintf(`
 		SELECT pat.id::text, pat.event_id::text, pat.therapy_id::text, t.therapy_name,
 		       pat.full_name_enc, pat.birth_date_enc, COALESCE(pat.complaint,''),
 		       COALESCE(pat.preferred_time,''), pat.reservation_status, pat.slot_id::text,
@@ -173,14 +173,14 @@ func queryPatients(ctx context.Context, conn *sql.Conn, eventID string, f patien
 
 	var total int
 	countQ := `SELECT COUNT(*) ` + patientFromJoin + ` WHERE ` + where
-	if err := conn.QueryRowContext(ctx, countQ, args...).Scan(&total); err != nil {
+	if err := ts.QueryRowContext(ctx, countQ, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 	qArgs := append([]any{}, args...)
 	qArgs = append(qArgs, limit, offset)
 	limIdx := len(args) + 1
 	offIdx := len(args) + 2
-	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
+	rows, err := ts.QueryContext(ctx, fmt.Sprintf(`
 		SELECT pat.id::text, pat.event_id::text, pat.therapy_id::text, t.therapy_name,
 		       pat.full_name_enc, pat.birth_date_enc, COALESCE(pat.complaint,''),
 		       COALESCE(pat.preferred_time,''), pat.reservation_status, pat.slot_id::text,

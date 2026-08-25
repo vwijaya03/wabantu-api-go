@@ -30,20 +30,24 @@ ALTER TABLE inv_warehouse ADD COLUMN IF NOT EXISTS customer_label VARCHAR(80);
 // alwaysApplyInventorySettingPatch ensures inv_setting has PR-A6 columns on local dev.
 // On Encore Cloud, admin-owned tables must be patched via apply-inventory-schema-cloud.sh.
 func alwaysApplyInventorySettingPatch(ctx context.Context, conn *sql.Conn) error {
-	hasTable, err := tenantschema.TableExists(ctx, conn, "inv_setting")
+	schemaName, err := tenantSchemaFromConn(ctx, conn)
+	if err != nil {
+		return err
+	}
+	hasTable, err := tenantschema.TableExists(ctx, conn, schemaName, "inv_setting")
 	if err != nil {
 		return err
 	}
 	if !hasTable {
 		return nil
 	}
-	if err := applyInventoryColumnPatch(ctx, conn, "purchase_posts_expense", inventoryPurchasePostsExpenseAlterSQL); err != nil {
+	if err := applyInventoryColumnPatch(ctx, conn, schemaName, "purchase_posts_expense", inventoryPurchasePostsExpenseAlterSQL); err != nil {
 		return err
 	}
-	if err := applyInventoryColumnPatch(ctx, conn, "stock_txn_backfill_done", inventoryStockTxnBackfillAlterSQL); err != nil {
+	if err := applyInventoryColumnPatch(ctx, conn, schemaName, "stock_txn_backfill_done", inventoryStockTxnBackfillAlterSQL); err != nil {
 		return err
 	}
-	return applyWarehouseCustomerLabelPatch(ctx, conn)
+	return applyWarehouseCustomerLabelPatch(ctx, conn, schemaName)
 }
 
 const inventoryStockTxnLineItemWhIndexSQL = `
@@ -53,7 +57,11 @@ CREATE INDEX IF NOT EXISTS idx_inv_stock_txn_line_item_wh
 
 // alwaysApplyInventoryIndexPatch adds indexes safe to re-run on every migration.
 func alwaysApplyInventoryIndexPatch(ctx context.Context, conn *sql.Conn) error {
-	hasTable, err := tenantschema.TableExists(ctx, conn, "inv_stock_transaction_line")
+	schemaName, err := tenantSchemaFromConn(ctx, conn)
+	if err != nil {
+		return err
+	}
+	hasTable, err := tenantschema.TableExists(ctx, conn, schemaName, "inv_stock_transaction_line")
 	if err != nil {
 		return err
 	}
@@ -67,8 +75,8 @@ func alwaysApplyInventoryIndexPatch(ctx context.Context, conn *sql.Conn) error {
 	return err
 }
 
-func applyInventoryColumnPatch(ctx context.Context, conn *sql.Conn, column, alterSQL string) error {
-	hasCol, err := tenantschema.ColumnExists(ctx, conn, "inv_setting", column)
+func applyInventoryColumnPatch(ctx context.Context, conn *sql.Conn, schemaName, column, alterSQL string) error {
+	hasCol, err := tenantschema.ColumnExists(ctx, conn, schemaName, "inv_setting", column)
 	if err != nil {
 		return err
 	}
@@ -82,15 +90,15 @@ func applyInventoryColumnPatch(ctx context.Context, conn *sql.Conn, column, alte
 	return err
 }
 
-func applyWarehouseCustomerLabelPatch(ctx context.Context, conn *sql.Conn) error {
-	hasTable, err := tenantschema.TableExists(ctx, conn, "inv_warehouse")
+func applyWarehouseCustomerLabelPatch(ctx context.Context, conn *sql.Conn, schemaName string) error {
+	hasTable, err := tenantschema.TableExists(ctx, conn, schemaName, "inv_warehouse")
 	if err != nil {
 		return err
 	}
 	if !hasTable {
 		return nil
 	}
-	hasCol, err := tenantschema.ColumnExists(ctx, conn, "inv_warehouse", "customer_label")
+	hasCol, err := tenantschema.ColumnExists(ctx, conn, schemaName, "inv_warehouse", "customer_label")
 	if err != nil {
 		return err
 	}

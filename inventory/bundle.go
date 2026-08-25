@@ -1,13 +1,13 @@
 package inventory
 
 import (
+	appdb "encore.app/wabantu/shared/db"
 	"context"
 	"database/sql"
 	"math"
 	"strings"
 
 	appErrs "encore.app/wabantu/shared/errs"
-	"encore.app/wabantu/tenant"
 )
 
 // BundleComponent is one child SKU of a bundle and the qty consumed per bundle unit.
@@ -91,8 +91,8 @@ type rowsQuerier interface {
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 }
 
-func loadBundleComponents(ctx context.Context, q rowsQuerier, parentID string) ([]BundleComponent, error) {
-	rows, err := q.QueryContext(ctx,
+func loadBundleComponents(ctx context.Context, sch appdb.SchemaSQL, q rowsQuerier, parentID string) ([]BundleComponent, error) {
+	rows, err := qquery(ctx, sch, q,
 		`SELECT child_catalog_item_id, qty FROM inv_bundle_component WHERE parent_catalog_item_id = $1`, parentID)
 	if err != nil {
 		return nil, err
@@ -109,9 +109,9 @@ func loadBundleComponents(ctx context.Context, q rowsQuerier, parentID string) (
 	return out, rows.Err()
 }
 
-func isBundleItem(ctx context.Context, q querier, catalogItemID string) (bool, error) {
+func isBundleItem(ctx context.Context, sch appdb.SchemaSQL, q querier, catalogItemID string) (bool, error) {
 	var isBundle sql.NullBool
-	err := q.QueryRowContext(ctx,
+	err := qrow(ctx, sch, q,
 		`SELECT is_bundle FROM inv_sku WHERE catalog_item_id = $1`, catalogItemID).Scan(&isBundle)
 	if err == sql.ErrNoRows {
 		return false, nil
@@ -143,18 +143,18 @@ func GetBundleComponents(ctx context.Context, catalogItemID string) (*GetBundleR
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
+	if err != nil {
+		return nil, err
+	}
+	pool := tenantDB()
+
+	isBundle, err := isBundleItem(ctx, sch, pool, catalogItemID)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer tenant.CloseTenantConn(conn)
 
-	isBundle, err := isBundleItem(ctx, conn, catalogItemID)
-	if err != nil {
-		return nil, appErrs.Internal(err.Error())
-	}
-
-	rows, err := conn.QueryContext(ctx, `
+	rows, err := qquery(ctx, sch, pool, `
 		SELECT bc.child_catalog_item_id, COALESCE(ci.name, ''), COALESCE(ci.external_code, ''), bc.qty
 		FROM inv_bundle_component bc
 		LEFT JOIN business_catalog_item ci ON ci.id = bc.child_catalog_item_id
@@ -190,13 +190,13 @@ func SetBundleComponents(ctx context.Context, catalogItemID string, p *SetBundle
 		return nil, err
 	}
 
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantDB()
 
-	if err := validateCatalogItem(ctx, conn, catalogItemID); err != nil {
+	if err := validateCatalogItem(ctx, sch, pool, catalogItemID); err != nil {
 		return nil, err
 	}
 
@@ -207,10 +207,10 @@ func SetBundleComponents(ctx context.Context, catalogItemID string, p *SetBundle
 		}
 		// Children must exist and must not themselves be bundles (no nesting in v1).
 		for _, c := range p.Components {
-			if err := validateCatalogItem(ctx, conn, c.ChildCatalogItemID); err != nil {
+			if err := validateCatalogItem(ctx, sch, pool, c.ChildCatalogItemID); err != nil {
 				return nil, err
 			}
-			childIsBundle, err := isBundleItem(ctx, conn, c.ChildCatalogItemID)
+			childIsBundle, err := isBundleItem(ctx, sch, pool, c.ChildCatalogItemID)
 			if err != nil {
 				return nil, appErrs.Internal(err.Error())
 			}
@@ -220,28 +220,28 @@ func SetBundleComponents(ctx context.Context, catalogItemID string, p *SetBundle
 		}
 	}
 
-	tx, err := conn.BeginTx(ctx, nil)
+	tx, err := pool.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer tx.Rollback()
 
-	if err := ensureSku(ctx, tx, catalogItemID); err != nil {
+	if err := ensureSku(ctx, sch, tx, catalogItemID); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	if _, err := tx.ExecContext(ctx,
+	if _, err := qexec(ctx, sch, tx,
 		`DELETE FROM inv_bundle_component WHERE parent_catalog_item_id = $1`, catalogItemID); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	for _, c := range p.Components {
-		if _, err := tx.ExecContext(ctx, `
+		if _, err := qexec(ctx, sch, tx, `
 			INSERT INTO inv_bundle_component (parent_catalog_item_id, child_catalog_item_id, qty)
 			VALUES ($1, $2, $3)`, catalogItemID, c.ChildCatalogItemID, round4(c.Qty)); err != nil {
 			return nil, appErrs.Internal(err.Error())
 		}
 	}
 	// A bundle parent does not hold its own stock; flag it and disable stock tracking.
-	if _, err := tx.ExecContext(ctx, `
+	if _, err := qexec(ctx, sch, tx, `
 		UPDATE inv_sku SET is_bundle = $2, track_stock = $3, updated_at = now()
 		WHERE catalog_item_id = $1`, catalogItemID, !clearing, clearing); err != nil {
 		return nil, appErrs.Internal(err.Error())

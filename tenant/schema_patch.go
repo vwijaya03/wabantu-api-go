@@ -216,7 +216,7 @@ func RunSchemaPatches(ctx context.Context, schemaName string) error {
 		return err
 	}
 	defer conn.Close()
-	ready, err := tenantschema.TenantPatchReady(ctx, conn)
+	ready, err := tenantschema.TenantPatchReady(ctx, conn, schemaName)
 	if err != nil {
 		return err
 	}
@@ -277,7 +277,11 @@ func runAlwaysApplyPatches(ctx context.Context, conn *sql.Conn) error {
 }
 
 func alwaysApplyOrderIncomePatch(ctx context.Context, conn *sql.Conn) error {
-	ready, err := tenantschema.OrderIncomePatchReady(ctx, conn)
+	schemaName, err := tenantSchemaFromConn(ctx, conn)
+	if err != nil {
+		return err
+	}
+	ready, err := tenantschema.OrderIncomePatchReady(ctx, conn, schemaName)
 	if err != nil {
 		return err
 	}
@@ -287,7 +291,7 @@ func alwaysApplyOrderIncomePatch(ctx context.Context, conn *sql.Conn) error {
 	if encore.Meta().Environment.Cloud != encore.CloudLocal {
 		return ensureCloudAdminDDLForConn(ctx, conn)
 	}
-	hasCol, err := tenantschema.ColumnExists(ctx, conn, "order", "income_wallet_id")
+	hasCol, err := tenantschema.ColumnExists(ctx, conn, schemaName, "order", "income_wallet_id")
 	if err != nil {
 		return err
 	}
@@ -296,11 +300,11 @@ func alwaysApplyOrderIncomePatch(ctx context.Context, conn *sql.Conn) error {
 			return err
 		}
 	}
-	finExists, err := tenantschema.TableExists(ctx, conn, "fin_transaction")
+	finExists, err := tenantschema.TableExists(ctx, conn, schemaName, "fin_transaction")
 	if err != nil || !finExists {
 		return err
 	}
-	hasIdx, err := tenantschema.IndexExists(ctx, conn, "idx_fin_txn_order_income_ref")
+	hasIdx, err := tenantschema.IndexExists(ctx, conn, schemaName, "idx_fin_txn_order_income_ref")
 	if err != nil || hasIdx {
 		return err
 	}
@@ -326,7 +330,11 @@ CREATE INDEX IF NOT EXISTS idx_order_payment_status
 `
 
 func alwaysApplyPaymentProofPatch(ctx context.Context, conn *sql.Conn) error {
-	ready, err := tenantschema.OrderPaymentProofPatchReady(ctx, conn)
+	schemaName, err := tenantSchemaFromConn(ctx, conn)
+	if err != nil {
+		return err
+	}
+	ready, err := tenantschema.OrderPaymentProofPatchReady(ctx, conn, schemaName)
 	if err != nil {
 		return err
 	}
@@ -341,7 +349,11 @@ func alwaysApplyPaymentProofPatch(ctx context.Context, conn *sql.Conn) error {
 }
 
 func runPIISchemaOnConn(ctx context.Context, conn *sql.Conn) error {
-	ready, err := tenantschema.PIIReady(ctx, conn)
+	schemaName, err := tenantSchemaFromConn(ctx, conn)
+	if err != nil {
+		return err
+	}
+	ready, err := tenantschema.PIIReady(ctx, conn, schemaName)
 	if err != nil || ready {
 		return err
 	}

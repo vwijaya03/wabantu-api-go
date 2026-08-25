@@ -1,6 +1,7 @@
 package inventory
 
 import (
+	appdb "encore.app/wabantu/shared/db"
 	"context"
 	"fmt"
 )
@@ -35,9 +36,9 @@ func poStatusFromReceipts(totalOrdered, totalReceived float64) string {
 
 // nextDocNumber atomically increments the per-tenant sequence and returns the
 // formatted number. Must run inside the document-creation transaction.
-func nextDocNumber(ctx context.Context, q querier, docType, prefix string) (string, error) {
+func nextDocNumber(ctx context.Context, sch appdb.SchemaSQL, q querier, docType, prefix string) (string, error) {
 	var n int64
-	err := q.QueryRowContext(ctx, `
+	err := qrow(ctx, sch, q, `
 		INSERT INTO inv_document_sequence (doc_type, next_no)
 		VALUES ($1, 1)
 		ON CONFLICT (doc_type) DO UPDATE SET next_no = inv_document_sequence.next_no + 1

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	appdb "encore.app/wabantu/shared/db"
 	appErrs "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/types"
 	"encore.app/wabantu/usage"
@@ -96,9 +97,9 @@ func parseBillingPeriod(period string) (time.Time, time.Time, string, error) {
 // ensureMonthlyBillingItems upserts checklist rows for the month in one statement.
 // Do not run Exec while a Rows cursor is open on the same *sql.Conn — that deadlocks
 // the connection until timeout ("driver: bad connection").
-func ensureMonthlyBillingItems(ctx context.Context, conn *sql.Conn, periodStart time.Time) error {
+func ensureMonthlyBillingItems(ctx context.Context, sch appdb.SchemaSQL, q finQuerier, periodStart time.Time) error {
 	monthStart := periodStart.Format("2006-01-02")
-	_, err := conn.ExecContext(ctx, `
+	_, err := qexec(ctx, sch, q, `
 		INSERT INTO fin_checklist_item (template_id, due_date)
 		SELECT
 		  t.id,
@@ -163,10 +164,10 @@ func scanChecklistItemRow(
 	return it, nil
 }
 
-func repairOrphanChecklistTransactionIDs(ctx context.Context, conn *sql.Conn, periodStart, periodEnd time.Time) error {
+func repairOrphanChecklistTransactionIDs(ctx context.Context, sch appdb.SchemaSQL, q finQuerier, periodStart, periodEnd time.Time) error {
 	startStr := periodStart.Format("2006-01-02")
 	endStr := periodEnd.Format("2006-01-02")
-	_, err := conn.ExecContext(ctx, `
+	_, err := qexec(ctx, sch, q, `
 		UPDATE fin_checklist_item i
 		SET transaction_id = NULL
 		FROM fin_checklist_template t
@@ -181,18 +182,18 @@ func repairOrphanChecklistTransactionIDs(ctx context.Context, conn *sql.Conn, pe
 	return err
 }
 
-func syncMonthlyBillingPeriod(ctx context.Context, conn *sql.Conn, tenantSchema string, u *types.AuthUser, periodStart, periodEnd time.Time, periodLabel string) error {
-	if err := repairOrphanChecklistTransactionIDs(ctx, conn, periodStart, periodEnd); err != nil {
+func syncMonthlyBillingPeriod(ctx context.Context, sch appdb.SchemaSQL, q finQuerier, tenantSchema string, u *types.AuthUser, periodStart, periodEnd time.Time, periodLabel string) error {
+	if err := repairOrphanChecklistTransactionIDs(ctx, sch, q, periodStart, periodEnd); err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	return tryPostMonthlyBillingTransactions(ctx, conn, tenantSchema, u, periodStart, periodEnd, periodLabel)
+	return tryPostMonthlyBillingTransactions(ctx, sch, q, tenantSchema, u, periodStart, periodEnd, periodLabel)
 }
 
-func loadMonthlyBilling(ctx context.Context, conn *sql.Conn, periodStart, periodEnd time.Time, periodLabel string) (*MonthlyBillingResponse, error) {
+func loadMonthlyBilling(ctx context.Context, sch appdb.SchemaSQL, q finQuerier, periodStart, periodEnd time.Time, periodLabel string) (*MonthlyBillingResponse, error) {
 	startStr := periodStart.Format("2006-01-02")
 	endStr := periodEnd.Format("2006-01-02")
 
-	itemRows, err := conn.QueryContext(ctx, `
+	itemRows, err := qquery(ctx, sch, q, `
 		SELECT i.id, i.template_id, COALESCE(t.title_enc,''), t.title, i.due_date::text, i.status,
 		       CASE WHEN ft.id IS NOT NULL THEN ft.id::text ELSE NULL END,
 		       i.completed_by, i.completed_at, i.note,
@@ -253,11 +254,11 @@ func ListChecklistTemplatesPaginated(ctx context.Context, p *ListChecklistTempla
 		p.PageSize = 20
 	}
 
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	q := tenantPool()
 
 	conditions := []string{"1=1"}
 	args := []any{}
@@ -278,15 +279,15 @@ func ListChecklistTemplatesPaginated(ctx context.Context, p *ListChecklistTempla
 	where := strings.Join(conditions, " AND ")
 
 	var total int
-	if err := conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM fin_checklist_template WHERE `+where, args...).Scan(&total); err != nil {
+	if err := qrow(ctx, sch, q, `SELECT COUNT(*) FROM fin_checklist_template WHERE `+where, args...).Scan(&total); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 
-	ref := financeNow(ctx, conn)
+	ref := financeNow(ctx, sch, q)
 
 	offset := (p.Page - 1) * p.PageSize
 	listArgs := append(append([]any{}, args...), p.PageSize, offset)
-	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
+	rows, err := qquery(ctx, sch, q, fmt.Sprintf(`
 		SELECT id, title, description, amount_hint, category_id, wallet_id,
 		       frequency, day_of_month, due_anchor_date, is_active, display_order, created_at
 		FROM fin_checklist_template WHERE %s
@@ -347,11 +348,11 @@ func UpdateChecklistTemplate(ctx context.Context, id string, p *UpdateChecklistT
 	if err := assertOwner(u); err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	q := tenantPool()
 
 	sets := []string{}
 	args := []any{}
@@ -404,7 +405,7 @@ func UpdateChecklistTemplate(ctx context.Context, id string, p *UpdateChecklistT
 		if *p.DayOfMonth < 1 || *p.DayOfMonth > 31 {
 			return nil, appErrs.BadRequest("tanggal jatuh tempo tidak valid (hari 1–31)")
 		}
-		ref := financeNow(ctx, conn)
+		ref := financeNow(ctx, sch, q)
 		anchor := synthesizeDueAnchor(ref.Year(), ref.Month(), *p.DayOfMonth)
 		sets = append(sets, fmt.Sprintf("day_of_month=$%d", i), fmt.Sprintf("due_anchor_date=$%d", i+1))
 		args = append(args, *p.DayOfMonth, anchor)
@@ -425,7 +426,7 @@ func UpdateChecklistTemplate(ctx context.Context, id string, p *UpdateChecklistT
 		return nil, appErrs.BadRequest("tidak ada field untuk diperbarui")
 	}
 	args = append(args, id)
-	res, err := conn.ExecContext(ctx,
+	res, err := qexec(ctx, sch, q,
 		fmt.Sprintf(`UPDATE fin_checklist_template SET %s WHERE id=$%d`, strings.Join(sets, ", "), i),
 		args...)
 	if err != nil {
@@ -437,7 +438,7 @@ func UpdateChecklistTemplate(ctx context.Context, id string, p *UpdateChecklistT
 	}
 
 	if dueScheduleChanged {
-		if err := reconcilePendingChecklistItems(ctx, conn, id, currentMonthStart(ctx, conn)); err != nil {
+		if err := reconcilePendingChecklistItems(ctx, sch, q, id, currentMonthStart(ctx, sch, q)); err != nil {
 			return nil, appErrs.Internal(err.Error())
 		}
 	}
@@ -447,7 +448,7 @@ func UpdateChecklistTemplate(ctx context.Context, id string, p *UpdateChecklistT
 	var amtHint sql.NullFloat64
 	var domN sql.NullInt64
 	var anchor sql.NullTime
-	err = conn.QueryRowContext(ctx, `
+	err = qrow(ctx, sch, q, `
 		SELECT id, title, description, amount_hint, category_id, wallet_id,
 		       frequency, day_of_month, due_anchor_date, is_active, display_order, created_at
 		FROM fin_checklist_template WHERE id=$1`, id).Scan(
@@ -469,7 +470,7 @@ func UpdateChecklistTemplate(ctx context.Context, id string, p *UpdateChecklistT
 	if walletID.Valid {
 		t.WalletID = &walletID.String
 	}
-	attachDueAnchorDate(&t, anchor, domN, financeNow(ctx, conn))
+	attachDueAnchorDate(&t, anchor, domN, financeNow(ctx, sch, q))
 	return &t, nil
 }
 
@@ -491,18 +492,18 @@ func GetMonthlyBillingChecklist(ctx context.Context, p *MonthlyBillingParams) (*
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	if err := ensureMonthlyBillingItems(ctx, conn, periodStart); err != nil {
+	q := tenantPool()
+	if err := ensureMonthlyBillingItems(ctx, sch, q, periodStart); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	if err := syncMonthlyBillingPeriod(ctx, conn, u.TenantSchema, u, periodStart, periodEnd, label); err != nil {
+	if err := syncMonthlyBillingPeriod(ctx, sch, q, u.TenantSchema, u, periodStart, periodEnd, label); err != nil {
 		return nil, err
 	}
-	return loadMonthlyBilling(ctx, conn, periodStart, periodEnd, label)
+	return loadMonthlyBilling(ctx, sch, q, periodStart, periodEnd, label)
 }
 
 //encore:api auth method=POST path=/api/v1/finance/checklist/monthly/toggle
@@ -514,14 +515,14 @@ func ToggleMonthlyBillingItem(ctx context.Context, p *ToggleMonthlyBillingParams
 	if strings.TrimSpace(p.ItemID) == "" {
 		return nil, appErrs.BadRequest("itemId wajib")
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	q := tenantPool()
 
 	var dueDate, status, freq string
-	err = conn.QueryRowContext(ctx, `
+	err = qrow(ctx, sch, q, `
 		SELECT i.due_date::text, i.status, t.frequency
 		FROM fin_checklist_item i
 		JOIN fin_checklist_template t ON t.id=i.template_id
@@ -543,7 +544,7 @@ func ToggleMonthlyBillingItem(ctx context.Context, p *ToggleMonthlyBillingParams
 	}
 
 	if !p.Checked {
-		if err := removeChecklistBillingTransaction(ctx, conn, u, p.ItemID); err != nil {
+		if err := removeChecklistBillingTransaction(ctx, sch, q, u, p.ItemID); err != nil {
 			return nil, err
 		}
 	}
@@ -552,7 +553,7 @@ func ToggleMonthlyBillingItem(ctx context.Context, p *ToggleMonthlyBillingParams
 	if p.Checked {
 		newStatus = "done"
 	}
-	_, err = conn.ExecContext(ctx,
+	_, err = qexec(ctx, sch, q,
 		`UPDATE fin_checklist_item SET status=$1,
 		 completed_by=CASE WHEN $2='done' THEN $3::uuid ELSE NULL END,
 		 completed_at=CASE WHEN $2='done' THEN now() ELSE NULL END
@@ -562,13 +563,13 @@ func ToggleMonthlyBillingItem(ctx context.Context, p *ToggleMonthlyBillingParams
 		return nil, appErrs.Internal(err.Error())
 	}
 
-	if err := ensureMonthlyBillingItems(ctx, conn, periodStart); err != nil {
+	if err := ensureMonthlyBillingItems(ctx, sch, q, periodStart); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	if err := syncMonthlyBillingPeriod(ctx, conn, u.TenantSchema, u, periodStart, periodEnd, label); err != nil {
+	if err := syncMonthlyBillingPeriod(ctx, sch, q, u.TenantSchema, u, periodStart, periodEnd, label); err != nil {
 		return nil, err
 	}
-	billing, err := loadMonthlyBilling(ctx, conn, periodStart, periodEnd, label)
+	billing, err := loadMonthlyBilling(ctx, sch, q, periodStart, periodEnd, label)
 	if err != nil {
 		return nil, err
 	}
@@ -585,12 +586,12 @@ func ToggleMonthlyBillingItem(ctx context.Context, p *ToggleMonthlyBillingParams
 	return &ToggleMonthlyBillingResponse{Item: item, Billing: *billing}, nil
 }
 
-func tryPostMonthlyBillingTransactions(ctx context.Context, conn *sql.Conn, tenantSchema string, u *types.AuthUser, periodStart, periodEnd time.Time, periodLabel string) error {
+func tryPostMonthlyBillingTransactions(ctx context.Context, sch appdb.SchemaSQL, q finQuerier, tenantSchema string, u *types.AuthUser, periodStart, periodEnd time.Time, periodLabel string) error {
 	startStr := periodStart.Format("2006-01-02")
 	endStr := periodEnd.Format("2006-01-02")
 
 	var unpostedDone int
-	err := conn.QueryRowContext(ctx, `
+	err := qrow(ctx, sch, q, `
 		SELECT COUNT(*)::int
 		FROM fin_checklist_item i
 		JOIN fin_checklist_template t ON t.id=i.template_id
@@ -604,7 +605,7 @@ func tryPostMonthlyBillingTransactions(ctx context.Context, conn *sql.Conn, tena
 		return nil
 	}
 
-	rows, err := conn.QueryContext(ctx, `
+	rows, err := qquery(ctx, sch, q, `
 		SELECT i.id, i.due_date::text, COALESCE(t.title_enc,''), t.title, t.amount_hint, t.category_id, t.wallet_id
 		FROM fin_checklist_item i
 		JOIN fin_checklist_template t ON t.id=i.template_id
@@ -646,7 +647,7 @@ func tryPostMonthlyBillingTransactions(ctx context.Context, conn *sql.Conn, tena
 	}
 	rows.Close()
 
-	defaultWallet, err := resolveDefaultExpenseWallet(ctx, conn)
+	defaultWallet, err := resolveDefaultExpenseWallet(ctx, sch, q)
 	if err != nil {
 		return err
 	}
@@ -657,20 +658,20 @@ func tryPostMonthlyBillingTransactions(ctx context.Context, conn *sql.Conn, tena
 		if r.walletID.Valid && r.walletID.String != "" {
 			wallet = r.walletID.String
 		}
-		if err := assertWalletAccessible(ctx, conn, u, wallet); err != nil {
+		if err := assertWalletAccessible(ctx, sch, q, u, wallet); err != nil {
 			return err
 		}
 		walletsToRefresh[wallet] = struct{}{}
 	}
 
-	dbTx, err := conn.BeginTx(ctx, nil)
+	dbTx, err := tenantPool().BeginTx(ctx, nil)
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
 	defer dbTx.Rollback()
 
 	for _, r := range pending {
-		if err := ensurePeriodUnlocked(ctx, conn, walletPeriod(r.due)); err != nil {
+		if err := ensurePeriodUnlocked(ctx, sch, q, walletPeriod(r.due)); err != nil {
 			return err
 		}
 
@@ -681,7 +682,7 @@ func tryPostMonthlyBillingTransactions(ctx context.Context, conn *sql.Conn, tena
 
 		ref := "checklist:" + r.id
 		var exists bool
-		if err := dbTx.QueryRowContext(ctx, `
+		if err := qrow(ctx, sch, dbTx,  `
 			SELECT EXISTS(
 			  SELECT 1 FROM fin_transaction
 			  WHERE reference_no=$1 AND deleted_at IS NULL LIMIT 1
@@ -690,10 +691,10 @@ func tryPostMonthlyBillingTransactions(ctx context.Context, conn *sql.Conn, tena
 		}
 		if exists {
 			var txnID string
-			if err := dbTx.QueryRowContext(ctx,
+			if err := qrow(ctx, sch, dbTx, 
 				`SELECT id::text FROM fin_transaction WHERE reference_no=$1 AND deleted_at IS NULL LIMIT 1`, ref,
 			).Scan(&txnID); err == nil {
-				_, _ = dbTx.ExecContext(ctx, `UPDATE fin_checklist_item SET transaction_id=$1 WHERE id=$2`, txnID, r.id)
+				_, _ = qexec(ctx, sch, dbTx,  `UPDATE fin_checklist_item SET transaction_id=$1 WHERE id=$2`, txnID, r.id)
 			}
 			continue
 		}
@@ -701,7 +702,7 @@ func tryPostMonthlyBillingTransactions(ctx context.Context, conn *sql.Conn, tena
 		desc := fmt.Sprintf("%s (Tagihan %s)", r.title, periodLabel)
 		tags := []string{"checklist-billing", periodLabel}
 		var txnID string
-		err = dbTx.QueryRowContext(ctx, `
+		err = qrow(ctx, sch, dbTx,  `
 			INSERT INTO fin_transaction
 			 (type, amount, currency, wallet_id, category_id, description, reference_no,
 			  transaction_date, status, tags, created_by)
@@ -712,7 +713,7 @@ func tryPostMonthlyBillingTransactions(ctx context.Context, conn *sql.Conn, tena
 		if err != nil {
 			return appErrs.Internal("gagal mencatat transaksi tagihan: " + err.Error())
 		}
-		if _, err := dbTx.ExecContext(ctx,
+		if _, err := qexec(ctx, sch, dbTx, 
 			`UPDATE fin_checklist_item SET transaction_id=$1 WHERE id=$2`, txnID, r.id); err != nil {
 			return appErrs.Internal(err.Error())
 		}
@@ -723,18 +724,18 @@ func tryPostMonthlyBillingTransactions(ctx context.Context, conn *sql.Conn, tena
 	}
 
 	for w := range walletsToRefresh {
-		refreshWallets(ctx, conn, w, nil)
+		refreshWallets(ctx, sch, q, w, nil)
 	}
 	_ = usage.RecordEvent(ctx, tenantSchema, "fin_transaction_created", len(pending), nil)
 	return nil
 }
 
 // removeChecklistBillingTransaction soft-deletes the expense linked to a checklist item.
-func removeChecklistBillingTransaction(ctx context.Context, conn *sql.Conn, u *types.AuthUser, itemID string) error {
+func removeChecklistBillingTransaction(ctx context.Context, sch appdb.SchemaSQL, q finQuerier, u *types.AuthUser, itemID string) error {
 	ref := "checklist:" + itemID
 
 	var dueDate string
-	if err := conn.QueryRowContext(ctx,
+	if err := qrow(ctx, sch, q,
 		`SELECT due_date::text FROM fin_checklist_item WHERE id=$1`, itemID,
 	).Scan(&dueDate); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -743,11 +744,11 @@ func removeChecklistBillingTransaction(ctx context.Context, conn *sql.Conn, u *t
 		return appErrs.Internal(err.Error())
 	}
 
-	if err := ensurePeriodUnlocked(ctx, conn, walletPeriod(dueDate)); err != nil {
+	if err := ensurePeriodUnlocked(ctx, sch, q, walletPeriod(dueDate)); err != nil {
 		return err
 	}
 
-	rows, err := conn.QueryContext(ctx, `
+	rows, err := qquery(ctx, sch, q, `
 		SELECT DISTINCT wallet_id::text
 		FROM fin_transaction
 		WHERE deleted_at IS NULL AND type = 'expense'
@@ -776,7 +777,7 @@ func removeChecklistBillingTransaction(ctx context.Context, conn *sql.Conn, u *t
 	}
 	rows.Close()
 
-	res, err := conn.ExecContext(ctx, `
+	res, err := qexec(ctx, sch, q, `
 		UPDATE fin_transaction
 		SET deleted_at = now(), deleted_by = $1, updated_at = now()
 		WHERE deleted_at IS NULL AND type = 'expense'
@@ -791,7 +792,7 @@ func removeChecklistBillingTransaction(ctx context.Context, conn *sql.Conn, u *t
 		return appErrs.Internal(err.Error())
 	}
 
-	_, err = conn.ExecContext(ctx,
+	_, err = qexec(ctx, sch, q,
 		`UPDATE fin_checklist_item SET transaction_id = NULL WHERE id = $1`, itemID)
 	if err != nil {
 		return appErrs.Internal(err.Error())
@@ -799,15 +800,15 @@ func removeChecklistBillingTransaction(ctx context.Context, conn *sql.Conn, u *t
 
 	if n, _ := res.RowsAffected(); n > 0 {
 		for _, w := range walletIDs {
-			refreshWallets(ctx, conn, w, nil)
+			refreshWallets(ctx, sch, q, w, nil)
 		}
 	}
 	return nil
 }
 
-func resolveDefaultExpenseWallet(ctx context.Context, conn *sql.Conn) (string, error) {
+func resolveDefaultExpenseWallet(ctx context.Context, sch appdb.SchemaSQL, q finQuerier) (string, error) {
 	var walletID string
-	err := conn.QueryRowContext(ctx, `
+	err := qrow(ctx, sch, q, `
 		SELECT id::text FROM fin_wallet
 		WHERE deleted_at IS NULL AND is_active = true
 		ORDER BY CASE WHEN type = 'cash' THEN 0 ELSE 1 END, display_order, created_at

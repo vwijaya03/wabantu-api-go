@@ -79,16 +79,15 @@ func loadPublicRegistration(ctx context.Context, tenantSlug, eventSlug string) (
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, schema)
+	ts, err := openTenant(ctx, schema)
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
 
 	var e PublicEventInfo
 	var desc, loc sql.NullString
 	var openAt, closeAt sql.NullTime
-	err = conn.QueryRowContext(ctx, `
+	err = ts.QueryRowContext(ctx, `
 		SELECT event_name, event_description, location,
 		       start_date::text, end_date::text, start_time::text, end_time::text, status,
 		       registration_open_at, registration_close_at
@@ -129,7 +128,7 @@ func loadPublicRegistration(ctx context.Context, tenantSlug, eventSlug string) (
 		e.Closed = true
 	}
 
-	rows, err := conn.QueryContext(ctx, `
+	rows, err := ts.QueryContext(ctx, `
 		SELECT t.id::text, t.therapy_name, COALESCE(t.description,''), t.is_active, t.display_order
 		FROM evt_therapy t
 		JOIN evt_event_therapy et ON et.therapy_id = t.id
@@ -168,15 +167,14 @@ func loadPublicRegistrationSlots(ctx context.Context, tenantSlug, eventSlug stri
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, schema)
+	ts, err := openTenant(ctx, schema)
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
 
 	var eventID, status string
 	var openAt, closeAt sql.NullTime
-	err = conn.QueryRowContext(ctx, `
+	err = ts.QueryRowContext(ctx, `
 		SELECT id::text, status, registration_open_at, registration_close_at
 		FROM evt_event WHERE event_slug=$1 AND deleted_at IS NULL`, eventSlug,
 	).Scan(&eventID, &status, &openAt, &closeAt)
@@ -190,7 +188,7 @@ func loadPublicRegistrationSlots(ctx context.Context, tenantSlug, eventSlug stri
 		return &PublicSlotsResponse{Items: []PublicSlotOption{}}, nil
 	}
 
-	items, err := listPublicSlotOptions(ctx, conn, eventID, strings.TrimSpace(p.TherapyID))
+	items, err := listPublicSlotOptions(ctx, ts, eventID, strings.TrimSpace(p.TherapyID))
 	if err != nil {
 		return nil, err
 	}
@@ -212,15 +210,14 @@ func postPublicRegistration(ctx context.Context, tenantSlug, eventSlug string, p
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, schema)
+	ts, err := openTenant(ctx, schema)
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
 
 	var eventID, status string
 	var openAt, closeAt sql.NullTime
-	err = conn.QueryRowContext(ctx, `
+	err = ts.QueryRowContext(ctx, `
 		SELECT id::text, status, registration_open_at, registration_close_at
 		FROM evt_event WHERE event_slug=$1 AND deleted_at IS NULL`, eventSlug,
 	).Scan(&eventID, &status, &openAt, &closeAt)
@@ -301,16 +298,15 @@ func loadPublicStaffRegistration(ctx context.Context, tenantSlug, eventSlug stri
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, schema)
+	ts, err := openTenant(ctx, schema)
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
 
 	var e PublicStaffEventInfo
 	var desc, loc sql.NullString
 	var openAt, closeAt sql.NullTime
-	err = conn.QueryRowContext(ctx, `
+	err = ts.QueryRowContext(ctx, `
 		SELECT event_name, event_description, location,
 		       start_date::text, end_date::text, start_time::text, end_time::text, status,
 		       registration_open_at, registration_close_at
@@ -350,7 +346,7 @@ func loadPublicStaffRegistration(ctx context.Context, tenantSlug, eventSlug stri
 		e.Closed = true
 	}
 
-	rows, err := conn.QueryContext(ctx, `
+	rows, err := ts.QueryContext(ctx, `
 		SELECT t.id::text, t.therapy_name, COALESCE(t.description,''), t.is_active, t.display_order
 		FROM evt_therapy t
 		JOIN evt_event_therapy et ON et.therapy_id = t.id
@@ -372,7 +368,7 @@ func loadPublicStaffRegistration(ctx context.Context, tenantSlug, eventSlug stri
 		e.Therapies = []Therapy{}
 	}
 
-	vrows, err := conn.QueryContext(ctx, `
+	vrows, err := ts.QueryContext(ctx, `
 		SELECT id::text, role_name, is_active, display_order
 		FROM evt_volunteer_role
 		WHERE deleted_at IS NULL AND is_active = true
@@ -409,15 +405,14 @@ func postPublicStaffRegistration(ctx context.Context, tenantSlug, eventSlug stri
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, schema)
+	ts, err := openTenant(ctx, schema)
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
 
 	var eventID, status string
 	var openAt, closeAt sql.NullTime
-	err = conn.QueryRowContext(ctx, `
+	err = ts.QueryRowContext(ctx, `
 		SELECT id::text, status, registration_open_at, registration_close_at
 		FROM evt_event WHERE event_slug=$1 AND deleted_at IS NULL`, eventSlug,
 	).Scan(&eventID, &status, &openAt, &closeAt)
@@ -468,7 +463,7 @@ func postPublicStaffRegistration(ctx context.Context, tenantSlug, eventSlug stri
 	if err := validatePerson(params); err != nil {
 		return nil, err
 	}
-	if err := createPersonInEvent(ctx, conn, eventID, params); err != nil {
+	if err := createPersonInEvent(ctx, ts, eventID, params); err != nil {
 		return nil, err
 	}
 	return &PublicRegisterResponse{

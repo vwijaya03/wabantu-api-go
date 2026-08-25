@@ -1,16 +1,16 @@
 package inventory
 
 import (
+	appdb "encore.app/wabantu/shared/db"
 	"context"
-	"database/sql"
 	"encoding/json"
 
 	appErrs "encore.app/wabantu/shared/errs"
 )
 
-func loadWizardSnapshot(ctx context.Context, conn *sql.Conn) (WizardAnswers, WizardRecommendation, error) {
+func loadWizardSnapshot(ctx context.Context, sch appdb.SchemaSQL, q querier) (WizardAnswers, WizardRecommendation, error) {
 	var answersJSON, recJSON []byte
-	err := conn.QueryRowContext(ctx, `
+	err := qrow(ctx, sch, q, `
 		SELECT wizard_answers, wizard_recommendation
 		FROM inv_setting
 		ORDER BY created_at
