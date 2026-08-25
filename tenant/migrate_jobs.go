@@ -3,6 +3,7 @@ package tenant
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -302,6 +303,12 @@ func ShouldUseSyncMigration(req *MigrateSchemasRequest) bool {
 
 // ProcessTenantSchemaMigration applies patches (or backfills version) for one tenant.
 func ProcessTenantSchemaMigration(ctx context.Context, tenantID, schemaName, migratedBy string) error {
+	return withSchemaMigrationLock(ctx, schemaName, func() error {
+		return processTenantSchemaMigrationLocked(ctx, tenantID, schemaName, migratedBy)
+	})
+}
+
+func processTenantSchemaMigrationLocked(ctx context.Context, tenantID, schemaName, migratedBy string) error {
 	provisioned, err := tenantSchemaBaseProvisioned(ctx, schemaName)
 	if err != nil {
 		return err
@@ -355,7 +362,11 @@ func handleTenantSchemaMigrate(ctx context.Context, msg *TenantSchemaMigrateMess
 
 	// Lazy migrations without a job item run directly.
 	if msg.Lazy || msg.ItemID == "" {
-		return ProcessTenantSchemaMigration(ctx, msg.TenantID, msg.SchemaName, msg.MigratedBy)
+		err := ProcessTenantSchemaMigration(ctx, msg.TenantID, msg.SchemaName, msg.MigratedBy)
+		if errors.Is(err, errSchemaMigrationBusy) {
+			return nil
+		}
+		return err
 	}
 
 	_, err := system.DB.Exec(ctx, `
