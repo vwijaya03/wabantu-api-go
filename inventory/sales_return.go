@@ -90,7 +90,7 @@ func CreateSalesReturn(ctx context.Context, p *CreateSalesReturnParams) (*SalesR
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 	return createSalesReturnConn(ctx, conn, u.TenantSchema, u.AccountID, p)
 }
 
@@ -104,7 +104,7 @@ func ListSalesReturns(ctx context.Context, p *ListSalesReturnsParams) (*ListSale
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	page, pageSize := p.Page, p.PageSize
 	if page < 1 {
@@ -157,7 +157,7 @@ func GetSalesReturn(ctx context.Context, id string) (*SalesReturn, error) {
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 	return getSalesReturn(ctx, conn, id)
 }
 

@@ -120,7 +120,7 @@ func applyEventsSchemaPatches(ctx context.Context, schema string) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 	var exists bool
 	if err := conn.QueryRowContext(ctx, `
 		SELECT EXISTS (
@@ -159,7 +159,7 @@ func eventsPersonPatchReady(ctx context.Context, schema string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 	var exists bool
 	if err := conn.QueryRowContext(ctx, `
 		SELECT EXISTS (

@@ -147,7 +147,7 @@ func GetBundleComponents(ctx context.Context, catalogItemID string) (*GetBundleR
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	isBundle, err := isBundleItem(ctx, conn, catalogItemID)
 	if err != nil {
@@ -194,7 +194,7 @@ func SetBundleComponents(ctx context.Context, catalogItemID string, p *SetBundle
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	if err := validateCatalogItem(ctx, conn, catalogItemID); err != nil {
 		return nil, err

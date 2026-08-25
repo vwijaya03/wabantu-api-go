@@ -36,7 +36,7 @@ func GetReturnableOrderLines(ctx context.Context, orderID string) (*ReturnableOr
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 	return loadReturnableOrderLines(ctx, conn, orderID)
 }
 
@@ -123,7 +123,7 @@ func BatchCreateSalesReturns(ctx context.Context, p *BatchCreateSalesReturnsPara
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	resp := &BatchCreateSalesReturnsResponse{
 		Results: make([]BatchSalesReturnResultLine, 0, len(p.Orders)),

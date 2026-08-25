@@ -95,7 +95,7 @@ func CreatePurchaseOrder(ctx context.Context, p *CreatePurchaseOrderParams) (*Pu
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	defaultWarehouse := strings.TrimSpace(p.WarehouseID)
 	var subtotal float64
@@ -165,7 +165,7 @@ func ListPurchaseOrders(ctx context.Context, p *ListPurchaseOrdersParams) (*List
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	page, pageSize := p.Page, p.PageSize
 	if page < 1 {
@@ -228,7 +228,7 @@ func GetPurchaseOrder(ctx context.Context, id string) (*PurchaseOrder, error) {
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 	return getPurchaseOrder(ctx, conn, id)
 }
 
@@ -245,7 +245,7 @@ func ClosePurchaseOrder(ctx context.Context, id string) (*PurchaseOrder, error) 
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	res, err := conn.ExecContext(ctx, `
 		UPDATE pur_purchase_order SET status = 'closed', updated_at = now()
@@ -272,7 +272,7 @@ func CancelPurchaseOrder(ctx context.Context, id string) (*PurchaseOrder, error)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	var received float64
 	if err := conn.QueryRowContext(ctx, `

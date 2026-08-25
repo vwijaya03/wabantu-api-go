@@ -82,7 +82,7 @@ func BackfillOrders(ctx context.Context, p *BackfillOrdersParams) (*BackfillOrde
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	setup, _, _, err := loadSyncSetting(ctx, conn)
 	if err != nil {

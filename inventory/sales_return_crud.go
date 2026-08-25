@@ -24,7 +24,7 @@ func DeleteSalesReturn(ctx context.Context, id string) error {
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 	return deleteSalesReturnConn(ctx, conn, u.TenantSchema, id)
 }
 
@@ -78,7 +78,7 @@ func UpdateSalesReturn(ctx context.Context, id string, p *UpdateSalesReturnParam
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	existing, err := getSalesReturn(ctx, conn, id)
 	if err != nil {

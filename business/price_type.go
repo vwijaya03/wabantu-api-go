@@ -65,7 +65,7 @@ func ListPriceTypes(ctx context.Context, p *ListPriceTypesParams) (*ListPriceTyp
 	}
 	defer closeTenantConn(conn)
 
-	if err := ensurePricingSchema(ctx, conn); err != nil {
+	if err := ensurePricingSchema(ctx, conn, user.TenantSchema); err != nil {
 		return nil, apperr.Internal("prepare price types failed")
 	}
 	if err := seedDefaultPriceTypes(ctx, conn); err != nil {
@@ -135,7 +135,7 @@ func CreatePriceType(ctx context.Context, req *CreatePriceTypeRequest) (*PriceTy
 		return nil, err
 	}
 	defer closeTenantConn(conn)
-	if err := ensurePricingSchema(ctx, conn); err != nil {
+	if err := ensurePricingSchema(ctx, conn, user.TenantSchema); err != nil {
 		return nil, apperr.Internal("prepare price types failed")
 	}
 

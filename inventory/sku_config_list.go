@@ -39,7 +39,7 @@ func ListConfigItems(ctx context.Context, p *ListConfigItemsParams) (*ListConfig
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	if p == nil {
 		p = &ListConfigItemsParams{}

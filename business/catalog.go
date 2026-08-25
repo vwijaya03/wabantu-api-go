@@ -83,7 +83,7 @@ func ListCatalog(ctx context.Context, p *ListCatalogParams) (*ListCatalogRespons
 	}
 	defer closeTenantConn(conn)
 
-	if err := ensurePricingSchema(ctx, conn); err != nil {
+	if err := ensurePricingSchema(ctx, conn, user.TenantSchema); err != nil {
 		return nil, apperr.Internal("prepare catalog pricing failed")
 	}
 	if err := seedDefaultPriceTypes(ctx, conn); err != nil {
@@ -178,7 +178,7 @@ func CreateCatalog(ctx context.Context, req *CreateCatalogRequest) (*CatalogItem
 	}
 	defer closeTenantConn(conn)
 
-	if err := ensurePricingSchema(ctx, conn); err != nil {
+	if err := ensurePricingSchema(ctx, conn, user.TenantSchema); err != nil {
 		return nil, apperr.Internal("prepare catalog pricing failed")
 	}
 
@@ -225,7 +225,7 @@ func UpdateCatalog(ctx context.Context, id string, req *UpdateCatalogRequest) (*
 	}
 	defer closeTenantConn(conn)
 
-	if err := ensurePricingSchema(ctx, conn); err != nil {
+	if err := ensurePricingSchema(ctx, conn, user.TenantSchema); err != nil {
 		return nil, apperr.Internal("prepare catalog pricing failed")
 	}
 

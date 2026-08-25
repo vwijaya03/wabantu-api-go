@@ -23,6 +23,6 @@ func CheckPeriodUnlockedForDate(ctx context.Context, tenantSchema, dateStr strin
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 	return ensurePeriodUnlocked(ctx, conn, walletPeriod(dateStr))
 }

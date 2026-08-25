@@ -37,7 +37,7 @@ func BatchTrackStock(ctx context.Context, p *BatchTrackStockParams) (*BatchTrack
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	ids := uniqueNonEmpty(p.CatalogItemIDs)
 	if p.All {

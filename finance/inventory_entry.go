@@ -34,7 +34,7 @@ func RecordInventoryEntry(ctx context.Context, tenantSchema, createdBy, referenc
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	resolvedWalletID, err := resolveIncomeWallet(ctx, conn, preferredWalletID)
 	if err != nil {
@@ -102,7 +102,7 @@ func RemoveInventoryEntries(ctx context.Context, tenantSchema string, referenceN
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	const chunk = 200
 	for i := 0; i < len(refs); i += chunk {

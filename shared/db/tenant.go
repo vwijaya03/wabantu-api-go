@@ -3,9 +3,25 @@ package db
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
+
+// IsStalePreparedStatement reports pgx cached-plan errors after search_path changes.
+func IsStalePreparedStatement(err error) bool {
+	if err == nil {
+		return false
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "08P01"
+	}
+	return strings.Contains(err.Error(), "prepared statement") ||
+		strings.Contains(err.Error(), "SQLSTATE 08P01")
+}
 
 // QuoteIdent safely quotes a SQL identifier to prevent injection.
 func QuoteIdent(s string) string {
@@ -19,6 +35,8 @@ func TenantConn(ctx context.Context, pool *sql.DB, schema string) (*sql.Conn, er
 	if err != nil {
 		return nil, fmt.Errorf("get connection: %w", err)
 	}
+	// Pool reuse can leave server-side prepared statements from a prior tenant session.
+	_, _ = conn.ExecContext(ctx, "DEALLOCATE ALL")
 	if _, err := conn.ExecContext(ctx, "SET search_path TO "+QuoteIdent(schema)+", public"); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("set search_path: %w", err)
@@ -35,7 +53,11 @@ func CloseTenantConn(conn *sql.Conn) {
 		return
 	}
 	ctx := context.Background()
-	_, _ = conn.ExecContext(ctx, "DEALLOCATE ALL")
+	if _, err := conn.ExecContext(ctx, "DEALLOCATE ALL"); err != nil {
+		// Connection already broken (e.g. 08P01); discard instead of resetting session.
+		conn.Close()
+		return
+	}
 	_, _ = conn.ExecContext(ctx, "RESET search_path")
 	_, _ = conn.ExecContext(ctx, "RESET ROLE")
 	conn.Close()

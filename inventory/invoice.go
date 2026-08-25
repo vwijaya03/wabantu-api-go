@@ -71,7 +71,7 @@ func CreateInvoiceFromOrder(ctx context.Context, orderID string) (*Invoice, erro
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 	return createInvoiceFromOrderConn(ctx, conn, u.AccountID, orderID, false)
 }
 
@@ -85,7 +85,7 @@ func ListInvoices(ctx context.Context, p *ListInvoicesParams) (*ListInvoicesResp
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	page, pageSize := p.Page, p.PageSize
 	if page < 1 {
@@ -137,7 +137,7 @@ func GetInvoice(ctx context.Context, id string) (*Invoice, error) {
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 	return getInvoice(ctx, conn, id)
 }
 

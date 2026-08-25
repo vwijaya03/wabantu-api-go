@@ -111,7 +111,7 @@ func CreateBill(ctx context.Context, p *CreateBillParams) (*Bill, error) {
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	setting, err := loadSetting(ctx, conn)
 	if err != nil {
@@ -198,7 +198,7 @@ func ListBills(ctx context.Context, p *ListBillsParams) (*ListBillsResponse, err
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	page, pageSize := p.Page, p.PageSize
 	if page < 1 {
@@ -253,7 +253,7 @@ func GetBill(ctx context.Context, id string) (*Bill, error) {
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 	return getBill(ctx, conn, id)
 }
 

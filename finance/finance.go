@@ -220,7 +220,7 @@ func ListWallets(ctx context.Context) (*WalletListResponse, error) {
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	ownerOnly := ""
 	if !isOwner(u) {
@@ -307,7 +307,7 @@ func CreateWallet(ctx context.Context, p *CreateWalletParams) (*Wallet, error) {
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	var id string
 	err = conn.QueryRowContext(ctx,
@@ -347,7 +347,7 @@ func UpdateWallet(ctx context.Context, id string, p *UpdateWalletParams) (*Walle
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	sets := []string{"updated_at=now()"}
 	args := []any{}
@@ -442,7 +442,7 @@ func DeleteWallet(ctx context.Context, id string) (*OKResponse, error) {
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	var exists bool
 	if err := conn.QueryRowContext(ctx,
@@ -509,7 +509,7 @@ func ListCategories(ctx context.Context) (*CategoryListResponse, error) {
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	rows, err := conn.QueryContext(ctx,
 		`SELECT id, name, type, parent_id, icon, color, is_system, display_order, created_at
@@ -560,7 +560,7 @@ func CreateCategory(ctx context.Context, p *CreateCategoryParams) (*Category, er
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	var id string
 	err = conn.QueryRowContext(ctx,
@@ -588,7 +588,7 @@ func DeleteCategory(ctx context.Context, id string) (*OKResponse, error) {
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 	var isSystem bool
 	if err := conn.QueryRowContext(ctx,
 		`SELECT is_system FROM fin_category WHERE id=$1 AND deleted_at IS NULL`, id,
@@ -719,7 +719,7 @@ func ListTransactions(ctx context.Context, p *ListTransactionsParams) (*ListTran
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	if p.Page <= 0 {
 		p.Page = 1
@@ -915,7 +915,7 @@ func CreateTransaction(ctx context.Context, p *CreateTransactionParams) (*Transa
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	if p.TransactionDate == "" {
 		p.TransactionDate = financeToday(ctx, conn)
@@ -1015,7 +1015,7 @@ func UpdateTransaction(ctx context.Context, id string, p *UpdateTransactionParam
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	// Fetch existing to check ownership and period lock
 	var txType, txDate, txStatus, createdBy string
@@ -1121,7 +1121,7 @@ func DeleteTransaction(ctx context.Context, id string) (*OKResponse, error) {
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	var walletID, txDate string
 	var toWalletID sql.NullString
@@ -1171,7 +1171,7 @@ func ApproveTransaction(ctx context.Context, p *ApproveParams) (*Transaction, er
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	var walletID, curStatus string
 	var toWalletID sql.NullString
@@ -1227,7 +1227,7 @@ func GetApprovalSetting(ctx context.Context) (*ApprovalSettingParams, error) {
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 	var s ApprovalSettingParams
 	var threshold sql.NullFloat64
 	conn.QueryRowContext(ctx,
@@ -1256,7 +1256,7 @@ func UpdateApprovalSetting(ctx context.Context, p *ApprovalSettingParams) (*Appr
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 	types := p.RequireForTypes
 	if types == nil {
 		types = []string{}
@@ -1299,7 +1299,7 @@ func LockPeriod(ctx context.Context, p *LockPeriodParams) (*OKResponse, error) {
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 	_, err = conn.ExecContext(ctx,
 		`INSERT INTO fin_period_lock (period, locked_by, note) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`,
 		p.Period, u.AccountID, p.Note)
@@ -1320,7 +1320,7 @@ func ListLockedPeriods(ctx context.Context) (*LockedPeriodsResponse, error) {
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 	rows, err := conn.QueryContext(ctx, `SELECT period FROM fin_period_lock ORDER BY period DESC`)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
@@ -1366,7 +1366,7 @@ func DuplicateTransactions(ctx context.Context, p *DuplicateParams) (*CountRespo
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	if err := ensurePeriodUnlocked(ctx, conn, walletPeriod(p.TargetDate)); err != nil {
 		return nil, err
@@ -1433,7 +1433,7 @@ func GetDashboard(ctx context.Context, p *DashboardParams) (*DashboardSummary, e
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	period := p.Period
 	if period == "" {
@@ -1555,7 +1555,7 @@ func GetAuditLog(ctx context.Context, p *AuditLogParams) (*AuditLogResponse, err
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	limit := p.Limit
 	if limit <= 0 || limit > 200 {

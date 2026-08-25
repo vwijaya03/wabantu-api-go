@@ -13,7 +13,7 @@ import (
 
 // EnsureSchema applies idempotent DDL for price types and catalog prices.
 // On Encore Cloud the app DB role cannot run DDL; skip when schema is already present.
-func EnsureSchema(ctx context.Context, conn *sql.Conn) error {
+func EnsureSchema(ctx context.Context, conn *sql.Conn, tenantSchema string) error {
 	ready, err := tenantschema.PricingReady(ctx, conn)
 	if err != nil {
 		return err
@@ -22,11 +22,7 @@ func EnsureSchema(ctx context.Context, conn *sql.Conn) error {
 		return nil
 	}
 	if encore.Meta().Environment.Cloud != encore.CloudLocal {
-		var schemaName string
-		if err := conn.QueryRowContext(ctx, `SELECT current_schema()`).Scan(&schemaName); err != nil {
-			return err
-		}
-		return tenant.EnsureCloudAdminTenantDDL(ctx, schemaName)
+		return tenant.EnsureCloudAdminTenantDDL(ctx, tenantSchema)
 	}
 	_, err = conn.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS business_price_type (

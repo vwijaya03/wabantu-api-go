@@ -49,7 +49,7 @@ func ListEligibleInvoiceOrders(ctx context.Context, p *ListEligibleInvoiceOrders
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	page, pageSize := p.Page, p.PageSize
 	if page < 1 {
@@ -149,7 +149,7 @@ func BatchCreateInvoicesFromOrders(ctx context.Context, p *BatchCreateInvoicesPa
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	resp := &BatchCreateInvoicesResponse{
 		Results: make([]BatchInvoiceResultLine, 0, len(p.OrderIDs)),

@@ -167,7 +167,7 @@ func StartInvSetupInterview(ctx context.Context) (*InvSetupInterviewStartRespons
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 	if _, err := loadSetting(ctx, conn); err != nil {
 		return nil, err
 	}
@@ -251,7 +251,7 @@ func SendInvSetupInterviewMessage(ctx context.Context, sessionId string, req *In
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 	biz := loadBusinessWizardContext(ctx, conn)
 
 	turn, tokens, terr := completeInvSetupInterviewTurn(ctx, u, session, biz, msg)

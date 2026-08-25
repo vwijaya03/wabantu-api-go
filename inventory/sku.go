@@ -41,7 +41,7 @@ func GetSku(ctx context.Context, catalogItemID string) (*SkuConfig, error) {
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 	return loadSkuConfig(ctx, conn, catalogItemID)
 }
 
@@ -58,7 +58,7 @@ func UpdateSku(ctx context.Context, catalogItemID string, p *UpdateSkuParams) (*
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	defer tenant.CloseTenantConn(conn)
 
 	if err := validateCatalogItem(ctx, conn, catalogItemID); err != nil {
 		return nil, err

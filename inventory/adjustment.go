@@ -180,8 +180,8 @@ func CreateAdjustment(ctx context.Context, p *AdjustmentParams) (*StockOpResult,
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	if err := ensureInventoryModuleReady(ctx, conn); err != nil {
+	defer tenant.CloseTenantConn(conn)
+	if err := ensureInventoryModuleReady(ctx, conn, u.TenantSchema); err != nil {
 		return nil, err
 	}
 
@@ -282,8 +282,8 @@ func CreateTransfer(ctx context.Context, p *TransferParams) (*StockOpResult, err
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	if err := ensureInventoryModuleReady(ctx, conn); err != nil {
+	defer tenant.CloseTenantConn(conn)
+	if err := ensureInventoryModuleReady(ctx, conn, u.TenantSchema); err != nil {
 		return nil, err
 	}
 
@@ -406,8 +406,8 @@ func CreateOpeningBalance(ctx context.Context, p *OpeningBalanceParams) (*Openin
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	if err := ensureInventoryModuleReady(ctx, conn); err != nil {
+	defer tenant.CloseTenantConn(conn)
+	if err := ensureInventoryModuleReady(ctx, conn, u.TenantSchema); err != nil {
 		return nil, err
 	}
 
@@ -532,8 +532,8 @@ func CreateRevaluation(ctx context.Context, p *RevaluationParams) (*StockOpResul
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	if err := ensureInventoryModuleReady(ctx, conn); err != nil {
+	defer tenant.CloseTenantConn(conn)
+	if err := ensureInventoryModuleReady(ctx, conn, u.TenantSchema); err != nil {
 		return nil, err
 	}
 
