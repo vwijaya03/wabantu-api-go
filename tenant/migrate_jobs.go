@@ -302,6 +302,15 @@ func ShouldUseSyncMigration(req *MigrateSchemasRequest) bool {
 
 // ProcessTenantSchemaMigration applies patches (or backfills version) for one tenant.
 func ProcessTenantSchemaMigration(ctx context.Context, tenantID, schemaName, migratedBy string) error {
+	provisioned, err := tenantSchemaBaseProvisioned(ctx, schemaName)
+	if err != nil {
+		return err
+	}
+	if !provisioned {
+		rlog.Info("skip schema migration until tenant bootstrap completes",
+			"tenantId", tenantID, "schema", schemaName)
+		return nil
+	}
 	if err := RepairTenantSchemaDeployGrants(ctx, schemaName); err != nil {
 		return fmt.Errorf("repair deploy grants: %w", err)
 	}
@@ -526,6 +535,11 @@ func PublishLazySchemaMigration(ctx context.Context, tenantID, schemaName string
 	}
 	lazyMigrateUntil[schemaName] = time.Now().Add(5 * time.Minute)
 	lazyMigrateMu.Unlock()
+
+	provisioned, err := tenantSchemaBaseProvisioned(ctx, schemaName)
+	if err != nil || !provisioned {
+		return
+	}
 
 	ver, err := getTenantSchemaPatchVersion(ctx, tenantID)
 	if err != nil || ver >= CurrentSchemaPatchVersion {

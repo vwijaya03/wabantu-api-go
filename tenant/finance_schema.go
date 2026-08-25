@@ -353,8 +353,10 @@ func runFinanceSchemaAndSeed(ctx context.Context, conn *sql.Conn) error {
 			if err != nil {
 				return fmt.Errorf("finance schema recheck: %w", err)
 			}
-		}
-		if !ready {
+			if !ready {
+				return fmt.Errorf("finance schema masih belum lengkap setelah cloud DDL")
+			}
+		} else {
 			if _, err := conn.ExecContext(ctx, financeSchemaPatchSQL); err != nil {
 				return fmt.Errorf("finance DDL: %w", err)
 			}

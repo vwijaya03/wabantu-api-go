@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"encore.app/wabantu/shared/tenantschema"
 	"encore.app/wabantu/system"
 	"encore.dev"
 	"encore.dev/rlog"
@@ -212,6 +213,24 @@ func listCloudDeployBlockers(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	return blockers, nil
+}
+
+// tenantSchemaBaseProvisioned reports whether signup bootstrap created core tenant tables.
+// Uses contact (not business_profile) because lazy migration must not run until tenantDDL
+// has created tables that admin patches ALTER.
+func tenantSchemaBaseProvisioned(ctx context.Context, schemaName string) (bool, error) {
+	if !schemaNameRe.MatchString(schemaName) {
+		return false, fmt.Errorf("invalid schema name: %q", schemaName)
+	}
+	conn, err := DataDB.Stdlib().Conn(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, fmt.Sprintf(`SET search_path TO %s, public`, quoteIdent(schemaName))); err != nil {
+		return false, err
+	}
+	return tenantschema.TableExists(ctx, conn, "contact")
 }
 
 // diffOrphanSchemas returns schemas in all but not in registered (test helper).

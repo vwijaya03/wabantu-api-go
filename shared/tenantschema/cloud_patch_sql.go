@@ -2,6 +2,8 @@ package tenantschema
 
 // CloudTenantPatchSQL is idempotent DDL for Encore Cloud admin scripts.
 // Covers pricing + core tenant patches. Finance/events blocks are conditional.
+// ALTER on core tables (contact, order, …) is guarded with to_regclass so lazy
+// migration does not fail on schemas still being bootstrapped during signup.
 const CloudTenantPatchSQL = `
 CREATE TABLE IF NOT EXISTS business_price_type (
     id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -27,9 +29,6 @@ CREATE TABLE IF NOT EXISTS business_catalog_item_price (
 );
 CREATE INDEX IF NOT EXISTS idx_catalog_item_price_type
     ON business_catalog_item_price(price_type_id);
-
-ALTER TABLE contact ADD COLUMN IF NOT EXISTS price_type_id UUID;
-ALTER TABLE contact ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active';
 
 CREATE TABLE IF NOT EXISTS branch (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -59,17 +58,42 @@ CREATE TABLE IF NOT EXISTS workflow_rule (
     deleted_by     UUID
 );
 
-ALTER TABLE whatsapp_channel ADD COLUMN IF NOT EXISTS branch_id UUID;
-ALTER TABLE conversation ADD COLUMN IF NOT EXISTS branch_id UUID;
-
-ALTER TABLE "order" ADD COLUMN IF NOT EXISTS income_wallet_id UUID;
-
-CREATE INDEX IF NOT EXISTS idx_contact_status_updated
-    ON contact(status, updated_at DESC)
-    WHERE deleted_at IS NULL;
-
 DO $patch$
 BEGIN
+    IF to_regclass('contact') IS NOT NULL THEN
+        ALTER TABLE contact ADD COLUMN IF NOT EXISTS price_type_id UUID;
+        ALTER TABLE contact ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active';
+        CREATE INDEX IF NOT EXISTS idx_contact_status_updated
+            ON contact(status, updated_at DESC)
+            WHERE deleted_at IS NULL;
+    END IF;
+
+    IF to_regclass('whatsapp_channel') IS NOT NULL THEN
+        ALTER TABLE whatsapp_channel ADD COLUMN IF NOT EXISTS branch_id UUID;
+    END IF;
+
+    IF to_regclass('conversation') IS NOT NULL THEN
+        ALTER TABLE conversation ADD COLUMN IF NOT EXISTS branch_id UUID;
+    END IF;
+
+    IF to_regclass(format('%I.%I', current_schema(), 'order')) IS NOT NULL THEN
+        ALTER TABLE "order" ADD COLUMN IF NOT EXISTS income_wallet_id UUID;
+        ALTER TABLE "order" ADD COLUMN IF NOT EXISTS payment_status VARCHAR(20) NOT NULL DEFAULT 'unpaid';
+        ALTER TABLE "order" ADD COLUMN IF NOT EXISTS payment_proof_message_id UUID;
+        ALTER TABLE "order" ADD COLUMN IF NOT EXISTS payment_proof_submitted_at TIMESTAMPTZ;
+        ALTER TABLE "order" ADD COLUMN IF NOT EXISTS payment_proof_verified_at TIMESTAMPTZ;
+        ALTER TABLE "order" ADD COLUMN IF NOT EXISTS payment_proof_verified_by UUID;
+        ALTER TABLE "order" ADD COLUMN IF NOT EXISTS payment_proof_meta JSONB NOT NULL DEFAULT '{}';
+        CREATE INDEX IF NOT EXISTS idx_order_payment_status
+            ON "order"(payment_status, created_at DESC)
+            WHERE deleted_at IS NULL;
+    END IF;
+
+    IF to_regclass('business_profile') IS NOT NULL THEN
+        ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS payment_verification_mode VARCHAR(20) NOT NULL DEFAULT 'manual';
+        ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS payment_auto_verify_min_confidence NUMERIC(5,2) NOT NULL DEFAULT 0.95;
+    END IF;
+
     IF to_regclass('business_catalog_item') IS NOT NULL THEN
         DROP INDEX IF EXISTS idx_catalog_source_code;
         CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_source_code
@@ -95,19 +119,6 @@ BEGIN
             WHERE type = 'income' AND reference_no IS NOT NULL AND deleted_at IS NULL;
     END IF;
 END $patch$;
-
--- Fase 2 payment proof (order + business_profile)
-ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS payment_verification_mode VARCHAR(20) NOT NULL DEFAULT 'manual';
-ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS payment_auto_verify_min_confidence NUMERIC(5,2) NOT NULL DEFAULT 0.95;
-ALTER TABLE "order" ADD COLUMN IF NOT EXISTS payment_status VARCHAR(20) NOT NULL DEFAULT 'unpaid';
-ALTER TABLE "order" ADD COLUMN IF NOT EXISTS payment_proof_message_id UUID;
-ALTER TABLE "order" ADD COLUMN IF NOT EXISTS payment_proof_submitted_at TIMESTAMPTZ;
-ALTER TABLE "order" ADD COLUMN IF NOT EXISTS payment_proof_verified_at TIMESTAMPTZ;
-ALTER TABLE "order" ADD COLUMN IF NOT EXISTS payment_proof_verified_by UUID;
-ALTER TABLE "order" ADD COLUMN IF NOT EXISTS payment_proof_meta JSONB NOT NULL DEFAULT '{}';
-CREATE INDEX IF NOT EXISTS idx_order_payment_status
-    ON "order"(payment_status, created_at DESC)
-    WHERE deleted_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS knowledge_base_entry (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),

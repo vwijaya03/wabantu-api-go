@@ -78,7 +78,10 @@ func CatalogIndexReady(ctx context.Context, conn *sql.Conn) (bool, error) {
 
 // FinanceModuleReady — finance tables through latest patch.
 func FinanceModuleReady(ctx context.Context, conn *sql.Conn) (bool, error) {
-	for _, t := range []string{"fin_wallet", "fin_transaction", "fin_report_job"} {
+	for _, t := range []string{
+		"fin_wallet", "fin_transaction", "fin_report_job",
+		"fin_category", "fin_transaction_type",
+	} {
 		ok, err := tableExists(ctx, conn, t)
 		if err != nil || !ok {
 			return false, err
