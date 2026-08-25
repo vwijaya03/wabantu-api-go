@@ -208,6 +208,9 @@ func RunSchemaPatches(ctx context.Context, schemaName string) error {
 	if !schemaNameRe.MatchString(schemaName) {
 		return fmt.Errorf("invalid schema name: %q", schemaName)
 	}
+	if err := applyCloudAdminTenantDDL(ctx, schemaName); err != nil {
+		return fmt.Errorf("cloud admin DDL: %w", err)
+	}
 	conn, err := TenantConn(ctx, schemaName)
 	if err != nil {
 		return err
@@ -218,8 +221,10 @@ func RunSchemaPatches(ctx context.Context, schemaName string) error {
 		return err
 	}
 	if !ready {
-		if _, err = conn.ExecContext(ctx, tenantSchemaPatchSQL); err != nil {
-			return err
+		if encore.Meta().Environment.Cloud == encore.CloudLocal {
+			if _, err = conn.ExecContext(ctx, tenantSchemaPatchSQL); err != nil {
+				return err
+			}
 		}
 	}
 	if err := runPIISchemaOnConn(ctx, conn); err != nil {
@@ -264,10 +269,7 @@ func alwaysApplyOrderIncomePatch(ctx context.Context, conn *sql.Conn) error {
 		return nil
 	}
 	if encore.Meta().Environment.Cloud != encore.CloudLocal {
-		return fmt.Errorf(
-			"patch order income belum diterapkan di cloud: jalankan ./scripts/apply-tenant-schema-cloud.sh %s",
-			encore.Meta().Environment.Name,
-		)
+		return ensureCloudAdminDDLForConn(ctx, conn)
 	}
 	hasCol, err := tenantschema.ColumnExists(ctx, conn, "order", "income_wallet_id")
 	if err != nil {
@@ -316,10 +318,7 @@ func alwaysApplyPaymentProofPatch(ctx context.Context, conn *sql.Conn) error {
 		return nil
 	}
 	if encore.Meta().Environment.Cloud != encore.CloudLocal {
-		return fmt.Errorf(
-			"patch payment proof belum diterapkan di cloud: jalankan ./scripts/apply-tenant-schema-cloud.sh %s",
-			encore.Meta().Environment.Name,
-		)
+		return ensureCloudAdminDDLForConn(ctx, conn)
 	}
 	_, err = conn.ExecContext(ctx, orderPaymentProofPatchSQL)
 	return err
@@ -329,6 +328,9 @@ func runPIISchemaOnConn(ctx context.Context, conn *sql.Conn) error {
 	ready, err := tenantschema.PIIReady(ctx, conn)
 	if err != nil || ready {
 		return err
+	}
+	if encore.Meta().Environment.Cloud != encore.CloudLocal {
+		return ensureCloudAdminDDLForConn(ctx, conn)
 	}
 	_, err = conn.ExecContext(ctx, tenantschema.PIISchemaPatchSQL)
 	return err

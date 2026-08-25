@@ -30,8 +30,7 @@ func ensureInventoryModuleSchema(ctx context.Context, schemaName string) error {
 }
 
 // ensureInventoryModuleReady verifies inventory DDL is complete before reads/writes.
-// On Encore Cloud, ALTER on admin-owned inv_* tables must be applied via
-// ./scripts/apply-inventory-schema-cloud.sh (app role cannot ALTER).
+// On Encore Cloud, inv_* DDL is applied via db_tenant_admin (EnsureCloudAdminTenantDDL).
 func ensureInventoryModuleReady(ctx context.Context, conn *sql.Conn) error {
 	ready, err := tenantschema.InventoryModuleReady(ctx, conn)
 	if err != nil {
@@ -41,10 +40,21 @@ func ensureInventoryModuleReady(ctx context.Context, conn *sql.Conn) error {
 		return nil
 	}
 	if encore.Meta().Environment.Cloud != encore.CloudLocal {
-		return appErrs.Internal(
-			"schema inventory belum lengkap di cloud — jalankan ./scripts/apply-inventory-schema-cloud.sh " +
-				encore.Meta().Environment.Name,
-		)
+		var schemaName string
+		if err := conn.QueryRowContext(ctx, `SELECT current_schema()`).Scan(&schemaName); err != nil {
+			return appErrs.Internal(err.Error())
+		}
+		if err := tenant.EnsureCloudAdminTenantDDL(ctx, schemaName); err != nil {
+			return appErrs.Internal(err.Error())
+		}
+		ready, err = tenantschema.InventoryModuleReady(ctx, conn)
+		if err != nil {
+			return appErrs.Internal(err.Error())
+		}
+		if !ready {
+			return appErrs.Internal("schema inventory masih belum lengkap setelah cloud DDL")
+		}
+		return nil
 	}
 	if _, err := conn.ExecContext(ctx, tenantschema.InventorySchemaSQL); err != nil {
 		return appErrs.Internal(err.Error())

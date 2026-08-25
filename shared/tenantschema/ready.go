@@ -199,6 +199,7 @@ func InventoryModuleReady(ctx context.Context, conn *sql.Conn) (bool, error) {
 }
 
 // CloudTenantReady — migrated / fully provisioned tenant (skip all runtime DDL).
+// Admin DDL that satisfies these checks: tenant.cloudAdminTenantDDLBlocks() in cloud_admin_ddl.go.
 func CloudTenantReady(ctx context.Context, conn *sql.Conn) (bool, error) {
 	checks := []func(context.Context, *sql.Conn) (bool, error){
 		TenantPatchReady,

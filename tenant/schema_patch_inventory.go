@@ -3,7 +3,6 @@ package tenant
 import (
 	"context"
 	"database/sql"
-	"fmt"
 
 	"encore.dev"
 
@@ -77,10 +76,7 @@ func applyInventoryColumnPatch(ctx context.Context, conn *sql.Conn, column, alte
 		return nil
 	}
 	if encore.Meta().Environment.Cloud != encore.CloudLocal {
-		return fmt.Errorf(
-			"patch inventory belum diterapkan di cloud: jalankan ./scripts/apply-inventory-schema-cloud.sh %s",
-			encore.Meta().Environment.Name,
-		)
+		return ensureCloudAdminDDLForConn(ctx, conn)
 	}
 	_, err = conn.ExecContext(ctx, alterSQL)
 	return err
@@ -102,10 +98,7 @@ func applyWarehouseCustomerLabelPatch(ctx context.Context, conn *sql.Conn) error
 		return nil
 	}
 	if encore.Meta().Environment.Cloud != encore.CloudLocal {
-		return fmt.Errorf(
-			"patch inventory belum diterapkan di cloud: jalankan ./scripts/apply-inventory-schema-cloud.sh %s",
-			encore.Meta().Environment.Name,
-		)
+		return ensureCloudAdminDDLForConn(ctx, conn)
 	}
 	_, err = conn.ExecContext(ctx, inventoryWarehouseCustomerLabelAlterSQL)
 	return err

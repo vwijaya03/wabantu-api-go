@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+
+	"encore.dev"
 )
 
 const eventsSchemaPatchSQL = `
@@ -306,6 +308,11 @@ func SeedEventsMasterDataOnly(ctx context.Context, schemaName string) error {
 func RunEventsSchemaPatches(ctx context.Context, schemaName string) error {
 	if !schemaNameRe.MatchString(schemaName) {
 		return fmt.Errorf("invalid schema name: %q", schemaName)
+	}
+	if encore.Meta().Environment.Cloud != encore.CloudLocal {
+		if err := applyCloudAdminTenantDDL(ctx, schemaName); err != nil {
+			return fmt.Errorf("events cloud DDL: %w", err)
+		}
 	}
 	conn, err := TenantConn(ctx, schemaName)
 	if err != nil {

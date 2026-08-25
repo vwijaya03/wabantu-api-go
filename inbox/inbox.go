@@ -22,7 +22,9 @@ import (
 	"encore.app/wabantu/shared/strutil"
 	"encore.app/wabantu/shared/tenantctx"
 	"encore.app/wabantu/shared/types"
+	"encore.app/wabantu/tenant"
 	"encore.app/wabantu/whatsapp"
+	"encore.dev"
 )
 
 var db = sqldb.Named("tenant")
@@ -1129,11 +1131,15 @@ func ensureContactRuntimeSchema(ctx context.Context, conn *sql.Conn) error {
 		return err
 	}
 	if !ready {
-		cloudReady, cErr := tenantschema.CloudTenantReady(ctx, conn)
-		if cErr != nil {
-			return cErr
-		}
-		if !cloudReady {
+		if encore.Meta().Environment.Cloud != encore.CloudLocal {
+			var schemaName string
+			if err := conn.QueryRowContext(ctx, `SELECT current_schema()`).Scan(&schemaName); err != nil {
+				return err
+			}
+			if err := tenant.EnsureCloudAdminTenantDDL(ctx, schemaName); err != nil {
+				return err
+			}
+		} else {
 			_, err = conn.ExecContext(ctx, `
 				ALTER TABLE contact ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active';
 				UPDATE contact SET status = 'active' WHERE status IS NULL OR TRIM(status) = '';

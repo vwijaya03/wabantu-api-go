@@ -2,45 +2,114 @@ package tenant
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 
-	"encore.dev"
+	"encore.app/wabantu/shared/tenantschema"
 )
 
-// DropTenantSchema permanently removes a tenant schema (destructive).
-func DropTenantSchema(ctx context.Context, schemaName string) error {
-	if !schemaNameRe.MatchString(schemaName) {
-		return fmt.Errorf("invalid schema name: %q", schemaName)
-	}
+// cloudAdminDDLBlock is one idempotent SQL bundle applied with db_tenant_admin on Encore Cloud.
+type cloudAdminDDLBlock struct {
+	label  string
+	sql    string
+	covers string // documents which CloudTenantReady checks this satisfies
+}
 
-	if encore.Meta().Environment.Cloud != encore.CloudLocal {
-		if err := dropTenantSchemaViaFunction(ctx, schemaName); err == nil {
-			return nil
-		} else if !isMissingDropTenantSchemaFunction(err) {
-			return err
+// cloudAdminTenantDDLBlocks is the single registry of admin-owned tenant DDL on Encore Cloud.
+// Keep in sync with tenantschema.CloudTenantReady — add a block here when a new ready check
+// requires CREATE/ALTER that the app role cannot run.
+func cloudAdminTenantDDLBlocks() []cloudAdminDDLBlock {
+	return []cloudAdminDDLBlock{
+		{
+			label:  "cloud tenant patch",
+			sql:    tenantschema.CloudTenantPatchSQL,
+			covers: "TenantPatchReady, PricingReady, OrderIncomePatchReady, OrderPaymentProofPatchReady, KnowledgeBaseReady",
+		},
+		{
+			label:  "pii patch",
+			sql:    tenantschema.PIISchemaPatchSQL,
+			covers: "PIIReady",
+		},
+		{
+			label:  "finance patch",
+			sql:    financeSchemaPatchSQL,
+			covers: "FinanceModuleReady",
+		},
+		{
+			label:  "events patch",
+			sql:    eventsSchemaPatchSQL,
+			covers: "EventsModuleReady",
+		},
+		{
+			label:  "inventory patch",
+			sql:    tenantschema.InventorySchemaSQL,
+			covers: "InventoryModuleReady",
+		},
+	}
+}
+
+// EnsureCloudAdminTenantDDL applies all admin-owned tenant DDL on Encore Cloud (idempotent).
+// Safe at signup (RunTenantDDL), migrate (ProcessTenantSchemaMigration), and runtime recovery.
+func EnsureCloudAdminTenantDDL(ctx context.Context, schemaName string) error {
+	return applyCloudAdminTenantDDL(ctx, schemaName)
+}
+
+// applyCloudAdminTenantDDL runs idempotent admin-owned DDL patches on Encore Cloud.
+func applyCloudAdminTenantDDL(ctx context.Context, schemaName string) error {
+	if !isEncoreCloud() {
+		return nil
+	}
+	return withTenantAdminTx(ctx, schemaName, func(ctx context.Context, tx *sql.Tx) error {
+		for _, block := range cloudAdminTenantDDLBlocks() {
+			if strings.TrimSpace(block.sql) == "" {
+				continue
+			}
+			if _, err := tx.ExecContext(ctx, block.sql); err != nil {
+				return fmt.Errorf("%s: %w", block.label, err)
+			}
 		}
-		return dropTenantSchemaViaSetRole(ctx, schemaName)
-	}
-	return dropTenantSchemaDirect(ctx, schemaName)
+		return nil
+	})
 }
 
-func dropTenantSchemaViaFunction(ctx context.Context, schemaName string) error {
-	_, err := DataDB.Stdlib().ExecContext(ctx, `SELECT public.drop_tenant_schema($1)`, schemaName)
+// applyCloudInventoryDDL creates inv_* tables via db_tenant_admin on Encore Cloud.
+func applyCloudInventoryDDL(ctx context.Context, schemaName string) error {
+	if !isEncoreCloud() {
+		return nil
+	}
+	return withTenantAdminTx(ctx, schemaName, func(ctx context.Context, tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, tenantschema.InventorySchemaSQL)
+		return err
+	})
+}
+
+func ensureCloudAdminDDLForConn(ctx context.Context, conn *sql.Conn) error {
+	if !isEncoreCloud() {
+		return nil
+	}
+	schemaName, err := currentSchemaName(ctx, conn)
 	if err != nil {
-		return fmt.Errorf(
-			"drop tenant schema function (jalankan ./scripts/fix-cloud-db-grants.sh %s): %w",
-			encore.Meta().Environment.Name,
-			err,
-		)
+		return err
 	}
-	return nil
+	return applyCloudAdminTenantDDL(ctx, schemaName)
 }
 
-func dropTenantSchemaViaSetRole(ctx context.Context, schemaName string) error {
+func currentSchemaName(ctx context.Context, conn *sql.Conn) (string, error) {
+	var schemaName string
+	if err := conn.QueryRowContext(ctx, `SELECT current_schema()`).Scan(&schemaName); err != nil {
+		return "", fmt.Errorf("current_schema: %w", err)
+	}
+	if schemaName == "" {
+		return "", fmt.Errorf("current_schema: empty")
+	}
+	return schemaName, nil
+}
+
+func withTenantAdminTx(ctx context.Context, schemaName string, fn func(context.Context, *sql.Tx) error) error {
 	tx, err := DataDB.Stdlib().BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("begin drop schema tx: %w", err)
+		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
 
@@ -48,34 +117,15 @@ func dropTenantSchemaViaSetRole(ctx context.Context, schemaName string) error {
 		var currentUser string
 		_ = tx.QueryRowContext(ctx, `SELECT current_user`).Scan(&currentUser)
 		return fmt.Errorf(
-			"set tenant admin role as %s (jalankan ./scripts/fix-cloud-db-grants.sh %s): %w",
-			currentUser,
-			encore.Meta().Environment.Name,
-			err,
+			"set tenant admin role as %s — jalankan POST /api/v1/admin/migrate-tenant-schemas: %w",
+			currentUser, err,
 		)
 	}
-
-	qSchema := quoteIdent(schemaName)
-	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`DROP SCHEMA IF EXISTS %s CASCADE`, qSchema)); err != nil {
-		return fmt.Errorf("drop schema %s: %w", schemaName, err)
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`SET LOCAL search_path TO %s, public`, quoteIdent(schemaName))); err != nil {
+		return fmt.Errorf("set search_path: %w", err)
+	}
+	if err := fn(ctx, tx); err != nil {
+		return err
 	}
 	return tx.Commit()
-}
-
-func dropTenantSchemaDirect(ctx context.Context, schemaName string) error {
-	qSchema := quoteIdent(schemaName)
-	_, err := DataDB.Stdlib().ExecContext(ctx, fmt.Sprintf(`DROP SCHEMA IF EXISTS %s CASCADE`, qSchema))
-	if err != nil {
-		return fmt.Errorf("drop schema %s: %w", schemaName, err)
-	}
-	return nil
-}
-
-func isMissingDropTenantSchemaFunction(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "drop_tenant_schema") &&
-		(strings.Contains(msg, "does not exist") || strings.Contains(msg, "42883"))
 }
