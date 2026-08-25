@@ -152,7 +152,7 @@ func SummarizeConversation(ctx context.Context, tenantSchema, convoID string) er
 	conversationText := strings.Join(lines, "\n")
 
 	businessCtx := ""
-	if profile, pErr := loadBusinessProfile(ctx, tenantScope{q: db, sch: appdb.SchemaSQL{Schema: tenantSchema}}); pErr == nil && profile != nil {
+	if profile, pErr := loadBusinessProfile(ctx, tenantScope{q: poolQuerier{pool: db}, sch: appdb.SchemaSQL{Schema: tenantSchema}}); pErr == nil && profile != nil {
 		businessCtx = fmt.Sprintf(
 			"Konteks bisnis tenant (katalog resmi — pesanan di luar ini TIDAK valid):\n- Nama: %s\n- Produk/layanan: %s\n\n",
 			profile.BusinessName,
@@ -212,7 +212,7 @@ func GetLatestSummary(ctx context.Context, tenantSchema, convoID string) (string
 	q := fmt.Sprintf(`SELECT summary FROM %q.conversation_summary
 		WHERE conversation_id = $1 ORDER BY created_at DESC LIMIT 1`, tenantSchema)
 	var summary string
-	err = db.QueryRowContext(ctx, q, convoID).Scan(&summary)
+	err = appdb.PoolQueryRow(ctx, db, q, convoID).Scan(&summary)
 	if err == sql.ErrNoRows {
 		return "", nil
 	}
@@ -237,7 +237,7 @@ func ShouldTriggerSummary(ctx context.Context, tenantSchema, convoID string) (bo
 	q := fmt.Sprintf(`SELECT COUNT(*) FROM %q.message
 		WHERE conversation_id = $1 AND created_at > $2`, tenantSchema)
 	var count int
-	err = db.QueryRowContext(ctx, q, convoID, lastTime).Scan(&count)
+	err = appdb.PoolQueryRow(ctx, db, q, convoID, lastTime).Scan(&count)
 	if err != nil {
 		return false, err
 	}
@@ -248,7 +248,7 @@ func getLastSummaryTime(ctx context.Context, db *sql.DB, schema, convoID string)
 	q := fmt.Sprintf(`SELECT created_at FROM %q.conversation_summary
 		WHERE conversation_id = $1 ORDER BY created_at DESC LIMIT 1`, schema)
 	var t time.Time
-	err := db.QueryRowContext(ctx, q, convoID).Scan(&t)
+	err := appdb.PoolQueryRow(ctx, db, q, convoID).Scan(&t)
 	if err == sql.ErrNoRows {
 		return time.Time{}, nil
 	}
@@ -260,7 +260,7 @@ func loadMessagesSince(ctx context.Context, db *sql.DB, schema, convoID string, 
 		WHERE conversation_id = $1 AND created_at > $2
 		ORDER BY created_at ASC LIMIT 100`, schema)
 
-	rows, err := db.QueryContext(ctx, q, convoID, since)
+	rows, err := appdb.QueryContextPool(ctx, db, q, convoID, since)
 	if err != nil {
 		return nil, err
 	}
@@ -285,7 +285,7 @@ func storeSummary(ctx context.Context, db *sql.DB, schema, convoID, summary stri
 			summary = EXCLUDED.summary,
 			message_count = EXCLUDED.message_count,
 			updated_at = NOW()`, schema)
-	_, err := db.ExecContext(ctx, q, convoID, summary, msgCount)
+	_, err := appdb.ExecPool(ctx, db, q, convoID, summary, msgCount)
 	return err
 }
 

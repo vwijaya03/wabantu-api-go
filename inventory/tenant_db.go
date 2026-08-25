@@ -48,8 +48,9 @@ var tenantTables = []string{
 }
 
 var (
-	orderTableRE = regexp.MustCompile(`(?i)\b(FROM|JOIN|INTO|UPDATE|TABLE)\s+"?order"?\b`)
-	invTableREs  = make([]*regexp.Regexp, len(tenantTables))
+	orderQuotedRE   = regexp.MustCompile(`(?i)\b(FROM|JOIN|INTO|UPDATE|TABLE)\s+"order"`)
+	orderUnquotedRE = regexp.MustCompile(`(?i)\b(FROM|JOIN|INTO|UPDATE|TABLE)\s+order\b`)
+	invTableREs     = make([]*regexp.Regexp, len(tenantTables))
 )
 
 func init() {
@@ -66,26 +67,40 @@ func qualSQL(sch appdb.SchemaSQL, sql string) string {
 	for i, table := range tenantTables {
 		out = invTableREs[i].ReplaceAllString(out, sch.T(table))
 	}
-	out = orderTableRE.ReplaceAllStringFunc(out, func(m string) string {
+	replaceOrder := func(m string) string {
 		parts := strings.Fields(m)
 		if len(parts) < 2 {
 			return m
 		}
 		return parts[0] + " " + sch.T("order")
-	})
+	}
+	out = orderQuotedRE.ReplaceAllStringFunc(out, replaceOrder)
+	out = orderUnquotedRE.ReplaceAllStringFunc(out, replaceOrder)
 	return out
 }
 
-func qrow(ctx context.Context, sch appdb.SchemaSQL, q querier, query string, args ...any) *sql.Row {
-	return q.QueryRowContext(ctx, qualSQL(sch, query), args...)
+func qrow(ctx context.Context, sch appdb.SchemaSQL, q querier, query string, args ...any) appdb.Scannable {
+	qualified := qualSQL(sch, query)
+	if pool, ok := q.(*sql.DB); ok {
+		return appdb.PoolQueryRow(ctx, pool, qualified, args...)
+	}
+	return q.QueryRowContext(ctx, qualified, args...)
 }
 
 func qexec(ctx context.Context, sch appdb.SchemaSQL, q querier, query string, args ...any) (sql.Result, error) {
-	return q.ExecContext(ctx, qualSQL(sch, query), args...)
+	qualified := qualSQL(sch, query)
+	if pool, ok := q.(*sql.DB); ok {
+		return appdb.ExecPool(ctx, pool, qualified, args...)
+	}
+	return q.ExecContext(ctx, qualified, args...)
 }
 
 func qquery(ctx context.Context, sch appdb.SchemaSQL, q querier, query string, args ...any) (*sql.Rows, error) {
-	return q.QueryContext(ctx, qualSQL(sch, query), args...)
+	qualified := qualSQL(sch, query)
+	if pool, ok := q.(*sql.DB); ok {
+		return appdb.QueryContextPool(ctx, pool, qualified, args...)
+	}
+	return q.QueryContext(ctx, qualified, args...)
 }
 
 func qformat(ctx context.Context, sch appdb.SchemaSQL, q querier, format string, args ...any) (*sql.Rows, error) {
