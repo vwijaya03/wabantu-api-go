@@ -16,6 +16,7 @@ import (
 	"encore.dev/storage/sqldb"
 
 	"encore.app/wabantu/shared/inboxrealtime"
+	appdb "encore.app/wabantu/shared/db"
 	"encore.app/wabantu/shared/strutil"
 	"encore.app/wabantu/shared/pii"
 	"encore.app/wabantu/usage"
@@ -44,10 +45,10 @@ const (
 
 var aiDB = sqldb.Named("tenant")
 
-// tenantQuerier is implemented by *sql.DB, *sql.Conn, and tenantScope.
+// tenantQuerier is implemented by poolQuerier, *sql.Tx, and tenantScope.
 type tenantQuerier interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
-	QueryRowContext(context.Context, string, ...any) *sql.Row
+	QueryRowContext(context.Context, string, ...any) appdb.Scannable
 	ExecContext(context.Context, string, ...any) (sql.Result, error)
 }
 
