@@ -5,17 +5,21 @@ package tenantschema
 import (
 	"context"
 	"database/sql"
+
+	appdb "encore.app/wabantu/shared/db"
 )
 
-// TableExists reports whether a named table exists in the current schema.
-func TableExists(ctx context.Context, conn *sql.Conn, table string) (bool, error) {
+func scanExists(ctx context.Context, conn *sql.Conn, query string, args ...any) (bool, error) {
 	var exists bool
-	err := conn.QueryRowContext(ctx, `
-		SELECT EXISTS (
-		  SELECT 1 FROM information_schema.tables
-		  WHERE table_schema = current_schema() AND table_name = $1
-		)`, table).Scan(&exists)
-	return exists, err
+	if err := appdb.QueryRowContextRetry(ctx, conn, []any{&exists}, query, args...); err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
+// TableExists reports whether a named table exists in the current search_path schema.
+func TableExists(ctx context.Context, conn *sql.Conn, table string) (bool, error) {
+	return scanExists(ctx, conn, `SELECT to_regclass($1::text) IS NOT NULL`, table)
 }
 
 // ColumnExists reports whether a column exists on a table in the current schema.
@@ -28,25 +32,31 @@ func tableExists(ctx context.Context, conn *sql.Conn, table string) (bool, error
 }
 
 func columnExists(ctx context.Context, conn *sql.Conn, table, column string) (bool, error) {
-	var exists bool
-	err := conn.QueryRowContext(ctx, `
+	return scanExists(ctx, conn, `
 		SELECT EXISTS (
-		  SELECT 1 FROM information_schema.columns
-		  WHERE table_schema = current_schema()
-		    AND table_name = $1 AND column_name = $2
-		)`, table, column).Scan(&exists)
-	return exists, err
+		  SELECT 1
+		  FROM pg_catalog.pg_attribute a
+		  JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+		  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+		  WHERE n.nspname = current_schema()
+		    AND c.relname = $1
+		    AND a.attname = $2
+		    AND a.attnum > 0
+		    AND NOT a.attisdropped
+		)`, table, column)
 }
 
 // IndexExists reports whether a named index exists in the current schema.
 func IndexExists(ctx context.Context, conn *sql.Conn, indexName string) (bool, error) {
-	var exists bool
-	err := conn.QueryRowContext(ctx, `
+	return scanExists(ctx, conn, `
 		SELECT EXISTS (
-		  SELECT 1 FROM pg_indexes
-		  WHERE schemaname = current_schema() AND indexname = $1
-		)`, indexName).Scan(&exists)
-	return exists, err
+		  SELECT 1
+		  FROM pg_catalog.pg_class c
+		  JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+		  WHERE n.nspname = current_schema()
+		    AND c.relname = $1
+		    AND c.relkind IN ('i', 'I')
+		)`, indexName)
 }
 
 // ContactRuntimeReady — inbox + pricing contact columns.
@@ -173,16 +183,6 @@ func PIIReady(ctx context.Context, conn *sql.Conn) (bool, error) {
 }
 
 // InventoryModuleReady — inventory/HPP module tables present.
-// Checks the latest table in the current schema generation so that tenants which
-// already have earlier inventory tables still receive newer ones on re-migration
-// (all DDL is CREATE ... IF NOT EXISTS, so re-running InventorySchemaSQL is safe).
-//   - PR-A1: inv_setting, inv_warehouse, inv_sku
-//   - PR-A2: inv_cost_layer, inv_stock_balance, inv_stock_movement
-//   - PR-A4: inv_bundle_component
-//   - PR-A5: inv_document_sequence, pur_purchase_order(_line)
-//   - PR-A6: pur_bill(_line) + inv_setting.purchase_posts_expense
-//   - PR-A7: inv_invoice(_line), inv_sales_return(_line)
-//   - PR stock-txn-crud: inv_stock_transaction(_line)
 func InventoryModuleReady(ctx context.Context, conn *sql.Conn) (bool, error) {
 	for _, t := range []string{
 		"inv_setting", "inv_warehouse", "inv_sku",
@@ -202,7 +202,6 @@ func InventoryModuleReady(ctx context.Context, conn *sql.Conn) (bool, error) {
 }
 
 // CloudTenantReady — migrated / fully provisioned tenant (skip all runtime DDL).
-// Admin DDL that satisfies these checks: tenant.cloudAdminTenantDDLBlocks() in cloud_admin_ddl.go.
 func CloudTenantReady(ctx context.Context, conn *sql.Conn) (bool, error) {
 	checks := []func(context.Context, *sql.Conn) (bool, error){
 		TenantPatchReady,
