@@ -4,11 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"strings"
+
+	appdb "encore.app/wabantu/shared/db"
 )
 
 // ResolveInboundBeforeOutbound finds the latest inbound message before an outbound reply.
 func ResolveInboundBeforeOutbound(ctx context.Context, q interface {
-	QueryRowContext(context.Context, string, ...any) *sql.Row
+	QueryRowContext(context.Context, string, ...any) appdb.Scannable
 }, conversationID, outboundMessageID string) (inboundID, userText string, err error) {
 	conversationID = strings.TrimSpace(conversationID)
 	outboundMessageID = strings.TrimSpace(outboundMessageID)

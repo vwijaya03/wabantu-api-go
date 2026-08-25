@@ -35,7 +35,7 @@ func ensurePricingSchema(ctx context.Context, tenantSchema string) error {
 }
 
 // ensureCatalogIndexes fixes legacy unique index that blocked re-create after soft delete.
-func ensureCatalogIndexes(ctx context.Context, q appdb.TenantQuerier, tenantSchema string) error {
+func ensureCatalogIndexes(ctx context.Context, q any, tenantSchema string) error {
 	exists, err := tenantschema.CatalogIndexReady(ctx, q, tenantSchema)
 	if err != nil {
 		return err
@@ -48,7 +48,8 @@ func ensureCatalogIndexes(ctx context.Context, q appdb.TenantQuerier, tenantSche
 	}
 	sch := appdb.SchemaSQL{Schema: tenantSchema}
 	catalogItem := sch.T("business_catalog_item")
-	_, err = q.ExecContext(ctx, fmt.Sprintf(`
+	querier := tenantschema.Q(q)
+	_, err = querier.ExecContext(ctx, fmt.Sprintf(`
 		DROP INDEX IF EXISTS idx_catalog_source_code;
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_source_code
 			ON %s(source, external_code)

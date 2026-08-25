@@ -8,17 +8,18 @@ import (
 	"strings"
 )
 
-// TenantQuerier is satisfied by *sql.DB, *sql.Conn, and *sql.Tx.
+// TenantQuerier is satisfied by *sql.DB, *sql.Conn, *sql.Tx, and TenantScope.
 type TenantQuerier interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
-	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+	QueryRowContext(ctx context.Context, query string, args ...any) Scannable
 }
 
 // TenantScope runs tenant DML with schema-qualified table names (no SET search_path).
 type TenantScope struct {
-	Q   TenantQuerier
-	Sch SchemaSQL
+	Q    TenantQuerier
+	Sch  SchemaSQL
+	pool *sql.DB // set for pool-backed scopes; enables 08P01 retry on QueryRow/Exec
 }
 
 // tenantTableNames longest-first so shorter names are not partially matched.
@@ -130,12 +131,16 @@ func QualifySQL(sch SchemaSQL, sql string) string {
 
 // OpenTenantScope returns a scope for schema-qualified DML on pool (no search_path).
 func OpenTenantScope(pool *sql.DB, schema string) TenantScope {
-	return TenantScope{Q: pool, Sch: SchemaSQL{Schema: schema}}
+	return TenantScope{Q: AsTenantQuerier(pool), Sch: SchemaSQL{Schema: schema}, pool: pool}
 }
 
 // WithQ returns the same scope using a different querier (e.g. *sql.Tx).
-func (ts TenantScope) WithQ(q TenantQuerier) TenantScope {
-	return TenantScope{Q: q, Sch: ts.Sch}
+func (ts TenantScope) WithQ(q interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}) TenantScope {
+	return TenantScope{Q: AsTenantQuerier(q), Sch: ts.Sch}
 }
 
 func (ts TenantScope) T(table string) string {
@@ -150,7 +155,7 @@ func (ts TenantScope) QueryContext(ctx context.Context, query string, args ...an
 	return ts.Q.QueryContext(ctx, QualifySQL(ts.Sch, query), args...)
 }
 
-func (ts TenantScope) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+func (ts TenantScope) QueryRowContext(ctx context.Context, query string, args ...any) Scannable {
 	return ts.Q.QueryRowContext(ctx, QualifySQL(ts.Sch, query), args...)
 }
 

@@ -59,7 +59,7 @@ func encKey() string {
 	return strings.TrimSpace(secrets.DataEncryptionKey)
 }
 
-func ensurePIISchema(ctx context.Context, q appdb.TenantQuerier, tenantSchema string) error {
+func ensurePIISchema(ctx context.Context, q any, tenantSchema string) error {
 	active, err := tenantschema.ContactPIIActive(ctx, q, tenantSchema)
 	if err != nil {
 		return err

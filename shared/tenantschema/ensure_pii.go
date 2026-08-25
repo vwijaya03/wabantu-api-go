@@ -5,11 +5,7 @@ import (
 	"database/sql"
 )
 
-type columnChecker interface {
-	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
-}
-
-func columnExistsChecker(ctx context.Context, db columnChecker, table, column string) (bool, error) {
+func columnExistsChecker(ctx context.Context, db Querier, table, column string) (bool, error) {
 	var exists bool
 	err := db.QueryRowContext(ctx, `
 		SELECT EXISTS (
@@ -27,12 +23,12 @@ func ContactPIIReady(ctx context.Context, conn *sql.Conn) (bool, error) {
 
 // ContactPIIReadyDB is ContactPIIReady for *sql.DB connections.
 func ContactPIIReadyDB(ctx context.Context, db *sql.DB) (bool, error) {
-	return columnExistsChecker(ctx, db, "contact", "phone_number_idx")
+	return columnExistsChecker(ctx, Q(db), "contact", "phone_number_idx")
 }
 
 // LeadPIIReadyDB reports whether lead PII columns exist (uncached).
 func LeadPIIReadyDB(ctx context.Context, db *sql.DB) (bool, error) {
-	return columnExistsChecker(ctx, db, "lead", "phone_number_idx")
+	return columnExistsChecker(ctx, Q(db), "lead", "phone_number_idx")
 }
 
 // PIIPatchRunner applies PII DDL when columns are missing (injected to avoid import cycles).
@@ -41,7 +37,7 @@ type PIIPatchRunner func(ctx context.Context, conn *sql.Conn) error
 // EnsureContactPII applies idempotent PII DDL/constraints and reports if encrypted writes are safe.
 func EnsureContactPII(ctx context.Context, conn *sql.Conn, schema string, patch PIIPatchRunner) bool {
 	if schema == "" {
-		schema = currentSchema(ctx, conn)
+		schema = currentSchema(ctx, Q(conn))
 	}
 	wasActive, _ := ContactPIIActiveConn(ctx, conn, schema)
 	if patch != nil {
@@ -50,7 +46,7 @@ func EnsureContactPII(ctx context.Context, conn *sql.Conn, schema string, patch 
 			InvalidateContactPIICache(schema)
 		}
 	}
-	active, err := contactPIIActiveUncached(ctx, conn, schema)
+	active, err := contactPIIActiveUncached(ctx, Q(conn), schema)
 	if active {
 		MarkContactPIIActive(schema)
 	}

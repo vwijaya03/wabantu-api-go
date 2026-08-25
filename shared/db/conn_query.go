@@ -15,7 +15,7 @@ func ResetPreparedStatements(ctx context.Context, conn *sql.Conn) {
 
 // QueryRowContextRetry runs QueryRowContext+Scan and retries once after DEALLOCATE ALL
 // when pgx reports a stale prepared statement (08P01).
-func QueryRowContextRetry(ctx context.Context, conn *sql.Conn, dest []any, query string, args ...any) error {
+func QueryRowContextRetry(ctx context.Context, conn *sql.Conn, query string, args []any, dest ...any) error {
 	err := conn.QueryRowContext(ctx, query, args...).Scan(dest...)
 	if !IsStalePreparedStatement(err) {
 		return err
