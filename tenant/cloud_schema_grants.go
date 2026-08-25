@@ -119,23 +119,7 @@ func repairAllCloudSchemaDeployGrants(ctx context.Context) {
 	if encore.Meta().Environment.Cloud == encore.CloudLocal {
 		return
 	}
-	schemas, err := ListSchemaNames(ctx)
-	if err != nil {
-		rlog.Warn("cloud schema grant repair: list schemas failed", "err", err)
-		return
-	}
-	conn, err := DataDB.Stdlib().Conn(ctx)
-	if err != nil {
-		rlog.Warn("cloud schema grant repair: connect failed", "err", err)
-		return
-	}
-	defer conn.Close()
-
-	ensureCloudRuntimeRoleMembership(ctx, conn)
-
-	for _, schema := range schemas {
-		if err := ensureCloudSchemaDeployGrants(ctx, conn, schema); err != nil {
-			rlog.Warn("cloud schema grant repair failed", "schema", schema, "err", err)
-		}
+	if _, err := repairAllTenantSchemaDeployGrants(ctx); err != nil {
+		rlog.Warn("cloud schema grant repair failed", "err", err)
 	}
 }

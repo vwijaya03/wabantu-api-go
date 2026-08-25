@@ -32,39 +32,51 @@ type SchemaMigrationItem struct {
 }
 
 type MigrateSchemasResponse struct {
-	Async    bool                    `json:"async,omitempty"`
-	JobID    string                  `json:"jobId,omitempty"`
-	Enqueued int                     `json:"enqueued,omitempty"`
-	Patched  int                     `json:"patched"`
-	Failed   int                     `json:"failed"`
-	Errors   []string                `json:"errors,omitempty"`
-	Results  []SchemaMigrationItem   `json:"results,omitempty"`
+	Async     bool                      `json:"async,omitempty"`
+	JobID     string                    `json:"jobId,omitempty"`
+	Enqueued  int                       `json:"enqueued,omitempty"`
+	Patched   int                       `json:"patched"`
+	Failed    int                       `json:"failed"`
+	Errors    []string                  `json:"errors,omitempty"`
+	Results   []SchemaMigrationItem     `json:"results,omitempty"`
+	CloudPrep *CloudMigrationPrepResult `json:"cloudPrep,omitempty"`
 }
 
 // RunMigrateAllTenantSchemas applies patches to every active tenant schema (async).
 func RunMigrateAllTenantSchemas(ctx context.Context, migratedBy string) (*MigrateSchemasResponse, error) {
+	prep, err := RunCloudMigrationPrep(ctx)
+	if err != nil {
+		return nil, err
+	}
 	enq, err := EnqueueSchemaMigration(ctx, nil, migratedBy)
 	if err != nil {
 		return nil, err
 	}
 	return &MigrateSchemasResponse{
-		Async:    true,
-		JobID:    enq.JobID,
-		Enqueued: enq.Enqueued,
+		Async:     true,
+		JobID:     enq.JobID,
+		Enqueued:  enq.Enqueued,
+		CloudPrep: prep,
 	}, nil
 }
 
 // RunMigrateTenantSchemas applies patches synchronously (≤3 tenants) or enqueues a job.
 func RunMigrateTenantSchemas(ctx context.Context, req *MigrateSchemasRequest, migratedBy string) (*MigrateSchemasResponse, error) {
+	prep, err := RunCloudMigrationPrep(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	if req != nil && strings.TrimSpace(req.Mode) == "behind" {
 		enq, err := EnqueueBehindSchemaMigration(ctx, migratedBy)
 		if err != nil {
 			return nil, err
 		}
 		return &MigrateSchemasResponse{
-			Async:    true,
-			JobID:    enq.JobID,
-			Enqueued: enq.Enqueued,
+			Async:     true,
+			JobID:     enq.JobID,
+			Enqueued:  enq.Enqueued,
+			CloudPrep: prep,
 		}, nil
 	}
 
@@ -74,9 +86,10 @@ func RunMigrateTenantSchemas(ctx context.Context, req *MigrateSchemasRequest, mi
 			return nil, err
 		}
 		return &MigrateSchemasResponse{
-			Async:    true,
-			JobID:    enq.JobID,
-			Enqueued: enq.Enqueued,
+			Async:     true,
+			JobID:     enq.JobID,
+			Enqueued:  enq.Enqueued,
+			CloudPrep: prep,
 		}, nil
 	}
 
@@ -85,11 +98,12 @@ func RunMigrateTenantSchemas(ctx context.Context, req *MigrateSchemasRequest, mi
 		return nil, err
 	}
 	if len(targets) == 0 {
-		return &MigrateSchemasResponse{Results: []SchemaMigrationItem{}}, nil
+		return &MigrateSchemasResponse{Results: []SchemaMigrationItem{}, CloudPrep: prep}, nil
 	}
 
 	resp := &MigrateSchemasResponse{
-		Results: make([]SchemaMigrationItem, 0, len(targets)),
+		Results:   make([]SchemaMigrationItem, 0, len(targets)),
+		CloudPrep: prep,
 	}
 	for _, target := range targets {
 		item := SchemaMigrationItem{

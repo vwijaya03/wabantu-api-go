@@ -12,8 +12,8 @@ type PatchManifest struct {
 var SchemaManifests = []PatchManifest{
 	{
 		Version:          CurrentSchemaPatchVersion,
-		RequiresAdminDDL: true,
-		Description:      "Payment proof columns, inventory indexes, finance seeds",
+		RequiresAdminDDL: false,
+		Description:      "Payment proof, inventory, finance — applied via migrate-tenant-schemas on cloud",
 	},
 }
 

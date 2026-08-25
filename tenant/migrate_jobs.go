@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"encore.app/wabantu/shared/tenantschema"
 	"encore.app/wabantu/system"
 	"encore.dev/pubsub"
 	"encore.dev/rlog"
@@ -303,6 +302,13 @@ func ShouldUseSyncMigration(req *MigrateSchemasRequest) bool {
 
 // ProcessTenantSchemaMigration applies patches (or backfills version) for one tenant.
 func ProcessTenantSchemaMigration(ctx context.Context, tenantID, schemaName, migratedBy string) error {
+	if err := RepairTenantSchemaDeployGrants(ctx, schemaName); err != nil {
+		return fmt.Errorf("repair deploy grants: %w", err)
+	}
+	if err := applyCloudAdminTenantDDL(ctx, schemaName); err != nil {
+		return fmt.Errorf("cloud admin DDL: %w", err)
+	}
+
 	// Module-specific evt_* DDL (new columns) is idempotent and must run even when
 	// tenant schema_patch_version is already current.
 	if err := RunEventsSchemaPatches(ctx, schemaName); err != nil {
@@ -314,31 +320,23 @@ func ProcessTenantSchemaMigration(ctx context.Context, tenantID, schemaName, mig
 		return err
 	}
 	if ver >= CurrentSchemaPatchVersion {
-		return nil
-	}
-
-	conn, err := TenantConn(ctx, schemaName)
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
-	if m := manifestForVersion(CurrentSchemaPatchVersion); m != nil && m.RequiresAdminDDL {
-		ready, readyErr := tenantschema.CloudTenantReady(ctx, conn)
-		if readyErr != nil {
-			return readyErr
-		}
-		if ready {
-			_, _, err = recordSchemaMigrationSuccess(ctx, tenantID, migratedBy, CurrentSchemaPatchVersion)
-			return err
-		}
+		return finalizeTenantSchemaMigration(ctx, schemaName)
 	}
 
 	if err := RunSchemaPatches(ctx, schemaName); err != nil {
 		return err
 	}
-	_, _, err = recordSchemaMigrationSuccess(ctx, tenantID, migratedBy, CurrentSchemaPatchVersion)
-	return err
+	if _, _, err = recordSchemaMigrationSuccess(ctx, tenantID, migratedBy, CurrentSchemaPatchVersion); err != nil {
+		return err
+	}
+	return finalizeTenantSchemaMigration(ctx, schemaName)
+}
+
+func finalizeTenantSchemaMigration(ctx context.Context, schemaName string) error {
+	if err := RepairTenantSchemaDeployGrants(ctx, schemaName); err != nil {
+		return fmt.Errorf("finalize deploy grants: %w", err)
+	}
+	return nil
 }
 
 func handleTenantSchemaMigrate(ctx context.Context, msg *TenantSchemaMigrateMessage) error {
