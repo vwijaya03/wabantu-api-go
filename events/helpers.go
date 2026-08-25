@@ -70,13 +70,6 @@ var (
 	eventsSchemaGroup  singleflight.Group
 )
 
-func tenantConn(ctx context.Context, schema string) (*sql.Conn, error) {
-	if err := ensureEventsSchema(ctx, schema); err != nil {
-		return nil, err
-	}
-	return tenant.TenantConn(ctx, schema)
-}
-
 // ensureEventsSchema applies evt_* DDL on tenants created before the events module (idempotent).
 func ensureEventsSchema(ctx context.Context, schema string) error {
 	eventsSchemaMu.Lock()
@@ -121,15 +114,11 @@ func applyEventsSchemaPatches(ctx context.Context, schema string) error {
 		return err
 	}
 	defer tenant.CloseTenantConn(conn)
-	var exists bool
-	if err := conn.QueryRowContext(ctx, `
-		SELECT EXISTS (
-		  SELECT 1 FROM information_schema.tables
-		  WHERE table_schema = current_schema() AND table_name = 'evt_event'
-		)`).Scan(&exists); err != nil {
+	exists, err := tenantschema.TableExistsConn(ctx, conn, "evt_event")
+	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	cloudReady, err := tenantschema.CloudTenantReady(ctx, conn)
+	cloudReady, err := tenantschema.CloudTenantReadyConn(ctx, conn)
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
@@ -155,30 +144,22 @@ func applyEventsSchemaPatches(ctx context.Context, schema string) error {
 }
 
 func eventsPersonPatchReady(ctx context.Context, schema string) (bool, error) {
-	conn, err := tenant.TenantConn(ctx, schema)
+	db := tenant.DataDB.Stdlib()
+	exists, err := tenantschema.TableExists(ctx, db, schema, "evt_event_person")
 	if err != nil {
-		return false, err
-	}
-	defer tenant.CloseTenantConn(conn)
-	var exists bool
-	if err := conn.QueryRowContext(ctx, `
-		SELECT EXISTS (
-		  SELECT 1 FROM information_schema.tables
-		  WHERE table_schema = current_schema() AND table_name = 'evt_event_person'
-		)`).Scan(&exists); err != nil {
 		return false, appErrs.Internal(err.Error())
 	}
 	if !exists {
 		return true, nil
 	}
-	hasMeals, err := tenantschema.ColumnExists(ctx, conn, "evt_event_person", "counts_toward_meals")
+	hasMeals, err := tenantschema.ColumnExists(ctx, db, schema, "evt_event_person", "counts_toward_meals")
 	if err != nil {
 		return false, appErrs.Internal(err.Error())
 	}
 	if !hasMeals {
 		return false, nil
 	}
-	hasCatering, err := tenantschema.ColumnExists(ctx, conn, "evt_event", "catering_order_notes")
+	hasCatering, err := tenantschema.ColumnExists(ctx, db, schema, "evt_event", "catering_order_notes")
 	if err != nil {
 		return false, appErrs.Internal(err.Error())
 	}
@@ -198,7 +179,7 @@ func ensureEventsMissingColumns(ctx context.Context, conn *sql.Conn, schema stri
 	var missing *colCheck
 	for i := range checks {
 		c := &checks[i]
-		has, colErr := tenantschema.ColumnExists(ctx, conn, c.table, c.column)
+		has, colErr := tenantschema.ColumnExistsConn(ctx, conn, c.table, c.column)
 		if colErr != nil {
 			return appErrs.Internal(colErr.Error())
 		}
@@ -239,9 +220,9 @@ func clampLen(s string, max int) string {
 	return s
 }
 
-func assertEventExists(ctx context.Context, conn *sql.Conn, eventID string) error {
+func assertEventExists(ctx context.Context, ts tenantScope, eventID string) error {
 	var one int
-	err := conn.QueryRowContext(ctx, `
+	err := ts.QueryRowContext(ctx, `
 		SELECT 1 FROM evt_event WHERE id=$1::uuid AND deleted_at IS NULL`, eventID,
 	).Scan(&one)
 	if err == sql.ErrNoRows {
@@ -382,7 +363,7 @@ func slugify(name string) string {
 	return s
 }
 
-func auditEvent(ctx context.Context, conn *sql.Conn, u *types.AuthUser, entityType, entityID, action string, before, after any) {
+func auditEvent(ctx context.Context, ts tenantScope, u *types.AuthUser, entityType, entityID, action string, before, after any) {
 	var actorID, role *string
 	if u != nil {
 		actorID = &u.AccountID
@@ -390,7 +371,7 @@ func auditEvent(ctx context.Context, conn *sql.Conn, u *types.AuthUser, entityTy
 	}
 	beforeJSON, _ := json.Marshal(before)
 	afterJSON, _ := json.Marshal(after)
-	_, _ = conn.ExecContext(ctx, `
+	_, _ = ts.ExecContext(ctx, `
 		INSERT INTO evt_audit_log (entity_type, entity_id, action, actor_id, actor_role, before_data, after_data)
 		VALUES ($1,$2::uuid,$3,$4::uuid,$5,$6::jsonb,$7::jsonb)`,
 		entityType, entityID, action, actorID, role, nullJSON(beforeJSON), nullJSON(afterJSON),
@@ -427,9 +408,9 @@ func registrationOpen(now time.Time, openAt, closeAt sql.NullTime) bool {
 	return true
 }
 
-func assertEventMutable(ctx context.Context, conn *sql.Conn, eventID string) error {
+func assertEventMutable(ctx context.Context, ts tenantScope, eventID string) error {
 	var status string
-	err := conn.QueryRowContext(ctx, `
+	err := ts.QueryRowContext(ctx, `
 		SELECT status FROM evt_event WHERE id=$1::uuid AND deleted_at IS NULL`, eventID,
 	).Scan(&status)
 	if err == sql.ErrNoRows {
@@ -444,7 +425,7 @@ func assertEventMutable(ctx context.Context, conn *sql.Conn, eventID string) err
 	return nil
 }
 
-func uniqueSlug(ctx context.Context, conn *sql.Conn, base string, excludeID string) (string, error) {
+func uniqueSlug(ctx context.Context, ts tenantScope, base string, excludeID string) (string, error) {
 	candidate := base
 	for i := 0; i < 50; i++ {
 		var exists bool
@@ -455,7 +436,7 @@ func uniqueSlug(ctx context.Context, conn *sql.Conn, base string, excludeID stri
 			args = append(args, excludeID)
 		}
 		q += `)`
-		if err := conn.QueryRowContext(ctx, q, args...).Scan(&exists); err != nil {
+		if err := ts.QueryRowContext(ctx, q, args...).Scan(&exists); err != nil {
 			return "", err
 		}
 		if !exists {

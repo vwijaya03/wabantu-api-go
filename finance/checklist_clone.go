@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	appdb "encore.app/wabantu/shared/db"
 	appErrs "encore.app/wabantu/shared/errs"
 )
 
@@ -43,9 +44,9 @@ func recurringDueFields(nextRun string, dayOfMonth *int) (anchor string, dom int
 	return synthesizeDueAnchor(now.Year(), now.Month(), dom), dom
 }
 
-func billingTemplateExists(ctx context.Context, conn *sql.Conn, title string) (bool, error) {
+func billingTemplateExists(ctx context.Context, sch appdb.SchemaSQL, q finQuerier, title string) (bool, error) {
 	var exists bool
-	err := conn.QueryRowContext(ctx, `
+	err := qrow(ctx, sch, q, `
 		SELECT EXISTS(
 		  SELECT 1 FROM fin_checklist_template
 		  WHERE is_active = true AND frequency = 'monthly'
@@ -67,11 +68,11 @@ func CloneRecurringToBilling(ctx context.Context, p *CloneRecurringToBillingPara
 		return nil, appErrs.BadRequest("pilih minimal satu transaksi otomatis")
 	}
 
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	q := tenantPool()
 
 	resp := &CloneRecurringToBillingResponse{
 		Created: []ChecklistTemplate{},
@@ -96,7 +97,7 @@ func CloneRecurringToBilling(ctx context.Context, p *CloneRecurringToBillingPara
 		var dayOfMonth sql.NullInt64
 		var isActive bool
 
-		err := conn.QueryRowContext(ctx, `
+		err := qrow(ctx, sch, q, `
 			SELECT title, type, frequency, amount, wallet_id, category_id, description,
 			       day_of_month, next_run_date::text, is_active
 			FROM fin_recurring
@@ -140,7 +141,7 @@ func CloneRecurringToBilling(ctx context.Context, p *CloneRecurringToBillingPara
 			continue
 		}
 
-		exists, err := billingTemplateExists(ctx, conn, title)
+		exists, err := billingTemplateExists(ctx, sch, q, title)
 		if err != nil {
 			return nil, appErrs.Internal(err.Error())
 		}
@@ -174,7 +175,7 @@ func CloneRecurringToBilling(ctx context.Context, p *CloneRecurringToBillingPara
 		}
 
 		var tplID string
-		err = conn.QueryRowContext(ctx, `
+		err = qrow(ctx, sch, q, `
 			INSERT INTO fin_checklist_template
 			 (title, description, amount_hint, category_id, wallet_id, frequency, day_of_month, due_anchor_date, display_order, created_by)
 			 VALUES ($1,$2,$3,$4,$5,'monthly',$6,$7,0,$8)

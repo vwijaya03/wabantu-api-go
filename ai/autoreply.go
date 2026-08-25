@@ -15,7 +15,6 @@ import (
 	"encore.dev/rlog"
 	"encore.dev/storage/sqldb"
 
-	appdb "encore.app/wabantu/shared/db"
 	"encore.app/wabantu/shared/inboxrealtime"
 	"encore.app/wabantu/shared/strutil"
 	"encore.app/wabantu/shared/pii"
@@ -45,17 +44,11 @@ const (
 
 var aiDB = sqldb.Named("tenant")
 
-// tenantQuerier is implemented by *sql.Conn (per-tenant search_path) and *sql.DB.
+// tenantQuerier is implemented by *sql.DB, *sql.Conn, and tenantScope.
 type tenantQuerier interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 	ExecContext(context.Context, string, ...any) (sql.Result, error)
-}
-
-// openTenantConn returns a dedicated connection with search_path set for the tenant schema.
-// Do not use SET search_path on the shared pool (*sql.DB) — concurrent jobs race and break inserts.
-func openTenantConn(ctx context.Context, schema string) (*sql.Conn, error) {
-	return appdb.TenantConn(ctx, aiDB.Stdlib(), schema)
 }
 
 // ─── Payload & internal types ────────────────────────────────────────────────
@@ -185,13 +178,12 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		"inboundId", payload.InboundMessageID,
 	)
 
-	conn, err := openTenantConn(ctx, payload.TenantSchema)
+	ts, err := openTenantScope(ctx, payload.TenantSchema)
 	if err != nil {
 		return false, err
 	}
-	defer conn.Close()
 
-	convo, err := loadConversation(ctx, conn, payload.ConversationID)
+	convo, err := loadConversation(ctx, ts, payload.ConversationID)
 	if err != nil {
 		return false, err
 	}
@@ -206,7 +198,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		InboundMessageID: payload.InboundMessageID,
 	})
 
-	inbound, err := loadMessage(ctx, conn, payload.InboundMessageID)
+	inbound, err := loadMessage(ctx, ts, payload.InboundMessageID)
 	if err != nil {
 		return false, err
 	}
@@ -237,7 +229,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return false, nil
 	}
 
-	profile, err := loadBusinessProfile(ctx, conn)
+	profile, err := loadBusinessProfile(ctx, ts)
 	if err != nil {
 		return false, err
 	}
@@ -246,11 +238,11 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return false, nil
 	}
 
-	contact, err := loadContact(ctx, conn, convo.ContactID)
+	contact, err := loadContact(ctx, ts, convo.ContactID)
 	if err != nil {
 		return false, err
 	}
-	channel, err := loadChannel(ctx, conn, convo.ChannelID)
+	channel, err := loadChannel(ctx, ts, convo.ChannelID)
 	if err != nil {
 		return false, err
 	}
@@ -258,7 +250,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		rlog.Warn("AI job: missing contact or channel")
 		return false, nil
 	}
-	if channel.Provider != "meta_cloud" || channel.Status != "connected" {
+	if channel.Provider != "meta_cloud" || channel.Status != "tsected" {
 		rlog.Warn("AI job: unsupported/invalid channel",
 			"provider", channel.Provider,
 			"status", channel.Status,
@@ -275,7 +267,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	if !isBusinessProfileComplete(profile) {
 		out := metaNoLLM(reasonProfileIncomplete, PathProfileIncomplete)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact,
+		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact,
 			nonAiDefaultReply(profile), "system", out)
 		return err == nil, err
 	}
@@ -283,12 +275,12 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	rlog.Info("AI job: inbound text", "lenUserText", len(userText), "sourceType", inbound.Type)
 
 	if IsThirdPartyBuyerLookup(userText) {
-		return s.handleThirdPartyBuyerLookupDenied(ctx, conn, payload, convo, channel, contact)
+		return s.handleThirdPartyBuyerLookupDenied(ctx, ts, payload, convo, channel, contact)
 	}
 
 	// Status inquiry sebelum greeting — "halo min punya pesanan aktif?" bukan sapaan murni.
 	if (IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) || IsOrderRefStatusLookup(userText)) && !wantsOrderContextFromHistory(userText) {
-		return s.handleCustomerOrderStatus(ctx, conn, payload.TenantSchema, payload, convo, channel, contact, userText, nil)
+		return s.handleCustomerOrderStatus(ctx, ts, payload.TenantSchema, payload, convo, channel, contact, userText, nil)
 	}
 
 	if IsGreetingLike(userText) {
@@ -297,7 +289,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		greet := GreetingReply(userText, strOrEmpty(profile.Tone), strOrEmpty(profile.GreetingTemplate))
 		out := metaNoLLM(reasonNonQuestion, PathGreeting)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, greet, "ai", out)
+		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, greet, "ai", out)
 		return err == nil, err
 	}
 
@@ -305,7 +297,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		greet := GreetingFeedbackReply(userText, strOrEmpty(profile.Tone))
 		out := metaNoLLM(reasonNonQuestion, PathGreeting)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, greet, "ai", out)
+		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, greet, "ai", out)
 		return err == nil, err
 	}
 
@@ -321,31 +313,31 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		}
 		out := metaNoLLM(reasonOutOfScope, PathInjectionGuard)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, text, "system", out)
+		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, text, "system", out)
 		return err == nil, err
 	}
 
-	history, err := loadHistory(ctx, conn, convo.ID, 12)
+	history, err := loadHistory(ctx, ts, convo.ID, 12)
 	if err != nil {
 		return false, err
 	}
-	kbEntries, err := loadKBEntries(ctx, conn, 20)
+	kbEntries, err := loadKBEntries(ctx, ts, 20)
 	if err != nil {
 		return false, err
 	}
 
-	catalog, catLoadErr := loadActiveCatalog(ctx, conn, 50)
+	catalog, catLoadErr := loadActiveCatalog(ctx, ts, 50)
 	if catLoadErr != nil {
 		rlog.Warn("AI job: catalog load failed", "err", catLoadErr)
 	}
-	enrichCatalogStock(ctx, conn, catalog)
+	enrichCatalogStock(ctx, ts, catalog)
 
 	if IsPaymentQuestion(userText) {
 		if ans, ok := tryPaymentFAQAnswer(userText, kbEntries); ok {
 			finalReply := applyOutputPolicy(ans)
 			out := metaNoLLM(reasonAIGenerated, PathPaymentFAQ)
 			out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-			err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
+			err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
 			return err == nil, err
 		}
 	}
@@ -358,29 +350,29 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 			out := metaNoLLM(reasonNonQuestion, PathOrderCancel)
 			out.OrderAction = "cancel_draft"
 			out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-			err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact,
+			err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact,
 				orderFlowCancelReply(tone), "system", out)
 			return err == nil, err
 		}
 		// Tanpa draft aktif: "ga jadi beli + ada nomor pesanan?" → jawab status, jangan cancel order lama.
 		if IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) {
-			return s.handleCustomerOrderStatus(ctx, conn, payload.TenantSchema, payload, convo, channel, contact, userText, history)
+			return s.handleCustomerOrderStatus(ctx, ts, payload.TenantSchema, payload, convo, channel, contact, userText, history)
 		}
 		if ShouldCancelPersistedOrder(userText) {
-			return s.handleCustomerOrderCancel(ctx, conn, payload.TenantSchema, payload, convo, channel, contact, profile, userText)
+			return s.handleCustomerOrderCancel(ctx, ts, payload.TenantSchema, payload, convo, channel, contact, profile, userText)
 		}
 		out := metaNoLLM(reasonNonQuestion, PathOrderCancel)
 		out.OrderAction = "cancel"
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact,
+		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact,
 			orderNoneToCancelReply(), "system", out)
 		return err == nil, err
 	}
 	if IsThirdPartyBuyerLookup(userText) {
-		return s.handleThirdPartyBuyerLookupDenied(ctx, conn, payload, convo, channel, contact)
+		return s.handleThirdPartyBuyerLookupDenied(ctx, ts, payload, convo, channel, contact)
 	}
 	if IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) || IsOrderRefStatusLookup(userText) {
-		return s.handleCustomerOrderStatus(ctx, conn, payload.TenantSchema, payload, convo, channel, contact, userText, history)
+		return s.handleCustomerOrderStatus(ctx, ts, payload.TenantSchema, payload, convo, channel, contact, userText, history)
 	}
 
 	clearedOrderForCorrection := false
@@ -396,12 +388,12 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 				greet := GreetingReply(userText, tone, strOrEmpty(profile.GreetingTemplate))
 				out := metaNoLLM(reasonNonQuestion, PathGreeting)
 				out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-				err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, greet, "ai", out)
+				err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, greet, "ai", out)
 				return err == nil, err
 			}
 			// Fall through → classifier / LLM for harga, tanya produk, dll.
 		} else {
-			sent, oErr := s.handleOrderFlow(ctx, conn, payload.TenantSchema, payload.TenantID, convo, channel, contact,
+			sent, oErr := s.handleOrderFlow(ctx, ts, payload.TenantSchema, payload.TenantID, convo, channel, contact,
 				userText, profile, kbEntries, history, payload.InboundMessageID)
 			return sent, oErr
 		}
@@ -466,7 +458,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 
 	// ── Order flow — prioritas sebelum katalog statis ─────────────────────
 	if inScope && (classifier.Label == "order_intent" || IsStructuredOrderList(userText)) {
-		sent, oErr := s.handleOrderFlow(ctx, conn, payload.TenantSchema, payload.TenantID, convo, channel, contact,
+		sent, oErr := s.handleOrderFlow(ctx, ts, payload.TenantSchema, payload.TenantID, convo, channel, contact,
 			userText, profile, kbEntries, history, payload.InboundMessageID)
 		return sent, oErr
 	}
@@ -477,7 +469,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		finalReply := applyOutputPolicy(replyRecipientPolicyQuestion(userText, kbEntries, formal))
 		out := metaNoLLM(reasonAIGenerated, PathRecipientPolicy)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
+		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
 		return err == nil, err
 	}
 
@@ -490,14 +482,14 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 			finalReply := applyOutputPolicy(catReply)
 			out := metaNoLLM(reasonAIGenerated, PathCatalogDB)
 			out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-			err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
+			err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
 			return err == nil, err
 		}
 		if clearedOrderForCorrection {
 			formal := strOrEmpty(profile.Tone) == "formal"
 			out := metaNoLLM(reasonAIGenerated, PathConsulting)
 			out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-			err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact,
+			err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact,
 				salesCorrectionReply(formal), "ai", out)
 			return err == nil, err
 		}
@@ -507,13 +499,13 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	if classifier.Label == "sensitive_escalate" {
 		out := metaNoLLM(reasonOutOfScope, PathEscalate)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact,
+		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact,
 			"Maaf kak, untuk topik ini tim CS kami akan langsung mengambil alih dan segera menghubungi kakak 🙏",
 			"system", out)
 		if err != nil {
 			return false, err
 		}
-		return true, pauseAI(ctx, conn, convo.ID, "Sensitive/escalate detected")
+		return true, pauseAI(ctx, ts, convo.ID, "Sensitive/escalate detected")
 	}
 
 	// ── Handle: out of scope ─────────────────────────────────────────────
@@ -526,7 +518,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		}
 		out := metaNoLLM(reasonOutOfScope, PathOutOfScope)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, text, "system", out)
+		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, text, "system", out)
 		return err == nil, err
 	}
 
@@ -536,7 +528,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 			finalReply := applyOutputPolicy(catReply)
 			out := metaNoLLM(reasonAIGenerated, PathCatalogDB)
 			out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-			err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
+			err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
 			return err == nil, err
 		}
 	}
@@ -551,7 +543,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		}
 		out := metaNoLLM(reasonNonQuestion, PathNonQuestion)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, text, "system", out)
+		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, text, "system", out)
 		return err == nil, err
 	}
 
@@ -559,20 +551,20 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	if classifier.Label == "in_scope_question" && classifier.Confidence < llmConfidenceThreshold {
 		out := metaNoLLM(reasonNonQuestion, PathLowConfidence)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact,
+		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact,
 			scopeDirectionReply(profile), "system", out)
 		return err == nil, err
 	}
 
 	// ── Handle: order intent state machine ───────────────────────────────
 	if classifier.Label == "order_intent" || (IsOrderContinuationMessage(userText) && hasOrderIntentText(userText)) {
-		sent, oErr := s.handleOrderFlow(ctx, conn, payload.TenantSchema, payload.TenantID, convo, channel, contact,
+		sent, oErr := s.handleOrderFlow(ctx, ts, payload.TenantSchema, payload.TenantID, convo, channel, contact,
 			userText, profile, kbEntries, history, payload.InboundMessageID)
 		return sent, oErr
 	}
 	if inScope && (IsOrderRevisionMessage(userText) ||
 		(mentionsOrderQty(userText) && IsActiveCheckoutFromHistory(history, userText))) {
-		sent, oErr := s.handleOrderFlow(ctx, conn, payload.TenantSchema, payload.TenantID, convo, channel, contact,
+		sent, oErr := s.handleOrderFlow(ctx, ts, payload.TenantSchema, payload.TenantID, convo, channel, contact,
 			userText, profile, kbEntries, history, payload.InboundMessageID)
 		return sent, oErr
 	}
@@ -580,7 +572,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		formal := strOrEmpty(profile.Tone) == "formal"
 		out := metaNoLLM(reasonAIGenerated, PathConsulting)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact,
+		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact,
 			casualPraiseReply(formal), "ai", out)
 		return err == nil, err
 	}
@@ -589,17 +581,17 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	s.resetScopeCounters(ctx, payload.TenantID, convo.ID)
 
 	if IsThirdPartyBuyerLookup(userText) {
-		return s.handleThirdPartyBuyerLookupDenied(ctx, conn, payload, convo, channel, contact)
+		return s.handleThirdPartyBuyerLookupDenied(ctx, ts, payload, convo, channel, contact)
 	}
 	if IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) || IsOrderRefStatusLookup(userText) {
-		return s.handleCustomerOrderStatus(ctx, conn, payload.TenantSchema, payload, convo, channel, contact, userText, history)
+		return s.handleCustomerOrderStatus(ctx, ts, payload.TenantSchema, payload, convo, channel, contact, userText, history)
 	}
 
 	cached, _ := s.getCachedAnswer(ctx, payload.TenantID, userText)
 	if cached != "" {
 		out := metaNoLLM(reasonAIGenerated, PathFAQCache)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, cached, "ai", out)
+		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, cached, "ai", out)
 		return err == nil, err
 	}
 
@@ -617,11 +609,11 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		s.setCachedAnswer(ctx, payload.TenantID, userText, finalReply)
 		out := metaNoLLM(reasonAIGenerated, PathFAQDirect)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
+		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
 		return err == nil, err
 	}
 
-	planCode, _ := loadSubscriptionPlanCode(ctx, conn)
+	planCode, _ := loadSubscriptionPlanCode(ctx, ts)
 	complexity := ClassifyComplexity(userText, classifier.Label, kbTopScore)
 	route := ResolveRouting(planCode, complexity)
 	if ac, ok := ActivityContextFrom(ctx); ok {
@@ -640,7 +632,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		rlog.Warn("AI job: tenant cost limit reached", "reason", reason)
 		out := metaNoLLM(reasonOutOfScope, PathCostLimit)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact,
+		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact,
 			"Maaf kak, kuota AI bulan ini sudah mencapai batas. Tim kami akan segera menghubungi kakak ya 🙏",
 			"system", out)
 		return err == nil, err
@@ -718,27 +710,26 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	}
 	out := metaFromRoute(reasonAIGenerated, llmPath, route)
 	out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, compUsage.InputTokens, compUsage.OutputTokens)
-	err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
+	err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
 	return err == nil, err
 }
 
 // FallbackAutoReply sends a generic fallback and pauses AI on the conversation.
 func (s *AutoReplyService) FallbackAutoReply(ctx context.Context, payload AiReplyJobPayload) error {
-	conn, err := openTenantConn(ctx, payload.TenantSchema)
+	ts, err := openTenantScope(ctx, payload.TenantSchema)
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
 
-	convo, err := loadConversation(ctx, conn, payload.ConversationID)
+	convo, err := loadConversation(ctx, ts, payload.ConversationID)
 	if err != nil || convo == nil {
 		return err
 	}
-	contact, err := loadContact(ctx, conn, convo.ContactID)
+	contact, err := loadContact(ctx, ts, convo.ContactID)
 	if err != nil {
 		return err
 	}
-	channel, err := loadChannel(ctx, conn, convo.ChannelID)
+	channel, err := loadChannel(ctx, ts, convo.ChannelID)
 	if err != nil {
 		return err
 	}
@@ -748,13 +739,13 @@ func (s *AutoReplyService) FallbackAutoReply(ctx context.Context, payload AiRepl
 
 	out := metaNoLLM(reasonNonQuestion, PathAutoFallback)
 	out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-	err = s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact,
+	err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact,
 		"Maaf kak, saat ini sistem kami sedang sibuk. Tim kami akan bantu balas secepatnya ya 🙏",
 		"system", out)
 	if err != nil {
 		return err
 	}
-	return pauseAI(ctx, conn, convo.ID, "Auto fallback setelah retry AI gagal")
+	return pauseAI(ctx, ts, convo.ID, "Auto fallback setelah retry AI gagal")
 }
 
 // ─── Order flow state machine ────────────────────────────────────────────────
@@ -765,7 +756,7 @@ var (
 
 func (s *AutoReplyService) handleOrderFlow(
 	ctx context.Context,
-	q tenantQuerier,
+	ts tenantScopedQuerier,
 	tenantSchema, tenantID string,
 	convo *dbConversation,
 	channel *dbChannel,
@@ -781,28 +772,28 @@ func (s *AutoReplyService) handleOrderFlow(
 		s.clearOrderState(ctx, tenantID, convo.ID)
 		out := metaNoLLM(reasonOutOfScope, PathOutOfScope)
 		out.LogAndRecord(ctx, convo.ID, inboundID, 0, 0)
-		err := s.sendAiMessage(ctx, q, tenantID, convo, channel, contact,
+		err := s.sendAiMessage(ctx, ts, tenantID, convo, channel, contact,
 			outOfScopeReply(profile), "system", out)
 		return err == nil, err
 	}
 
 	tmpl := orderTemplatesFromKB(kb, strOrEmpty(profile.Tone) == "formal")
 	formal := strOrEmpty(profile.Tone) == "formal"
-	catalog, catErr := loadActiveCatalog(ctx, q, 40)
+	catalog, catErr := loadActiveCatalog(ctx, ts, 40)
 	if catErr != nil {
 		rlog.Warn("AI order: catalog load failed", "err", catErr)
 	}
-	enrichCatalogStock(ctx, q, catalog)
+	enrichCatalogStock(ctx, ts, catalog)
 	send := func(text string) (bool, error) {
 		out := metaNoLLM(reasonNonQuestion, PathOrderFlow)
 		out.LogAndRecord(ctx, convo.ID, inboundID, 0, 0)
-		err := s.sendAiMessage(ctx, q, tenantID, convo, channel, contact, text, "system", out)
+		err := s.sendAiMessage(ctx, ts, tenantID, convo, channel, contact, text, "system", out)
 		return err == nil, err
 	}
 	sendCatalog := func(text string) (bool, error) {
 		out := metaNoLLM(reasonAIGenerated, PathCatalogDB)
 		out.LogAndRecord(ctx, convo.ID, inboundID, 0, 0)
-		err := s.sendAiMessage(ctx, q, tenantID, convo, channel, contact, applyOutputPolicy(text), "ai", out)
+		err := s.sendAiMessage(ctx, ts, tenantID, convo, channel, contact, applyOutputPolicy(text), "ai", out)
 		return err == nil, err
 	}
 	tryCatalogEscape := func() (bool, error) {
@@ -1016,7 +1007,7 @@ func (s *AutoReplyService) handleOrderFlow(
 			s.clearOrderState(ctx, tenantID, convo.ID)
 			out := metaNoLLM(reasonOutOfScope, PathOutOfScope)
 			out.LogAndRecord(ctx, convo.ID, inboundID, 0, 0)
-			err := s.sendAiMessage(ctx, q, tenantID, convo, channel, contact,
+			err := s.sendAiMessage(ctx, ts, tenantID, convo, channel, contact,
 				outOfScopeReply(profile), "system", out)
 			return err == nil, err
 		}
@@ -1198,7 +1189,7 @@ func (s *AutoReplyService) handleOrderFlow(
 				s.setOrderState(ctx, tenantID, convo.ID, st)
 				return send(reply)
 			}
-			orderID, err := persistDraftOrder(ctx, q, tenantSchema, convo.ID, convo.ContactID, st)
+			orderID, err := persistDraftOrder(ctx, ts, tenantSchema, convo.ID, convo.ContactID, st)
 			if err != nil {
 				rlog.Warn("AI order: persist draft failed", "err", err, "convoId", convo.ID)
 				s.setOrderState(ctx, tenantID, convo.ID, st)
@@ -1236,7 +1227,7 @@ func (s *AutoReplyService) handleOrderFlow(
 			s.setOrderState(ctx, tenantID, convo.ID, st)
 			return send(reply)
 		}
-		orderID, err := persistDraftOrder(ctx, q, tenantSchema, convo.ID, convo.ContactID, st)
+		orderID, err := persistDraftOrder(ctx, ts, tenantSchema, convo.ID, convo.ContactID, st)
 		if err != nil {
 			rlog.Warn("AI order: persist draft failed", "err", err, "convoId", convo.ID)
 			s.setOrderState(ctx, tenantID, convo.ID, st)
@@ -1251,7 +1242,7 @@ func (s *AutoReplyService) handleOrderFlow(
 
 func (s *AutoReplyService) handleCustomerOrderCancel(
 	ctx context.Context,
-	conn tenantQuerier,
+	ts tenantScopedQuerier,
 	tenantSchema string,
 	payload AiReplyJobPayload,
 	convo *dbConversation,
@@ -1261,7 +1252,7 @@ func (s *AutoReplyService) handleCustomerOrderCancel(
 	userText string,
 ) (bool, error) {
 	scope := orderAccessScope{ConversationID: convo.ID, ContactID: convo.ContactID}
-	res, err := resolvePersistedOrderCancel(ctx, conn, tenantSchema, scope, userText)
+	res, err := resolvePersistedOrderCancel(ctx, ts, tenantSchema, scope, userText)
 	if err != nil {
 		rlog.Warn("order cancel: load failed", "err", err, "convoId", convo.ID)
 		return false, err
@@ -1269,7 +1260,7 @@ func (s *AutoReplyService) handleCustomerOrderCancel(
 	tone := strOrEmpty(profile.Tone)
 	send := func(text string, meta AiReplyMeta) (bool, error) {
 		meta.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err := s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, text, "system", meta)
+		err := s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, text, "system", meta)
 		return err == nil, err
 	}
 	if res.AccessDenied {
@@ -1313,7 +1304,7 @@ func (s *AutoReplyService) handleCustomerOrderCancel(
 			ref, orderStatusLabelID(o.Status))
 		return send(msg, meta)
 	}
-	if err := cancelPersistedOrder(ctx, conn, tenantSchema, o.ID, scope); err != nil {
+	if err := cancelPersistedOrder(ctx, ts, tenantSchema, o.ID, scope); err != nil {
 		if err == sql.ErrNoRows {
 			meta := metaNoLLM(reasonNonQuestion, PathOrderCancel)
 			meta.OrderID = o.ID
@@ -1332,7 +1323,7 @@ func (s *AutoReplyService) handleCustomerOrderCancel(
 
 func (s *AutoReplyService) handleThirdPartyBuyerLookupDenied(
 	ctx context.Context,
-	conn tenantQuerier,
+	ts tenantScopedQuerier,
 	payload AiReplyJobPayload,
 	convo *dbConversation,
 	channel *dbChannel,
@@ -1340,14 +1331,14 @@ func (s *AutoReplyService) handleThirdPartyBuyerLookupDenied(
 ) (bool, error) {
 	meta := metaNoLLM(reasonOutOfScope, PathOrderLookupDenied)
 	meta.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-	err := s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact,
+	err := s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact,
 		thirdPartyBuyerLookupDeniedReply(), "system", meta)
 	return err == nil, err
 }
 
 func (s *AutoReplyService) handleCustomerOrderStatus(
 	ctx context.Context,
-	conn tenantQuerier,
+	ts tenantScopedQuerier,
 	tenantSchema string,
 	payload AiReplyJobPayload,
 	convo *dbConversation,
@@ -1357,7 +1348,7 @@ func (s *AutoReplyService) handleCustomerOrderStatus(
 	history []dbMessage,
 ) (bool, error) {
 	scope := orderAccessScope{ConversationID: convo.ID, ContactID: convo.ContactID}
-	res, err := resolvePersistedOrderStatus(ctx, conn, tenantSchema, scope, userText, history)
+	res, err := resolvePersistedOrderStatus(ctx, ts, tenantSchema, scope, userText, history)
 	if err != nil {
 		return false, err
 	}
@@ -1365,7 +1356,7 @@ func (s *AutoReplyService) handleCustomerOrderStatus(
 	meta.OrderAction = "status"
 	send := func(text string) (bool, error) {
 		meta.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err := s.sendAiMessage(ctx, conn, payload.TenantID, convo, channel, contact, text, "system", meta)
+		err := s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, text, "system", meta)
 		return err == nil, err
 	}
 	if res.AccessDenied {
@@ -1684,13 +1675,13 @@ func (s *AutoReplyService) resetScopeCounters(ctx context.Context, tenantID, con
 
 // ─── DB loaders ──────────────────────────────────────────────────────────────
 
-func loadSubscriptionPlanCode(ctx context.Context, q tenantQuerier) (string, error) {
+func loadSubscriptionPlanCode(ctx context.Context, ts tenantScopedQuerier) (string, error) {
 	var planCode string
 	var isTrial bool
-	err := q.QueryRowContext(ctx, `
-		SELECT plan_code, COALESCE(is_trial, false) FROM subscription
+	err := ts.QueryRowContext(ctx, fmt.Sprintf(`
+		SELECT plan_code, COALESCE(is_trial, false) FROM %s
 		WHERE status = 'active'
-		ORDER BY created_at DESC LIMIT 1`,
+		ORDER BY created_at DESC LIMIT 1`, ts.T("subscription")),
 	).Scan(&planCode, &isTrial)
 	if err == sql.ErrNoRows {
 		return "trial", nil
@@ -1707,11 +1698,11 @@ func loadSubscriptionPlanCode(ctx context.Context, q tenantQuerier) (string, err
 	return planCode, nil
 }
 
-func loadConversation(ctx context.Context, q tenantQuerier, id string) (*dbConversation, error) {
-	row := q.QueryRowContext(ctx, `
+func loadConversation(ctx context.Context, ts tenantScopedQuerier, id string) (*dbConversation, error) {
+	row := ts.QueryRowContext(ctx, fmt.Sprintf(`
 		SELECT id, contact_id, channel_id, ai_handled, ai_paused_at,
 		       handoff_reason, last_message_at, last_message_preview, status
-		FROM conversation WHERE id = $1`, id)
+		FROM %s WHERE id = $1`, ts.T("conversation")), id)
 	c := &dbConversation{}
 	err := row.Scan(&c.ID, &c.ContactID, &c.ChannelID, &c.AIHandled,
 		&c.AIPausedAt, &c.HandoffReason, &c.LastMessageAt, &c.LastPreview, &c.Status)
@@ -1721,10 +1712,10 @@ func loadConversation(ctx context.Context, q tenantQuerier, id string) (*dbConve
 	return c, err
 }
 
-func loadMessage(ctx context.Context, q tenantQuerier, id string) (*dbMessage, error) {
-	row := q.QueryRowContext(ctx, `
+func loadMessage(ctx context.Context, ts tenantScopedQuerier, id string) (*dbMessage, error) {
+	row := ts.QueryRowContext(ctx, fmt.Sprintf(`
 		SELECT id, direction, author, type, COALESCE(body,''), created_at
-		FROM message WHERE id = $1`, id)
+		FROM %s WHERE id = $1`, ts.T("message")), id)
 	m := &dbMessage{}
 	err := row.Scan(&m.ID, &m.Direction, &m.Author, &m.Type, &m.Body, &m.CreatedAt)
 	if err == sql.ErrNoRows {
@@ -1733,13 +1724,13 @@ func loadMessage(ctx context.Context, q tenantQuerier, id string) (*dbMessage, e
 	return m, err
 }
 
-func loadBusinessProfile(ctx context.Context, q tenantQuerier) (*dbBusinessProfile, error) {
-	row := q.QueryRowContext(ctx, `
+func loadBusinessProfile(ctx context.Context, ts tenantScopedQuerier) (*dbBusinessProfile, error) {
+	row := ts.QueryRowContext(ctx, fmt.Sprintf(`
 		SELECT business_name, description, address, opening_hours,
 		       products_services, base_pricing, delivery_area,
 		       greeting_template, tone, ai_enabled,
 		       COALESCE(catalog_website_url, '')
-		FROM business_profile ORDER BY created_at ASC LIMIT 1`)
+		FROM %s ORDER BY created_at ASC LIMIT 1`, ts.T("business_profile")))
 	p := &dbBusinessProfile{}
 	var catalogURL string
 	err := row.Scan(&p.BusinessName, &p.Description, &p.Address, &p.OpeningHours,
@@ -1754,20 +1745,20 @@ func loadBusinessProfile(ctx context.Context, q tenantQuerier) (*dbBusinessProfi
 	return p, err
 }
 
-func loadContact(ctx context.Context, q tenantQuerier, id string) (*dbContact, error) {
-	c, err := loadContactPII(ctx, q, id)
+func loadContact(ctx context.Context, ts tenantScopedQuerier, id string) (*dbContact, error) {
+	c, err := loadContactPII(ctx, ts, id)
 	if err != nil && isMissingPIIColumn(err) {
-		return loadContactLegacy(ctx, q, id)
+		return loadContactLegacy(ctx, ts, id)
 	}
 	return c, err
 }
 
-func loadContactPII(ctx context.Context, q tenantQuerier, id string) (*dbContact, error) {
-	row := q.QueryRowContext(ctx, `
+func loadContactPII(ctx context.Context, ts tenantScopedQuerier, id string) (*dbContact, error) {
+	row := ts.QueryRowContext(ctx, fmt.Sprintf(`
 		SELECT id,
 		       COALESCE(phone_number_enc, ''), COALESCE(phone_number, ''),
 		       COALESCE(display_name_enc, ''), COALESCE(display_name, '')
-		FROM contact WHERE id = $1`, id)
+		FROM %s WHERE id = $1`, ts.T("contact")), id)
 	var c dbContact
 	var phoneEnc, phoneLegacy, displayEnc, displayLegacy string
 	err := row.Scan(&c.ID, &phoneEnc, &phoneLegacy, &displayEnc, &displayLegacy)
@@ -1791,10 +1782,10 @@ func loadContactPII(ctx context.Context, q tenantQuerier, id string) (*dbContact
 	return &c, nil
 }
 
-func loadContactLegacy(ctx context.Context, q tenantQuerier, id string) (*dbContact, error) {
-	row := q.QueryRowContext(ctx, `
+func loadContactLegacy(ctx context.Context, ts tenantScopedQuerier, id string) (*dbContact, error) {
+	row := ts.QueryRowContext(ctx, fmt.Sprintf(`
 		SELECT id, phone_number, display_name
-		FROM contact WHERE id = $1`, id)
+		FROM %s WHERE id = $1`, ts.T("contact")), id)
 	c := &dbContact{}
 	err := row.Scan(&c.ID, &c.PhoneNumber, &c.DisplayName)
 	if err == sql.ErrNoRows {
@@ -1811,11 +1802,11 @@ func isMissingPIIColumn(err error) bool {
 	return strings.Contains(msg, "does not exist") && strings.Contains(msg, "column")
 }
 
-func loadChannel(ctx context.Context, q tenantQuerier, id string) (*dbChannel, error) {
-	row := q.QueryRowContext(ctx, `
+func loadChannel(ctx context.Context, ts tenantScopedQuerier, id string) (*dbChannel, error) {
+	row := ts.QueryRowContext(ctx, fmt.Sprintf(`
 		SELECT id, provider, status, access_token, meta_phone_number_id,
 		       meta_waba_id, display_name, phone_number
-		FROM whatsapp_channel WHERE id = $1`, id)
+		FROM %s WHERE id = $1`, ts.T("whatsapp_channel")), id)
 	ch := &dbChannel{}
 	err := row.Scan(&ch.ID, &ch.Provider, &ch.Status, &ch.AccessToken,
 		&ch.MetaPhoneNumberID, &ch.MetaWabaID, &ch.DisplayName, &ch.PhoneNumber)
@@ -1825,11 +1816,11 @@ func loadChannel(ctx context.Context, q tenantQuerier, id string) (*dbChannel, e
 	return ch, err
 }
 
-func loadHistory(ctx context.Context, q tenantQuerier, convoID string, limit int) ([]dbMessage, error) {
-	rows, err := q.QueryContext(ctx, `
+func loadHistory(ctx context.Context, ts tenantScopedQuerier, convoID string, limit int) ([]dbMessage, error) {
+	rows, err := ts.QueryContext(ctx, fmt.Sprintf(`
 		SELECT id, direction, author, type, COALESCE(body,''), created_at
-		FROM message WHERE conversation_id = $1
-		ORDER BY created_at DESC LIMIT $2`, convoID, limit)
+		FROM %s WHERE conversation_id = $1
+		ORDER BY created_at DESC LIMIT $2`, ts.T("message")), convoID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -1849,12 +1840,12 @@ func loadHistory(ctx context.Context, q tenantQuerier, convoID string, limit int
 	return msgs, rows.Err()
 }
 
-func loadKBEntries(ctx context.Context, q tenantQuerier, limit int) ([]dbKBEntry, error) {
-	rows, err := q.QueryContext(ctx, `
+func loadKBEntries(ctx context.Context, ts tenantScopedQuerier, limit int) ([]dbKBEntry, error) {
+	rows, err := ts.QueryContext(ctx, fmt.Sprintf(`
 		SELECT id, question, answer, category, is_active
-		FROM knowledge_base_entry
+		FROM %s
 		WHERE is_active = true
-		ORDER BY created_at DESC LIMIT $1`, limit)
+		ORDER BY created_at DESC LIMIT $1`, ts.T("knowledge_base_entry")), limit)
 	if err != nil {
 		return nil, err
 	}
@@ -1874,7 +1865,7 @@ func loadKBEntries(ctx context.Context, q tenantQuerier, limit int) ([]dbKBEntry
 
 func (s *AutoReplyService) sendAiMessage(
 	ctx context.Context,
-	q tenantQuerier,
+	ts tenantScopedQuerier,
 	tenantID string,
 	convo *dbConversation,
 	channel *dbChannel,
@@ -1898,8 +1889,8 @@ func (s *AutoReplyService) sendAiMessage(
 	if channel.Provider != "meta_cloud" {
 		return fmt.Errorf("unsupported channel provider %q", channel.Provider)
 	}
-	if channel.Status != "connected" {
-		return fmt.Errorf("whatsapp channel not connected")
+	if channel.Status != "tsected" {
+		return fmt.Errorf("whatsapp channel not tsected")
 	}
 	if channel.AccessToken == nil || strings.TrimSpace(*channel.AccessToken) == "" {
 		return fmt.Errorf("whatsapp channel missing access token")
@@ -1932,10 +1923,10 @@ func (s *AutoReplyService) sendAiMessage(
 
 	metadataJSON, _ := json.Marshal(meta)
 	var msgCreatedAt time.Time
-	err = q.QueryRowContext(ctx, `
-		INSERT INTO message (conversation_id, external_id, direction, author, type, body, metadata, status)
+	err = ts.QueryRowContext(ctx, fmt.Sprintf(`
+		INSERT INTO %s (conversation_id, external_id, direction, author, type, body, metadata, status)
 		VALUES ($1, $2, 'out', $3, 'text', $4, $5::jsonb, 'sent')
-		RETURNING created_at`,
+		RETURNING created_at`, ts.T("message")),
 		convo.ID, extID, author, text, string(metadataJSON),
 	).Scan(&msgCreatedAt)
 	if err != nil {
@@ -1943,10 +1934,10 @@ func (s *AutoReplyService) sendAiMessage(
 		return fmt.Errorf("insert message: %w", err)
 	}
 
-	_, err = q.ExecContext(ctx, `
-		UPDATE conversation
+	_, err = ts.ExecContext(ctx, fmt.Sprintf(`
+		UPDATE %s
 		SET last_message_at = $1, last_message_preview = $2, status = 'open'
-		WHERE id = $3`,
+		WHERE id = $3`, ts.T("conversation")),
 		msgCreatedAt, preview, convo.ID,
 	)
 	if err != nil {
@@ -1960,11 +1951,11 @@ func (s *AutoReplyService) sendAiMessage(
 	return nil
 }
 
-func pauseAI(ctx context.Context, q tenantQuerier, convoID, reason string) error {
-	_, err := q.ExecContext(ctx, `
-		UPDATE conversation
+func pauseAI(ctx context.Context, ts tenantScopedQuerier, convoID, reason string) error {
+	_, err := ts.ExecContext(ctx, fmt.Sprintf(`
+		UPDATE %s
 		SET ai_handled = false, ai_paused_at = NOW(), handoff_reason = $1
-		WHERE id = $2`,
+		WHERE id = $2`, ts.T("conversation")),
 		reason, convoID,
 	)
 	return err

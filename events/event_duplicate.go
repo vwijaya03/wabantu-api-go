@@ -35,13 +35,12 @@ func DuplicateEvent(ctx context.Context, eventId string, p *DuplicateEventParams
 		p = &DuplicateEventParams{}
 	}
 
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
 
-	src, err := loadEventRow(ctx, conn, eventId)
+	src, err := loadEventRow(ctx, ts, eventId)
 	if err != nil {
 		return nil, err
 	}
@@ -59,19 +58,20 @@ func DuplicateEvent(ctx context.Context, eventId string, p *DuplicateEventParams
 		endDate = strings.TrimSpace(*p.EndDate)
 	}
 
-	slug, err := uniqueSlug(ctx, conn, slugify(newName), "")
+	slug, err := uniqueSlug(ctx, ts, slugify(newName), "")
 	if err != nil {
 		return nil, err
 	}
 
-	tx, err := conn.BeginTx(ctx, nil)
+	tx, err := ts.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer tx.Rollback()
+	txTS := ts.WithQ(tx)
 
 	var newEventID string
-	err = tx.QueryRowContext(ctx, `
+	err = txTS.QueryRowContext(ctx, `
 		INSERT INTO evt_event (
 		  event_name, event_slug, event_description, catering_order_notes, location,
 		  start_date, end_date, start_time, end_time,
@@ -93,15 +93,15 @@ func DuplicateEvent(ctx context.Context, eventId string, p *DuplicateEventParams
 		return nil, appErrs.Internal(err.Error())
 	}
 
-	therapySettingsCopied, err := copyEventTherapySettings(ctx, tx, eventId, newEventID)
+	therapySettingsCopied, err := copyEventTherapySettings(ctx, txTS, eventId, newEventID)
 	if err != nil {
 		return nil, err
 	}
-	peopleCopied, err := copyEventPeople(ctx, tx, eventId, newEventID)
+	peopleCopied, err := copyEventPeople(ctx, txTS, eventId, newEventID)
 	if err != nil {
 		return nil, err
 	}
-	patientsCopied, err := copyEventPatients(ctx, tx, eventId, newEventID)
+	patientsCopied, err := copyEventPatients(ctx, txTS, eventId, newEventID)
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +110,7 @@ func DuplicateEvent(ctx context.Context, eventId string, p *DuplicateEventParams
 		return nil, appErrs.Internal(err.Error())
 	}
 
-	auditEvent(ctx, conn, u, "event", newEventID, "duplicate", map[string]any{"sourceEventId": eventId}, map[string]any{
+	auditEvent(ctx, ts, u, "event", newEventID, "duplicate", map[string]any{"sourceEventId": eventId}, map[string]any{
 		"peopleCopied": peopleCopied, "patientsCopied": patientsCopied,
 	})
 
@@ -132,9 +132,9 @@ type eventRow struct {
 	EndDate   string
 }
 
-func loadEventRow(ctx context.Context, conn *sql.Conn, eventID string) (*eventRow, error) {
+func loadEventRow(ctx context.Context, ts tenantScope, eventID string) (*eventRow, error) {
 	var r eventRow
-	err := conn.QueryRowContext(ctx, `
+	err := ts.QueryRowContext(ctx, `
 		SELECT event_name, start_date::text, end_date::text
 		FROM evt_event WHERE id=$1::uuid AND deleted_at IS NULL`, eventID,
 	).Scan(&r.EventName, &r.StartDate, &r.EndDate)
@@ -147,8 +147,8 @@ func loadEventRow(ctx context.Context, conn *sql.Conn, eventID string) (*eventRo
 	return &r, nil
 }
 
-func copyEventTherapySettings(ctx context.Context, tx *sql.Tx, srcID, dstID string) (int, error) {
-	res, err := tx.ExecContext(ctx, `
+func copyEventTherapySettings(ctx context.Context, ts tenantScope, srcID, dstID string) (int, error) {
+	res, err := ts.ExecContext(ctx, `
 		INSERT INTO evt_event_therapy (
 		  event_id, therapy_id, slot_duration_minutes, max_capacity, capacity_mode,
 		  schedule_mode, schedule_start_time, schedule_end_time
@@ -162,7 +162,7 @@ func copyEventTherapySettings(ctx context.Context, tx *sql.Tx, srcID, dstID stri
 		return 0, appErrs.Internal(err.Error())
 	}
 	n, _ := res.RowsAffected()
-	_, err = tx.ExecContext(ctx, `
+	_, err = ts.ExecContext(ctx, `
 		INSERT INTO evt_event_therapy_slot_template (event_therapy_id, start_time, end_time, sort_order)
 		SELECT new_et.id, st.start_time, st.end_time, st.sort_order
 		FROM evt_event_therapy_slot_template st
@@ -176,8 +176,8 @@ func copyEventTherapySettings(ctx context.Context, tx *sql.Tx, srcID, dstID stri
 	return int(n), nil
 }
 
-func copyEventPeople(ctx context.Context, tx *sql.Tx, srcID, dstID string) (int, error) {
-	rows, err := tx.QueryContext(ctx, `
+func copyEventPeople(ctx context.Context, ts tenantScope, srcID, dstID string) (int, error) {
+	rows, err := ts.QueryContext(ctx, `
 		SELECT id::text, full_name, person_type, attendance_status,
 		       arrival_time::text, departure_time::text, COALESCE(notes,''),
 		       counts_toward_meals
@@ -198,7 +198,7 @@ func copyEventPeople(ctx context.Context, tx *sql.Tx, srcID, dstID string) (int,
 			return copied, appErrs.Internal(err.Error())
 		}
 		var newID string
-		err := tx.QueryRowContext(ctx, `
+		err := ts.QueryRowContext(ctx, `
 			INSERT INTO evt_event_person (
 			  event_id, full_name, person_type, attendance_status,
 			  arrival_time, departure_time, notes, counts_toward_meals
@@ -212,7 +212,7 @@ func copyEventPeople(ctx context.Context, tx *sql.Tx, srcID, dstID string) (int,
 		}
 
 		if isTherapyStaffPersonType(personType) {
-			_, err = tx.ExecContext(ctx, `
+			_, err = ts.ExecContext(ctx, `
 				INSERT INTO evt_person_therapy (person_id, therapy_id, available_from, available_until)
 				SELECT $1::uuid, therapy_id, available_from, available_until
 				FROM evt_person_therapy WHERE person_id=$2::uuid`,
@@ -222,7 +222,7 @@ func copyEventPeople(ctx context.Context, tx *sql.Tx, srcID, dstID string) (int,
 			}
 		}
 		if personType == "VOLUNTEER" {
-			_, err = tx.ExecContext(ctx, `
+			_, err = ts.ExecContext(ctx, `
 				INSERT INTO evt_event_volunteer (person_id, volunteer_role_id, is_pencatat)
 				SELECT $1::uuid, volunteer_role_id, is_pencatat
 				FROM evt_event_volunteer WHERE person_id=$2::uuid`,
@@ -244,8 +244,8 @@ func nullStringPtr(n sql.NullString) *string {
 	return &s
 }
 
-func copyEventPatients(ctx context.Context, tx *sql.Tx, srcID, dstID string) (int, error) {
-	rows, err := tx.QueryContext(ctx, `
+func copyEventPatients(ctx context.Context, ts tenantScope, srcID, dstID string) (int, error) {
+	rows, err := ts.QueryContext(ctx, `
 		SELECT therapy_id::text, full_name_enc, birth_date_enc,
 		       normalized_name, normalized_birthdate,
 		       COALESCE(complaint,''), COALESCE(preferred_time,'')
@@ -263,7 +263,7 @@ func copyEventPatients(ctx context.Context, tx *sql.Tx, srcID, dstID string) (in
 		if err := rows.Scan(&therapyID, &encName, &encBirth, &normName, &normBirth, &complaint, &preferred); err != nil {
 			return copied, appErrs.Internal(err.Error())
 		}
-		_, err := tx.ExecContext(ctx, `
+		_, err := ts.ExecContext(ctx, `
 			INSERT INTO evt_patient (
 			  event_id, therapy_id, full_name_enc, birth_date_enc,
 			  normalized_name, normalized_birthdate, complaint, preferred_time,

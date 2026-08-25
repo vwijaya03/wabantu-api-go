@@ -8,8 +8,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-
-	"encore.app/wabantu/tenant"
 )
 
 const (
@@ -90,39 +88,39 @@ func FetchAITurnsInWindow(ctx context.Context, tenantSchema string, from, to tim
 		maxTurns = triageLLMMaxTurns
 	}
 
-	conn, err := tenant.TenantConn(ctx, tenantSchema)
+	ts, err := openTenantScope(ctx, tenantSchema)
 	if err != nil {
 		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
 
-	messages, err := fetchMessagesInWindow(ctx, conn, from, to, strings.TrimSpace(conversationID), triageLLMMaxMessages)
+	messages, err := fetchMessagesInWindow(ctx, ts, from, to, strings.TrimSpace(conversationID), triageLLMMaxMessages)
 	if err != nil {
 		return nil, err
 	}
 	return extractAITurnsFromWindowMessages(messages, maxTurns), nil
 }
 
-func fetchMessagesInWindow(ctx context.Context, q tenantQuerier, from, to time.Time, conversationID string, limit int) ([]windowMessage, error) {
+func fetchMessagesInWindow(ctx context.Context, ts tenantScopedQuerier, from, to time.Time, conversationID string, limit int) ([]windowMessage, error) {
+	msgTbl := ts.T("message")
 	var rows *sql.Rows
 	var err error
 	if conversationID != "" {
-		rows, err = q.QueryContext(ctx, `
+		rows, err = ts.QueryContext(ctx, fmt.Sprintf(`
 			SELECT id::text, conversation_id::text, direction, COALESCE(body,''), type, metadata, created_at
-			FROM message
+			FROM %s
 			WHERE conversation_id = $1::uuid
 			  AND created_at >= $2
 			  AND created_at <= $3
 			ORDER BY created_at ASC
-			LIMIT $4`, conversationID, from, to, limit)
+			LIMIT $4`, msgTbl), conversationID, from, to, limit)
 	} else {
-		rows, err = q.QueryContext(ctx, `
+		rows, err = ts.QueryContext(ctx, fmt.Sprintf(`
 			SELECT id::text, conversation_id::text, direction, COALESCE(body,''), type, metadata, created_at
-			FROM message
+			FROM %s
 			WHERE created_at >= $1
 			  AND created_at <= $2
 			ORDER BY created_at ASC
-			LIMIT $3`, from, to, limit)
+			LIMIT $3`, msgTbl), from, to, limit)
 	}
 	if err != nil {
 		return nil, err
@@ -241,18 +239,17 @@ func RunLLMTriageScan(ctx context.Context, p LLMScanParams) (*LLMScanRunResult, 
 		return nil, err
 	}
 
-	conn, err := tenant.TenantConn(ctx, p.TenantSchema)
+	ts, err := openTenantScope(ctx, p.TenantSchema)
 	if err != nil {
 		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
 
 	businessName := ""
-	if profile, err := loadBusinessProfile(ctx, conn); err == nil && profile != nil {
+	if profile, err := loadBusinessProfile(ctx, ts); err == nil && profile != nil {
 		businessName = strings.TrimSpace(profile.BusinessName)
 	}
 
-	catalog, err := loadActiveCatalog(ctx, conn, 40)
+	catalog, err := loadActiveCatalog(ctx, ts, 40)
 	if err != nil {
 		catalog = nil
 	}

@@ -1,6 +1,7 @@
 package inventory
 
 import (
+	appdb "encore.app/wabantu/shared/db"
 	"context"
 	"database/sql"
 	"errors"
@@ -10,7 +11,6 @@ import (
 
 	"encore.app/wabantu/finance"
 	appErrs "encore.app/wabantu/shared/errs"
-	"encore.app/wabantu/tenant"
 )
 
 const finCatPembelianPersediaan = "Pembelian Persediaan"
@@ -107,13 +107,13 @@ func CreateBill(ctx context.Context, p *CreateBillParams) (*Bill, error) {
 		return nil, appErrs.BadRequest("format tanggal harus YYYY-MM-DD")
 	}
 
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantDB()
 
-	setting, err := loadSetting(ctx, conn)
+	setting, err := loadSetting(ctx, sch, pool)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
@@ -136,28 +136,28 @@ func CreateBill(ctx context.Context, p *CreateBillParams) (*Bill, error) {
 		if strings.TrimSpace(l.WarehouseID) == "" {
 			l.WarehouseID = defaultWarehouse
 		}
-		if err := validateCatalogItem(ctx, conn, l.CatalogItemID); err != nil {
+		if err := validateCatalogItem(ctx, sch, pool, l.CatalogItemID); err != nil {
 			return nil, fmt.Errorf("baris %d: %w", i+1, err)
 		}
-		if err := validateWarehouse(ctx, conn, l.WarehouseID); err != nil {
+		if err := validateWarehouse(ctx, sch, pool, l.WarehouseID); err != nil {
 			return nil, fmt.Errorf("baris %d: %w", i+1, err)
 		}
 	}
 
-	tx, err := conn.BeginTx(ctx, nil)
+	tx, err := pool.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer tx.Rollback()
 
-	billNo, err := nextDocNumber(ctx, tx, DocBill, DocBill)
+	billNo, err := nextDocNumber(ctx, sch, tx, DocBill, DocBill)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	subtotal := sumBillLines(p.Lines)
 
 	var billID string
-	if err := tx.QueryRowContext(ctx, `
+	if err := qrow(ctx, sch, tx, `
 		INSERT INTO pur_bill
 		  (bill_no, purchase_order_id, supplier_name, contact_id, warehouse_id, status,
 		   transaction_date, note, subtotal, created_by)
@@ -168,7 +168,7 @@ func CreateBill(ctx context.Context, p *CreateBillParams) (*Bill, error) {
 		return nil, appErrs.Internal(err.Error())
 	}
 
-	if err := postBillLinesTx(ctx, tx, billID, billNo, p.PurchaseOrderID, u.AccountID, p.Lines); err != nil {
+	if err := postBillLinesTx(ctx, sch, tx, billID, billNo, p.PurchaseOrderID, u.AccountID, p.Lines); err != nil {
 		return nil, err
 	}
 
@@ -185,7 +185,7 @@ func CreateBill(ctx context.Context, p *CreateBillParams) (*Bill, error) {
 			return nil, err
 		}
 	}
-	return getBill(ctx, conn, billID)
+	return getBill(ctx, sch, pool, billID)
 }
 
 //encore:api auth method=GET path=/api/v1/inventory/bills
@@ -194,11 +194,11 @@ func ListBills(ctx context.Context, p *ListBillsParams) (*ListBillsResponse, err
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantDB()
 
 	page, pageSize := p.Page, p.PageSize
 	if page < 1 {
@@ -216,12 +216,12 @@ func ListBills(ctx context.Context, p *ListBillsParams) (*ListBillsResponse, err
 		idx++
 	}
 	var total int
-	if err := conn.QueryRowContext(ctx,
+	if err := qrow(ctx, sch, pool,
 		fmt.Sprintf(`SELECT COUNT(*) FROM pur_bill %s`, where), args...).Scan(&total); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	args = append(args, pageSize, (page-1)*pageSize)
-	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
+	rows, err := qquery(ctx, sch, pool, fmt.Sprintf(`
 		SELECT id, bill_no, purchase_order_id::text, COALESCE(supplier_name,''), status,
 		       transaction_date::text, COALESCE(note,''), subtotal, created_at
 		FROM pur_bill %s
@@ -249,18 +249,18 @@ func GetBill(ctx context.Context, id string) (*Bill, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
-	return getBill(ctx, conn, id)
+	pool := tenantDB()
+	return getBill(ctx, sch, pool, id)
 }
 
 // ---------- helpers ----------
 
-func getBill(ctx context.Context, conn *sql.Conn, id string) (*Bill, error) {
-	b, err := scanBillHeader(conn.QueryRowContext(ctx, `
+func getBill(ctx context.Context, sch appdb.SchemaSQL, q querier, id string) (*Bill, error) {
+	b, err := scanBillHeader(qrow(ctx, sch, q, `
 		SELECT id, bill_no, purchase_order_id::text, COALESCE(supplier_name,''), status,
 		       transaction_date::text, COALESCE(note,''), subtotal, created_at
 		FROM pur_bill WHERE id = $1 AND deleted_at IS NULL`, id).Scan)
@@ -270,7 +270,7 @@ func getBill(ctx context.Context, conn *sql.Conn, id string) (*Bill, error) {
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	rows, err := conn.QueryContext(ctx, `
+	rows, err := qquery(ctx, sch, q, `
 		SELECT l.id, l.catalog_item_id, COALESCE(ci.name,''), l.warehouse_id, COALESCE(l.description,''),
 		       l.qty, l.unit_cost, l.batch_no
 		FROM pur_bill_line l

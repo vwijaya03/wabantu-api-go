@@ -13,8 +13,8 @@ import (
 	"encore.dev/rlog"
 
 	appauth "encore.app/wabantu/auth"
-	appdb "encore.app/wabantu/shared/db"
 	apperr "encore.app/wabantu/shared/errs"
+	appdb "encore.app/wabantu/shared/db"
 	"encore.app/wabantu/shared/mediastorage"
 	"encore.app/wabantu/whatsapp"
 )
@@ -108,10 +108,10 @@ func storeCachedInboxMedia(ctx context.Context, tenantSchema, messageID string, 
 	_ = rdb.Set(ctx, inboxMediaCacheKey(tenantSchema, messageID), raw, inboxMediaCacheTTL).Err()
 }
 
-func loadMessageMediaRow(ctx context.Context, conn *sql.Conn, messageID string) (*messageMediaRow, error) {
+func loadMessageMediaRow(ctx context.Context, q appdb.TenantQuerier, messageID string) (*messageMediaRow, error) {
 	var row messageMediaRow
 	var meta []byte
-	err := conn.QueryRowContext(ctx, `
+	err := q.QueryRowContext(ctx, `
 		SELECT m.id, m.conversation_id, m.type, m.metadata, c.channel_id
 		FROM message m
 		JOIN conversation c ON c.id = m.conversation_id
@@ -127,9 +127,9 @@ func loadMessageMediaRow(ctx context.Context, conn *sql.Conn, messageID string) 
 	return &row, nil
 }
 
-func loadChannelAccessToken(ctx context.Context, conn *sql.Conn, channelID string) (string, error) {
+func loadChannelAccessToken(ctx context.Context, q appdb.TenantQuerier, channelID string) (string, error) {
 	var status, token, provider string
-	err := conn.QueryRowContext(ctx, `
+	err := q.QueryRowContext(ctx, `
 		SELECT status, COALESCE(access_token,''), provider
 		FROM whatsapp_channel WHERE id = $1`, channelID).
 		Scan(&status, &token, &provider)
@@ -181,13 +181,12 @@ func fetchMessageMediaBytes(ctx context.Context, tenantSchema string, row *messa
 		return cached.Data, mime, nil
 	}
 
-	conn, err := tConn(ctx, tenantSchema)
+	ts, err := openTenantScope(ctx, tenantSchema)
 	if err != nil {
 		return nil, "", apperr.Internal("database connection failed")
 	}
-	defer appdb.CloseTenantConn(conn)
 
-	token, err := loadChannelAccessToken(ctx, conn, row.ChannelID)
+	token, err := loadChannelAccessToken(ctx, ts, row.ChannelID)
 	if err != nil {
 		return nil, "", err
 	}
@@ -207,12 +206,11 @@ func fetchMessageMediaBytes(ctx context.Context, tenantSchema string, row *messa
 
 // FetchMessageMediaBytes downloads WhatsApp media for an inbox message (shared with AI jobs).
 func FetchMessageMediaBytes(ctx context.Context, tenantSchema, messageID string) ([]byte, string, error) {
-	conn, err := tConn(ctx, tenantSchema)
+	ts, err := openTenantScope(ctx, tenantSchema)
 	if err != nil {
 		return nil, "", apperr.Internal("database connection failed")
 	}
-	defer appdb.CloseTenantConn(conn)
-	row, err := loadMessageMediaRow(ctx, conn, messageID)
+	row, err := loadMessageMediaRow(ctx, ts, messageID)
 	if err != nil {
 		return nil, "", err
 	}
@@ -249,14 +247,13 @@ func GetMessageMedia(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	conn, err := tConn(ctx, user.TenantSchema)
+	ts, err := openTenantScope(ctx, user.TenantSchema)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	defer appdb.CloseTenantConn(conn)
 
-	row, err := loadMessageMediaRow(ctx, conn, messageID)
+	row, err := loadMessageMediaRow(ctx, ts, messageID)
 	if err != nil {
 		writeInboxMediaError(w, err)
 		return

@@ -74,13 +74,13 @@ func ListRecurring(ctx context.Context) (*RecurringListResponse, error) {
 	if err := assertOwner(u); err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	q := tenantPool()
 
-	rows, err := conn.QueryContext(ctx, `
+	rows, err := qquery(ctx, sch, q, `
 		SELECT id, COALESCE(title_enc,''), title, type, amount, wallet_id, to_wallet_id, category_id, description,
 		       frequency, frequency_value, day_of_month, day_of_week, mode,
 		       start_date::text, end_date::text, max_occurrences, occurrences_done,
@@ -168,17 +168,17 @@ func CreateRecurring(ctx context.Context, p *CreateRecurringParams) (*Recurring,
 	if p.Mode != "reminder" {
 		p.Mode = "auto"
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	q := tenantPool()
 
 	if p.StartDate == "" {
-		p.StartDate = financeToday(ctx, conn)
+		p.StartDate = financeToday(ctx, sch, q)
 	}
 
-	if _, err := loadTransactionTypeByCode(ctx, conn, p.Type); err != nil {
+	if _, err := loadTransactionTypeByCode(ctx, sch, q, p.Type); err != nil {
 		return nil, err
 	}
 
@@ -187,7 +187,7 @@ func CreateRecurring(ctx context.Context, p *CreateRecurringParams) (*Recurring,
 		return nil, appErrs.Internal(encErr.Error())
 	}
 	var id string
-	err = conn.QueryRowContext(ctx,
+	err = qrow(ctx, sch, q,
 		`INSERT INTO fin_recurring
 		 (title, title_enc, type, amount, wallet_id, to_wallet_id, category_id, description,
 		  frequency, frequency_value, day_of_month, day_of_week, mode,
@@ -221,12 +221,12 @@ func DeleteRecurring(ctx context.Context, id string) (*OKResponse, error) {
 	if err := assertOwner(u); err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	conn.ExecContext(ctx, `UPDATE fin_recurring SET deleted_at=now(), is_active=false WHERE id=$1`, id)
+	q := tenantPool()
+	qexec(ctx, sch, q, `UPDATE fin_recurring SET deleted_at=now(), is_active=false WHERE id=$1`, id)
 	return &OKResponse{OK: true}, nil
 }
 
@@ -257,18 +257,18 @@ func ProcessAllRecurring(ctx context.Context) error {
 }
 
 func processRecurringForTenant(ctx context.Context, schema string) error {
-	conn, err := tenantConn(ctx, schema)
+	sch, err := prepareTenant(ctx, schema)
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	q := tenantPool()
 
-	if !financeTablesReady(ctx, conn) {
+	if !financeTablesReady(ctx, sch, q) {
 		return nil
 	}
-	today := financeToday(ctx, conn)
+	today := financeToday(ctx, sch, q)
 
-	rows, err := conn.QueryContext(ctx, `
+	rows, err := qquery(ctx, sch, q, `
 		SELECT id, type, amount, wallet_id, to_wallet_id, category_id, description,
 		       frequency, frequency_value, day_of_month, day_of_week, mode,
 		       end_date::text, max_occurrences, occurrences_done, next_run_date::text, created_by
@@ -309,18 +309,18 @@ func processRecurringForTenant(ctx context.Context, schema string) error {
 	for _, r := range recs {
 		// Check end_date
 		if r.endDate.Valid && r.endDate.String != "" && r.endDate.String < today {
-			conn.ExecContext(ctx, `UPDATE fin_recurring SET is_active=false WHERE id=$1`, r.id)
+			qexec(ctx, sch, q, `UPDATE fin_recurring SET is_active=false WHERE id=$1`, r.id)
 			continue
 		}
 		// Check max_occurrences
 		if r.maxOcc.Valid && r.occDone.Valid && r.occDone.Int64 >= r.maxOcc.Int64 {
-			conn.ExecContext(ctx, `UPDATE fin_recurring SET is_active=false WHERE id=$1`, r.id)
+			qexec(ctx, sch, q, `UPDATE fin_recurring SET is_active=false WHERE id=$1`, r.id)
 			continue
 		}
 
 		var logStatus, errMsg, txnID string
 		if r.mode == "auto" {
-			if err := ensurePeriodUnlocked(ctx, conn, walletPeriod(today)); err != nil {
+			if err := ensurePeriodUnlocked(ctx, sch, q, walletPeriod(today)); err != nil {
 				logStatus = "failed"
 				errMsg = err.Error()
 			} else {
@@ -329,7 +329,7 @@ func processRecurringForTenant(ctx context.Context, schema string) error {
 				if createdBy == "" {
 					createdBy = "00000000-0000-0000-0000-000000000000"
 				}
-				err := conn.QueryRowContext(ctx,
+				err := qrow(ctx, sch, q,
 					`INSERT INTO fin_transaction
 					 (type,amount,currency,wallet_id,to_wallet_id,category_id,description,
 					  transaction_date,status,tags,recurring_id,created_by)
@@ -349,33 +349,33 @@ func processRecurringForTenant(ctx context.Context, schema string) error {
 					if r.toWalletID.Valid && r.toWalletID.String != "" {
 						toPtr = &r.toWalletID.String
 					}
-					refreshWallets(ctx, conn, r.walletID, toPtr)
+					refreshWallets(ctx, sch, q, r.walletID, toPtr)
 				}
 			}
 		} else {
 			logStatus = "reminded"
 		}
 
-		conn.ExecContext(ctx,
+		qexec(ctx, sch, q,
 			`INSERT INTO fin_recurring_log (recurring_id, run_date, status, error_msg, txn_id)
 			 VALUES ($1,$2,$3,NULLIF($4,''),NULLIF($5,'')::uuid)`,
 			r.id, today, logStatus, errMsg, txnID)
 
 		if logStatus != "failed" {
 			nextRun := calcNextRunDate(today, r.frequency, r.freqVal, r.dayOfMonth, r.dayOfWeek)
-			conn.ExecContext(ctx,
+			qexec(ctx, sch, q,
 				`UPDATE fin_recurring SET next_run_date=$1, occurrences_done=occurrences_done+1, updated_at=now() WHERE id=$2`,
 				nextRun, r.id)
 		}
 
 		// Pause after 3 consecutive failures
 		var failCount int
-		conn.QueryRowContext(ctx,
+		qrow(ctx, sch, q,
 			`SELECT COUNT(*) FROM fin_recurring_log WHERE recurring_id=$1 AND status='failed' AND run_date>=($2::date-3)`,
 			r.id, today,
 		).Scan(&failCount)
 		if failCount >= 3 {
-			conn.ExecContext(ctx, `UPDATE fin_recurring SET is_active=false WHERE id=$1`, r.id)
+			qexec(ctx, sch, q, `UPDATE fin_recurring SET is_active=false WHERE id=$1`, r.id)
 			rlog.Warn("recurring paused after 3 failures", "id", r.id)
 		}
 	}

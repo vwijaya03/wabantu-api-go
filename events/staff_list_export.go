@@ -20,8 +20,8 @@ type staffListRow struct {
 	Notes            string
 }
 
-func loadStaffListRows(ctx context.Context, conn *sql.Conn, eventID string) ([]staffListRow, error) {
-	rows, err := conn.QueryContext(ctx, `
+func loadStaffListRows(ctx context.Context, ts tenantScope, eventID string) ([]staffListRow, error) {
+	rows, err := ts.QueryContext(ctx, `
 		SELECT `+personNameEncLegacyColsP+`, p.person_type, p.attendance_status, COALESCE(p.notes,''),
 		       COALESCE(string_agg(t.therapy_name, ', ' ORDER BY t.therapy_name), ''),
 		       vr.role_name, COALESCE(ev.is_pencatat, false)

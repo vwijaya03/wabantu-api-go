@@ -33,7 +33,11 @@ var inventoryFinanceCategories = []struct {
 // Only CREATE TABLE/INDEX on new inv_* tables are issued, so this is safe to run
 // at runtime on Encore Cloud (no ALTER on app-non-owned tables).
 func runInventorySchemaAndSeed(ctx context.Context, conn *sql.Conn) error {
-	ready, err := tenantschema.InventoryModuleReady(ctx, conn)
+	schema, err := SchemaFromConn(ctx, conn)
+	if err != nil {
+		return fmt.Errorf("inventory schema: %w", err)
+	}
+	ready, err := tenantschema.InventoryModuleReady(ctx, conn, schema)
 	if err != nil {
 		return fmt.Errorf("inventory schema check: %w", err)
 	}
@@ -42,7 +46,7 @@ func runInventorySchemaAndSeed(ctx context.Context, conn *sql.Conn) error {
 			if err := ensureCloudAdminDDLForConn(ctx, conn); err != nil {
 				return fmt.Errorf("inventory cloud DDL: %w", err)
 			}
-			ready, err = tenantschema.InventoryModuleReady(ctx, conn)
+			ready, err = tenantschema.InventoryModuleReady(ctx, conn, schema)
 			if err != nil {
 				return fmt.Errorf("inventory schema recheck: %w", err)
 			}

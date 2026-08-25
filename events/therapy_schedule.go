@@ -2,7 +2,6 @@ package events
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"sort"
 	"strings"
@@ -11,8 +10,8 @@ import (
 	appErrs "encore.app/wabantu/shared/errs"
 )
 
-func loadTherapySlotTemplates(ctx context.Context, conn *sql.Conn, eventID string) (map[string][]TherapySlotTemplate, error) {
-	rows, err := conn.QueryContext(ctx, `
+func loadTherapySlotTemplates(ctx context.Context, ts tenantScope, eventID string) (map[string][]TherapySlotTemplate, error) {
+	rows, err := ts.QueryContext(ctx, `
 		SELECT ets.id::text, st.id::text, st.start_time::text, st.end_time::text, st.capacity, st.sort_order
 		FROM evt_event_therapy_slot_template st
 		JOIN evt_event_therapy ets ON ets.id = st.event_therapy_id
@@ -104,8 +103,8 @@ func parseClock(s string) (time.Time, error) {
 	return t, nil
 }
 
-func replaceTherapySlotTemplates(ctx context.Context, tx *sql.Tx, eventTherapyID, mode string, templates []TherapySlotTemplate) error {
-	if _, err := tx.ExecContext(ctx, `
+func replaceTherapySlotTemplates(ctx context.Context, ts tenantScope, eventTherapyID, mode string, templates []TherapySlotTemplate) error {
+	if _, err := ts.ExecContext(ctx, `
 		DELETE FROM evt_event_therapy_slot_template WHERE event_therapy_id=$1::uuid`, eventTherapyID); err != nil {
 		return appErrs.Internal(err.Error())
 	}
@@ -121,7 +120,7 @@ func replaceTherapySlotTemplates(ctx context.Context, tx *sql.Tx, eventTherapyID
 		if capacity <= 0 {
 			capacity = 1
 		}
-		if _, err := tx.ExecContext(ctx, `
+		if _, err := ts.ExecContext(ctx, `
 			INSERT INTO evt_event_therapy_slot_template (event_therapy_id, start_time, end_time, capacity, sort_order)
 			VALUES ($1::uuid, $2::time, $3::time, $4, $5)`,
 			eventTherapyID, t.StartTime, t.EndTime, capacity, ord); err != nil {
@@ -131,8 +130,8 @@ func replaceTherapySlotTemplates(ctx context.Context, tx *sql.Tx, eventTherapyID
 	return nil
 }
 
-func loadManualDaySlots(ctx context.Context, conn *sql.Conn, eventTherapyID string) ([]slotRange, error) {
-	rows, err := conn.QueryContext(ctx, `
+func loadManualDaySlots(ctx context.Context, ts tenantScope, eventTherapyID string) ([]slotRange, error) {
+	rows, err := ts.QueryContext(ctx, `
 		SELECT start_time::text, end_time::text, capacity
 		FROM evt_event_therapy_slot_template
 		WHERE event_therapy_id=$1::uuid

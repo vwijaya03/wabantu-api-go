@@ -18,11 +18,14 @@ import (
 
 var db = sqldb.Named("tenant")
 
-func tenantConn(ctx context.Context, schema string) (*sql.Conn, error) {
-	if err := tenant.EnsureKnowledgeBaseSchema(ctx, schema); err != nil {
-		return nil, e.Internal(err.Error())
+func openTenantScope(ctx context.Context, schema string) (appdb.TenantScope, error) {
+	if err := tenant.PrepareTenantAccess(ctx, schema); err != nil {
+		return appdb.TenantScope{}, e.Internal(err.Error())
 	}
-	return appdb.TenantConn(ctx, db.Stdlib(), schema)
+	if err := tenant.EnsureKnowledgeBaseSchema(ctx, schema); err != nil {
+		return appdb.TenantScope{}, e.Internal(err.Error())
+	}
+	return appdb.OpenTenantScope(db.Stdlib(), schema), nil
 }
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -132,11 +135,10 @@ func List(ctx context.Context, req *ListRequest) (*ListResponse, error) {
 		return nil, err
 	}
 
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenantScope(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, err
 	}
-	defer appdb.CloseTenantConn(conn)
 
 	page := req.Page
 	if page < 1 {
@@ -168,7 +170,7 @@ func List(ctx context.Context, req *ListRequest) (*ListResponse, error) {
 
 	countSQL := "SELECT COUNT(*) FROM knowledge_base_entry " + where
 	var total int
-	if err := conn.QueryRowContext(ctx, countSQL, args...).Scan(&total); err != nil {
+	if err := ts.QueryRowContext(ctx, countSQL, args...).Scan(&total); err != nil {
 		return nil, fmt.Errorf("count KB entries: %w", err)
 	}
 
@@ -180,7 +182,7 @@ func List(ctx context.Context, req *ListRequest) (*ListResponse, error) {
 		LIMIT $%d OFFSET $%d`, where, argN, argN+1)
 	args = append(args, pageSize, offset)
 
-	rows, err := conn.QueryContext(ctx, querySQL, args...)
+	rows, err := ts.QueryContext(ctx, querySQL, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list KB entries: %w", err)
 	}
@@ -217,11 +219,10 @@ func Create(ctx context.Context, req *CreateRequest) (*CreateResponse, error) {
 		return nil, e.BadRequest("question and answer are required")
 	}
 
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenantScope(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, err
 	}
-	defer appdb.CloseTenantConn(conn)
 
 	isActive := true
 	if req.IsActive != nil {
@@ -230,7 +231,7 @@ func Create(ctx context.Context, req *CreateRequest) (*CreateResponse, error) {
 	source := resolveKBEntrySource(req.Source)
 
 	var entry KBEntry
-	err = conn.QueryRowContext(ctx, `
+	err = ts.QueryRowContext(ctx, `
 		INSERT INTO knowledge_base_entry (question, answer, category, source, is_active)
 		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id, question, answer, category, source, is_active, created_at, updated_at`,
@@ -253,11 +254,10 @@ func Update(ctx context.Context, id string, req *UpdateRequest) (*UpdateResponse
 		return nil, err
 	}
 
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenantScope(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, err
 	}
-	defer appdb.CloseTenantConn(conn)
 
 	sets := []string{}
 	args := []any{}
@@ -304,7 +304,7 @@ func Update(ctx context.Context, id string, req *UpdateRequest) (*UpdateResponse
 		joinStrings(sets, ", "), argN)
 
 	var entry KBEntry
-	err = conn.QueryRowContext(ctx, query, args...).Scan(
+	err = ts.QueryRowContext(ctx, query, args...).Scan(
 		&entry.ID, &entry.Question, &entry.Answer, &entry.Category,
 		&entry.Source, &entry.IsActive, &entry.CreatedAt, &entry.UpdatedAt)
 	if err == sql.ErrNoRows {
@@ -326,13 +326,12 @@ func Delete(ctx context.Context, id string) (*DeleteResponse, error) {
 		return nil, err
 	}
 
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenantScope(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, err
 	}
-	defer appdb.CloseTenantConn(conn)
 
-	res, err := conn.ExecContext(ctx, `
+	res, err := ts.ExecContext(ctx, `
 		UPDATE knowledge_base_entry
 		SET deleted_at = NOW(), deleted_by = $1
 		WHERE id = $2 AND deleted_at IS NULL`,

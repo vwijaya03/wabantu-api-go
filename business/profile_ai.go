@@ -2,13 +2,13 @@ package business
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"strings"
 
 	"encore.dev/rlog"
 
 	"encore.app/wabantu/ai"
+	appdb "encore.app/wabantu/shared/db"
 	apperr "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/usage"
 )
@@ -61,12 +61,11 @@ func SuggestProfileField(ctx context.Context, req *ProfileAISuggestRequest) (*Pr
 	}
 	p := profResp.Profile
 
-	conn, err := tConn(ctx, user.TenantSchema)
+	ts, err := openTenantScope(ctx, user.TenantSchema)
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer closeTenantConn(conn)
-	catalogHint := loadCatalogNameHints(ctx, conn)
+	catalogHint := loadCatalogNameHints(ctx, ts)
 
 	apiKey := strings.TrimSpace(secrets.AnthropicAPIKey)
 	if apiKey == "" {
@@ -176,8 +175,8 @@ func buildProfileAISuggestPrompt(field profileAISuggestField, p ProfileResponse,
 	return b.String()
 }
 
-func loadCatalogNameHints(ctx context.Context, conn *sql.Conn) string {
-	rows, err := conn.QueryContext(ctx, `
+func loadCatalogNameHints(ctx context.Context, ts appdb.TenantScope) string {
+	rows, err := ts.QueryContext(ctx, `
 		SELECT name FROM business_catalog_item
 		WHERE is_active = true AND COALESCE(TRIM(name), '') <> ''
 		ORDER BY updated_at DESC NULLS LAST, created_at DESC

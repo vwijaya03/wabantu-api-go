@@ -6,7 +6,6 @@ import (
 
 	"encore.app/wabantu/finance"
 	appErrs "encore.app/wabantu/shared/errs"
-	"encore.app/wabantu/tenant"
 )
 
 type UpdateStockTransactionParams struct {
@@ -33,16 +32,16 @@ func UpdateStockTransaction(ctx context.Context, id string, p *UpdateStockTransa
 	if err := requireOwner(u); err != nil {
 		return nil, err
 	}
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
-	if err := ensureInventoryModuleReady(ctx, conn, u.TenantSchema); err != nil {
+	pool := tenantDB()
+	if err := ensureInventoryModuleSchema(ctx, u.TenantSchema); err != nil {
 		return nil, err
 	}
 
-	existing, err := loadStockTransaction(ctx, conn, id)
+	existing, err := loadStockTransaction(ctx, sch, pool, id)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +49,7 @@ func UpdateStockTransaction(ctx context.Context, id string, p *UpdateStockTransa
 		return nil, err
 	}
 
-	movs, err := collectMovementsByRef(ctx, conn, txnKindRefType(existing.Kind), id)
+	movs, err := collectMovementsByRef(ctx, sch, pool, txnKindRefType(existing.Kind), id)
 	if err != nil {
 		return nil, err
 	}
@@ -58,16 +57,16 @@ func UpdateStockTransaction(ctx context.Context, id string, p *UpdateStockTransa
 		return nil, err
 	}
 
-	tx, terr := conn.BeginTx(ctx, nil)
+	tx, terr := pool.BeginTx(ctx, nil)
 	if terr != nil {
 		return nil, appErrs.Internal(terr.Error())
 	}
 	defer tx.Rollback()
 
-	if _, err := purgeMovementsByRef(ctx, tx, txnKindRefType(existing.Kind), id); err != nil {
+	if _, err := purgeMovementsByRef(ctx, sch, tx, txnKindRefType(existing.Kind), id); err != nil {
 		return nil, err
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM inv_stock_transaction_line WHERE transaction_id = $1`, id); err != nil {
+	if _, err := qexec(ctx, sch, tx, `DELETE FROM inv_stock_transaction_line WHERE transaction_id = $1`, id); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 
@@ -86,7 +85,7 @@ func UpdateStockTransaction(ctx context.Context, id string, p *UpdateStockTransa
 		if uc == 0 && existing.UnitCost != nil {
 			uc = *existing.UnitCost
 		}
-		adjResult, err = repostAdjustmentOnTx(ctx, tx, id, existing.DocNo, u.AccountID, &AdjustmentParams{
+		adjResult, err = repostAdjustmentOnTx(ctx, sch, tx, id, existing.DocNo, u.AccountID, &AdjustmentParams{
 			CatalogItemID: coalesceStr(p.CatalogItemID, existing.CatalogItemID),
 			WarehouseID:   coalesceStr(p.WarehouseID, existing.WarehouseID),
 			Qty:           qty,
@@ -100,7 +99,7 @@ func UpdateStockTransaction(ctx context.Context, id string, p *UpdateStockTransa
 		if qty <= 0 && existing.SignedQty != nil {
 			qty = *existing.SignedQty
 		}
-		err = repostTransferOnTx(ctx, tx, id, u.AccountID, &TransferParams{
+		err = repostTransferOnTx(ctx, sch, tx, id, u.AccountID, &TransferParams{
 			CatalogItemID:   coalesceStr(p.CatalogItemID, existing.CatalogItemID),
 			FromWarehouseID: coalesceStr(p.FromWarehouseID, existing.FromWarehouseID),
 			ToWarehouseID:   coalesceStr(p.ToWarehouseID, existing.ToWarehouseID),
@@ -112,14 +111,14 @@ func UpdateStockTransaction(ctx context.Context, id string, p *UpdateStockTransa
 		if len(entries) == 0 {
 			return nil, appErrs.BadRequest("entries wajib untuk edit saldo awal")
 		}
-		err = repostOpeningOnTx(ctx, tx, id, existing.DocNo, u.AccountID, entries)
+		err = repostOpeningOnTx(ctx, sch, tx, id, existing.DocNo, u.AccountID, entries)
 	case TxnKindRevaluation:
 		nuc := p.NewUnitCost
 		if nuc == 0 && existing.NewUnitCost != nil {
 			nuc = *existing.NewUnitCost
 		}
 		revalNote = coalesceStr(p.Note, existing.Note)
-		revalMovID, revalDelta, err = repostRevaluationOnTx(ctx, tx, id, u.AccountID, u.TenantSchema, &RevaluationParams{
+		revalMovID, revalDelta, err = repostRevaluationOnTx(ctx, sch, tx, id, u.AccountID, u.TenantSchema, &RevaluationParams{
 			CatalogItemID: coalesceStr(p.CatalogItemID, existing.CatalogItemID),
 			WarehouseID:   coalesceStr(p.WarehouseID, existing.WarehouseID),
 			NewUnitCost:   nuc,
@@ -141,7 +140,7 @@ func UpdateStockTransaction(ctx context.Context, id string, p *UpdateStockTransa
 	if err := recordRevaluationFinance(ctx, u.TenantSchema, u.AccountID, revalMovID, revalNote, revalDelta); err != nil {
 		return nil, err
 	}
-	return loadStockTransaction(ctx, conn, id)
+	return loadStockTransaction(ctx, sch, pool, id)
 }
 
 func financeCheckPeriodForTxn(ctx context.Context, schema, txnDate string) error {

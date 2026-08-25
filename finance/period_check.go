@@ -6,7 +6,6 @@ import (
 	"time"
 
 	appErrs "encore.app/wabantu/shared/errs"
-	"encore.app/wabantu/tenant"
 )
 
 // CheckPeriodUnlockedForDate rejects edits/deletes when the finance period for
@@ -19,10 +18,10 @@ func CheckPeriodUnlockedForDate(ctx context.Context, tenantSchema, dateStr strin
 	if _, err := time.Parse("2006-01-02", dateStr); err != nil {
 		return appErrs.BadRequest("format tanggal harus YYYY-MM-DD")
 	}
-	conn, err := tenant.TenantConn(ctx, tenantSchema)
+	sch, err := prepareTenant(ctx, tenantSchema)
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	defer tenant.CloseTenantConn(conn)
-	return ensurePeriodUnlocked(ctx, conn, walletPeriod(dateStr))
+	pool := tenantPool()
+	return ensurePeriodUnlocked(ctx, sch, pool, walletPeriod(dateStr))
 }

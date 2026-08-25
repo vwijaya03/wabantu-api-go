@@ -19,6 +19,7 @@ import (
 
 	"encore.app/wabantu/audit"
 	"encore.app/wabantu/branch"
+	appdb "encore.app/wabantu/shared/db"
 	"encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/ratelimit"
 	"encore.app/wabantu/shared/response"
@@ -249,14 +250,12 @@ func Register(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// Seed empty business_profile + default branch
-	if conn, err := tenant.TenantConn(ctx, schemaName); err == nil {
-		defer conn.Close()
-		conn.ExecContext(ctx,
-			`INSERT INTO business_profile (business_name, tone, ai_enabled)
-			 VALUES ($1, 'friendly', true) ON CONFLICT DO NOTHING`,
-			tenantName,
-		)
-	}
+	sch := appdb.SchemaSQL{Schema: schemaName}
+	_, _ = tenant.DataDB.Stdlib().ExecContext(ctx, fmt.Sprintf(
+		`INSERT INTO %s (business_name, tone, ai_enabled)
+		 VALUES ($1, 'friendly', true) ON CONFLICT DO NOTHING`, sch.T("business_profile")),
+		tenantName,
+	)
 	_ = branch.EnsureDefaultBranch(ctx, schemaName)
 	_ = tenant.RecordNewTenantSchemaVersion(ctx, tenantID)
 

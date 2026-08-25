@@ -8,6 +8,7 @@ import (
 
 	"encore.dev/rlog"
 
+	appdb "encore.app/wabantu/shared/db"
 	appErrs "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/pii"
 	"encore.app/wabantu/shared/types"
@@ -62,23 +63,23 @@ func parsePostgreSQLStringArray(raw sql.NullString) []string {
 	return out
 }
 
-func refreshWallets(ctx context.Context, conn *sql.Conn, walletID string, toWalletID *string) {
+func refreshWallets(ctx context.Context, sch appdb.SchemaSQL, q finQuerier, walletID string, toWalletID *string) {
 	if walletID != "" {
-		if err := refreshWalletBalance(ctx, conn, walletID); err != nil {
+		if err := refreshWalletBalance(ctx, sch, q, walletID); err != nil {
 			rlog.Warn("finance: refresh wallet balance", "walletId", walletID, "err", err)
 		}
 	}
 	if toWalletID != nil && *toWalletID != "" && *toWalletID != walletID {
-		if err := refreshWalletBalance(ctx, conn, *toWalletID); err != nil {
+		if err := refreshWalletBalance(ctx, sch, q, *toWalletID); err != nil {
 			rlog.Warn("finance: refresh wallet balance", "walletId", *toWalletID, "err", err)
 		}
 	}
 }
 
-func refreshWalletsForTransaction(ctx context.Context, conn *sql.Conn, txnID string) {
+func refreshWalletsForTransaction(ctx context.Context, sch appdb.SchemaSQL, q finQuerier, txnID string) {
 	var walletID string
 	var toWalletID sql.NullString
-	if err := conn.QueryRowContext(ctx,
+	if err := qrow(ctx, sch, q,
 		`SELECT wallet_id, to_wallet_id FROM fin_transaction WHERE id=$1`, txnID,
 	).Scan(&walletID, &toWalletID); err != nil {
 		rlog.Warn("finance: load txn for balance refresh", "txnId", txnID, "err", err)
@@ -88,10 +89,10 @@ func refreshWalletsForTransaction(ctx context.Context, conn *sql.Conn, txnID str
 	if toWalletID.Valid && toWalletID.String != "" {
 		toPtr = &toWalletID.String
 	}
-	refreshWallets(ctx, conn, walletID, toPtr)
+	refreshWallets(ctx, sch, q, walletID, toPtr)
 }
 
-func assertWalletAccessible(ctx context.Context, conn *sql.Conn, u *types.AuthUser, walletID string) error {
+func assertWalletAccessible(ctx context.Context, sch appdb.SchemaSQL, q finQuerier, u *types.AuthUser, walletID string) error {
 	if walletID == "" {
 		return appErrs.BadRequest("dompet harus dipilih")
 	}
@@ -99,7 +100,7 @@ func assertWalletAccessible(ctx context.Context, conn *sql.Conn, u *types.AuthUs
 		return nil
 	}
 	var visibility string
-	err := conn.QueryRowContext(ctx,
+	err := qrow(ctx, sch, q,
 		`SELECT visibility FROM fin_wallet WHERE id=$1 AND deleted_at IS NULL AND is_active=true`, walletID,
 	).Scan(&visibility)
 	if err == sql.ErrNoRows {
@@ -139,9 +140,9 @@ type approvalConfig struct {
 	requireForTypes []string
 }
 
-func loadApprovalConfig(ctx context.Context, conn *sql.Conn) (approvalConfig, error) {
+func loadApprovalConfig(ctx context.Context, sch appdb.SchemaSQL, q finQuerier) (approvalConfig, error) {
 	var cfg approvalConfig
-	err := conn.QueryRowContext(ctx,
+	err := qrow(ctx, sch, q,
 		`SELECT enabled, amount_threshold, require_for_types
 		 FROM fin_approval_setting WHERE id=$1`, approvalSettingID,
 	).Scan(&cfg.enabled, &cfg.threshold, &cfg.requireForTypes)
@@ -179,8 +180,8 @@ func staffNeedsApproval(cfg approvalConfig, txnType string, amount float64) bool
 	return true
 }
 
-func ensurePeriodUnlocked(ctx context.Context, conn *sql.Conn, period string) error {
-	locked, err := periodLocked(ctx, conn, period)
+func ensurePeriodUnlocked(ctx context.Context, sch appdb.SchemaSQL, q finQuerier, period string) error {
+	locked, err := periodLocked(ctx, sch, q, period)
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
@@ -190,8 +191,8 @@ func ensurePeriodUnlocked(ctx context.Context, conn *sql.Conn, period string) er
 	return nil
 }
 
-func financeTablesReady(ctx context.Context, conn *sql.Conn) bool {
+func financeTablesReady(ctx context.Context, sch appdb.SchemaSQL, q finQuerier) bool {
 	var name sql.NullString
-	_ = conn.QueryRowContext(ctx, `SELECT to_regclass('fin_recurring')::text`).Scan(&name)
+	_ = qrow(ctx, sch, q, `SELECT to_regclass($1)::text`, sch.T("fin_recurring")).Scan(&name)
 	return name.Valid && strings.TrimSpace(name.String) != ""
 }

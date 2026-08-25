@@ -81,13 +81,12 @@ func CreateExportJob(ctx context.Context, eventId string, p *CreateExportJobPara
 		return nil, appErrs.BadRequest("jenis export tidak valid")
 	}
 
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
 
-	if err := assertEventExists(ctx, conn, eventId); err != nil {
+	if err := assertEventExists(ctx, ts, eventId); err != nil {
 		return nil, err
 	}
 
@@ -108,7 +107,7 @@ func CreateExportJob(ctx context.Context, eventId string, p *CreateExportJobPara
 		if err := validatePatientFilters(filters); err != nil {
 			return nil, err
 		}
-		_, total, err := queryPatients(ctx, conn, eventId, filters, 1, 0)
+		_, total, err := queryPatients(ctx, ts, eventId, filters, 1, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -142,7 +141,7 @@ func CreateExportJob(ctx context.Context, eventId string, p *CreateExportJobPara
 	}
 
 	var id string
-	err = conn.QueryRowContext(ctx, `
+	err = ts.QueryRowContext(ctx, `
 		INSERT INTO evt_export_job (event_id, kind, params, status, error_msg, created_by)
 		VALUES ($1::uuid,$2,$3,'queued','Menunggu antrian export...',$4)
 		RETURNING id::text`,
@@ -157,7 +156,7 @@ func CreateExportJob(ctx context.Context, eventId string, p *CreateExportJobPara
 	})
 
 	now := time.Now()
-	auditEvent(ctx, conn, u, "event", eventId, "export_job_created", nil, map[string]any{"kind": kind, "jobId": id})
+	auditEvent(ctx, ts, u, "event", eventId, "export_job_created", nil, map[string]any{"kind": kind, "jobId": id})
 
 	return &ExportJob{
 		ID:        id,
@@ -176,13 +175,12 @@ func GetExportJob(ctx context.Context, eventId, jobId string) (*ExportJob, error
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
 
-	return scanExportJob(ctx, conn, eventId, jobId, u.AccountID, isOwner(u))
+	return scanExportJob(ctx, ts, eventId, jobId, u.AccountID, isOwner(u))
 }
 
 //encore:api auth method=GET path=/api/v1/events/detail/:eventId/export-jobs
@@ -191,17 +189,16 @@ func ListExportJobs(ctx context.Context, eventId string) (*ExportJobListResponse
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
 
-	if err := assertEventExists(ctx, conn, eventId); err != nil {
+	if err := assertEventExists(ctx, ts, eventId); err != nil {
 		return nil, err
 	}
 
-	expireStaleExportJobs(ctx, conn, u.AccountID, eventId)
+	expireStaleExportJobs(ctx, ts, u.AccountID, eventId)
 
 	owner := isOwner(u)
 	q := `SELECT id::text, event_id::text, kind,
@@ -215,7 +212,7 @@ func ListExportJobs(ctx context.Context, eventId string) (*ExportJobListResponse
 	}
 	q += ` ORDER BY created_at DESC LIMIT 20`
 
-	rows, err := conn.QueryContext(ctx, q, args...)
+	rows, err := ts.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
@@ -239,60 +236,59 @@ func processExportJobAsync(schema, jobID, eventID, kind, format string, filters 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
-	conn, err := tenantConn(ctx, schema)
+	ts, err := openTenant(ctx, schema)
 	if err != nil {
 		return
 	}
-	defer conn.Close()
 
-	processExportJob(ctx, conn, jobID, eventID, kind, format, filters, staffFilters, hiddenCols, accountID, tenantID, tenantName)
+	processExportJob(ctx, ts, jobID, eventID, kind, format, filters, staffFilters, hiddenCols, accountID, tenantID, tenantName)
 }
 
-func processExportJob(ctx context.Context, conn *sql.Conn, jobID, eventID, kind, format string, filters patientFilterInput, staffFilters staffExportFilterInput, hiddenCols map[string]bool, accountID, tenantID, tenantName string) {
+func processExportJob(ctx context.Context, ts tenantScope, jobID, eventID, kind, format string, filters patientFilterInput, staffFilters staffExportFilterInput, hiddenCols map[string]bool, accountID, tenantID, tenantName string) {
 	defer func() {
 		if r := recover(); r != nil {
-			failExportJob(ctx, conn, jobID, fmt.Sprintf("export gagal: %v", r))
+			failExportJob(ctx, ts, jobID, fmt.Sprintf("export gagal: %v", r))
 		}
 	}()
 
-	_, _ = conn.ExecContext(ctx, `
+	_, _ = ts.ExecContext(ctx, `
 		UPDATE evt_export_job SET status='processing', error_msg='Memproses export...', updated_at=now()
 		WHERE id=$1::uuid`, jobID)
 
 	switch kind {
 	case exportKindPatientsPDF:
-		processPatientsExportJob(ctx, conn, jobID, eventID, filters, hiddenCols, tenantID, tenantName)
+		processPatientsExportJob(ctx, ts, jobID, eventID, filters, hiddenCols, tenantID, tenantName)
 	case exportKindPatientsXLSX:
-		processPatientsXLSXExportJob(ctx, conn, jobID, eventID, filters, hiddenCols, tenantID, tenantName)
+		processPatientsXLSXExportJob(ctx, ts, jobID, eventID, filters, hiddenCols, tenantID, tenantName)
 	case exportKindStaffSheet:
-		processStaffSheetExportJob(ctx, conn, jobID, eventID, staffFilters)
+		processStaffSheetExportJob(ctx, ts, jobID, eventID, staffFilters)
 	case exportKindStaffList:
-		processStaffListExportJob(ctx, conn, jobID, eventID, staffFilters)
+		processStaffListExportJob(ctx, ts, jobID, eventID, staffFilters)
 	default:
-		failExportJob(ctx, conn, jobID, "jenis export tidak dikenali")
+		failExportJob(ctx, ts, jobID, "jenis export tidak dikenali")
 	}
 	_ = format
 }
 
-func processPatientsXLSXExportJob(ctx context.Context, conn *sql.Conn, jobID, eventID string, filters patientFilterInput, hiddenCols map[string]bool, tenantID, tenantName string) {
-	updateExportJobProgress(ctx, conn, jobID, "Memuat data pasien...")
+func processPatientsXLSXExportJob(ctx context.Context, ts tenantScope, jobID, eventID string, filters patientFilterInput, hiddenCols map[string]bool, tenantID, tenantName string) {
+	updateExportJobProgress(ctx, ts, jobID, "Memuat data pasien...")
 
 	var eventName, startDate, endDate, location string
 	var loc sql.NullString
-	if err := conn.QueryRowContext(ctx, `
+	if err := ts.QueryRowContext(ctx, `
 		SELECT event_name, start_date::text, end_date::text, location
 		FROM evt_event WHERE id=$1::uuid AND deleted_at IS NULL`, eventID,
 	).Scan(&eventName, &startDate, &endDate, &loc); err != nil {
-		failExportJob(ctx, conn, jobID, "acara tidak ditemukan")
+		failExportJob(ctx, ts, jobID, "acara tidak ditemukan")
 		return
 	}
 	if loc.Valid {
 		location = loc.String
 	}
 
-	items, _, err := queryPatients(ctx, conn, eventID, filters, maxPatientExportRows, 0)
+	items, _, err := queryPatients(ctx, ts, eventID, filters, maxPatientExportRows, 0)
 	if err != nil {
-		failExportJob(ctx, conn, jobID, exportErrMessage(err, "gagal memuat pasien"))
+		failExportJob(ctx, ts, jobID, exportErrMessage(err, "gagal memuat pasien"))
 		return
 	}
 
@@ -305,7 +301,7 @@ func processPatientsXLSXExportJob(ctx context.Context, conn *sql.Conn, jobID, ev
 			}
 		}
 	}
-	_, total, _ := queryPatients(ctx, conn, eventID, filters, 1, 0)
+	_, total, _ := queryPatients(ctx, ts, eventID, filters, 1, 0)
 	filterSummary := buildPatientFilterSummary(filters, therapyLabel, total)
 
 	tenantName = strings.TrimSpace(tenantName)
@@ -318,7 +314,7 @@ func processPatientsXLSXExportJob(ctx context.Context, conn *sql.Conn, jobID, ev
 		tenantName = "WABantu"
 	}
 
-	updateExportJobProgress(ctx, conn, jobID, fmt.Sprintf("Membuat Excel (%d pasien)...", len(items)))
+	updateExportJobProgress(ctx, ts, jobID, fmt.Sprintf("Membuat Excel (%d pasien)...", len(items)))
 	xlsxBytes, err := buildPatientsXLSX(patientPDFData{
 		TenantName:    tenantName,
 		EventName:     eventName,
@@ -330,62 +326,62 @@ func processPatientsXLSXExportJob(ctx context.Context, conn *sql.Conn, jobID, ev
 		HiddenColumns: hiddenCols,
 	})
 	if err != nil {
-		failExportJob(ctx, conn, jobID, "gagal membuat Excel")
+		failExportJob(ctx, ts, jobID, "gagal membuat Excel")
 		return
 	}
 
 	dataURL := xlsxDataURL(xlsxBytes)
 	slug := slugify(eventName)
 	fileName := fmt.Sprintf("pasien-%s-%s.xlsx", slug, time.Now().Format("20060102"))
-	completeExportJob(ctx, conn, jobID, dataURL, fileName, len(items))
+	completeExportJob(ctx, ts, jobID, dataURL, fileName, len(items))
 }
 
-func processStaffListExportJob(ctx context.Context, conn *sql.Conn, jobID, eventID string, staffFilters staffExportFilterInput) {
-	updateExportJobProgress(ctx, conn, jobID, "Memuat daftar staf...")
+func processStaffListExportJob(ctx context.Context, ts tenantScope, jobID, eventID string, staffFilters staffExportFilterInput) {
+	updateExportJobProgress(ctx, ts, jobID, "Memuat daftar staf...")
 	var eventName string
-	if err := conn.QueryRowContext(ctx, `
+	if err := ts.QueryRowContext(ctx, `
 		SELECT event_name FROM evt_event WHERE id=$1::uuid AND deleted_at IS NULL`, eventID,
 	).Scan(&eventName); err != nil {
-		failExportJob(ctx, conn, jobID, "acara tidak ditemukan")
+		failExportJob(ctx, ts, jobID, "acara tidak ditemukan")
 		return
 	}
-	rows, err := loadStaffListRows(ctx, conn, eventID)
+	rows, err := loadStaffListRows(ctx, ts, eventID)
 	if err != nil {
-		failExportJob(ctx, conn, jobID, exportErrMessage(err, "gagal memuat staf"))
+		failExportJob(ctx, ts, jobID, exportErrMessage(err, "gagal memuat staf"))
 		return
 	}
 	sortStaffListRowsInMemory(rows, staffFilters.SortBy, staffFilters.SortDir)
-	updateExportJobProgress(ctx, conn, jobID, "Membuat Excel...")
+	updateExportJobProgress(ctx, ts, jobID, "Membuat Excel...")
 	xlsxBytes, err := buildStaffListXLSX(eventName, rows)
 	if err != nil {
-		failExportJob(ctx, conn, jobID, "gagal membuat Excel")
+		failExportJob(ctx, ts, jobID, "gagal membuat Excel")
 		return
 	}
 	dataURL := xlsxDataURL(xlsxBytes)
 	slug := slugify(eventName)
 	fileName := fmt.Sprintf("daftar-staf-%s-%s.xlsx", slug, time.Now().Format("20060102"))
-	completeExportJob(ctx, conn, jobID, dataURL, fileName, len(rows))
+	completeExportJob(ctx, ts, jobID, dataURL, fileName, len(rows))
 }
 
-func processPatientsExportJob(ctx context.Context, conn *sql.Conn, jobID, eventID string, filters patientFilterInput, hiddenCols map[string]bool, tenantID, tenantName string) {
-	updateExportJobProgress(ctx, conn, jobID, "Memuat data pasien...")
+func processPatientsExportJob(ctx context.Context, ts tenantScope, jobID, eventID string, filters patientFilterInput, hiddenCols map[string]bool, tenantID, tenantName string) {
+	updateExportJobProgress(ctx, ts, jobID, "Memuat data pasien...")
 
 	var eventName, startDate, endDate, location string
 	var loc sql.NullString
-	if err := conn.QueryRowContext(ctx, `
+	if err := ts.QueryRowContext(ctx, `
 		SELECT event_name, start_date::text, end_date::text, location
 		FROM evt_event WHERE id=$1::uuid AND deleted_at IS NULL`, eventID,
 	).Scan(&eventName, &startDate, &endDate, &loc); err != nil {
-		failExportJob(ctx, conn, jobID, "acara tidak ditemukan")
+		failExportJob(ctx, ts, jobID, "acara tidak ditemukan")
 		return
 	}
 	if loc.Valid {
 		location = loc.String
 	}
 
-	items, _, err := queryPatients(ctx, conn, eventID, filters, maxPatientExportRows, 0)
+	items, _, err := queryPatients(ctx, ts, eventID, filters, maxPatientExportRows, 0)
 	if err != nil {
-		failExportJob(ctx, conn, jobID, exportErrMessage(err, "gagal memuat pasien"))
+		failExportJob(ctx, ts, jobID, exportErrMessage(err, "gagal memuat pasien"))
 		return
 	}
 
@@ -398,10 +394,10 @@ func processPatientsExportJob(ctx context.Context, conn *sql.Conn, jobID, eventI
 			}
 		}
 		if therapyLabel == "Semua terapi" {
-			_ = conn.QueryRowContext(ctx, `SELECT therapy_name FROM evt_therapy WHERE id=$1::uuid`, tid).Scan(&therapyLabel)
+			_ = ts.QueryRowContext(ctx, `SELECT therapy_name FROM evt_therapy WHERE id=$1::uuid`, tid).Scan(&therapyLabel)
 		}
 	}
-	_, total, _ := queryPatients(ctx, conn, eventID, filters, 1, 0)
+	_, total, _ := queryPatients(ctx, ts, eventID, filters, 1, 0)
 	filterSummary := buildPatientFilterSummary(filters, therapyLabel, total)
 
 	tenantName = strings.TrimSpace(tenantName)
@@ -414,7 +410,7 @@ func processPatientsExportJob(ctx context.Context, conn *sql.Conn, jobID, eventI
 		tenantName = "WABantu"
 	}
 
-	updateExportJobProgress(ctx, conn, jobID, fmt.Sprintf("Membuat PDF (%d pasien)...", len(items)))
+	updateExportJobProgress(ctx, ts, jobID, fmt.Sprintf("Membuat PDF (%d pasien)...", len(items)))
 	pdfBytes, err := buildPatientsPDF(patientPDFData{
 		TenantName:    tenantName,
 		EventName:     eventName,
@@ -426,72 +422,72 @@ func processPatientsExportJob(ctx context.Context, conn *sql.Conn, jobID, eventI
 		HiddenColumns: hiddenCols,
 	})
 	if err != nil {
-		failExportJob(ctx, conn, jobID, fmt.Sprintf("gagal membuat PDF: %v", err))
+		failExportJob(ctx, ts, jobID, fmt.Sprintf("gagal membuat PDF: %v", err))
 		return
 	}
 
 	dataURL := pdfDataURL(pdfBytes)
 	slug := slugify(eventName)
 	fileName := fmt.Sprintf("pasien-%s-%s.pdf", slug, time.Now().Format("20060102"))
-	completeExportJob(ctx, conn, jobID, dataURL, fileName, len(items))
+	completeExportJob(ctx, ts, jobID, dataURL, fileName, len(items))
 }
 
-func processStaffSheetExportJob(ctx context.Context, conn *sql.Conn, jobID, eventID string, staffFilters staffExportFilterInput) {
-	updateExportJobProgress(ctx, conn, jobID, "Memuat staf & penugasan...")
-	data, err := loadStaffSheetExportData(ctx, conn, eventID)
+func processStaffSheetExportJob(ctx context.Context, ts tenantScope, jobID, eventID string, staffFilters staffExportFilterInput) {
+	updateExportJobProgress(ctx, ts, jobID, "Memuat staf & penugasan...")
+	data, err := loadStaffSheetExportData(ctx, ts, eventID)
 	if err != nil {
-		failExportJob(ctx, conn, jobID, exportErrMessage(err, "gagal memuat data staf"))
+		failExportJob(ctx, ts, jobID, exportErrMessage(err, "gagal memuat data staf"))
 		return
 	}
 	sortStaffSheetRowsInMemory(data.TherapyStaff, staffFilters.SortBy, staffFilters.SortDir)
 
-	updateExportJobProgress(ctx, conn, jobID, "Membuat lembar Excel...")
+	updateExportJobProgress(ctx, ts, jobID, "Membuat lembar Excel...")
 	xlsxBytes, err := buildStaffSheetXLSX(data)
 	if err != nil {
-		failExportJob(ctx, conn, jobID, "gagal membuat Excel: "+err.Error())
+		failExportJob(ctx, ts, jobID, "gagal membuat Excel: "+err.Error())
 		return
 	}
 
 	dataURL := xlsxDataURL(xlsxBytes)
 	slug := slugify(data.EventName)
 	fileName := fmt.Sprintf("terapis-%s-%s.xlsx", slug, time.Now().Format("20060102"))
-	completeExportJob(ctx, conn, jobID, dataURL, fileName, len(data.TherapyStaff))
+	completeExportJob(ctx, ts, jobID, dataURL, fileName, len(data.TherapyStaff))
 }
 
-func completeExportJob(ctx context.Context, conn *sql.Conn, jobID, dataURL, fileName string, rowCount int) {
-	updateExportJobProgress(ctx, conn, jobID, "Menyimpan hasil export...")
-	_, err := conn.ExecContext(ctx, `
+func completeExportJob(ctx context.Context, ts tenantScope, jobID, dataURL, fileName string, rowCount int) {
+	updateExportJobProgress(ctx, ts, jobID, "Menyimpan hasil export...")
+	_, err := ts.ExecContext(ctx, `
 		UPDATE evt_export_job
 		SET status='done', download_url=$1, file_name=$2, row_count=$3, error_msg=NULL, updated_at=now()
 		WHERE id=$4::uuid`,
 		dataURL, fileName, rowCount, jobID)
 	if err != nil {
-		failExportJob(ctx, conn, jobID, "gagal menyimpan hasil export")
+		failExportJob(ctx, ts, jobID, "gagal menyimpan hasil export")
 	}
 }
 
-func failExportJob(ctx context.Context, conn *sql.Conn, jobID, msg string) {
+func failExportJob(ctx context.Context, ts tenantScope, jobID, msg string) {
 	if strings.TrimSpace(msg) == "" {
 		msg = "export gagal"
 	}
 	updateCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	_, _ = conn.ExecContext(updateCtx,
+	_, _ = ts.ExecContext(updateCtx,
 		`UPDATE evt_export_job SET status='failed', error_msg=$1, updated_at=now() WHERE id=$2::uuid`,
 		msg, jobID)
 }
 
-func updateExportJobProgress(ctx context.Context, conn *sql.Conn, jobID, msg string) {
+func updateExportJobProgress(ctx context.Context, ts tenantScope, jobID, msg string) {
 	if strings.TrimSpace(msg) == "" {
 		return
 	}
-	_, _ = conn.ExecContext(ctx,
+	_, _ = ts.ExecContext(ctx,
 		`UPDATE evt_export_job SET error_msg=$1, updated_at=now() WHERE id=$2::uuid AND status='processing'`,
 		msg, jobID)
 }
 
-func expireStaleExportJobs(ctx context.Context, conn *sql.Conn, accountID, eventID string) {
-	_, _ = conn.ExecContext(ctx, `
+func expireStaleExportJobs(ctx context.Context, ts tenantScope, accountID, eventID string) {
+	_, _ = ts.ExecContext(ctx, `
 		UPDATE evt_export_job
 		SET status='failed',
 		    error_msg='export sebelumnya tidak selesai, silakan ulangi export',
@@ -502,7 +498,7 @@ func expireStaleExportJobs(ctx context.Context, conn *sql.Conn, accountID, event
 		accountID, eventID)
 }
 
-func scanExportJob(ctx context.Context, conn *sql.Conn, eventID, jobID, accountID string, owner bool) (*ExportJob, error) {
+func scanExportJob(ctx context.Context, ts tenantScope, eventID, jobID, accountID string, owner bool) (*ExportJob, error) {
 	q := `SELECT id::text, event_id::text, kind,
 		COALESCE(params->>'format',''), status, download_url, file_name, row_count, error_msg,
 		created_at, updated_at
@@ -512,7 +508,7 @@ func scanExportJob(ctx context.Context, conn *sql.Conn, eventID, jobID, accountI
 		q += ` AND created_by=$3`
 		args = append(args, accountID)
 	}
-	rows, err := conn.QueryContext(ctx, q, args...)
+	rows, err := ts.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}

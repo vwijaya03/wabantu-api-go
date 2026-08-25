@@ -1,6 +1,7 @@
 package inventory
 
 import (
+	appdb "encore.app/wabantu/shared/db"
 	"context"
 	"fmt"
 
@@ -58,9 +59,9 @@ func stringsJoin(parts []string) string {
 	return out
 }
 
-func loadWarehouseUsage(ctx context.Context, q querier, warehouseID string) (warehouseUsage, error) {
+func loadWarehouseUsage(ctx context.Context, sch appdb.SchemaSQL, q querier, warehouseID string) (warehouseUsage, error) {
 	var u warehouseUsage
-	err := q.QueryRowContext(ctx, `
+	err := qrow(ctx, sch, q, `
 		SELECT
 		  (SELECT COUNT(*)::int FROM inv_stock_balance WHERE warehouse_id = $1 AND on_hand > 0.0001),
 		  (SELECT COUNT(*)::int FROM inv_stock_movement WHERE warehouse_id = $1),

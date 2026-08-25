@@ -63,12 +63,11 @@ func ListStaffRoster(ctx context.Context) (*ListStaffRosterResponse, error) {
 }
 
 func listStaffRosterWithConn(ctx context.Context, schema string) ([]StaffRosterEntry, error) {
-	conn, err := tenantConn(ctx, schema)
+	ts, err := openTenant(ctx, schema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	rows, err := conn.QueryContext(ctx, `
+	rows, err := ts.QueryContext(ctx, `
 		SELECT id::text, COALESCE(full_name_enc,''), COALESCE(full_name,''), person_type, COALESCE(notes,'')
 		FROM evt_staff_roster
 		WHERE deleted_at IS NULL
@@ -94,7 +93,7 @@ func listStaffRosterWithConn(ctx context.Context, schema string) ([]StaffRosterE
 	if err := rows.Err(); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	if err := attachRosterExtrasBatch(ctx, conn, items); err != nil {
+	if err := attachRosterExtrasBatch(ctx, ts, items); err != nil {
 		return nil, err
 	}
 	if items == nil {
@@ -103,7 +102,7 @@ func listStaffRosterWithConn(ctx context.Context, schema string) ([]StaffRosterE
 	return items, nil
 }
 
-func attachRosterExtrasBatch(ctx context.Context, conn *sql.Conn, items []StaffRosterEntry) error {
+func attachRosterExtrasBatch(ctx context.Context, ts tenantScope, items []StaffRosterEntry) error {
 	if len(items) == 0 {
 		return nil
 	}
@@ -112,7 +111,7 @@ func attachRosterExtrasBatch(ctx context.Context, conn *sql.Conn, items []StaffR
 		byID[items[i].ID] = &items[i]
 	}
 
-	rows, err := conn.QueryContext(ctx, `
+	rows, err := ts.QueryContext(ctx, `
 		SELECT rt.roster_id::text, rt.therapy_id::text, t.therapy_name
 		FROM evt_staff_roster_therapy rt
 		JOIN evt_therapy t ON t.id = rt.therapy_id
@@ -136,7 +135,7 @@ func attachRosterExtrasBatch(ctx context.Context, conn *sql.Conn, items []StaffR
 		return appErrs.Internal(err.Error())
 	}
 
-	vrows, err := conn.QueryContext(ctx, `
+	vrows, err := ts.QueryContext(ctx, `
 		SELECT rv.roster_id::text, rv.volunteer_role_id::text, rv.is_pencatat
 		FROM evt_staff_roster_volunteer rv
 		JOIN evt_staff_roster r ON r.id = rv.roster_id AND r.deleted_at IS NULL`)
@@ -161,8 +160,8 @@ func attachRosterExtrasBatch(ctx context.Context, conn *sql.Conn, items []StaffR
 	return vrows.Err()
 }
 
-func loadRosterExtras(ctx context.Context, conn *sql.Conn, e *StaffRosterEntry) error {
-	rows, err := conn.QueryContext(ctx, `
+func loadRosterExtras(ctx context.Context, ts tenantScope, e *StaffRosterEntry) error {
+	rows, err := ts.QueryContext(ctx, `
 		SELECT rt.therapy_id::text, t.therapy_name
 		FROM evt_staff_roster_therapy rt
 		JOIN evt_therapy t ON t.id = rt.therapy_id
@@ -182,7 +181,7 @@ func loadRosterExtras(ctx context.Context, conn *sql.Conn, e *StaffRosterEntry) 
 	}
 	var volRole sql.NullString
 	var isPencatat bool
-	err = conn.QueryRowContext(ctx, `
+	err = ts.QueryRowContext(ctx, `
 		SELECT volunteer_role_id::text, is_pencatat
 		FROM evt_staff_roster_volunteer WHERE roster_id=$1::uuid`, e.ID,
 	).Scan(&volRole, &isPencatat)
@@ -208,15 +207,14 @@ func ImportStaffRosterToEvent(ctx context.Context, eventId string) (*ImportStaff
 	}
 	// Retry once on transient DB connection drops.
 	run := func() (*ImportStaffRosterResponse, error) {
-		conn, err := tenantConn(ctx, u.TenantSchema)
+		ts, err := openTenant(ctx, u.TenantSchema)
 		if err != nil {
 			return nil, appErrs.Internal(err.Error())
 		}
-		defer conn.Close()
-		if err := assertEventMutable(ctx, conn, eventId); err != nil {
+		if err := assertEventMutable(ctx, ts, eventId); err != nil {
 			return nil, err
 		}
-		added, skipped, err := importAllRosterToEvent(ctx, conn, eventId)
+		added, skipped, err := importAllRosterToEvent(ctx, ts, eventId)
 		if err != nil {
 			return nil, err
 		}
@@ -242,15 +240,14 @@ func SyncStaffRosterFromEvent(ctx context.Context, eventId string) (*SyncStaffRo
 		return nil, err
 	}
 	run := func() (*SyncStaffRosterFromEventResponse, error) {
-		conn, err := tenantConn(ctx, u.TenantSchema)
+		ts, err := openTenant(ctx, u.TenantSchema)
 		if err != nil {
 			return nil, appErrs.Internal(err.Error())
 		}
-		defer conn.Close()
-		if err := assertEventExists(ctx, conn, eventId); err != nil {
+		if err := assertEventExists(ctx, ts, eventId); err != nil {
 			return nil, err
 		}
-		upserted, err := syncAllEventPeopleToRoster(ctx, conn, eventId)
+		upserted, err := syncAllEventPeopleToRoster(ctx, ts, eventId)
 		if err != nil {
 			return nil, err
 		}
@@ -277,8 +274,8 @@ type eventPersonRosterSync struct {
 	isPencatat       bool
 }
 
-func loadEventPeopleForRosterSync(ctx context.Context, conn *sql.Conn, eventID string) ([]eventPersonRosterSync, error) {
-	rows, err := conn.QueryContext(ctx, `
+func loadEventPeopleForRosterSync(ctx context.Context, ts tenantScope, eventID string) ([]eventPersonRosterSync, error) {
+	rows, err := ts.QueryContext(ctx, `
 		SELECT id::text, `+personNameEncLegacyCols+`, person_type, attendance_status, COALESCE(notes,'')
 		FROM evt_event_person
 		WHERE event_id=$1::uuid AND deleted_at IS NULL
@@ -315,7 +312,7 @@ func loadEventPeopleForRosterSync(ctx context.Context, conn *sql.Conn, eventID s
 		return people, nil
 	}
 
-	trows, err := conn.QueryContext(ctx, `
+	trows, err := ts.QueryContext(ctx, `
 		SELECT pt.person_id::text, pt.therapy_id::text
 		FROM evt_person_therapy pt
 		JOIN evt_event_person p ON p.id = pt.person_id
@@ -342,7 +339,7 @@ func loadEventPeopleForRosterSync(ctx context.Context, conn *sql.Conn, eventID s
 		return nil, appErrs.Internal(err.Error())
 	}
 
-	vrows, err := conn.QueryContext(ctx, `
+	vrows, err := ts.QueryContext(ctx, `
 		SELECT ev.person_id::text, ev.volunteer_role_id::text, ev.is_pencatat
 		FROM evt_event_volunteer ev
 		JOIN evt_event_person p ON p.id = ev.person_id
@@ -375,8 +372,8 @@ func loadEventPeopleForRosterSync(ctx context.Context, conn *sql.Conn, eventID s
 	return people, nil
 }
 
-func syncAllEventPeopleToRoster(ctx context.Context, conn *sql.Conn, eventID string) (int, error) {
-	people, err := loadEventPeopleForRosterSync(ctx, conn, eventID)
+func syncAllEventPeopleToRoster(ctx context.Context, ts tenantScope, eventID string) (int, error) {
+	people, err := loadEventPeopleForRosterSync(ctx, ts, eventID)
 	if err != nil {
 		return 0, err
 	}
@@ -392,15 +389,15 @@ func syncAllEventPeopleToRoster(ctx context.Context, conn *sql.Conn, eventID str
 			VolunteerRoleID:  person.volunteerRoleID,
 			IsPencatat:       person.isPencatat,
 		}
-		if _, err := upsertStaffRoster(ctx, conn, p); err == nil {
+		if _, err := upsertStaffRoster(ctx, ts, p); err == nil {
 			upserted++
 		}
 	}
 	return upserted, nil
 }
 
-func importAllRosterToEvent(ctx context.Context, conn *sql.Conn, eventID string) (added, skipped int, err error) {
-	rows, err := conn.QueryContext(ctx, `
+func importAllRosterToEvent(ctx context.Context, ts tenantScope, eventID string) (added, skipped int, err error) {
+	rows, err := ts.QueryContext(ctx, `
 		SELECT id::text FROM evt_staff_roster WHERE deleted_at IS NULL ORDER BY person_type, full_name`)
 	if err != nil {
 		return 0, 0, appErrs.Internal(err.Error())
@@ -420,7 +417,7 @@ func importAllRosterToEvent(ctx context.Context, conn *sql.Conn, eventID string)
 		return added, skipped, appErrs.Internal(err.Error())
 	}
 	for _, rosterID := range rosterIDs {
-		ok, err := addRosterMemberToEvent(ctx, conn, eventID, rosterID)
+		ok, err := addRosterMemberToEvent(ctx, ts, eventID, rosterID)
 		if err != nil {
 			return added, skipped, err
 		}
@@ -433,10 +430,10 @@ func importAllRosterToEvent(ctx context.Context, conn *sql.Conn, eventID string)
 	return added, skipped, nil
 }
 
-func addRosterMemberToEvent(ctx context.Context, conn *sql.Conn, eventID, rosterID string) (bool, error) {
+func addRosterMemberToEvent(ctx context.Context, ts tenantScope, eventID, rosterID string) (bool, error) {
 	var fullName, pt string
 	var nameEnc, nameLegacy string
-	err := conn.QueryRowContext(ctx, `
+	err := ts.QueryRowContext(ctx, `
 		SELECT `+personNameEncLegacyCols+`, person_type FROM evt_staff_roster
 		WHERE id=$1::uuid AND deleted_at IS NULL`, rosterID,
 	).Scan(&nameEnc, &nameLegacy, &pt)
@@ -454,7 +451,7 @@ func addRosterMemberToEvent(ctx context.Context, conn *sql.Conn, eventID, roster
 		return false, appErrs.Internal(encErr.Error())
 	}
 	var exists bool
-	if err := conn.QueryRowContext(ctx, `
+	if err := ts.QueryRowContext(ctx, `
 		SELECT EXISTS(
 		  SELECT 1 FROM evt_event_person
 		  WHERE event_id=$1::uuid AND deleted_at IS NULL
@@ -469,7 +466,7 @@ func addRosterMemberToEvent(ctx context.Context, conn *sql.Conn, eventID, roster
 	e.ID = rosterID
 	e.FullName = fullName
 	e.PersonType = pt
-	if err := loadRosterExtras(ctx, conn, &e); err != nil {
+	if err := loadRosterExtras(ctx, ts, &e); err != nil {
 		return false, err
 	}
 	p := &UpsertPersonParams{
@@ -482,18 +479,19 @@ func addRosterMemberToEvent(ctx context.Context, conn *sql.Conn, eventID, roster
 		IsPencatat:       e.IsPencatat,
 		Notes:            e.Notes,
 	}
-	if err := createPersonInEvent(ctx, conn, eventID, p); err != nil {
+	if err := createPersonInEvent(ctx, ts, eventID, p); err != nil {
 		return false, err
 	}
 	return true, nil
 }
 
-func createPersonInEvent(ctx context.Context, conn *sql.Conn, eventID string, p *UpsertPersonParams) error {
-	tx, err := conn.BeginTx(ctx, nil)
+func createPersonInEvent(ctx context.Context, ts tenantScope, eventID string, p *UpsertPersonParams) error {
+	tx, err := ts.BeginTx(ctx, nil)
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
 	defer tx.Rollback()
+	txTS := ts.WithQ(tx)
 	var personID string
 	pt := resolvePersonType(p)
 	att := attendanceForDB(p.AttendanceStatus)
@@ -501,7 +499,7 @@ func createPersonInEvent(ctx context.Context, conn *sql.Conn, eventID string, p 
 	if encErr != nil {
 		return appErrs.Internal(encErr.Error())
 	}
-	err = tx.QueryRowContext(ctx, `
+	err = txTS.QueryRowContext(ctx, `
 		INSERT INTO evt_event_person (event_id, full_name, full_name_enc, normalized_name, person_type, attendance_status, arrival_time, departure_time, notes, counts_toward_meals)
 		VALUES ($1::uuid,$2,$3,$4,$5,$6,$7::time,$8::time,$9,$10) RETURNING id::text`,
 		eventID, piiPlaceholder(nameEnc), nameEnc, nameIdx, pt, att,
@@ -513,19 +511,19 @@ func createPersonInEvent(ctx context.Context, conn *sql.Conn, eventID string, p 
 	}
 	therapyIDs := personTherapyIDs(p)
 	if isTherapyStaffPersonType(pt) {
-		if err := syncPersonTherapies(ctx, tx, personID, therapyIDs, p.AvailableFrom, p.AvailableUntil); err != nil {
+		if err := syncPersonTherapies(ctx, txTS, personID, therapyIDs, p.AvailableFrom, p.AvailableUntil); err != nil {
 			return appErrs.Internal(err.Error())
 		}
 	}
 	if pt == "VOLUNTEER" {
-		if err := syncPersonVolunteer(ctx, tx, personID, p.VolunteerRoleID, p.IsPencatat); err != nil {
+		if err := syncPersonVolunteer(ctx, txTS, personID, p.VolunteerRoleID, p.IsPencatat); err != nil {
 			return appErrs.Internal(err.Error())
 		}
 	}
 	return tx.Commit()
 }
 
-func upsertStaffRoster(ctx context.Context, conn *sql.Conn, p *UpsertPersonParams) (string, error) {
+func upsertStaffRoster(ctx context.Context, ts tenantScope, p *UpsertPersonParams) (string, error) {
 	if p == nil || strings.TrimSpace(p.FullName) == "" {
 		return "", nil
 	}
@@ -535,18 +533,18 @@ func upsertStaffRoster(ctx context.Context, conn *sql.Conn, p *UpsertPersonParam
 		return "", appErrs.Internal(encErr.Error())
 	}
 	var rosterID string
-	err := conn.QueryRowContext(ctx, `
+	err := ts.QueryRowContext(ctx, `
 		SELECT id::text FROM evt_staff_roster
 		WHERE normalized_name_idx=$1 AND person_type=$2 AND deleted_at IS NULL`, nameIdx, pt,
 	).Scan(&rosterID)
 	if err == sql.ErrNoRows {
-		err = conn.QueryRowContext(ctx, `
+		err = ts.QueryRowContext(ctx, `
 			INSERT INTO evt_staff_roster (full_name, full_name_enc, normalized_name, normalized_name_idx, person_type, notes)
 			VALUES ($1,$2,$3,$4,$5,$6) RETURNING id::text`,
 			piiPlaceholder(nameEnc), nameEnc, nameIdx, nameIdx, pt, nullStr(p.Notes),
 		).Scan(&rosterID)
 	} else if err == nil {
-		_, err = conn.ExecContext(ctx, `
+		_, err = ts.ExecContext(ctx, `
 			UPDATE evt_staff_roster SET full_name=$1, full_name_enc=$2,
 			  normalized_name=$3, normalized_name_idx=$4, notes=$5, updated_at=now()
 			WHERE id=$6::uuid`,
@@ -555,12 +553,12 @@ func upsertStaffRoster(ctx context.Context, conn *sql.Conn, p *UpsertPersonParam
 	if err != nil {
 		return "", appErrs.Internal(err.Error())
 	}
-	_, _ = conn.ExecContext(ctx, `DELETE FROM evt_staff_roster_therapy WHERE roster_id=$1::uuid`, rosterID)
-	_, _ = conn.ExecContext(ctx, `DELETE FROM evt_staff_roster_volunteer WHERE roster_id=$1::uuid`, rosterID)
+	_, _ = ts.ExecContext(ctx, `DELETE FROM evt_staff_roster_therapy WHERE roster_id=$1::uuid`, rosterID)
+	_, _ = ts.ExecContext(ctx, `DELETE FROM evt_staff_roster_volunteer WHERE roster_id=$1::uuid`, rosterID)
 	therapyIDs := personTherapyIDs(p)
 	if isTherapyStaffPersonType(pt) {
 		for _, tid := range therapyIDs {
-			_, _ = conn.ExecContext(ctx, `
+			_, _ = ts.ExecContext(ctx, `
 				INSERT INTO evt_staff_roster_therapy (roster_id, therapy_id)
 				VALUES ($1::uuid,$2::uuid) ON CONFLICT DO NOTHING`, rosterID, tid)
 		}
@@ -570,7 +568,7 @@ func upsertStaffRoster(ctx context.Context, conn *sql.Conn, p *UpsertPersonParam
 		if p.VolunteerRoleID != nil && strings.TrimSpace(*p.VolunteerRoleID) != "" {
 			volID = *p.VolunteerRoleID
 		}
-		_, _ = conn.ExecContext(ctx, `
+		_, _ = ts.ExecContext(ctx, `
 			INSERT INTO evt_staff_roster_volunteer (roster_id, volunteer_role_id, is_pencatat)
 			VALUES ($1::uuid,$2::uuid,$3)
 			ON CONFLICT (roster_id) DO UPDATE SET
@@ -580,10 +578,10 @@ func upsertStaffRoster(ctx context.Context, conn *sql.Conn, p *UpsertPersonParam
 	return rosterID, nil
 }
 
-func rosterEntryToPersonParams(ctx context.Context, conn *sql.Conn, rosterID string) (*UpsertPersonParams, error) {
+func rosterEntryToPersonParams(ctx context.Context, ts tenantScope, rosterID string) (*UpsertPersonParams, error) {
 	var e StaffRosterEntry
 	var nameEnc, nameLegacy string
-	err := conn.QueryRowContext(ctx, `
+	err := ts.QueryRowContext(ctx, `
 		SELECT id::text, `+personNameEncLegacyCols+`, person_type, COALESCE(notes,'')
 		FROM evt_staff_roster WHERE id=$1::uuid AND deleted_at IS NULL`, rosterID,
 	).Scan(&e.ID, &nameEnc, &nameLegacy, &e.PersonType, &e.Notes)
@@ -596,7 +594,7 @@ func rosterEntryToPersonParams(ctx context.Context, conn *sql.Conn, rosterID str
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	if err := loadRosterExtras(ctx, conn, &e); err != nil {
+	if err := loadRosterExtras(ctx, ts, &e); err != nil {
 		return nil, err
 	}
 	return &UpsertPersonParams{

@@ -2,7 +2,6 @@ package inbox
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -62,13 +61,12 @@ func handleInboxMediaPersistJob(ctx context.Context, job *InboxMediaPersistJob) 
 		return nil
 	}
 
-	conn, err := tConn(ctx, job.TenantSchema)
+	ts, err := openTenantScope(ctx, job.TenantSchema)
 	if err != nil {
-		return fmt.Errorf("tenant conn: %w", err)
+		return fmt.Errorf("tenant scope: %w", err)
 	}
-	defer appdb.CloseTenantConn(conn)
 
-	row, err := loadMessageMediaRow(ctx, conn, job.MessageID)
+	row, err := loadMessageMediaRow(ctx, ts, job.MessageID)
 	if err != nil {
 		return err
 	}
@@ -123,7 +121,7 @@ func handleInboxMediaPersistJob(ctx context.Context, job *InboxMediaPersistJob) 
 	if err != nil {
 		return fmt.Errorf("merge persist metadata: %w", err)
 	}
-	if err := updateMessageMetadata(ctx, conn, job.MessageID, patched); err != nil {
+	if err := updateMessageMetadata(ctx, ts, job.MessageID, patched); err != nil {
 		return err
 	}
 
@@ -136,8 +134,8 @@ func handleInboxMediaPersistJob(ctx context.Context, job *InboxMediaPersistJob) 
 	return nil
 }
 
-func updateMessageMetadata(ctx context.Context, conn *sql.Conn, messageID string, metadata json.RawMessage) error {
-	res, err := conn.ExecContext(ctx,
+func updateMessageMetadata(ctx context.Context, q appdb.TenantQuerier, messageID string, metadata json.RawMessage) error {
+	res, err := q.ExecContext(ctx,
 		`UPDATE message SET metadata = $1::jsonb WHERE id = $2`,
 		string(metadata), messageID)
 	if err != nil {

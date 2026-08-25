@@ -1,6 +1,7 @@
 package inventory
 
 import (
+	appdb "encore.app/wabantu/shared/db"
 	"context"
 	"database/sql"
 	"errors"
@@ -40,7 +41,7 @@ func inClause(startIdx int, n int) (string, []any) {
 	return strings.Join(parts, ","), args
 }
 
-func validateCatalogItemsBatch(ctx context.Context, q querier, ids []string) error {
+func validateCatalogItemsBatch(ctx context.Context, sch appdb.SchemaSQL, q querier, ids []string) error {
 	ids = uniqueNonEmpty(ids)
 	if len(ids) == 0 {
 		return appErrs.BadRequest("item katalog wajib dipilih")
@@ -49,7 +50,7 @@ func validateCatalogItemsBatch(ctx context.Context, q querier, ids []string) err
 	for i, id := range ids {
 		args[i] = id
 	}
-	rows, err := q.QueryContext(ctx, fmt.Sprintf(`
+	rows, err := qquery(ctx, sch, q, fmt.Sprintf(`
 		SELECT id::text FROM business_catalog_item
 		WHERE deleted_at IS NULL AND id IN (%s)`, clause), args...)
 	if err != nil {
@@ -75,7 +76,7 @@ func validateCatalogItemsBatch(ctx context.Context, q querier, ids []string) err
 	return nil
 }
 
-func validateWarehousesBatch(ctx context.Context, q querier, ids []string) error {
+func validateWarehousesBatch(ctx context.Context, sch appdb.SchemaSQL, q querier, ids []string) error {
 	ids = uniqueNonEmpty(ids)
 	if len(ids) == 0 {
 		return appErrs.BadRequest("gudang wajib dipilih")
@@ -84,7 +85,7 @@ func validateWarehousesBatch(ctx context.Context, q querier, ids []string) error
 	for i, id := range ids {
 		args[i] = id
 	}
-	rows, err := q.QueryContext(ctx, fmt.Sprintf(`
+	rows, err := qquery(ctx, sch, q, fmt.Sprintf(`
 		SELECT id::text FROM inv_warehouse
 		WHERE deleted_at IS NULL AND id IN (%s)`, clause), args...)
 	if err != nil {
@@ -156,7 +157,7 @@ func uniqueOpeningBalanceKeys(entries []OpeningEntry) []openingBalanceKey {
 }
 
 // validateOpeningBalanceNotRegistered blocks saldo awal when SKU+gudang already has opening txn.
-func validateOpeningBalanceNotRegistered(ctx context.Context, q querier, entries []OpeningEntry) error {
+func validateOpeningBalanceNotRegistered(ctx context.Context, sch appdb.SchemaSQL, q querier, entries []OpeningEntry) error {
 	keys := uniqueOpeningBalanceKeys(entries)
 	if len(keys) == 0 {
 		return nil
@@ -179,7 +180,7 @@ func validateOpeningBalanceNotRegistered(ctx context.Context, q querier, entries
 		WHERE t.kind = $1
 		  AND (l.catalog_item_id, l.warehouse_id) IN (%s)
 		LIMIT 1`, strings.Join(tupleParts, ","))
-	row := q.QueryRowContext(ctx, query, args...)
+	row := qrow(ctx, sch, q, query, args...)
 	var itemName, whName string
 	if err := row.Scan(&itemName, &whName); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

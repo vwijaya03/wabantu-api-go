@@ -8,11 +8,12 @@ import (
 	"strings"
 
 	"encore.app/wabantu/finance"
+	appdb "encore.app/wabantu/shared/db"
 	appErrs "encore.app/wabantu/shared/errs"
 )
 
 // repostAdjustmentOnTx re-posts an adjustment against an existing transaction header.
-func repostAdjustmentOnTx(ctx context.Context, tx *sql.Tx, txnID, docNo, accountID string, p *AdjustmentParams) (*movementPostResult, error) {
+func repostAdjustmentOnTx(ctx context.Context, sch appdb.SchemaSQL, tx *sql.Tx, txnID, docNo, accountID string, p *AdjustmentParams) (*movementPostResult, error) {
 	mtype, dir, qty, ok := adjustmentPlan(p.Qty)
 	if !ok {
 		return nil, appErrs.BadRequest("qty penyesuaian tidak boleh nol")
@@ -21,27 +22,27 @@ func repostAdjustmentOnTx(ctx context.Context, tx *sql.Tx, txnID, docNo, account
 	if perr != nil {
 		return nil, perr
 	}
-	if err := validateCatalogItem(ctx, tx, p.CatalogItemID); err != nil {
+	if err := validateCatalogItem(ctx, sch, tx, p.CatalogItemID); err != nil {
 		return nil, err
 	}
-	if err := validateWarehouse(ctx, tx, p.WarehouseID); err != nil {
+	if err := validateWarehouse(ctx, sch, tx, p.WarehouseID); err != nil {
 		return nil, err
 	}
-	if err := ensureSku(ctx, tx, p.CatalogItemID); err != nil {
+	if err := ensureSku(ctx, sch, tx, p.CatalogItemID); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	if _, err := tx.ExecContext(ctx, `
+	if _, err := qexec(ctx, sch, tx, `
 		UPDATE inv_stock_transaction
 		SET catalog_item_id = $2, warehouse_id = $3, signed_qty = $4, unit_cost = $5, note = $6, updated_at = now()
 		WHERE id = $1`,
 		txnID, p.CatalogItemID, p.WarehouseID, p.Qty, nullFloat(p.UnitCost), nullStr(p.Note)); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	cc, err := loadCostingContext(ctx, tx, p.CatalogItemID)
+	cc, err := loadCostingContext(ctx, sch, tx, p.CatalogItemID)
 	if err != nil {
 		return nil, err
 	}
-	res, err := PostMovement(ctx, tx, MovementInput{
+	res, err := PostMovement(ctx, sch, tx, MovementInput{
 		CatalogItemID: p.CatalogItemID,
 		WarehouseID:   p.WarehouseID,
 		Type:          mtype,
@@ -69,37 +70,37 @@ type movementPostResult struct {
 	note string
 }
 
-func repostTransferOnTx(ctx context.Context, tx *sql.Tx, txnID, accountID string, p *TransferParams) error {
+func repostTransferOnTx(ctx context.Context, sch appdb.SchemaSQL, tx *sql.Tx, txnID, accountID string, p *TransferParams) error {
 	if p.Qty <= epsilon {
 		return appErrs.BadRequest("qty transfer harus lebih dari 0")
 	}
 	if strings.TrimSpace(p.FromWarehouseID) == strings.TrimSpace(p.ToWarehouseID) {
 		return appErrs.BadRequest("gudang asal dan tujuan tidak boleh sama")
 	}
-	if err := validateCatalogItem(ctx, tx, p.CatalogItemID); err != nil {
+	if err := validateCatalogItem(ctx, sch, tx, p.CatalogItemID); err != nil {
 		return err
 	}
-	if err := validateWarehouse(ctx, tx, p.FromWarehouseID); err != nil {
+	if err := validateWarehouse(ctx, sch, tx, p.FromWarehouseID); err != nil {
 		return err
 	}
-	if err := validateWarehouse(ctx, tx, p.ToWarehouseID); err != nil {
+	if err := validateWarehouse(ctx, sch, tx, p.ToWarehouseID); err != nil {
 		return err
 	}
-	if err := ensureSku(ctx, tx, p.CatalogItemID); err != nil {
+	if err := ensureSku(ctx, sch, tx, p.CatalogItemID); err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	if _, err := tx.ExecContext(ctx, `
+	if _, err := qexec(ctx, sch, tx, `
 		UPDATE inv_stock_transaction
 		SET catalog_item_id = $2, from_warehouse_id = $3, to_warehouse_id = $4, signed_qty = $5, note = $6, updated_at = now()
 		WHERE id = $1`,
 		txnID, p.CatalogItemID, p.FromWarehouseID, p.ToWarehouseID, p.Qty, nullStr(p.Note)); err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	cc, err := loadCostingContext(ctx, tx, p.CatalogItemID)
+	cc, err := loadCostingContext(ctx, sch, tx, p.CatalogItemID)
 	if err != nil {
 		return err
 	}
-	out, err := PostMovement(ctx, tx, MovementInput{
+	out, err := PostMovement(ctx, sch, tx, MovementInput{
 		CatalogItemID: p.CatalogItemID,
 		WarehouseID:   p.FromWarehouseID,
 		Type:          MovementTransferOut,
@@ -115,7 +116,7 @@ func repostTransferOnTx(ctx context.Context, tx *sql.Tx, txnID, accountID string
 	if err != nil {
 		return err
 	}
-	_, err = PostMovement(ctx, tx, MovementInput{
+	_, err = PostMovement(ctx, sch, tx, MovementInput{
 		CatalogItemID:    p.CatalogItemID,
 		WarehouseID:      p.ToWarehouseID,
 		Type:             MovementTransferIn,
@@ -133,7 +134,7 @@ func repostTransferOnTx(ctx context.Context, tx *sql.Tx, txnID, accountID string
 	return err
 }
 
-func repostOpeningOnTx(ctx context.Context, tx *sql.Tx, txnID, docNo, accountID string, entries []OpeningEntry) error {
+func repostOpeningOnTx(ctx context.Context, sch appdb.SchemaSQL, tx *sql.Tx, txnID, docNo, accountID string, entries []OpeningEntry) error {
 	for i, e := range entries {
 		if e.Qty <= epsilon {
 			return appErrs.BadRequest(fmt.Sprintf("baris %d: qty harus lebih dari 0", i+1))
@@ -141,25 +142,25 @@ func repostOpeningOnTx(ctx context.Context, tx *sql.Tx, txnID, docNo, accountID 
 		if e.UnitCost < 0 {
 			return appErrs.BadRequest(fmt.Sprintf("baris %d: harga pokok tidak boleh negatif", i+1))
 		}
-		if err := validateCatalogItem(ctx, tx, e.CatalogItemID); err != nil {
+		if err := validateCatalogItem(ctx, sch, tx, e.CatalogItemID); err != nil {
 			return fmt.Errorf("baris %d: %w", i+1, err)
 		}
-		if err := validateWarehouse(ctx, tx, e.WarehouseID); err != nil {
+		if err := validateWarehouse(ctx, sch, tx, e.WarehouseID); err != nil {
 			return fmt.Errorf("baris %d: %w", i+1, err)
 		}
 		expiry, perr := parseDatePtr(e.ExpiryDate)
 		if perr != nil {
 			return fmt.Errorf("baris %d: %w", i+1, perr)
 		}
-		if err := ensureSku(ctx, tx, e.CatalogItemID); err != nil {
+		if err := ensureSku(ctx, sch, tx, e.CatalogItemID); err != nil {
 			return appErrs.Internal(err.Error())
 		}
-		cc, cerr := loadCostingContext(ctx, tx, e.CatalogItemID)
+		cc, cerr := loadCostingContext(ctx, sch, tx, e.CatalogItemID)
 		if cerr != nil {
 			return cerr
 		}
 		var lineID string
-		if err := tx.QueryRowContext(ctx, `
+		if err := qrow(ctx, sch, tx, `
 			INSERT INTO inv_stock_transaction_line
 			  (transaction_id, catalog_item_id, warehouse_id, qty, unit_cost, batch_no, expiry_date, sort_order)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
@@ -168,7 +169,7 @@ func repostOpeningOnTx(ctx context.Context, tx *sql.Tx, txnID, docNo, accountID 
 			nullStr(e.BatchNo), nullTime(expiry), i).Scan(&lineID); err != nil {
 			return appErrs.Internal(err.Error())
 		}
-		res, merr := PostMovement(ctx, tx, MovementInput{
+		res, merr := PostMovement(ctx, sch, tx, MovementInput{
 			CatalogItemID: e.CatalogItemID,
 			WarehouseID:   e.WarehouseID,
 			Type:          MovementOpening,
@@ -188,7 +189,7 @@ func repostOpeningOnTx(ctx context.Context, tx *sql.Tx, txnID, docNo, accountID 
 		if merr != nil {
 			return merr
 		}
-		if _, err := tx.ExecContext(ctx,
+		if _, err := qexec(ctx, sch, tx,
 			`UPDATE inv_stock_transaction_line SET movement_id = $2 WHERE id = $1`, lineID, res.MovementID); err != nil {
 			return appErrs.Internal(err.Error())
 		}
@@ -196,18 +197,18 @@ func repostOpeningOnTx(ctx context.Context, tx *sql.Tx, txnID, docNo, accountID 
 	return nil
 }
 
-func repostRevaluationOnTx(ctx context.Context, tx *sql.Tx, txnID, accountID, tenantSchema string, p *RevaluationParams) (movementID string, delta float64, err error) {
+func repostRevaluationOnTx(ctx context.Context, sch appdb.SchemaSQL, tx *sql.Tx, txnID, accountID, tenantSchema string, p *RevaluationParams) (movementID string, delta float64, err error) {
 	if p.NewUnitCost < 0 {
 		return "", 0, appErrs.BadRequest("harga pokok baru tidak boleh negatif")
 	}
-	if err := validateCatalogItem(ctx, tx, p.CatalogItemID); err != nil {
+	if err := validateCatalogItem(ctx, sch, tx, p.CatalogItemID); err != nil {
 		return "", 0, err
 	}
-	if err := validateWarehouse(ctx, tx, p.WarehouseID); err != nil {
+	if err := validateWarehouse(ctx, sch, tx, p.WarehouseID); err != nil {
 		return "", 0, err
 	}
 	var onHand, oldTotal float64
-	err = tx.QueryRowContext(ctx, `
+	err = qrow(ctx, sch, tx, `
 		SELECT on_hand, total_value FROM inv_stock_balance
 		WHERE catalog_item_id = $1 AND warehouse_id = $2 FOR UPDATE`,
 		p.CatalogItemID, p.WarehouseID).Scan(&onHand, &oldTotal)
@@ -217,7 +218,7 @@ func repostRevaluationOnTx(ctx context.Context, tx *sql.Tx, txnID, accountID, te
 	if err != nil {
 		return "", 0, appErrs.Internal(err.Error())
 	}
-	if _, err := tx.ExecContext(ctx, `
+	if _, err := qexec(ctx, sch, tx, `
 		UPDATE inv_stock_transaction
 		SET catalog_item_id = $2, warehouse_id = $3, new_unit_cost = $4, note = $5, updated_at = now()
 		WHERE id = $1`,
@@ -225,21 +226,21 @@ func repostRevaluationOnTx(ctx context.Context, tx *sql.Tx, txnID, accountID, te
 		return "", 0, appErrs.Internal(err.Error())
 	}
 	newTotal, delta := revaluationDelta(onHand, oldTotal, p.NewUnitCost)
-	cc, err := loadCostingContext(ctx, tx, p.CatalogItemID)
+	cc, err := loadCostingContext(ctx, sch, tx, p.CatalogItemID)
 	if err != nil {
 		return "", 0, err
 	}
 	if cc.method != CostingAverage {
 		if oldTotal > epsilon {
 			factor := newTotal / oldTotal
-			if _, err := tx.ExecContext(ctx, `
+			if _, err := qexec(ctx, sch, tx, `
 				UPDATE inv_cost_layer SET unit_cost = ROUND(unit_cost * $3, 4)
 				WHERE catalog_item_id = $1 AND warehouse_id = $2 AND qty_remaining > 0`,
 				p.CatalogItemID, p.WarehouseID, factor); err != nil {
 				return "", 0, appErrs.Internal(err.Error())
 			}
 		} else {
-			if _, err := tx.ExecContext(ctx, `
+			if _, err := qexec(ctx, sch, tx, `
 				UPDATE inv_cost_layer SET unit_cost = $3
 				WHERE catalog_item_id = $1 AND warehouse_id = $2 AND qty_remaining > 0`,
 				p.CatalogItemID, p.WarehouseID, p.NewUnitCost); err != nil {
@@ -247,7 +248,7 @@ func repostRevaluationOnTx(ctx context.Context, tx *sql.Tx, txnID, accountID, te
 			}
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `
+	if _, err := qexec(ctx, sch, tx, `
 		UPDATE inv_stock_balance SET avg_unit_cost = $3, total_value = $4, updated_at = now()
 		WHERE catalog_item_id = $1 AND warehouse_id = $2`,
 		p.CatalogItemID, p.WarehouseID, p.NewUnitCost, newTotal); err != nil {
@@ -257,7 +258,7 @@ func repostRevaluationOnTx(ctx context.Context, tx *sql.Tx, txnID, accountID, te
 	if delta < 0 {
 		dir = dirOut
 	}
-	if err := tx.QueryRowContext(ctx, `
+	if err := qrow(ctx, sch, tx, `
 		INSERT INTO inv_stock_movement
 		  (catalog_item_id, warehouse_id, movement_type, direction, qty, unit_cost, total_cost,
 		   qty_after, avg_cost_after, ref_type, ref_id, note, created_by)

@@ -22,7 +22,7 @@ func columnExistsChecker(ctx context.Context, db columnChecker, table, column st
 
 // ContactPIIReady reports whether contact PII columns exist (uncached).
 func ContactPIIReady(ctx context.Context, conn *sql.Conn) (bool, error) {
-	return columnExists(ctx, conn, "contact", "phone_number_idx")
+	return ColumnExistsConn(ctx, conn, "contact", "phone_number_idx")
 }
 
 // ContactPIIReadyDB is ContactPIIReady for *sql.DB connections.

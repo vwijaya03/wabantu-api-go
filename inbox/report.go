@@ -10,7 +10,6 @@ import (
 	"encore.dev/rlog"
 
 	apperr "encore.app/wabantu/shared/errs"
-	appdb "encore.app/wabantu/shared/db"
 	"encore.app/wabantu/shared/triagereport"
 )
 
@@ -84,18 +83,17 @@ func ReportMessage(ctx context.Context, id string, p *ReportMessageParams) (*Rep
 		}
 	}
 
-	conn, err := tenantConn(ctx, user)
+	ts, err := openTenantScope(ctx, user.TenantSchema)
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer appdb.CloseTenantConn(conn)
 
-	msg, err := loadReportableMessage(ctx, conn, messageID)
+	msg, err := loadReportableMessage(ctx, ts, messageID)
 	if err != nil {
 		return nil, err
 	}
 
-	inboundID, userText, err := triagereport.ResolveInboundBeforeOutbound(ctx, conn, msg.ConversationID, msg.ID)
+	inboundID, userText, err := triagereport.ResolveInboundBeforeOutbound(ctx, ts, msg.ConversationID, msg.ID)
 	if err == sql.ErrNoRows {
 		inboundID, userText = "", ""
 	} else if err != nil {
@@ -179,13 +177,15 @@ type reportableMessage struct {
 	CreatedAt      time.Time
 }
 
-func loadReportableMessage(ctx context.Context, conn *sql.Conn, messageID string) (reportableMessage, error) {
+func loadReportableMessage(ctx context.Context, q interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, messageID string) (reportableMessage, error) {
 	var m reportableMessage
 	var direction, author string
 	var body sql.NullString
 	var meta []byte
 	var createdAt time.Time
-	err := conn.QueryRowContext(ctx, `
+	err := q.QueryRowContext(ctx, `
 		SELECT id::text, conversation_id::text, direction, author,
 		       COALESCE(body, ''), metadata, created_at
 		FROM message WHERE id = $1::uuid`, messageID,

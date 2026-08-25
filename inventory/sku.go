@@ -1,13 +1,13 @@
 package inventory
 
 import (
+	appdb "encore.app/wabantu/shared/db"
 	"context"
 	"database/sql"
 	"errors"
 	"strings"
 
 	appErrs "encore.app/wabantu/shared/errs"
-	"encore.app/wabantu/tenant"
 )
 
 type SkuConfig struct {
@@ -37,12 +37,12 @@ func GetSku(ctx context.Context, catalogItemID string) (*SkuConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
-	return loadSkuConfig(ctx, conn, catalogItemID)
+	pool := tenantDB()
+	return loadSkuConfig(ctx, sch, pool, catalogItemID)
 }
 
 //encore:api auth method=PATCH path=/api/v1/inventory/skus/:catalogItemID
@@ -54,16 +54,16 @@ func UpdateSku(ctx context.Context, catalogItemID string, p *UpdateSkuParams) (*
 	if err := requireOwner(u); err != nil {
 		return nil, err
 	}
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
-	}
-	defer tenant.CloseTenantConn(conn)
-
-	if err := validateCatalogItem(ctx, conn, catalogItemID); err != nil {
 		return nil, err
 	}
-	if err := ensureSku(ctx, conn, catalogItemID); err != nil {
+	pool := tenantDB()
+
+	if err := validateCatalogItem(ctx, sch, pool, catalogItemID); err != nil {
+		return nil, err
+	}
+	if err := ensureSku(ctx, sch, pool, catalogItemID); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 
@@ -71,7 +71,7 @@ func UpdateSku(ctx context.Context, catalogItemID string, p *UpdateSkuParams) (*
 	if p.CostingMethod != nil {
 		raw := strings.ToLower(strings.TrimSpace(*p.CostingMethod))
 		if raw == "" || raw == "inherit" {
-			if _, err := conn.ExecContext(ctx,
+			if _, err := qexec(ctx, sch, pool,
 				`UPDATE inv_sku SET costing_method = NULL, updated_at = now() WHERE catalog_item_id = $1`, catalogItemID); err != nil {
 				return nil, appErrs.Internal(err.Error())
 			}
@@ -81,14 +81,14 @@ func UpdateSku(ctx context.Context, catalogItemID string, p *UpdateSkuParams) (*
 			if !ok {
 				return nil, appErrs.BadRequest("metode HPP harus fifo, lifo, average, atau inherit")
 			}
-			if _, err := conn.ExecContext(ctx,
+			if _, err := qexec(ctx, sch, pool,
 				`UPDATE inv_sku SET costing_method = $2, updated_at = now() WHERE catalog_item_id = $1`, catalogItemID, method); err != nil {
 				return nil, appErrs.Internal(err.Error())
 			}
 			methodChanged = true
 		}
 	}
-	if err := updateSkuBoolCols(ctx, conn, catalogItemID, p); err != nil {
+	if err := updateSkuBoolCols(ctx, sch, pool, catalogItemID, p); err != nil {
 		return nil, err
 	}
 
@@ -98,10 +98,10 @@ func UpdateSku(ctx context.Context, catalogItemID string, p *UpdateSkuParams) (*
 			return nil, err
 		}
 	}
-	return loadSkuConfig(ctx, conn, catalogItemID)
+	return loadSkuConfig(ctx, sch, pool, catalogItemID)
 }
 
-func updateSkuBoolCols(ctx context.Context, conn *sql.Conn, catalogItemID string, p *UpdateSkuParams) error {
+func updateSkuBoolCols(ctx context.Context, sch appdb.SchemaSQL, q querier, catalogItemID string, p *UpdateSkuParams) error {
 	type col struct {
 		name string
 		val  *bool
@@ -116,14 +116,14 @@ func updateSkuBoolCols(ctx context.Context, conn *sql.Conn, catalogItemID string
 		if c.val == nil {
 			continue
 		}
-		if _, err := conn.ExecContext(ctx,
+		if _, err := qexec(ctx, sch, q,
 			"UPDATE inv_sku SET "+c.name+" = $2, updated_at = now() WHERE catalog_item_id = $1",
 			catalogItemID, *c.val); err != nil {
 			return appErrs.Internal(err.Error())
 		}
 	}
 	if p.BaseUOM != nil {
-		if _, err := conn.ExecContext(ctx,
+		if _, err := qexec(ctx, sch, q,
 			`UPDATE inv_sku SET base_uom = $2, updated_at = now() WHERE catalog_item_id = $1`,
 			catalogItemID, nullStr(*p.BaseUOM)); err != nil {
 			return appErrs.Internal(err.Error())
@@ -132,11 +132,11 @@ func updateSkuBoolCols(ctx context.Context, conn *sql.Conn, catalogItemID string
 	return nil
 }
 
-func loadSkuConfig(ctx context.Context, conn *sql.Conn, catalogItemID string) (*SkuConfig, error) {
+func loadSkuConfig(ctx context.Context, sch appdb.SchemaSQL, q querier, catalogItemID string) (*SkuConfig, error) {
 	var s SkuConfig
 	s.CatalogItemID = catalogItemID
 	var method, baseUOM sql.NullString
-	err := conn.QueryRowContext(ctx, `
+	err := qrow(ctx, sch, q, `
 		SELECT track_stock, is_bundle, costing_method, track_batch, track_serial, track_expiry, base_uom
 		FROM inv_sku WHERE catalog_item_id = $1`, catalogItemID).
 		Scan(&s.TrackStock, &s.IsBundle, &method, &s.TrackBatch, &s.TrackSerial, &s.TrackExpiry, &baseUOM)
@@ -156,7 +156,7 @@ func loadSkuConfig(ctx context.Context, conn *sql.Conn, catalogItemID string) (*
 	}
 
 	var tenantDefault string
-	_ = conn.QueryRowContext(ctx,
+	_ = qrow(ctx, sch, q,
 		`SELECT default_costing_method FROM inv_setting ORDER BY created_at LIMIT 1`).Scan(&tenantDefault)
 	override := ""
 	if s.CostingMethod != nil {

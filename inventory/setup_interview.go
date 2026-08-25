@@ -9,7 +9,6 @@ import (
 
 	appauth "encore.app/wabantu/auth"
 	appErrs "encore.app/wabantu/shared/errs"
-	"encore.app/wabantu/tenant"
 	"encore.app/wabantu/usage"
 )
 
@@ -163,15 +162,15 @@ func StartInvSetupInterview(ctx context.Context) (*InvSetupInterviewStartRespons
 
 	_, rem, lim := usage.CheckQuota(ctx, u.TenantSchema, "ai_token")
 
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
-	}
-	defer tenant.CloseTenantConn(conn)
-	if _, err := loadSetting(ctx, conn); err != nil {
 		return nil, err
 	}
-	biz := loadBusinessWizardContext(ctx, conn)
+	pool := tenantDB()
+	if _, err := loadSetting(ctx, sch, pool); err != nil {
+		return nil, err
+	}
+	biz := loadBusinessWizardContext(ctx, sch, pool)
 
 	sessionID := fmt.Sprintf("inv_setup_%d", time.Now().UnixNano())
 	session := &invSetupInterviewSession{
@@ -247,12 +246,12 @@ func SendInvSetupInterviewMessage(ctx context.Context, sessionId string, req *In
 	session.Messages = append(session.Messages, invSetupMessage{Role: "user", Content: msg})
 	session.TurnCount++
 
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
-	biz := loadBusinessWizardContext(ctx, conn)
+	pool := tenantDB()
+	biz := loadBusinessWizardContext(ctx, sch, pool)
 
 	turn, tokens, terr := completeInvSetupInterviewTurn(ctx, u, session, biz, msg)
 	if terr != nil {

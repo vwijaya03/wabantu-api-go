@@ -9,7 +9,6 @@ import (
 	"time"
 	"unicode"
 
-	"encore.app/wabantu/tenant"
 )
 
 const (
@@ -119,19 +118,19 @@ func ParseOutboundPath(metadata json.RawMessage) string {
 }
 
 // BuildSimulatorFromTenant loads profile, catalog, and KB for routing replay.
-func BuildSimulatorFromTenant(ctx context.Context, q tenantQuerier) (*ConversationSimulator, error) {
-	profile, err := loadBusinessProfile(ctx, q)
+func BuildSimulatorFromTenant(ctx context.Context, ts tenantScopedQuerier) (*ConversationSimulator, error) {
+	profile, err := loadBusinessProfile(ctx, ts)
 	if err != nil {
 		return nil, err
 	}
 	if profile == nil {
 		return nil, fmt.Errorf("business profile not found")
 	}
-	catalog, err := loadActiveCatalog(ctx, q, 40)
+	catalog, err := loadActiveCatalog(ctx, ts, 40)
 	if err != nil {
 		return nil, err
 	}
-	kb, err := loadKBEntries(ctx, q, 50)
+	kb, err := loadKBEntries(ctx, ts, 50)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +143,7 @@ func BuildSimulatorFromTenant(ctx context.Context, q tenantQuerier) (*Conversati
 }
 
 // FetchTriageMessages loads conversation context with optional anchor around inboundId.
-func FetchTriageMessages(ctx context.Context, q tenantQuerier, conversationID, anchorInboundID string, maxMessages int) ([]TriageMessage, error) {
+func FetchTriageMessages(ctx context.Context, ts tenantScopedQuerier, conversationID, anchorInboundID string, maxMessages int) ([]TriageMessage, error) {
 	conversationID = strings.TrimSpace(conversationID)
 	if conversationID == "" {
 		return nil, fmt.Errorf("conversationId required")
@@ -154,22 +153,23 @@ func FetchTriageMessages(ctx context.Context, q tenantQuerier, conversationID, a
 	}
 
 	if strings.TrimSpace(anchorInboundID) != "" {
-		return fetchTriageMessagesAnchored(ctx, q, conversationID, anchorInboundID, maxMessages)
+		return fetchTriageMessagesAnchored(ctx, ts, conversationID, anchorInboundID, maxMessages)
 	}
-	return fetchTriageMessagesTail(ctx, q, conversationID, maxMessages)
+	return fetchTriageMessagesTail(ctx, ts, conversationID, maxMessages)
 }
 
-func fetchTriageMessagesTail(ctx context.Context, q tenantQuerier, conversationID string, maxMessages int) ([]TriageMessage, error) {
-	rows, err := q.QueryContext(ctx, `
+func fetchTriageMessagesTail(ctx context.Context, ts tenantScopedQuerier, conversationID string, maxMessages int) ([]TriageMessage, error) {
+	msgTbl := ts.T("message")
+	rows, err := ts.QueryContext(ctx, fmt.Sprintf(`
 		SELECT id, direction, COALESCE(body,''), type, metadata, created_at
 		FROM (
 			SELECT id, direction, body, type, metadata, created_at
-			FROM message
+			FROM %s
 			WHERE conversation_id = $1::uuid
 			ORDER BY created_at DESC
 			LIMIT $2
 		) recent
-		ORDER BY created_at ASC`, conversationID, maxMessages)
+		ORDER BY created_at ASC`, msgTbl), conversationID, maxMessages)
 	if err != nil {
 		return nil, err
 	}
@@ -177,12 +177,13 @@ func fetchTriageMessagesTail(ctx context.Context, q tenantQuerier, conversationI
 	return scanTriageMessages(rows)
 }
 
-func fetchTriageMessagesAnchored(ctx context.Context, q tenantQuerier, conversationID, anchorInboundID string, maxMessages int) ([]TriageMessage, error) {
-	rows, err := q.QueryContext(ctx, `
+func fetchTriageMessagesAnchored(ctx context.Context, ts tenantScopedQuerier, conversationID, anchorInboundID string, maxMessages int) ([]TriageMessage, error) {
+	msgTbl := ts.T("message")
+	rows, err := ts.QueryContext(ctx, fmt.Sprintf(`
 		WITH ordered AS (
 			SELECT id, direction, COALESCE(body,'') AS body, type, metadata, created_at,
 			       ROW_NUMBER() OVER (ORDER BY created_at ASC) AS rn
-			FROM message
+			FROM %s
 			WHERE conversation_id = $1::uuid
 		),
 		anchor AS (
@@ -193,7 +194,7 @@ func fetchTriageMessagesAnchored(ctx context.Context, q tenantQuerier, conversat
 		WHERE rn BETWEEN GREATEST(1, (SELECT rn - $3 FROM anchor))
 		             AND (SELECT rn + $4 FROM anchor)
 		ORDER BY created_at ASC
-		LIMIT $5`,
+		LIMIT $5`, msgTbl),
 		conversationID, anchorInboundID, triageAnchorBefore, triageAnchorAfter, maxMessages)
 	if err != nil {
 		return nil, err
@@ -204,7 +205,7 @@ func fetchTriageMessagesAnchored(ctx context.Context, q tenantQuerier, conversat
 		return nil, err
 	}
 	if len(msgs) == 0 {
-		return fetchTriageMessagesTail(ctx, q, conversationID, maxMessages)
+		return fetchTriageMessagesTail(ctx, ts, conversationID, maxMessages)
 	}
 	return msgs, nil
 }
@@ -351,17 +352,16 @@ func AnalyzeConversation(ctx context.Context, tenantSchema, conversationID, focu
 		return nil, fmt.Errorf("tenantSchema and conversationId required")
 	}
 
-	conn, err := openTenantConn(ctx, tenantSchema)
+	ts, err := openTenantScope(ctx, tenantSchema)
 	if err != nil {
 		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
 
-	sim, err := BuildSimulatorFromTenant(ctx, conn)
+	sim, err := BuildSimulatorFromTenant(ctx, ts)
 	if err != nil {
 		return nil, err
 	}
-	messages, err := FetchTriageMessages(ctx, conn, conversationID, focusInboundID, triageMaxMessages)
+	messages, err := FetchTriageMessages(ctx, ts, conversationID, focusInboundID, triageMaxMessages)
 	if err != nil {
 		return nil, err
 	}
@@ -480,19 +480,18 @@ func FetchRecentAIActivityAnomalies(ctx context.Context, tenantSchema string, li
 		limit = triageAnomalyDefault
 	}
 
-	conn, err := tenant.TenantConn(ctx, tenantSchema)
+	ts, err := openTenantScope(ctx, tenantSchema)
 	if err != nil {
 		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
 
-	rows, err := conn.QueryContext(ctx, `
+	rows, err := ts.QueryContext(ctx, fmt.Sprintf(`
 		SELECT metadata, created_at
-		FROM usage_event
+		FROM %s
 		WHERE event_type = $1
 		  AND created_at >= now() - $2::interval
 		ORDER BY created_at DESC
-		LIMIT $3`, "ai_activity", formatPGInterval(TriageAnomalyWindow), limit)
+		LIMIT $3`, ts.T("usage_event")), "ai_activity", formatPGInterval(TriageAnomalyWindow), limit)
 	if err != nil {
 		return nil, err
 	}
@@ -514,13 +513,13 @@ func FetchRecentAIActivityAnomalies(ctx context.Context, tenantSchema string, li
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	if err := enrichAnomalyUserTexts(ctx, conn, out); err != nil {
+	if err := enrichAnomalyUserTexts(ctx, ts, out); err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func enrichAnomalyUserTexts(ctx context.Context, q tenantQuerier, entries []TriageAnomalyEntry) error {
+func enrichAnomalyUserTexts(ctx context.Context, ts tenantScopedQuerier, entries []TriageAnomalyEntry) error {
 	if len(entries) == 0 {
 		return nil
 	}
@@ -540,10 +539,10 @@ func enrichAnomalyUserTexts(ctx context.Context, q tenantQuerier, entries []Tria
 	if len(ids) == 0 {
 		return nil
 	}
-	rows, err := q.QueryContext(ctx, `
+	rows, err := ts.QueryContext(ctx, fmt.Sprintf(`
 		SELECT id::text, COALESCE(body, '')
-		FROM message
-		WHERE id = ANY($1::uuid[])`, ids)
+		FROM %s
+		WHERE id = ANY($1::uuid[])`, ts.T("message")), ids)
 	if err != nil {
 		return err
 	}

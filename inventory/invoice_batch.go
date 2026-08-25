@@ -1,6 +1,7 @@
 package inventory
 
 import (
+	appdb "encore.app/wabantu/shared/db"
 	"context"
 	"database/sql"
 	"errors"
@@ -8,7 +9,6 @@ import (
 	"strings"
 
 	appErrs "encore.app/wabantu/shared/errs"
-	"encore.app/wabantu/tenant"
 )
 
 const maxBatchOrderActions = 100
@@ -45,11 +45,11 @@ func ListEligibleInvoiceOrders(ctx context.Context, p *ListEligibleInvoiceOrders
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantDB()
 
 	page, pageSize := p.Page, p.PageSize
 	if page < 1 {
@@ -80,12 +80,12 @@ func ListEligibleInvoiceOrders(ctx context.Context, p *ListEligibleInvoiceOrders
 
 	var total int
 	countSQL := `SELECT COUNT(*) FROM "order" o LEFT JOIN contact c ON c.id = o.contact_id` + where
-	if err := conn.QueryRowContext(ctx, countSQL, args...).Scan(&total); err != nil {
+	if err := qrow(ctx, sch, pool, countSQL, args...).Scan(&total); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 
 	args = append(args, pageSize, (page-1)*pageSize)
-	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
+	rows, err := qquery(ctx, sch, pool, fmt.Sprintf(`
 		SELECT o.id::text, o.status, o.subtotal,
 		       COALESCE(c.display_name,''), COALESCE(c.phone_number,'')
 		FROM "order" o
@@ -145,11 +145,11 @@ func BatchCreateInvoicesFromOrders(ctx context.Context, p *BatchCreateInvoicesPa
 		return nil, appErrs.BadRequest(fmt.Sprintf("maksimal %d pesanan per aksi", maxBatchOrderActions))
 	}
 
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantDB()
 
 	resp := &BatchCreateInvoicesResponse{
 		Results: make([]BatchInvoiceResultLine, 0, len(p.OrderIDs)),
@@ -172,7 +172,7 @@ func BatchCreateInvoicesFromOrders(ctx context.Context, p *BatchCreateInvoicesPa
 		}
 		seen[orderID] = true
 
-		inv, cerr := createInvoiceFromOrderConn(ctx, conn, u.AccountID, orderID, true)
+		inv, cerr := createInvoiceFromOrderConn(ctx, sch, pool, u.AccountID, orderID, true)
 		if cerr != nil {
 			line.Error = cerr.Error()
 			resp.Failed++
@@ -189,21 +189,21 @@ func BatchCreateInvoicesFromOrders(ctx context.Context, p *BatchCreateInvoicesPa
 // createInvoiceFromOrderConn creates an invoice for one order.
 // When rejectExisting is true, returns error if invoice already exists (batch mode).
 // When false, returns existing invoice (idempotent single-create API).
-func createInvoiceFromOrderConn(ctx context.Context, conn *sql.Conn, accountID, orderID string, rejectExisting bool) (*Invoice, error) {
+func createInvoiceFromOrderConn(ctx context.Context, sch appdb.SchemaSQL, q querier, accountID, orderID string, rejectExisting bool) (*Invoice, error) {
 	var existingID string
-	err := conn.QueryRowContext(ctx,
+	err := qrow(ctx, sch, q,
 		`SELECT id::text FROM inv_invoice WHERE order_id=$1::uuid AND deleted_at IS NULL LIMIT 1`, orderID).Scan(&existingID)
 	if err == nil {
 		if rejectExisting {
 			return nil, appErrs.BadRequest("pesanan sudah memiliki faktur")
 		}
-		return getInvoice(ctx, conn, existingID)
+		return getInvoice(ctx, sch, q, existingID)
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return nil, appErrs.Internal(err.Error())
 	}
 
-	contactID, lines, subtotal, status, err := loadOrderForInvoice(ctx, conn, orderID)
+	contactID, lines, subtotal, status, err := loadOrderForInvoice(ctx, sch, q, orderID)
 	if err != nil {
 		return nil, err
 	}
@@ -214,24 +214,25 @@ func createInvoiceFromOrderConn(ctx context.Context, conn *sql.Conn, accountID, 
 		return nil, appErrs.BadRequest("pesanan tidak memiliki item")
 	}
 
-	costByItem, err := orderItemSaleCost(ctx, conn, orderID)
+	costByItem, err := orderItemSaleCost(ctx, sch, q, orderID)
 	if err != nil {
 		return nil, err
 	}
 
-	tx, err := conn.BeginTx(ctx, nil)
+	pool := tenantDB()
+	tx, err := pool.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer tx.Rollback()
 
-	invoiceNo, err := nextDocNumber(ctx, tx, DocInvoice, DocInvoice)
+	invoiceNo, err := nextDocNumber(ctx, sch, tx, DocInvoice, DocInvoice)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 
 	var invoiceID string
-	if err := tx.QueryRowContext(ctx, `
+	if err := qrow(ctx, sch, tx, `
 		INSERT INTO inv_invoice (invoice_no, order_id, contact_id, status, subtotal, total_cogs, created_by)
 		VALUES ($1,$2,$3,'issued',$4,0,$5)
 		RETURNING id`,
@@ -243,7 +244,7 @@ func createInvoiceFromOrderConn(ctx context.Context, conn *sql.Conn, accountID, 
 	for _, l := range lines {
 		cogs := round4(weightedItemCost(costByItem, l.CatalogItemID) * l.Qty)
 		totalCogs += cogs
-		if _, err := tx.ExecContext(ctx, `
+		if _, err := qexec(ctx, sch, tx, `
 			INSERT INTO inv_invoice_line
 			  (invoice_id, catalog_item_id, order_line_id, description, qty, unit_price, cogs, warehouse_id)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
@@ -252,12 +253,12 @@ func createInvoiceFromOrderConn(ctx context.Context, conn *sql.Conn, accountID, 
 			return nil, appErrs.Internal(err.Error())
 		}
 	}
-	if _, err := tx.ExecContext(ctx,
+	if _, err := qexec(ctx, sch, tx,
 		`UPDATE inv_invoice SET total_cogs=$2, updated_at=now() WHERE id=$1`, invoiceID, round4(totalCogs)); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	return getInvoice(ctx, conn, invoiceID)
+	return getInvoice(ctx, sch, q, invoiceID)
 }

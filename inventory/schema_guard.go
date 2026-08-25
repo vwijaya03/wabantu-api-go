@@ -32,7 +32,7 @@ func ensureInventoryModuleSchema(ctx context.Context, schemaName string) error {
 // ensureInventoryModuleReady verifies inventory DDL is complete before reads/writes.
 // On Encore Cloud, inv_* DDL is applied via db_tenant_admin (EnsureCloudAdminTenantDDL).
 func ensureInventoryModuleReady(ctx context.Context, conn *sql.Conn, schemaName string) error {
-	ready, err := tenantschema.InventoryModuleReady(ctx, conn)
+	ready, err := tenantschema.InventoryModuleReady(ctx, conn, schemaName)
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
@@ -43,7 +43,7 @@ func ensureInventoryModuleReady(ctx context.Context, conn *sql.Conn, schemaName 
 		if err := tenant.EnsureCloudAdminTenantDDL(ctx, schemaName); err != nil {
 			return appErrs.Internal(err.Error())
 		}
-		ready, err = tenantschema.InventoryModuleReady(ctx, conn)
+		ready, err = tenantschema.InventoryModuleReady(ctx, conn, schemaName)
 		if err != nil {
 			return appErrs.Internal(err.Error())
 		}

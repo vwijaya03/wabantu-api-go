@@ -9,6 +9,7 @@ import (
 
 	"encore.dev/rlog"
 
+	appdb "encore.app/wabantu/shared/db"
 	"encore.app/wabantu/shared/pii"
 	"encore.app/wabantu/shared/tenantschema"
 	"encore.app/wabantu/tenant"
@@ -46,8 +47,8 @@ const contactSelectLegacySQL = `
 	       tags
 	FROM contact`
 
-func contactSelectFor(ctx context.Context, conn *sql.Conn) string {
-	active, err := tenantschema.ContactPIIActiveConn(ctx, conn, "")
+func contactSelectFor(ctx context.Context, q appdb.TenantQuerier, tenantSchema string) string {
+	active, err := tenantschema.ContactPIIActive(ctx, q, tenantSchema)
 	if err != nil || !active {
 		return contactSelectLegacySQL
 	}
@@ -58,34 +59,27 @@ func encKey() string {
 	return strings.TrimSpace(secrets.DataEncryptionKey)
 }
 
-func ensurePIISchema(ctx context.Context, conn *sql.Conn) error {
-	schema := currentSchemaFromConn(ctx, conn)
-	active, err := tenantschema.ContactPIIActiveConn(ctx, conn, schema)
+func ensurePIISchema(ctx context.Context, conn *sql.Conn, tenantSchema string) error {
+	active, err := tenantschema.ContactPIIActiveConn(ctx, conn, tenantSchema)
 	if err != nil {
 		return err
 	}
 	if !active {
-		if err := tenant.RunPIISchemaPatches(ctx, schema); err != nil {
-			rlog.Warn("PII schema patch failed", "schema", schema, "err", err)
+		if err := tenant.RunPIISchemaPatches(ctx, tenantSchema); err != nil {
+			rlog.Warn("PII schema patch failed", "schema", tenantSchema, "err", err)
 			return nil
 		}
-		tenantschema.InvalidateContactPIICache(schema)
-		tenantschema.InvalidateLeadPIICache(schema)
-		if ok, _ := tenantschema.ContactPIIActiveConn(ctx, conn, schema); ok {
-			tenantschema.MarkContactPIIActive(schema)
-			tenantschema.MarkLeadPIIActive(schema)
+		tenantschema.InvalidateContactPIICache(tenantSchema)
+		tenantschema.InvalidateLeadPIICache(tenantSchema)
+		if ok, _ := tenantschema.ContactPIIActiveConn(ctx, conn, tenantSchema); ok {
+			tenantschema.MarkContactPIIActive(tenantSchema)
+			tenantschema.MarkLeadPIIActive(tenantSchema)
 		}
 	}
 	return nil
 }
 
-func currentSchemaFromConn(ctx context.Context, conn *sql.Conn) string {
-	var schema string
-	_ = conn.QueryRowContext(ctx, `SELECT current_schema()`).Scan(&schema)
-	return schema
-}
-
-func applyContactFieldPII(ctx context.Context, conn *sql.Conn, id string, displayName, birthDate *string) error {
+func applyContactFieldPII(ctx context.Context, q appdb.TenantQuerier, id string, displayName, birthDate *string) error {
 	key := encKey()
 	if err := pii.ValidateKey(key); err != nil {
 		return err
@@ -101,7 +95,7 @@ func applyContactFieldPII(ctx context.Context, conn *sql.Conn, id string, displa
 			}
 			idx = pii.BlindIndex(pii.NormalizeName(v), key)
 		}
-		if _, err := conn.ExecContext(ctx, `
+		if _, err := q.ExecContext(ctx, `
 			UPDATE contact SET display_name_enc = NULLIF($1,''), display_name_idx = NULLIF($2,''),
 			  display_name = $3, updated_at = NOW()
 			WHERE id = $4`, enc, idx, pii.Placeholder, id); err != nil {
@@ -118,7 +112,7 @@ func applyContactFieldPII(ctx context.Context, conn *sql.Conn, id string, displa
 				return err
 			}
 		}
-		if _, err := conn.ExecContext(ctx, `
+		if _, err := q.ExecContext(ctx, `
 			UPDATE contact SET birth_date_enc = NULLIF($1,''), birth_date = NULL, updated_at = NOW()
 			WHERE id = $2`, enc, id); err != nil {
 			return err
@@ -176,11 +170,11 @@ func scanContactPII(scanner interface{ Scan(...any) error }) (ContactDetail, err
 	return c, nil
 }
 
-func upsertContactPII(ctx context.Context, conn *sql.Conn, phone, displayName string, birthDate, notes *string, status string, priceTypeID *string, tagsJSON string) (ContactDetail, error) {
+func upsertContactPII(ctx context.Context, q appdb.TenantQuerier, tenantSchema, phone, displayName string, birthDate, notes *string, status string, priceTypeID *string, tagsJSON string) (ContactDetail, error) {
 	key := encKey()
-	active, _ := tenantschema.ContactPIIActiveConn(ctx, conn, "")
+	active, _ := tenantschema.ContactPIIActive(ctx, q, tenantSchema)
 	if err := pii.ValidateKey(key); err != nil || !active {
-		return upsertContactLegacy(ctx, conn, phone, displayName, birthDate, notes, status, priceTypeID, tagsJSON)
+		return upsertContactLegacy(ctx, q, phone, displayName, birthDate, notes, status, priceTypeID, tagsJSON)
 	}
 	phoneEnc, err := pii.Encrypt(phone, key)
 	if err != nil {
@@ -203,13 +197,13 @@ func upsertContactPII(ctx context.Context, conn *sql.Conn, phone, displayName st
 		}
 	}
 	var existingID string
-	err = conn.QueryRowContext(ctx, `
+	err = q.QueryRowContext(ctx, `
 		SELECT id FROM contact WHERE phone_number_idx = $1 LIMIT 1`, phoneIdx).Scan(&existingID)
 	if err != nil && err != sql.ErrNoRows {
 		return ContactDetail{}, err
 	}
 	if err == sql.ErrNoRows {
-		return scanContactPII(conn.QueryRowContext(ctx, `
+		return scanContactPII(q.QueryRowContext(ctx, `
 			INSERT INTO contact (
 			  phone_number, phone_number_enc, phone_number_idx,
 			  display_name, display_name_enc, display_name_idx,
@@ -220,7 +214,7 @@ func upsertContactPII(ctx context.Context, conn *sql.Conn, phone, displayName st
 			pii.Placeholder, phoneEnc, phoneIdx, displayEnc, nullIfEmpty(displayIdx), birthEnc,
 			notes, status, nullableUUIDPtr(priceTypeID), tagsJSON))
 	}
-	_, err = conn.ExecContext(ctx, `
+	_, err = q.ExecContext(ctx, `
 		UPDATE contact SET
 		  phone_number_enc = $1,
 		  phone_number_idx = $2,
@@ -242,12 +236,12 @@ func upsertContactPII(ctx context.Context, conn *sql.Conn, phone, displayName st
 	if err != nil {
 		return ContactDetail{}, err
 	}
-	return scanContactPII(conn.QueryRowContext(ctx, contactSelectFor(ctx, conn)+` WHERE id = $1`, existingID))
+	return scanContactPII(q.QueryRowContext(ctx, contactSelectFor(ctx, q, tenantSchema)+` WHERE id = $1`, existingID))
 }
 
-func upsertContactLegacy(ctx context.Context, conn *sql.Conn, phone, displayName string, birthDate, notes *string, status string, priceTypeID *string, tagsJSON string) (ContactDetail, error) {
+func upsertContactLegacy(ctx context.Context, q appdb.TenantQuerier, phone, displayName string, birthDate, notes *string, status string, priceTypeID *string, tagsJSON string) (ContactDetail, error) {
 	var existingID string
-	err := conn.QueryRowContext(ctx, `
+	err := q.QueryRowContext(ctx, `
 		SELECT id FROM contact WHERE phone_number = $1 AND deleted_at IS NULL LIMIT 1`, phone).Scan(&existingID)
 	if err != nil && err != sql.ErrNoRows {
 		return ContactDetail{}, err
@@ -257,13 +251,13 @@ func upsertContactLegacy(ctx context.Context, conn *sql.Conn, phone, displayName
 		dn = &displayName
 	}
 	if err == sql.ErrNoRows {
-		return scanContactPII(conn.QueryRowContext(ctx, `
+		return scanContactPII(q.QueryRowContext(ctx, `
 			INSERT INTO contact (phone_number, display_name, birth_date, notes, status, price_type_id, tags)
 			VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb)
 			RETURNING `+contactReturnLegacyCols(),
 			phone, dn, birthDate, notes, status, nullableUUIDPtr(priceTypeID), tagsJSON))
 	}
-	_, err = conn.ExecContext(ctx, `
+	_, err = q.ExecContext(ctx, `
 		UPDATE contact SET
 		  display_name = COALESCE($1, display_name),
 		  birth_date = COALESCE($2, birth_date),
@@ -278,7 +272,7 @@ func upsertContactLegacy(ctx context.Context, conn *sql.Conn, phone, displayName
 	if err != nil {
 		return ContactDetail{}, err
 	}
-	return scanContactPII(conn.QueryRowContext(ctx, contactSelectLegacySQL+` WHERE id = $1`, existingID))
+	return scanContactPII(q.QueryRowContext(ctx, contactSelectLegacySQL+` WHERE id = $1`, existingID))
 }
 
 func contactReturnLegacyCols() string {
@@ -293,7 +287,7 @@ func nullIfEmpty(s string) any {
 	return s
 }
 
-func upsertContactPIIByIdx(ctx context.Context, conn *sql.Conn, phone, displayName string) (string, error) {
+func upsertContactPIIByIdx(ctx context.Context, q appdb.TenantQuerier, phone, displayName string) (string, error) {
 	key := encKey()
 	if err := pii.ValidateKey(key); err != nil {
 		return "", err
@@ -312,11 +306,11 @@ func upsertContactPIIByIdx(ctx context.Context, conn *sql.Conn, phone, displayNa
 		displayEnc = &enc
 	}
 	var id string
-	err = conn.QueryRowContext(ctx, `
+	err = q.QueryRowContext(ctx, `
 		SELECT id FROM contact WHERE phone_number_idx = $1 AND deleted_at IS NULL LIMIT 1`,
 		phoneIdx).Scan(&id)
 	if err == sql.ErrNoRows {
-		err = conn.QueryRowContext(ctx, `
+		err = q.QueryRowContext(ctx, `
 			INSERT INTO contact (phone_number, phone_number_enc, phone_number_idx, display_name, display_name_enc, tags)
 			VALUES ($1,$2,$3,$1,$4,'["new"]'::jsonb)
 			RETURNING id`,
@@ -328,7 +322,7 @@ func upsertContactPIIByIdx(ctx context.Context, conn *sql.Conn, phone, displayNa
 	}
 	if displayName != "" {
 		enc, _ := pii.Encrypt(displayName, key)
-		_, _ = conn.ExecContext(ctx, `
+		_, _ = q.ExecContext(ctx, `
 			UPDATE contact SET display_name_enc = $1, display_name = $2, updated_at = NOW()
 			WHERE id = $3 AND (display_name_enc IS NULL OR TRIM(display_name_enc) = '')`,
 			enc, pii.Placeholder, id)
@@ -336,16 +330,16 @@ func upsertContactPIIByIdx(ctx context.Context, conn *sql.Conn, phone, displayNa
 	return id, nil
 }
 
-func contactPhoneByID(ctx context.Context, conn *sql.Conn, id string) (string, error) {
-	active, err := tenantschema.ContactPIIActiveConn(ctx, conn, "")
+func contactPhoneByID(ctx context.Context, q appdb.TenantQuerier, tenantSchema, id string) (string, error) {
+	active, err := tenantschema.ContactPIIActive(ctx, q, tenantSchema)
 	if err != nil || !active {
 		var phone string
-		err := conn.QueryRowContext(ctx,
+		err := q.QueryRowContext(ctx,
 			`SELECT COALESCE(phone_number,'') FROM contact WHERE id = $1`, id).Scan(&phone)
 		return phone, err
 	}
 	var phoneEnc, phoneLegacy sql.NullString
-	err = conn.QueryRowContext(ctx, `
+	err = q.QueryRowContext(ctx, `
 		SELECT COALESCE(phone_number_enc,''), COALESCE(phone_number,'')
 		FROM contact WHERE id = $1`, id).Scan(&phoneEnc, &phoneLegacy)
 	if err != nil {

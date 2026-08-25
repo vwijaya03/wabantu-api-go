@@ -8,7 +8,6 @@ import (
 
 	"encore.dev/rlog"
 
-	"encore.app/wabantu/tenant"
 	"encore.app/wabantu/usage"
 )
 
@@ -82,17 +81,16 @@ func JudgeTriageTurn(ctx context.Context, businessName string, catalog []dbCatal
 
 // JudgeReportTurn loads tenant catalog/profile and runs Haiku QA on one turn.
 func JudgeReportTurn(ctx context.Context, tenantSchema string, turn AITriageTurn) (TriageJudgeResult, error) {
-	conn, err := tenant.TenantConn(ctx, tenantSchema)
+	ts, err := openTenantScope(ctx, tenantSchema)
 	if err != nil {
 		return TriageJudgeResult{}, err
 	}
-	defer tenant.CloseTenantConn(conn)
 
 	businessName := ""
-	if profile, err := loadBusinessProfile(ctx, conn); err == nil && profile != nil {
+	if profile, err := loadBusinessProfile(ctx, ts); err == nil && profile != nil {
 		businessName = strings.TrimSpace(profile.BusinessName)
 	}
-	catalog, _ := loadActiveCatalog(ctx, conn, 40)
+	catalog, _ := loadActiveCatalog(ctx, ts, 40)
 	result, _, err := JudgeTriageTurn(ctx, businessName, catalog, turn)
 	return result, err
 }

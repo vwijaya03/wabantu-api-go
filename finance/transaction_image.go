@@ -3,7 +3,6 @@ package finance
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +19,7 @@ import (
 
 	appauth "encore.app/wabantu/auth"
 	"encore.app/wabantu/aivision"
+	appdb "encore.app/wabantu/shared/db"
 	appErrs "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/types"
 	"encore.app/wabantu/usage"
@@ -213,13 +213,13 @@ func CommitTransactionImageImport(ctx context.Context, jobId string, req *Commit
 		return nil, err
 	}
 
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	q := tenantPool()
 
-	defaultWallet, err := resolveDefaultExpenseWallet(ctx, conn)
+	defaultWallet, err := resolveDefaultExpenseWallet(ctx, sch, q)
 	if err != nil {
 		return nil, err
 	}
@@ -249,34 +249,34 @@ func CommitTransactionImageImport(ctx context.Context, jobId string, req *Commit
 
 		walletID := strings.TrimSpace(it.WalletID)
 		if walletID == "" {
-			walletID, _ = resolveWalletByNameHint(ctx, conn, it.WalletNameHint)
+			walletID, _ = resolveWalletByNameHint(ctx, sch, q, it.WalletNameHint)
 		}
 		if walletID == "" {
 			walletID = defaultWallet
 		}
-		if err := assertWalletAccessible(ctx, conn, u, walletID); err != nil {
+		if err := assertWalletAccessible(ctx, sch, q, u, walletID); err != nil {
 			skipped++
 			continue
 		}
 
 		txDate := strings.TrimSpace(it.TransactionDate)
 		if txDate == "" {
-			txDate = financeToday(ctx, conn)
+			txDate = financeToday(ctx, sch, q)
 		}
-		if err := ensurePeriodUnlocked(ctx, conn, walletPeriod(txDate)); err != nil {
+		if err := ensurePeriodUnlocked(ctx, sch, q, walletPeriod(txDate)); err != nil {
 			return nil, err
 		}
 
 		var catID *string
 		if cid := strings.TrimSpace(it.CategoryID); cid != "" {
 			catID = &cid
-		} else if cid, ok := resolveCategoryByHint(ctx, conn, it.CategoryNameHint, txType); ok {
+		} else if cid, ok := resolveCategoryByHint(ctx, sch, q, it.CategoryNameHint, txType); ok {
 			catID = &cid
 		}
 
 		ref := fmt.Sprintf("imgimport:%s:%s", jobId, strings.TrimSpace(it.DraftKey))
 		var exists bool
-		if err := conn.QueryRowContext(ctx, `
+		if err := qrow(ctx, sch, q, `
 			SELECT EXISTS(
 			  SELECT 1 FROM fin_transaction
 			  WHERE reference_no=$1 AND deleted_at IS NULL LIMIT 1
@@ -290,7 +290,7 @@ func CommitTransactionImageImport(ctx context.Context, jobId string, req *Commit
 
 		tags := []string{txnImageSourceTag}
 		var id string
-		err = conn.QueryRowContext(ctx, `
+		err = qrow(ctx, sch, q, `
 			INSERT INTO fin_transaction
 			 (type, amount, currency, wallet_id, category_id, description,
 			  reference_no, transaction_date, status, tags, created_by)
@@ -305,13 +305,13 @@ func CommitTransactionImageImport(ctx context.Context, jobId string, req *Commit
 		}
 		walletsToRefresh[walletID] = struct{}{}
 		saved++
-		auditFinance(ctx, conn, u, "transaction", id, "create", nil, map[string]any{
+		auditFinance(ctx, sch, q, u, "transaction", id, "create", nil, map[string]any{
 			"type": txType, "amount": it.Amount, "source": txnImageSourceTag,
 		})
 	}
 
 	for w := range walletsToRefresh {
-		refreshWallets(ctx, conn, w, nil)
+		refreshWallets(ctx, sch, q, w, nil)
 	}
 	if saved > 0 {
 		_ = usage.RecordEvent(ctx, u.TenantSchema, "fin_transaction_created", saved, nil)
@@ -654,13 +654,13 @@ func normalizeTxnDate(d string) string {
 	return ""
 }
 
-func resolveWalletByNameHint(ctx context.Context, conn *sql.Conn, hint string) (string, bool) {
+func resolveWalletByNameHint(ctx context.Context, sch appdb.SchemaSQL, q finQuerier, hint string) (string, bool) {
 	hint = strings.TrimSpace(hint)
 	if hint == "" {
 		return "", false
 	}
 	var id string
-	err := conn.QueryRowContext(ctx, `
+	err := qrow(ctx, sch, q, `
 		SELECT id::text FROM fin_wallet
 		WHERE deleted_at IS NULL AND is_active = true AND name ILIKE $1
 		ORDER BY display_order, created_at LIMIT 1`, "%"+hint+"%").Scan(&id)
@@ -670,7 +670,7 @@ func resolveWalletByNameHint(ctx context.Context, conn *sql.Conn, hint string) (
 	return id, true
 }
 
-func resolveCategoryByHint(ctx context.Context, conn *sql.Conn, hint, txnType string) (string, bool) {
+func resolveCategoryByHint(ctx context.Context, sch appdb.SchemaSQL, q finQuerier, hint, txnType string) (string, bool) {
 	hint = strings.TrimSpace(hint)
 	kind := "expense"
 	if txnType == "income" {
@@ -678,7 +678,7 @@ func resolveCategoryByHint(ctx context.Context, conn *sql.Conn, hint, txnType st
 	}
 	if hint != "" {
 		var id string
-		err := conn.QueryRowContext(ctx, `
+		err := qrow(ctx, sch, q, `
 			SELECT id::text FROM fin_category
 			WHERE deleted_at IS NULL
 			  AND (type = $1 OR type = 'any')
@@ -689,7 +689,7 @@ func resolveCategoryByHint(ctx context.Context, conn *sql.Conn, hint, txnType st
 		}
 	}
 	var id string
-	err := conn.QueryRowContext(ctx, `
+	err := qrow(ctx, sch, q, `
 		SELECT id::text FROM fin_category
 		WHERE deleted_at IS NULL AND type = $1
 		ORDER BY display_order, created_at LIMIT 1`, kind).Scan(&id)

@@ -1,6 +1,7 @@
 package inventory
 
 import (
+	appdb "encore.app/wabantu/shared/db"
 	"context"
 	"database/sql"
 	"errors"
@@ -9,7 +10,6 @@ import (
 	"time"
 
 	appErrs "encore.app/wabantu/shared/errs"
-	"encore.app/wabantu/tenant"
 )
 
 // ---------- types ----------
@@ -91,11 +91,11 @@ func CreatePurchaseOrder(ctx context.Context, p *CreatePurchaseOrderParams) (*Pu
 		return nil, appErrs.BadRequest("format tanggal harus YYYY-MM-DD")
 	}
 
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantDB()
 
 	defaultWarehouse := strings.TrimSpace(p.WarehouseID)
 	var subtotal float64
@@ -110,28 +110,28 @@ func CreatePurchaseOrder(ctx context.Context, p *CreatePurchaseOrderParams) (*Pu
 		if strings.TrimSpace(l.WarehouseID) == "" {
 			l.WarehouseID = defaultWarehouse
 		}
-		if err := validateCatalogItem(ctx, conn, l.CatalogItemID); err != nil {
+		if err := validateCatalogItem(ctx, sch, pool, l.CatalogItemID); err != nil {
 			return nil, fmt.Errorf("baris %d: %w", i+1, err)
 		}
-		if err := validateWarehouse(ctx, conn, l.WarehouseID); err != nil {
+		if err := validateWarehouse(ctx, sch, pool, l.WarehouseID); err != nil {
 			return nil, fmt.Errorf("baris %d: %w", i+1, err)
 		}
 		subtotal += l.QtyOrdered * l.UnitCost
 	}
 
-	tx, err := conn.BeginTx(ctx, nil)
+	tx, err := pool.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer tx.Rollback()
 
-	poNo, err := nextDocNumber(ctx, tx, DocPO, DocPO)
+	poNo, err := nextDocNumber(ctx, sch, tx, DocPO, DocPO)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 
 	var poID string
-	if err := tx.QueryRowContext(ctx, `
+	if err := qrow(ctx, sch, tx, `
 		INSERT INTO pur_purchase_order
 		  (po_no, supplier_name, contact_id, warehouse_id, status, transaction_date, note, subtotal, created_by)
 		VALUES ($1,$2,$3,$4,'open',$5,$6,$7,$8)
@@ -141,7 +141,7 @@ func CreatePurchaseOrder(ctx context.Context, p *CreatePurchaseOrderParams) (*Pu
 		return nil, appErrs.Internal(err.Error())
 	}
 	for _, l := range p.Lines {
-		if _, err := tx.ExecContext(ctx, `
+		if _, err := qexec(ctx, sch, tx, `
 			INSERT INTO pur_purchase_order_line
 			  (purchase_order_id, catalog_item_id, warehouse_id, description, qty_ordered, unit_cost)
 			VALUES ($1,$2,$3,$4,$5,$6)`,
@@ -152,7 +152,7 @@ func CreatePurchaseOrder(ctx context.Context, p *CreatePurchaseOrderParams) (*Pu
 	if err := tx.Commit(); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	return getPurchaseOrder(ctx, conn, poID)
+	return getPurchaseOrder(ctx, sch, pool, poID)
 }
 
 //encore:api auth method=GET path=/api/v1/inventory/purchase-orders
@@ -161,11 +161,11 @@ func ListPurchaseOrders(ctx context.Context, p *ListPurchaseOrdersParams) (*List
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantDB()
 
 	page, pageSize := p.Page, p.PageSize
 	if page < 1 {
@@ -189,12 +189,12 @@ func ListPurchaseOrders(ctx context.Context, p *ListPurchaseOrdersParams) (*List
 	}
 
 	var total int
-	if err := conn.QueryRowContext(ctx,
+	if err := qrow(ctx, sch, pool,
 		fmt.Sprintf(`SELECT COUNT(*) FROM pur_purchase_order %s`, where), args...).Scan(&total); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	args = append(args, pageSize, (page-1)*pageSize)
-	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
+	rows, err := qquery(ctx, sch, pool, fmt.Sprintf(`
 		SELECT id, po_no, COALESCE(supplier_name,''), contact_id::text, warehouse_id::text, status,
 		       transaction_date::text, COALESCE(note,''), subtotal, created_at
 		FROM pur_purchase_order
@@ -224,12 +224,12 @@ func GetPurchaseOrder(ctx context.Context, id string) (*PurchaseOrder, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
-	return getPurchaseOrder(ctx, conn, id)
+	pool := tenantDB()
+	return getPurchaseOrder(ctx, sch, pool, id)
 }
 
 //encore:api auth method=POST path=/api/v1/inventory/purchase-orders/:id/close
@@ -241,13 +241,13 @@ func ClosePurchaseOrder(ctx context.Context, id string) (*PurchaseOrder, error) 
 	if err := requireOwner(u); err != nil {
 		return nil, err
 	}
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantDB()
 
-	res, err := conn.ExecContext(ctx, `
+	res, err := qexec(ctx, sch, pool, `
 		UPDATE pur_purchase_order SET status = 'closed', updated_at = now()
 		WHERE id = $1 AND deleted_at IS NULL AND status IN ('open','partial')`, id)
 	if err != nil {
@@ -256,7 +256,7 @@ func ClosePurchaseOrder(ctx context.Context, id string) (*PurchaseOrder, error) 
 	if n, _ := res.RowsAffected(); n == 0 {
 		return nil, appErrs.BadRequest("PO tidak bisa ditutup (tidak ditemukan atau status tidak open/partial)")
 	}
-	return getPurchaseOrder(ctx, conn, id)
+	return getPurchaseOrder(ctx, sch, pool, id)
 }
 
 //encore:api auth method=POST path=/api/v1/inventory/purchase-orders/:id/cancel
@@ -268,14 +268,14 @@ func CancelPurchaseOrder(ctx context.Context, id string) (*PurchaseOrder, error)
 	if err := requireOwner(u); err != nil {
 		return nil, err
 	}
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantDB()
 
 	var received float64
-	if err := conn.QueryRowContext(ctx, `
+	if err := qrow(ctx, sch, pool, `
 		SELECT COALESCE(SUM(qty_received),0) FROM pur_purchase_order_line WHERE purchase_order_id = $1`,
 		id).Scan(&received); err != nil {
 		return nil, appErrs.Internal(err.Error())
@@ -283,7 +283,7 @@ func CancelPurchaseOrder(ctx context.Context, id string) (*PurchaseOrder, error)
 	if received > epsilon {
 		return nil, appErrs.BadRequest("PO sudah ada penerimaan, tidak bisa dibatalkan")
 	}
-	res, err := conn.ExecContext(ctx, `
+	res, err := qexec(ctx, sch, pool, `
 		UPDATE pur_purchase_order SET status = 'cancelled', updated_at = now()
 		WHERE id = $1 AND deleted_at IS NULL AND status NOT IN ('cancelled','received','closed')`, id)
 	if err != nil {
@@ -292,13 +292,13 @@ func CancelPurchaseOrder(ctx context.Context, id string) (*PurchaseOrder, error)
 	if n, _ := res.RowsAffected(); n == 0 {
 		return nil, appErrs.BadRequest("PO tidak bisa dibatalkan pada status saat ini")
 	}
-	return getPurchaseOrder(ctx, conn, id)
+	return getPurchaseOrder(ctx, sch, pool, id)
 }
 
 // ---------- helpers ----------
 
-func getPurchaseOrder(ctx context.Context, conn *sql.Conn, id string) (*PurchaseOrder, error) {
-	po, err := scanPurchaseOrderHeader(conn.QueryRowContext(ctx, `
+func getPurchaseOrder(ctx context.Context, sch appdb.SchemaSQL, q querier, id string) (*PurchaseOrder, error) {
+	po, err := scanPurchaseOrderHeader(qrow(ctx, sch, q, `
 		SELECT id, po_no, COALESCE(supplier_name,''), contact_id::text, warehouse_id::text, status,
 		       transaction_date::text, COALESCE(note,''), subtotal, created_at
 		FROM pur_purchase_order
@@ -309,7 +309,7 @@ func getPurchaseOrder(ctx context.Context, conn *sql.Conn, id string) (*Purchase
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	rows, err := conn.QueryContext(ctx, `
+	rows, err := qquery(ctx, sch, q, `
 		SELECT l.id, l.catalog_item_id, COALESCE(ci.name,''), l.warehouse_id, COALESCE(l.description,''),
 		       l.qty_ordered, l.qty_received, l.unit_cost
 		FROM pur_purchase_order_line l

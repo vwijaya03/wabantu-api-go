@@ -6,6 +6,7 @@
 package inventory
 
 import (
+	appdb "encore.app/wabantu/shared/db"
 	"context"
 	"database/sql"
 	"errors"
@@ -17,7 +18,6 @@ import (
 
 	appErrs "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/types"
-	"encore.app/wabantu/tenant"
 )
 
 func getUser() (*types.AuthUser, error) {
@@ -104,25 +104,25 @@ func GetSetting(ctx context.Context) (*InventorySetting, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantDB()
 
-	s, err := loadSetting(ctx, conn)
+	s, err := loadSetting(ctx, sch, pool)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	return enrichSetting(ctx, conn, s)
+	return enrichSetting(ctx, sch, pool, s)
 }
 
-func enrichSetting(ctx context.Context, conn *sql.Conn, s *InventorySetting) (*InventorySetting, error) {
-	if err := conn.QueryRowContext(ctx,
+func enrichSetting(ctx context.Context, sch appdb.SchemaSQL, q querier, s *InventorySetting) (*InventorySetting, error) {
+	if err := qrow(ctx, sch, q,
 		`SELECT COUNT(*) FROM inv_warehouse WHERE deleted_at IS NULL`).Scan(&s.WarehouseCount); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	if answers, rec, werr := loadWizardSnapshot(ctx, conn); werr == nil {
+	if answers, rec, werr := loadWizardSnapshot(ctx, sch, q); werr == nil {
 		s.WizardInterviewCompleted = wizardInterviewCompleted(answers, rec)
 	}
 	return s, nil
@@ -137,13 +137,13 @@ func UpdateSetting(ctx context.Context, p *UpdateSettingParams) (*InventorySetti
 	if err := requireOwner(u); err != nil {
 		return nil, err
 	}
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantDB()
 
-	if _, err := loadSetting(ctx, conn); err != nil {
+	if _, err := loadSetting(ctx, sch, pool); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	if p.DefaultCostingMethod != nil {
@@ -151,31 +151,31 @@ func UpdateSetting(ctx context.Context, p *UpdateSettingParams) (*InventorySetti
 		if !ok {
 			return nil, appErrs.BadRequest("metode HPP harus salah satu: fifo, lifo, average")
 		}
-		if _, err := conn.ExecContext(ctx,
+		if _, err := qexec(ctx, sch, pool,
 			`UPDATE inv_setting SET default_costing_method = $1, updated_by = $2, updated_at = now()`,
 			method, nullUUID(u.AccountID)); err != nil {
 			return nil, appErrs.Internal(err.Error())
 		}
 	}
 	if p.BlockNegativeStock != nil {
-		if _, err := conn.ExecContext(ctx,
+		if _, err := qexec(ctx, sch, pool,
 			`UPDATE inv_setting SET block_negative_stock = $1, updated_by = $2, updated_at = now()`,
 			*p.BlockNegativeStock, nullUUID(u.AccountID)); err != nil {
 			return nil, appErrs.Internal(err.Error())
 		}
 	}
 	if p.PurchasePostsExpense != nil {
-		if _, err := conn.ExecContext(ctx,
+		if _, err := qexec(ctx, sch, pool,
 			`UPDATE inv_setting SET purchase_posts_expense = $1, updated_by = $2, updated_at = now()`,
 			*p.PurchasePostsExpense, nullUUID(u.AccountID)); err != nil {
 			return nil, appErrs.Internal(err.Error())
 		}
 	}
-	s, err := loadSetting(ctx, conn)
+	s, err := loadSetting(ctx, sch, pool)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	return enrichSetting(ctx, conn, s)
+	return enrichSetting(ctx, sch, pool, s)
 }
 
 //encore:api auth method=POST path=/api/v1/inventory/setup/complete
@@ -187,27 +187,27 @@ func CompleteSetup(ctx context.Context) (*InventorySetting, error) {
 	if err := requireOwner(u); err != nil {
 		return nil, err
 	}
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantDB()
 
-	s, err := loadSetting(ctx, conn)
+	s, err := loadSetting(ctx, sch, pool)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	if s.SetupCompleted {
 		return s, nil
 	}
-	answers, rec, err := loadWizardSnapshot(ctx, conn)
+	answers, rec, err := loadWizardSnapshot(ctx, sch, pool)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	if err := validateInventorySetupActivation(answers, rec); err != nil {
 		return nil, err
 	}
-	if _, err := conn.ExecContext(ctx, `
+	if _, err := qexec(ctx, sch, pool, `
 		UPDATE inv_setting
 		SET setup_completed = true,
 		    setup_completed_at = COALESCE(setup_completed_at, now()),
@@ -215,31 +215,27 @@ func CompleteSetup(ctx context.Context) (*InventorySetting, error) {
 		    updated_at = now()`, nullUUID(u.AccountID)); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	s, err = loadSetting(ctx, conn)
+	s, err = loadSetting(ctx, sch, pool)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	return enrichSetting(ctx, conn, s)
+	return enrichSetting(ctx, sch, pool, s)
 }
 
 // loadSetting reads the singleton inv_setting row, creating it lazily if missing.
-func loadSetting(ctx context.Context, conn *sql.Conn) (*InventorySetting, error) {
-	schemaName, err := tenant.SchemaFromConn(ctx, conn)
-	if err != nil {
-		return nil, appErrs.Internal(err.Error())
-	}
-	if err := ensureInventoryModuleReady(ctx, conn, schemaName); err != nil {
+func loadSetting(ctx context.Context, sch appdb.SchemaSQL, q querier) (*InventorySetting, error) {
+	if err := ensureInventoryModuleSchema(ctx, sch.Schema); err != nil {
 		return nil, err
 	}
 	s := &InventorySetting{}
 	var completedAt sql.NullTime
-	err = conn.QueryRowContext(ctx, `
+	err := qrow(ctx, sch, q, `
 		SELECT setup_completed, setup_completed_at, default_costing_method, block_negative_stock, purchase_posts_expense
 		FROM inv_setting
 		ORDER BY created_at
 		LIMIT 1`).Scan(&s.SetupCompleted, &completedAt, &s.DefaultCostingMethod, &s.BlockNegativeStock, &s.PurchasePostsExpense)
 	if errors.Is(err, sql.ErrNoRows) {
-		if _, ierr := conn.ExecContext(ctx, `
+		if _, ierr := qexec(ctx, sch, q, `
 			INSERT INTO inv_setting (setup_completed, default_costing_method, block_negative_stock)
 			VALUES (false, 'average', true)`); ierr != nil {
 			return nil, ierr
@@ -266,11 +262,11 @@ func ListWarehouses(ctx context.Context, p *ListWarehousesParams) (*ListWarehous
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantDB()
 
 	if p == nil {
 		p = &ListWarehousesParams{}
@@ -289,17 +285,17 @@ func ListWarehouses(ctx context.Context, p *ListWarehousesParams) (*ListWarehous
 	where := "WHERE 1=1"
 	args := []any{}
 	idx := 1
-	if q := strings.TrimSpace(p.Q); q != "" {
+	if searchQ := strings.TrimSpace(p.Q); searchQ != "" {
 		where += fmt.Sprintf(` AND (
 			w.name ILIKE $%d OR w.code ILIKE $%d
 			OR COALESCE(w.address,'') ILIKE $%d OR COALESCE(w.note,'') ILIKE $%d
 		)`, idx, idx, idx, idx)
-		args = append(args, "%"+q+"%")
+		args = append(args, "%"+searchQ+"%")
 		idx++
 	}
 
 	var total int
-	if err := conn.QueryRowContext(ctx,
+	if err := qrow(ctx, sch, pool,
 		fmt.Sprintf(`SELECT COUNT(*) FROM inv_warehouse w %s`, where), args...).Scan(&total); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
@@ -316,7 +312,7 @@ func ListWarehouses(ctx context.Context, p *ListWarehousesParams) (*ListWarehous
 		query += fmt.Sprintf(" LIMIT $%d OFFSET $%d", idx, idx+1)
 	}
 
-	rows, err := conn.QueryContext(ctx, query, args...)
+	rows, err := qquery(ctx, sch, pool, query, args...)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
@@ -395,14 +391,14 @@ func CreateWarehouse(ctx context.Context, p *WarehouseInput) (*Warehouse, error)
 		displayOrder = *p.DisplayOrder
 	}
 
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantDB()
 
 	var dup bool
-	if err := conn.QueryRowContext(ctx,
+	if err := qrow(ctx, sch, pool,
 		`SELECT EXISTS(SELECT 1 FROM inv_warehouse WHERE code = $1 AND deleted_at IS NULL)`,
 		code).Scan(&dup); err != nil {
 		return nil, appErrs.Internal(err.Error())
@@ -411,7 +407,7 @@ func CreateWarehouse(ctx context.Context, p *WarehouseInput) (*Warehouse, error)
 		return nil, appErrs.BadRequest("kode gudang sudah dipakai")
 	}
 
-	row := conn.QueryRowContext(ctx, `
+	row := qrow(ctx, sch, pool, `
 		INSERT INTO inv_warehouse (code, name, customer_label, is_active, address, note, display_order, created_by)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id, code, name, customer_label, external_location_id, is_default, is_active,
@@ -433,11 +429,11 @@ func UpdateWarehouse(ctx context.Context, id string, p *WarehouseInput) (*Wareho
 	if err := requireOwner(u); err != nil {
 		return nil, err
 	}
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantDB()
 
 	name := strings.TrimSpace(p.Name)
 	if name == "" {
@@ -448,7 +444,7 @@ func UpdateWarehouse(ctx context.Context, id string, p *WarehouseInput) (*Wareho
 		isActive = *p.IsActive
 	}
 
-	row := conn.QueryRowContext(ctx, `
+	row := qrow(ctx, sch, pool, `
 		UPDATE inv_warehouse
 		SET name = $2,
 		    customer_label = $3,
@@ -480,14 +476,14 @@ func DeleteWarehouse(ctx context.Context, id string) error {
 	if err := requireOwner(u); err != nil {
 		return err
 	}
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return appErrs.Internal(err.Error())
+		return err
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantDB()
 
 	var isDefault bool
-	err = conn.QueryRowContext(ctx,
+	err = qrow(ctx, sch, pool,
 		`SELECT is_default FROM inv_warehouse WHERE id = $1 AND deleted_at IS NULL`, id).Scan(&isDefault)
 	if errors.Is(err, sql.ErrNoRows) {
 		return appErrs.NotFound("gudang tidak ditemukan")
@@ -498,14 +494,14 @@ func DeleteWarehouse(ctx context.Context, id string) error {
 	if isDefault {
 		return appErrs.BadRequest("gudang default tidak bisa dihapus")
 	}
-	usage, err := loadWarehouseUsage(ctx, conn, id)
+	usage, err := loadWarehouseUsage(ctx, sch, pool, id)
 	if err != nil {
 		return err
 	}
 	if usage.inUse() {
 		return appErrs.BadRequest(usage.message() + " — nonaktifkan saja atau pastikan tidak ada referensi")
 	}
-	if _, err := conn.ExecContext(ctx, `DELETE FROM inv_warehouse WHERE id = $1`, id); err != nil {
+	if _, err := qexec(ctx, sch, pool, `DELETE FROM inv_warehouse WHERE id = $1`, id); err != nil {
 		return appErrs.Internal(err.Error())
 	}
 	return nil
@@ -520,13 +516,13 @@ func ReactivateWarehouse(ctx context.Context, id string) (*Warehouse, error) {
 	if err := requireOwner(u); err != nil {
 		return nil, err
 	}
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantDB()
 
-	row := conn.QueryRowContext(ctx, `
+	row := qrow(ctx, sch, pool, `
 		UPDATE inv_warehouse
 		SET deleted_at = NULL, deleted_by = NULL, is_active = true, updated_at = now()
 		WHERE id = $1

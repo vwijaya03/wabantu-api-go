@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -38,14 +39,14 @@ func contactDisplayNameShouldUpdate(currentName, phone, candidate string) bool {
 
 // syncContactDisplayNameFromOrder copies the order recipient name onto the WhatsApp contact
 // when the contact still has no real display name (common when Meta webhook sends phone only).
-func syncContactDisplayNameFromOrder(ctx context.Context, q tenantQuerier, contactID, recipientName string) {
+func syncContactDisplayNameFromOrder(ctx context.Context, ts tenantScopedQuerier, contactID, recipientName string) {
 	recipientName = strings.TrimSpace(recipientName)
 	contactID = strings.TrimSpace(contactID)
 	if recipientName == "" || contactID == "" {
 		return
 	}
 
-	c, err := loadContact(ctx, q, contactID)
+	c, err := loadContact(ctx, ts, contactID)
 	if err != nil || c == nil {
 		if err != nil {
 			rlog.Warn("AI order: load contact for name sync failed", "err", err, "contactId", contactID)
@@ -69,22 +70,22 @@ func syncContactDisplayNameFromOrder(ctx context.Context, q tenantQuerier, conta
 			return
 		}
 		idx := pii.BlindIndex(pii.NormalizeName(recipientName), key)
-		_, err = q.ExecContext(ctx, `
-			UPDATE contact
+		_, err = ts.ExecContext(ctx, fmt.Sprintf(`
+			UPDATE %s
 			SET display_name_enc = $1,
 			    display_name_idx = NULLIF($2, ''),
 			    display_name = $3,
 			    updated_at = NOW()
-			WHERE id = $4`,
+			WHERE id = $4`, ts.T("contact")),
 			enc, idx, pii.Placeholder, contactID)
 		if err != nil && isMissingPIIColumn(err) {
-			_, err = q.ExecContext(ctx, `
-				UPDATE contact SET display_name = $1, updated_at = NOW() WHERE id = $2`,
+			_, err = ts.ExecContext(ctx, fmt.Sprintf(
+				`UPDATE %s SET display_name = $1, updated_at = NOW() WHERE id = $2`, ts.T("contact")),
 				recipientName, contactID)
 		}
 	} else {
-		_, err = q.ExecContext(ctx, `
-			UPDATE contact SET display_name = $1, updated_at = NOW() WHERE id = $2`,
+		_, err = ts.ExecContext(ctx, fmt.Sprintf(
+			`UPDATE %s SET display_name = $1, updated_at = NOW() WHERE id = $2`, ts.T("contact")),
 			recipientName, contactID)
 	}
 	if err != nil {

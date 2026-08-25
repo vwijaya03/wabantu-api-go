@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"encore.app/wabantu/auth"
-	appdb "encore.app/wabantu/shared/db"
 	apperr "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/inboxrealtime"
 	"encore.app/wabantu/shared/strutil"
@@ -36,14 +35,13 @@ func GetUnreadSummary(ctx context.Context) (*UnreadSummaryResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, user)
+	ts, err := openTenantScope(ctx, user.TenantSchema)
 	if err != nil {
 		return nil, err
 	}
-	defer appdb.CloseTenantConn(conn)
 
 	var sum int
-	if err := conn.QueryRowContext(ctx,
+	if err := ts.QueryRowContext(ctx,
 		`SELECT COALESCE(SUM(unread_count), 0) FROM conversation`,
 	).Scan(&sum); err != nil {
 		return nil, apperr.Internal("failed to load unread summary")
@@ -59,13 +57,12 @@ func MarkConversationRead(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	conn, err := tConn(ctx, user.TenantSchema)
+	ts, err := openTenantScope(ctx, user.TenantSchema)
 	if err != nil {
 		return apperr.Internal("database connection failed")
 	}
-	defer appdb.CloseTenantConn(conn)
 
-	res, err := conn.ExecContext(ctx,
+	res, err := ts.ExecContext(ctx,
 		`UPDATE conversation SET unread_count = 0 WHERE id = $1`, id)
 	if err != nil {
 		return apperr.Internal("failed to mark conversation read")
@@ -91,20 +88,19 @@ func HandoffConversation(ctx context.Context, id string, p *HandoffParams) error
 	}
 	reason = strutil.TruncateUTF8(reason, 280)
 
-	conn, err := tConn(ctx, user.TenantSchema)
+	ts, err := openTenantScope(ctx, user.TenantSchema)
 	if err != nil {
 		return apperr.Internal("database connection failed")
 	}
-	defer appdb.CloseTenantConn(conn)
 
 	var exists bool
-	if err := conn.QueryRowContext(ctx,
+	if err := ts.QueryRowContext(ctx,
 		`SELECT EXISTS(SELECT 1 FROM conversation WHERE id = $1)`, id,
 	).Scan(&exists); err != nil || !exists {
 		return apperr.NotFound("Percakapan tidak ditemukan")
 	}
 
-	_, err = conn.ExecContext(ctx, `
+	_, err = ts.ExecContext(ctx, `
 		UPDATE conversation
 		SET ai_handled = false,
 		    ai_paused_at = NOW(),
@@ -117,7 +113,7 @@ func HandoffConversation(ctx context.Context, id string, p *HandoffParams) error
 		return apperr.Internal("failed to handoff conversation")
 	}
 
-	_, _ = conn.ExecContext(ctx, `
+	_, _ = ts.ExecContext(ctx, `
 		INSERT INTO message (conversation_id, direction, author, type, body, metadata, status)
 		VALUES ($1, 'out', 'system', 'text', 'Staff mengambil alih percakapan ini.', $2::jsonb, 'sent')`,
 		id, fmt.Sprintf(`{"reason":%q}`, reason))
@@ -133,20 +129,19 @@ func ResumeAI(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	conn, err := tConn(ctx, user.TenantSchema)
+	ts, err := openTenantScope(ctx, user.TenantSchema)
 	if err != nil {
 		return apperr.Internal("database connection failed")
 	}
-	defer appdb.CloseTenantConn(conn)
 
 	var exists bool
-	if err := conn.QueryRowContext(ctx,
+	if err := ts.QueryRowContext(ctx,
 		`SELECT EXISTS(SELECT 1 FROM conversation WHERE id = $1)`, id,
 	).Scan(&exists); err != nil || !exists {
 		return apperr.NotFound("Percakapan tidak ditemukan")
 	}
 
-	_, err = conn.ExecContext(ctx, `
+	_, err = ts.ExecContext(ctx, `
 		UPDATE conversation
 		SET ai_handled = true,
 		    ai_paused_at = NULL,
@@ -158,7 +153,7 @@ func ResumeAI(ctx context.Context, id string) error {
 		return apperr.Internal("failed to resume AI")
 	}
 
-	_, _ = conn.ExecContext(ctx, `
+	_, _ = ts.ExecContext(ctx, `
 		INSERT INTO message (conversation_id, direction, author, type, body, metadata, status)
 		VALUES ($1, 'out', 'system', 'text', 'AI auto-reply diaktifkan kembali.', '{}'::jsonb, 'sent')`,
 		id)
@@ -184,27 +179,27 @@ func BulkHandoffConversation(ctx context.Context, req *BulkIDsParams) error {
 	}
 	reason = strutil.TruncateUTF8(reason, 280)
 
-	conn, err := tConn(ctx, user.TenantSchema)
+	ts, err := openTenantScope(ctx, user.TenantSchema)
 	if err != nil {
 		return apperr.Internal("database connection failed")
 	}
-	defer appdb.CloseTenantConn(conn)
 
-	tx, err := conn.BeginTx(ctx, nil)
+	tx, err := ts.BeginTx(ctx, nil)
 	if err != nil {
 		return apperr.Internal("failed to begin transaction")
 	}
 	defer tx.Rollback()
+	tTx := ts.WithQ(tx)
 
 	for _, id := range req.IDs {
 		var exists bool
-		if err := tx.QueryRowContext(ctx,
+		if err := tTx.QueryRowContext(ctx,
 			`SELECT EXISTS(SELECT 1 FROM conversation WHERE id = $1::uuid)`, id,
 		).Scan(&exists); err != nil || !exists {
 			return apperr.NotFound("Percakapan tidak ditemukan")
 		}
 
-		if _, err := tx.ExecContext(ctx, `
+		if _, err := tTx.ExecContext(ctx, `
 			UPDATE conversation
 			SET ai_handled = false,
 			    ai_paused_at = NOW(),
@@ -216,7 +211,7 @@ func BulkHandoffConversation(ctx context.Context, req *BulkIDsParams) error {
 			return apperr.Internal("failed to handoff conversation")
 		}
 
-		if _, err := tx.ExecContext(ctx, `
+		if _, err := tTx.ExecContext(ctx, `
 			INSERT INTO message (conversation_id, direction, author, type, body, metadata, status)
 			VALUES ($1::uuid, 'out', 'system', 'text', 'Staff mengambil alih percakapan ini.', $2::jsonb, 'sent')`,
 			id, fmt.Sprintf(`{"reason":%q}`, reason),
@@ -243,27 +238,27 @@ func BulkResumeAI(ctx context.Context, req *BulkIDsParams) error {
 		return apperr.BadRequest("ids required")
 	}
 
-	conn, err := tConn(ctx, user.TenantSchema)
+	ts, err := openTenantScope(ctx, user.TenantSchema)
 	if err != nil {
 		return apperr.Internal("database connection failed")
 	}
-	defer appdb.CloseTenantConn(conn)
 
-	tx, err := conn.BeginTx(ctx, nil)
+	tx, err := ts.BeginTx(ctx, nil)
 	if err != nil {
 		return apperr.Internal("failed to begin transaction")
 	}
 	defer tx.Rollback()
+	tTx := ts.WithQ(tx)
 
 	for _, id := range req.IDs {
 		var exists bool
-		if err := tx.QueryRowContext(ctx,
+		if err := tTx.QueryRowContext(ctx,
 			`SELECT EXISTS(SELECT 1 FROM conversation WHERE id = $1::uuid)`, id,
 		).Scan(&exists); err != nil || !exists {
 			return apperr.NotFound("Percakapan tidak ditemukan")
 		}
 
-		if _, err := tx.ExecContext(ctx, `
+		if _, err := tTx.ExecContext(ctx, `
 			UPDATE conversation
 			SET ai_handled = true,
 			    ai_paused_at = NULL,
@@ -275,7 +270,7 @@ func BulkResumeAI(ctx context.Context, req *BulkIDsParams) error {
 			return apperr.Internal("failed to resume AI")
 		}
 
-		if _, err := tx.ExecContext(ctx, `
+		if _, err := tTx.ExecContext(ctx, `
 			INSERT INTO message (conversation_id, direction, author, type, body, metadata, status)
 			VALUES ($1::uuid, 'out', 'system', 'text', 'AI auto-reply diaktifkan kembali.', '{}'::jsonb, 'sent')`,
 			id,

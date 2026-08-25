@@ -230,7 +230,7 @@ func tenantSchemaBaseProvisioned(ctx context.Context, schemaName string) (bool, 
 	if _, err := conn.ExecContext(ctx, fmt.Sprintf(`SET search_path TO %s, public`, quoteIdent(schemaName))); err != nil {
 		return false, err
 	}
-	return tenantschema.TableExists(ctx, conn, "contact")
+	return tenantschema.TableExists(ctx, conn, schemaName, "contact")
 }
 
 // diffOrphanSchemas returns schemas in all but not in registered (test helper).

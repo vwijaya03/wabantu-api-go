@@ -130,11 +130,10 @@ func ListEvents(ctx context.Context, p *ListEventsParams) (*ListEventsResponse, 
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
 	page, pageSize := paginate(p.Page, p.PageSize)
 	off, lim := offsetLimit(page, pageSize)
 	conds := []string{"deleted_at IS NULL"}
@@ -159,11 +158,11 @@ func ListEvents(ctx context.Context, p *ListEventsParams) (*ListEventsResponse, 
 		return nil, err
 	}
 	var total int
-	if err := conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM evt_event WHERE `+where, args...).Scan(&total); err != nil {
+	if err := ts.QueryRowContext(ctx, `SELECT COUNT(*) FROM evt_event WHERE `+where, args...).Scan(&total); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	args = append(args, lim, off)
-	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
+	rows, err := ts.QueryContext(ctx, fmt.Sprintf(`
 		SELECT id::text, event_name, event_slug, event_description, catering_order_notes, location,
 		       start_date::text, end_date::text, start_time::text, end_time::text,
 		       break_start_time::text, break_end_time::text,
@@ -205,12 +204,11 @@ func GetEvent(ctx context.Context, eventId string) (*Event, error) {
 }
 
 func loadEvent(ctx context.Context, tenantSchema, eventId string) (*Event, error) {
-	conn, err := tenantConn(ctx, tenantSchema)
+	ts, err := openTenant(ctx, tenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	row := conn.QueryRowContext(ctx, `
+	row := ts.QueryRowContext(ctx, `
 		SELECT id::text, event_name, event_slug, event_description, catering_order_notes, location,
 		       start_date::text, end_date::text, start_time::text, end_time::text,
 		       break_start_time::text, break_end_time::text,
@@ -238,16 +236,15 @@ func CreateEvent(ctx context.Context, p *UpsertEventParams) (*Event, error) {
 	if err := validateEventParams(p); err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
 	slug := strings.TrimSpace(p.EventSlug)
 	if slug == "" {
 		slug = slugify(p.EventName)
 	}
-	slug, err = uniqueSlug(ctx, conn, slug, "")
+	slug, err = uniqueSlug(ctx, ts, slug, "")
 	if err != nil {
 		return nil, err
 	}
@@ -256,7 +253,7 @@ func CreateEvent(ctx context.Context, p *UpsertEventParams) (*Event, error) {
 		st = "DRAFT"
 	}
 	var id string
-	err = conn.QueryRowContext(ctx, `
+	err = ts.QueryRowContext(ctx, `
 		INSERT INTO evt_event (
 		  event_name, event_slug, event_description, catering_order_notes, location,
 		  start_date, end_date, start_time, end_time,
@@ -273,7 +270,7 @@ func CreateEvent(ctx context.Context, p *UpsertEventParams) (*Event, error) {
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	_, _ = conn.ExecContext(ctx, `
+	_, _ = ts.ExecContext(ctx, `
 		INSERT INTO evt_event_therapy (event_id, therapy_id, slot_duration_minutes, capacity_mode)
 		SELECT $1::uuid, t.id, 30, CASE
 		  WHEN t.therapy_name ILIKE '%shijie%' THEN 'SHIJIE_COUNT'
@@ -288,10 +285,10 @@ func CreateEvent(ctx context.Context, p *UpsertEventParams) (*Event, error) {
 		importRoster = *p.ImportStaffFromRoster
 	}
 	if importRoster {
-		_, _, _ = importAllRosterToEvent(ctx, conn, id)
+		_, _, _ = importAllRosterToEvent(ctx, ts, id)
 	}
 
-	auditEvent(ctx, conn, u, "event", id, "create", nil, p)
+	auditEvent(ctx, ts, u, "event", id, "create", nil, p)
 	return GetEvent(ctx, id)
 }
 
@@ -307,24 +304,23 @@ func UpdateEvent(ctx context.Context, eventId string, p *UpsertEventParams) (*Ev
 	if err := validateEventParams(p); err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	if err := assertEventMutable(ctx, conn, eventId); err != nil {
+	if err := assertEventMutable(ctx, ts, eventId); err != nil {
 		return nil, err
 	}
 	slug := strings.TrimSpace(p.EventSlug)
 	if slug == "" {
 		slug = slugify(p.EventName)
 	}
-	slug, err = uniqueSlug(ctx, conn, slug, eventId)
+	slug, err = uniqueSlug(ctx, ts, slug, eventId)
 	if err != nil {
 		return nil, err
 	}
 	st := strings.ToUpper(strings.TrimSpace(p.Status))
-	_, err = conn.ExecContext(ctx, `
+	_, err = ts.ExecContext(ctx, `
 		UPDATE evt_event SET
 		  event_name=$1, event_slug=$2, event_description=$3, catering_order_notes=$4, location=$5,
 		  start_date=$6::date, end_date=$7::date, start_time=$8::time, end_time=$9::time,
@@ -339,7 +335,7 @@ func UpdateEvent(ctx context.Context, eventId string, p *UpsertEventParams) (*Ev
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	auditEvent(ctx, conn, u, "event", eventId, "update", nil, p)
+	auditEvent(ctx, ts, u, "event", eventId, "update", nil, p)
 	return GetEvent(ctx, eventId)
 }
 
@@ -352,19 +348,18 @@ func DeleteEvent(ctx context.Context, eventId string) error {
 	if err := assertOwner(u); err != nil {
 		return err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	if err := assertEventExists(ctx, conn, eventId); err != nil {
+	if err := assertEventExists(ctx, ts, eventId); err != nil {
 		return err
 	}
-	_, err = conn.ExecContext(ctx, `UPDATE evt_event SET deleted_at=now() WHERE id=$1::uuid AND deleted_at IS NULL`, eventId)
+	_, err = ts.ExecContext(ctx, `UPDATE evt_event SET deleted_at=now() WHERE id=$1::uuid AND deleted_at IS NULL`, eventId)
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	auditEvent(ctx, conn, u, "event", eventId, "delete", nil, nil)
+	auditEvent(ctx, ts, u, "event", eventId, "delete", nil, nil)
 	return nil
 }
 
@@ -508,12 +503,11 @@ func ListEventTherapySettings(ctx context.Context, eventId string) (*ListEventTh
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	rows, err := conn.QueryContext(ctx, `
+	rows, err := ts.QueryContext(ctx, `
 		SELECT ets.id::text, ets.event_id::text, ets.therapy_id::text, t.therapy_name,
 		       ets.slot_duration_minutes, ets.max_capacity, ets.capacity_mode,
 		       ets.schedule_mode,
@@ -554,7 +548,7 @@ func ListEventTherapySettings(ctx context.Context, eventId string) (*ListEventTh
 	if err := rows.Err(); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	tplMap, err := loadTherapySlotTemplates(ctx, conn, eventId)
+	tplMap, err := loadTherapySlotTemplates(ctx, ts, eventId)
 	if err != nil {
 		return nil, err
 	}
@@ -591,12 +585,11 @@ func UpsertEventTherapySetting(ctx context.Context, eventId string, p *UpsertEve
 	if dur := p.SlotDurationMinutes; dur > 0 && (dur < 5 || dur > 480) {
 		return nil, appErrs.BadRequest("durasi slot harus antara 5–480 menit")
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	ts, err := openTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	if err := assertEventMutable(ctx, conn, eventId); err != nil {
+	if err := assertEventMutable(ctx, ts, eventId); err != nil {
 		return nil, err
 	}
 	schedMode := strings.ToUpper(strings.TrimSpace(p.ScheduleMode))
@@ -615,14 +608,15 @@ func UpsertEventTherapySetting(ctx context.Context, eventId string, p *UpsertEve
 		return nil, err
 	}
 
-	tx, err := conn.BeginTx(ctx, nil)
+	tx, err := ts.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer tx.Rollback()
+	txTS := ts.WithQ(tx)
 
 	var id string
-	err = tx.QueryRowContext(ctx, `
+	err = txTS.QueryRowContext(ctx, `
 		INSERT INTO evt_event_therapy (
 		  event_id, therapy_id, slot_duration_minutes, max_capacity, capacity_mode,
 		  schedule_mode, schedule_start_time, schedule_end_time
@@ -642,13 +636,13 @@ func UpsertEventTherapySetting(ctx context.Context, eventId string, p *UpsertEve
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	if err := replaceTherapySlotTemplates(ctx, tx, id, schedMode, templates); err != nil {
+	if err := replaceTherapySlotTemplates(ctx, txTS, id, schedMode, templates); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	auditEvent(ctx, conn, u, "event_therapy", id, "upsert", nil, p)
+	auditEvent(ctx, ts, u, "event_therapy", id, "upsert", nil, p)
 	resp, _ := ListEventTherapySettings(ctx, eventId)
 	for _, it := range resp.Items {
 		if it.ID == id {

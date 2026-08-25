@@ -95,8 +95,11 @@ func requireOwner(u *types.AuthUser) error {
 	return nil
 }
 
-func tConn(ctx context.Context, schema string) (*sql.Conn, error) {
-	return appdb.TenantConn(ctx, db.Stdlib(), schema)
+func openTenantScope(ctx context.Context, schema string) (appdb.TenantScope, error) {
+	if err := tenant.PrepareTenantAccess(ctx, schema); err != nil {
+		return appdb.TenantScope{}, err
+	}
+	return appdb.OpenTenantScope(db.Stdlib(), schema), nil
 }
 
 // ListChannels returns all WhatsApp channels for the tenant.
@@ -107,13 +110,12 @@ func ListChannels(ctx context.Context) (*ListChannelsResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tConn(ctx, user.TenantSchema)
+	ts, err := openTenantScope(ctx, user.TenantSchema)
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer appdb.CloseTenantConn(conn)
 
-	rows, err := conn.QueryContext(ctx, `
+	rows, err := ts.QueryContext(ctx, `
 		SELECT id, provider, display_name, phone_number,
 		       meta_phone_number_id, meta_waba_id, meta_app_id,
 		       status, last_error, connected_at
@@ -243,13 +245,12 @@ func CompleteMetaConnect(ctx context.Context, p *MetaConnectCallbackParams) (*Ch
 		return nil, err
 	}
 
-	conn, err := tConn(ctx, schema)
+	ts, err := openTenantScope(ctx, schema)
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer appdb.CloseTenantConn(conn)
 
-	ch, err := upsertChannel(ctx, conn, channelConnectParams{
+	ch, err := upsertChannel(ctx, ts, channelConnectParams{
 		DisplayName:       p.DisplayName,
 		PhoneNumber:       p.PhoneNumber,
 		AccessToken:       accessToken,
@@ -281,14 +282,13 @@ func DisconnectChannel(ctx context.Context, id string) (*Channel, error) {
 		return nil, err
 	}
 
-	conn, err := tConn(ctx, user.TenantSchema)
+	ts, err := openTenantScope(ctx, user.TenantSchema)
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer appdb.CloseTenantConn(conn)
 
 	var ch Channel
-	err = conn.QueryRowContext(ctx, `
+	err = ts.QueryRowContext(ctx, `
 		UPDATE whatsapp_channel
 		SET status = 'disconnected', connected_at = NULL, updated_at = NOW()
 		WHERE id = $1
@@ -329,15 +329,15 @@ type channelConnectParams struct {
 	MetaAppSecret     *string
 }
 
-func upsertChannel(ctx context.Context, conn *sql.Conn, p channelConnectParams) (*Channel, error) {
+func upsertChannel(ctx context.Context, ts appdb.TenantScope, p channelConnectParams) (*Channel, error) {
 	var existingID string
-	err := conn.QueryRowContext(ctx,
+	err := ts.QueryRowContext(ctx,
 		`SELECT id FROM whatsapp_channel WHERE phone_number = $1`, p.PhoneNumber,
 	).Scan(&existingID)
 
 	var ch Channel
 	if err == sql.ErrNoRows {
-		err = conn.QueryRowContext(ctx, `
+		err = ts.QueryRowContext(ctx, `
 			INSERT INTO whatsapp_channel (
 				provider, display_name, phone_number, access_token,
 				meta_phone_number_id, meta_waba_id, meta_app_id, meta_app_secret,
@@ -354,7 +354,7 @@ func upsertChannel(ctx context.Context, conn *sql.Conn, p channelConnectParams) 
 			&ch.Status, &ch.LastError, &ch.ConnectedAt,
 		)
 	} else if err == nil {
-		err = conn.QueryRowContext(ctx, `
+		err = ts.QueryRowContext(ctx, `
 			UPDATE whatsapp_channel SET
 				provider = 'meta_cloud',
 				display_name = $1,
@@ -537,14 +537,13 @@ func SendTestMessage(ctx context.Context, id string, req *SendTestMessageRequest
 		return nil, apperr.BadRequest("to and body are required")
 	}
 
-	conn, err := tConn(ctx, user.TenantSchema)
+	ts, err := openTenantScope(ctx, user.TenantSchema)
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer appdb.CloseTenantConn(conn)
 
 	var token, phoneNumberID, status string
-	err = conn.QueryRowContext(ctx, `
+	err = ts.QueryRowContext(ctx, `
 		SELECT COALESCE(access_token,''), COALESCE(meta_phone_number_id,''), status
 		FROM whatsapp_channel WHERE id = $1`, id,
 	).Scan(&token, &phoneNumberID, &status)

@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
+	appdb "encore.app/wabantu/shared/db"
 	appErrs "encore.app/wabantu/shared/errs"
-	"encore.app/wabantu/tenant"
 )
 
 // RecordInventoryEntry posts an idempotent finance row for an inventory event
@@ -30,25 +30,25 @@ func RecordInventoryEntry(ctx context.Context, tenantSchema, createdBy, referenc
 	}
 	referenceNo = strings.TrimSpace(referenceNo)
 
-	conn, err := tenant.TenantConn(ctx, tenantSchema)
+	sch, err := prepareTenant(ctx, tenantSchema)
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantPool()
 
-	resolvedWalletID, err := resolveIncomeWallet(ctx, conn, preferredWalletID)
+	resolvedWalletID, err := resolveIncomeWallet(ctx, sch, pool, preferredWalletID)
 	if err != nil {
 		return err
 	}
 
 	var categoryID sql.NullString
-	_ = conn.QueryRowContext(ctx, `
+	_ = qrow(ctx, sch, pool, `
 		SELECT id::text FROM fin_category
 		WHERE name = $1 AND deleted_at IS NULL AND is_system = true
 		LIMIT 1`, categoryName).Scan(&categoryID)
 
-	today := financeToday(ctx, conn)
-	if err := ensurePeriodUnlocked(ctx, conn, walletPeriod(today)); err != nil {
+	today := financeToday(ctx, sch, pool)
+	if err := ensurePeriodUnlocked(ctx, sch, pool, walletPeriod(today)); err != nil {
 		return err
 	}
 
@@ -58,7 +58,7 @@ func RecordInventoryEntry(ctx context.Context, tenantSchema, createdBy, referenc
 
 	if referenceNo != "" {
 		var exists bool
-		if err := conn.QueryRowContext(ctx, `
+		if err := qrow(ctx, sch, pool, `
 			SELECT EXISTS(
 			  SELECT 1 FROM fin_transaction
 			  WHERE reference_no = $1 AND type = $2 AND deleted_at IS NULL
@@ -74,7 +74,7 @@ func RecordInventoryEntry(ctx context.Context, tenantSchema, createdBy, referenc
 	if referenceNo != "" {
 		refArg = referenceNo
 	}
-	if _, err := conn.ExecContext(ctx, `
+	if _, err := qexec(ctx, sch, pool, `
 		INSERT INTO fin_transaction
 		 (type, amount, currency, wallet_id, category_id, description, reference_no,
 		  transaction_date, status, tags, created_by)
@@ -82,7 +82,7 @@ func RecordInventoryEntry(ctx context.Context, tenantSchema, createdBy, referenc
 		flow, amount, resolvedWalletID, nullStr(categoryID), description, refArg, today, createdBy); err != nil {
 		return appErrs.Internal("failed to record inventory finance entry: " + err.Error())
 	}
-	refreshWallets(ctx, conn, resolvedWalletID, nil)
+	refreshWallets(ctx, sch, pool, resolvedWalletID, nil)
 	return nil
 }
 
@@ -98,11 +98,11 @@ func RemoveInventoryEntries(ctx context.Context, tenantSchema string, referenceN
 	if len(refs) == 0 {
 		return nil
 	}
-	conn, err := tenant.TenantConn(ctx, tenantSchema)
+	sch, err := prepareTenant(ctx, tenantSchema)
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantPool()
 
 	const chunk = 200
 	for i := 0; i < len(refs); i += chunk {
@@ -110,7 +110,7 @@ func RemoveInventoryEntries(ctx context.Context, tenantSchema string, referenceN
 		if end > len(refs) {
 			end = len(refs)
 		}
-		if err := removeInventoryEntriesChunk(ctx, conn, refs[i:end]); err != nil {
+		if err := removeInventoryEntriesChunk(ctx, sch, pool, refs[i:end]); err != nil {
 			return err
 		}
 	}
@@ -134,7 +134,7 @@ func uniqueReferenceNos(referenceNos []string) []string {
 	return out
 }
 
-func removeInventoryEntriesChunk(ctx context.Context, conn *sql.Conn, refs []string) error {
+func removeInventoryEntriesChunk(ctx context.Context, sch appdb.SchemaSQL, q finQuerier, refs []string) error {
 	if len(refs) == 0 {
 		return nil
 	}
@@ -143,7 +143,7 @@ func removeInventoryEntriesChunk(ctx context.Context, conn *sql.Conn, refs []str
 		args[i] = r
 	}
 
-	rows, err := conn.QueryContext(ctx, fmt.Sprintf(
+	rows, err := qquery(ctx, sch, q, fmt.Sprintf(
 		`SELECT DISTINCT wallet_id::text FROM fin_transaction WHERE reference_no IN (%s)`, clause), args...)
 	if err != nil {
 		return appErrs.Internal(err.Error())
@@ -161,12 +161,12 @@ func removeInventoryEntriesChunk(ctx context.Context, conn *sql.Conn, refs []str
 		return appErrs.Internal(err.Error())
 	}
 
-	if _, err := conn.ExecContext(ctx, fmt.Sprintf(
+	if _, err := qexec(ctx, sch, q, fmt.Sprintf(
 		`DELETE FROM fin_transaction WHERE reference_no IN (%s)`, clause), args...); err != nil {
 		return appErrs.Internal(err.Error())
 	}
 	for _, w := range wallets {
-		refreshWallets(ctx, conn, w, nil)
+		refreshWallets(ctx, sch, q, w, nil)
 	}
 	return nil
 }

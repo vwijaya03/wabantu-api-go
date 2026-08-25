@@ -12,6 +12,7 @@ import (
 	"encore.dev/rlog"
 
 	apperr "encore.app/wabantu/shared/errs"
+	appdb "encore.app/wabantu/shared/db"
 	"encore.app/wabantu/shared/reqctx"
 )
 
@@ -77,16 +78,15 @@ func ListCatalog(ctx context.Context, p *ListCatalogParams) (*ListCatalogRespons
 		return nil, err
 	}
 	normalizeCatalogListParams(p)
-	conn, err := tenantConn(ctx, user)
+	ts, err := openTenantScope(ctx, user.TenantSchema)
 	if err != nil {
 		return nil, err
 	}
-	defer closeTenantConn(conn)
 
-	if err := ensurePricingSchema(ctx, conn, user.TenantSchema); err != nil {
+	if err := ensurePricingSchema(ctx, user.TenantSchema); err != nil {
 		return nil, apperr.Internal("prepare catalog pricing failed")
 	}
-	if err := seedDefaultPriceTypes(ctx, conn); err != nil {
+	if err := seedDefaultPriceTypes(ctx, ts); err != nil {
 		return nil, apperr.Internal("seed price types failed")
 	}
 
@@ -107,7 +107,7 @@ func ListCatalog(ctx context.Context, p *ListCatalogParams) (*ListCatalogRespons
 	where := strings.Join(conditions, " AND ")
 
 	var total int
-	if err := conn.QueryRowContext(ctx, fmt.Sprintf(`
+	if err := ts.QueryRowContext(ctx, fmt.Sprintf(`
 		SELECT COUNT(*)
 		FROM business_catalog_item
 		WHERE %s`, where), args...).Scan(&total); err != nil {
@@ -119,7 +119,7 @@ func ListCatalog(ctx context.Context, p *ListCatalogParams) (*ListCatalogRespons
 	limitParam := len(queryArgs) - 1
 	offsetParam := len(queryArgs)
 
-	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
+	rows, err := ts.QueryContext(ctx, fmt.Sprintf(`
 		SELECT id, external_code, name, description, sell_price, sell_unit,
 		       is_active, barcode, source, created_at, updated_at
 		FROM business_catalog_item
@@ -142,11 +142,11 @@ func ListCatalog(ctx context.Context, p *ListCatalogParams) (*ListCatalogRespons
 	if err := rows.Err(); err != nil {
 		return nil, apperr.Internal("read catalog rows failed")
 	}
-	if err := attachCatalogItemPricesBatch(ctx, conn, items); err != nil {
+	if err := attachCatalogItemPricesBatch(ctx, ts, items); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(p.ContactID) != "" {
-		if err := attachEffectiveSellPrices(ctx, conn, items, strings.TrimSpace(p.ContactID)); err != nil {
+		if err := attachEffectiveSellPrices(ctx, ts, items, strings.TrimSpace(p.ContactID)); err != nil {
 			return nil, err
 		}
 	}
@@ -172,17 +172,16 @@ func CreateCatalog(ctx context.Context, req *CreateCatalogRequest) (*CatalogItem
 		active = *req.IsActive
 	}
 
-	conn, err := tConn(ctx, user.TenantSchema)
+	ts, err := openTenantScope(ctx, user.TenantSchema)
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer closeTenantConn(conn)
 
-	if err := ensurePricingSchema(ctx, conn, user.TenantSchema); err != nil {
+	if err := ensurePricingSchema(ctx, user.TenantSchema); err != nil {
 		return nil, apperr.Internal("prepare catalog pricing failed")
 	}
 
-	item, err := insertOrRestoreCatalogItem(ctx, conn, code, name, req.Description, req.SellPrice, req.SellUnit, active, req.Barcode)
+	item, err := insertOrRestoreCatalogItem(ctx, ts, code, name, req.Description, req.SellPrice, req.SellUnit, active, req.Barcode)
 	if err != nil {
 		if isUniqueViolation(err) {
 			return nil, apperr.BadRequest(fmt.Sprintf("SKU/kode %q sudah dipakai produk lain", code))
@@ -192,15 +191,15 @@ func CreateCatalog(ctx context.Context, req *CreateCatalogRequest) (*CatalogItem
 	}
 	prices := req.Prices
 	if len(prices) == 0 && req.SellPrice != nil {
-		if ptID, err := resolveDefaultPriceTypeID(ctx, conn); err == nil {
+		if ptID, err := resolveDefaultPriceTypeID(ctx, ts); err == nil {
 			prices = []CatalogItemPrice{{PriceTypeID: ptID, Price: *req.SellPrice}}
 		}
 	}
 	if len(prices) > 0 {
-		if err := upsertCatalogItemPrices(ctx, conn, item.ID, prices); err != nil {
+		if err := upsertCatalogItemPrices(ctx, ts, item.ID, prices); err != nil {
 			return nil, err
 		}
-		prices, pErr := loadCatalogItemPrices(ctx, conn, item.ID)
+		prices, pErr := loadCatalogItemPrices(ctx, ts, item.ID)
 		if pErr != nil {
 			return nil, pErr
 		}
@@ -219,13 +218,12 @@ func UpdateCatalog(ctx context.Context, id string, req *UpdateCatalogRequest) (*
 		return nil, apperr.Forbidden("only owner can manage catalog")
 	}
 
-	conn, err := tConn(ctx, user.TenantSchema)
+	ts, err := openTenantScope(ctx, user.TenantSchema)
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer closeTenantConn(conn)
 
-	if err := ensurePricingSchema(ctx, conn, user.TenantSchema); err != nil {
+	if err := ensurePricingSchema(ctx, user.TenantSchema); err != nil {
 		return nil, apperr.Internal("prepare catalog pricing failed")
 	}
 
@@ -270,7 +268,7 @@ func UpdateCatalog(ctx context.Context, id string, req *UpdateCatalogRequest) (*
 			RETURNING id, external_code, name, description, sell_price, sell_unit,
 			          is_active, barcode, source, created_at, updated_at`,
 			strings.Join(sets, ", "), n)
-		item, err = scanCatalog(conn.QueryRowContext(ctx, q, args...).Scan)
+		item, err = scanCatalog(ts.QueryRowContext(ctx, q, args...).Scan)
 		if err == sql.ErrNoRows {
 			return nil, apperr.NotFound("catalog item not found")
 		}
@@ -278,7 +276,7 @@ func UpdateCatalog(ctx context.Context, id string, req *UpdateCatalogRequest) (*
 			return nil, apperr.Internal("update catalog item failed")
 		}
 	} else {
-		row := conn.QueryRowContext(ctx, `
+		row := ts.QueryRowContext(ctx, `
 			SELECT id, external_code, name, description, sell_price, sell_unit,
 			       is_active, barcode, source, created_at, updated_at
 			FROM business_catalog_item
@@ -292,15 +290,15 @@ func UpdateCatalog(ctx context.Context, id string, req *UpdateCatalogRequest) (*
 		}
 	}
 	if len(req.Prices) > 0 {
-		if err := upsertCatalogItemPrices(ctx, conn, item.ID, req.Prices); err != nil {
+		if err := upsertCatalogItemPrices(ctx, ts, item.ID, req.Prices); err != nil {
 			return nil, err
 		}
 	} else if req.SellPrice != nil {
-		if ptID, err := resolveDefaultPriceTypeID(ctx, conn); err == nil {
-			_ = upsertCatalogItemPrices(ctx, conn, item.ID, []CatalogItemPrice{{PriceTypeID: ptID, Price: *req.SellPrice}})
+		if ptID, err := resolveDefaultPriceTypeID(ctx, ts); err == nil {
+			_ = upsertCatalogItemPrices(ctx, ts, item.ID, []CatalogItemPrice{{PriceTypeID: ptID, Price: *req.SellPrice}})
 		}
 	}
-	prices, pErr := loadCatalogItemPrices(ctx, conn, item.ID)
+	prices, pErr := loadCatalogItemPrices(ctx, ts, item.ID)
 	if pErr != nil {
 		return nil, pErr
 	}
@@ -317,14 +315,13 @@ func DeleteCatalog(ctx context.Context, id string) error {
 	if !user.CanPerformOwnerActions() {
 		return apperr.Forbidden("only owner can manage catalog")
 	}
-	conn, err := tConn(ctx, user.TenantSchema)
+	ts, err := openTenantScope(ctx, user.TenantSchema)
 	if err != nil {
 		return apperr.Internal("database connection failed")
 	}
-	defer closeTenantConn(conn)
 
 	uid, _ := auth.UserID()
-	res, err := conn.ExecContext(ctx, `
+	res, err := ts.ExecContext(ctx, `
 		UPDATE business_catalog_item
 		SET deleted_at = NOW(), deleted_by = $1, updated_at = NOW()
 		WHERE id = $2 AND deleted_at IS NULL`, string(uid), id)
@@ -364,7 +361,7 @@ func scanCatalog(scan func(dest ...any) error) (CatalogItem, error) {
 
 func insertOrRestoreCatalogItem(
 	ctx context.Context,
-	conn *sql.Conn,
+	ts appdb.TenantScope,
 	code, name string,
 	description *string,
 	sellPrice *float64,
@@ -372,7 +369,7 @@ func insertOrRestoreCatalogItem(
 	active bool,
 	barcode *string,
 ) (CatalogItem, error) {
-	restore := conn.QueryRowContext(ctx, `
+	restore := ts.QueryRowContext(ctx, `
 		UPDATE business_catalog_item
 		SET deleted_at = NULL, deleted_by = NULL,
 		    name = $2, description = $3, sell_price = $4, sell_unit = $5,
@@ -389,7 +386,7 @@ func insertOrRestoreCatalogItem(
 		return CatalogItem{}, err
 	}
 
-	insert := conn.QueryRowContext(ctx, `
+	insert := ts.QueryRowContext(ctx, `
 		INSERT INTO business_catalog_item
 			(external_code, name, description, sell_price, sell_unit, is_active, barcode, source)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,'manual')

@@ -31,6 +31,13 @@ import (
 
 var db = sqldb.Named("tenant")
 
+func openTenantScope(ctx context.Context, schema string) (appdb.TenantScope, error) {
+	if err := tenant.PrepareTenantAccess(ctx, schema); err != nil {
+		return appdb.TenantScope{}, err
+	}
+	return appdb.OpenTenantScope(db.Stdlib(), schema), nil
+}
+
 var secrets struct {
 	WebhookVerifyToken string
 	DataEncryptionKey  string
@@ -130,15 +137,14 @@ func ingestMessage(ctx context.Context, msg whatsapp.InboundMessage) error {
 	schema := resolved.Schema
 	channelID := resolved.ChannelID
 
-	conn, err := appdb.TenantConn(ctx, db.Stdlib(), schema)
+	ts, err := openTenantScope(ctx, schema)
 	if err != nil {
-		return fmt.Errorf("tenant conn: %w", err)
+		return fmt.Errorf("tenant scope: %w", err)
 	}
-	defer appdb.CloseTenantConn(conn)
 
 	// Idempotent: skip if message already stored
 	var exists bool
-	if err := conn.QueryRowContext(ctx,
+	if err := ts.QueryRowContext(ctx,
 		`SELECT EXISTS(SELECT 1 FROM message WHERE external_id = $1)`,
 		msg.ExternalID).Scan(&exists); err != nil {
 		return fmt.Errorf("dup check: %w", err)
@@ -147,24 +153,24 @@ func ingestMessage(ctx context.Context, msg whatsapp.InboundMessage) error {
 		return nil
 	}
 
-	contactID, err := upsertContact(ctx, conn, schema, msg)
+	contactID, err := upsertContact(ctx, ts, schema, msg)
 	if err != nil {
 		return fmt.Errorf("upsert contact: %w", err)
 	}
 
-	convoID, err := upsertConversation(ctx, conn, channelID, contactID)
+	convoID, err := upsertConversation(ctx, ts, channelID, contactID)
 	if err != nil {
 		return fmt.Errorf("upsert conversation: %w", err)
 	}
 
-	messageID, err := insertMessage(ctx, conn, convoID, msg)
+	messageID, err := insertMessage(ctx, ts, convoID, msg)
 	if err != nil {
 		return fmt.Errorf("insert message: %w", err)
 	}
 
 	preview := whatsapp.InboundMessagePreview(msg.Type, msg.Body)
 	preview = strutil.TruncateUTF8(preview, 280)
-	if _, err := conn.ExecContext(ctx,
+	if _, err := ts.ExecContext(ctx,
 		`UPDATE conversation
 		 SET unread_count = unread_count + 1,
 		     last_message_at = NOW(),
@@ -222,7 +228,7 @@ func ingestMessage(ctx context.Context, msg whatsapp.InboundMessage) error {
 		inboxrealtime.Publish(ctx, appauth.RedisClient(), tenantID)
 	}
 
-	contactPhone, _ := contactPhoneFromConn(ctx, conn, contactID)
+	contactPhone, _ := contactPhoneFromScope(ctx, ts, schema, contactID)
 
 	_, _ = leads.CaptureFromMessage(ctx, &leads.CaptureRequest{
 		TenantSchema:   schema,
@@ -240,23 +246,44 @@ func ingestMessage(ctx context.Context, msg whatsapp.InboundMessage) error {
 // DB helpers
 // ---------------------------------------------------------------------------
 
-func upsertContact(ctx context.Context, conn *sql.Conn, schema string, msg whatsapp.InboundMessage) (string, error) {
+func contactPIIReady(ctx context.Context, schema string) bool {
+	key := strings.TrimSpace(secrets.DataEncryptionKey)
+	if pii.ValidateKey(key) != nil {
+		return false
+	}
+	active, err := tenantschema.ContactPIIActive(ctx, db.Stdlib(), schema)
+	if err == nil && active {
+		return true
+	}
+	if err := tenant.RunPIISchemaPatches(ctx, schema); err != nil {
+		rlog.Warn("contact PII schema patch failed", "schema", schema, "err", err)
+		return false
+	}
+	tenantschema.InvalidateContactPIICache(schema)
+	active, err = tenantschema.TableColumnExists(ctx, db.Stdlib(), schema, "contact", "phone_number_idx")
+	if active {
+		tenantschema.MarkContactPIIActive(schema)
+	}
+	return active && err == nil
+}
+
+func upsertContact(ctx context.Context, ts appdb.TenantScope, schema string, msg whatsapp.InboundMessage) (string, error) {
 	phone := normalizePhone(msg.FromPhone)
 	displayName := truncStr(strings.TrimSpace(msg.FromDisplayName), 200)
-	key := strings.TrimSpace(secrets.DataEncryptionKey)
-	usePII := pii.ValidateKey(key) == nil && tenantschema.EnsureContactPII(ctx, conn, schema, tenant.RunPIISchemaPatchesOnConn)
+	usePII := contactPIIReady(ctx, schema)
 	if !usePII {
-		if pii.ValidateKey(key) == nil {
-			if active, _ := tenantschema.ContactPIIActiveConn(ctx, conn, schema); !active {
+		if pii.ValidateKey(strings.TrimSpace(secrets.DataEncryptionKey)) == nil {
+			if active, _ := tenantschema.ContactPIIActive(ctx, db.Stdlib(), schema); !active {
 				rlog.Warn("contact PII columns missing — using legacy upsert; run scripts/apply-pii-schema-cloud.sh",
 					"schema", schema)
 			}
 		}
-		return upsertContactLegacy(ctx, conn, phone, displayName)
+		return upsertContactLegacy(ctx, ts, phone, displayName)
 	}
+	key := strings.TrimSpace(secrets.DataEncryptionKey)
 	phoneIdx := pii.BlindIndex(pii.NormalizePhone(phone), key)
 	var id string
-	err := conn.QueryRowContext(ctx,
+	err := ts.QueryRowContext(ctx,
 		`SELECT id FROM contact WHERE phone_number_idx = $1 AND deleted_at IS NULL LIMIT 1`, phoneIdx).Scan(&id)
 	if err == sql.ErrNoRows {
 		phoneEnc, encErr := pii.Encrypt(phone, key)
@@ -271,7 +298,7 @@ func upsertContact(ctx context.Context, conn *sql.Conn, schema string, msg whats
 			}
 			displayEnc = &enc
 		}
-		return id, conn.QueryRowContext(ctx, `
+		return id, ts.QueryRowContext(ctx, `
 			INSERT INTO contact (phone_number, phone_number_enc, phone_number_idx, display_name, display_name_enc, tags)
 			VALUES ($1,$2,$3,$1,$4,'["new"]'::jsonb) RETURNING id`,
 			pii.Placeholder, phoneEnc, phoneIdx, displayEnc).Scan(&id)
@@ -281,7 +308,7 @@ func upsertContact(ctx context.Context, conn *sql.Conn, schema string, msg whats
 	}
 	if displayName != "" {
 		enc, _ := pii.Encrypt(displayName, key)
-		_, _ = conn.ExecContext(ctx, `
+		_, _ = ts.ExecContext(ctx, `
 			UPDATE contact SET display_name_enc = $1, display_name = $2, updated_at = NOW()
 			WHERE id = $3 AND (display_name_enc IS NULL OR TRIM(display_name_enc) = '')`,
 			enc, pii.Placeholder, id)
@@ -289,16 +316,16 @@ func upsertContact(ctx context.Context, conn *sql.Conn, schema string, msg whats
 	return id, nil
 }
 
-func upsertContactLegacy(ctx context.Context, conn *sql.Conn, phone, displayName string) (string, error) {
+func upsertContactLegacy(ctx context.Context, ts appdb.TenantScope, phone, displayName string) (string, error) {
 	var id string
-	err := conn.QueryRowContext(ctx,
+	err := ts.QueryRowContext(ctx,
 		`SELECT id FROM contact WHERE phone_number = $1 AND deleted_at IS NULL`, phone).Scan(&id)
 	if err == sql.ErrNoRows {
 		var dn *string
 		if displayName != "" {
 			dn = &displayName
 		}
-		return id, conn.QueryRowContext(ctx,
+		return id, ts.QueryRowContext(ctx,
 			`INSERT INTO contact (phone_number, display_name, tags)
 			 VALUES ($1, $2, '["new"]'::jsonb) RETURNING id`, phone, dn).Scan(&id)
 	}
@@ -306,7 +333,7 @@ func upsertContactLegacy(ctx context.Context, conn *sql.Conn, phone, displayName
 		return "", err
 	}
 	if displayName != "" {
-		_, _ = conn.ExecContext(ctx, `
+		_, _ = ts.ExecContext(ctx, `
 			UPDATE contact SET display_name = $1, updated_at = NOW()
 			WHERE id = $2 AND (display_name IS NULL OR TRIM(display_name) = '')`,
 			displayName, id)
@@ -314,16 +341,16 @@ func upsertContactLegacy(ctx context.Context, conn *sql.Conn, phone, displayName
 	return id, nil
 }
 
-func contactPhoneFromConn(ctx context.Context, conn *sql.Conn, contactID string) (string, error) {
-	active, err := tenantschema.ContactPIIActiveConn(ctx, conn, "")
+func contactPhoneFromScope(ctx context.Context, ts appdb.TenantScope, schema, contactID string) (string, error) {
+	active, err := tenantschema.ContactPIIActive(ctx, db.Stdlib(), schema)
 	if err != nil || !active {
 		var phone string
-		err := conn.QueryRowContext(ctx,
+		err := ts.QueryRowContext(ctx,
 			`SELECT COALESCE(phone_number,'') FROM contact WHERE id = $1`, contactID).Scan(&phone)
 		return phone, err
 	}
 	var phoneEnc, phoneLegacy sql.NullString
-	err = conn.QueryRowContext(ctx, `
+	err = ts.QueryRowContext(ctx, `
 		SELECT COALESCE(phone_number_enc,''), COALESCE(phone_number,'')
 		FROM contact WHERE id = $1`, contactID).Scan(&phoneEnc, &phoneLegacy)
 	if err != nil {
@@ -333,14 +360,14 @@ func contactPhoneFromConn(ctx context.Context, conn *sql.Conn, contactID string)
 	return pii.DecryptOrLegacy(phoneEnc.String, phoneLegacy.String, key)
 }
 
-func upsertConversation(ctx context.Context, conn *sql.Conn, channelID, contactID string) (string, error) {
+func upsertConversation(ctx context.Context, ts appdb.TenantScope, channelID, contactID string) (string, error) {
 	var id string
-	err := conn.QueryRowContext(ctx,
+	err := ts.QueryRowContext(ctx,
 		`SELECT id FROM conversation WHERE channel_id = $1 AND contact_id = $2`,
 		channelID, contactID).Scan(&id)
 
 	if err == sql.ErrNoRows {
-		return id, conn.QueryRowContext(ctx,
+		return id, ts.QueryRowContext(ctx,
 			`INSERT INTO conversation (channel_id, contact_id, status, ai_handled, unread_count)
 			 VALUES ($1, $2, 'open', true, 0)
 			 RETURNING id`,
@@ -349,10 +376,10 @@ func upsertConversation(ctx context.Context, conn *sql.Conn, channelID, contactI
 	return id, err
 }
 
-func insertMessage(ctx context.Context, conn *sql.Conn, convoID string, msg whatsapp.InboundMessage) (string, error) {
+func insertMessage(ctx context.Context, ts appdb.TenantScope, convoID string, msg whatsapp.InboundMessage) (string, error) {
 	rawJSON := string(msg.Raw)
 	var id string
-	err := conn.QueryRowContext(ctx,
+	err := ts.QueryRowContext(ctx,
 		`INSERT INTO message (conversation_id, external_id, direction, author, type, body, metadata, status)
 		 VALUES ($1, $2, 'in', 'contact', $3, $4, $5::jsonb, 'delivered')
 		 RETURNING id`,

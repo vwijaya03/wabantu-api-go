@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"strings"
 
+	appdb "encore.app/wabantu/shared/db"
 	"encore.app/wabantu/tenant"
 	apperr "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/tenantschema"
@@ -14,7 +15,7 @@ import (
 // EnsureSchema applies idempotent DDL for price types and catalog prices.
 // On Encore Cloud the app DB role cannot run DDL; skip when schema is already present.
 func EnsureSchema(ctx context.Context, conn *sql.Conn, tenantSchema string) error {
-	ready, err := tenantschema.PricingReady(ctx, conn)
+	ready, err := tenantschema.PricingReadyConn(ctx, conn)
 	if err != nil {
 		return err
 	}
@@ -56,9 +57,9 @@ func EnsureSchema(ctx context.Context, conn *sql.Conn, tenantSchema string) erro
 }
 
 // ResolveDefaultPriceTypeID returns the tenant default active price type.
-func ResolveDefaultPriceTypeID(ctx context.Context, conn *sql.Conn) (string, error) {
+func ResolveDefaultPriceTypeID(ctx context.Context, scope appdb.TenantScope) (string, error) {
 	var id string
-	err := conn.QueryRowContext(ctx, `
+	err := scope.QueryRowContext(ctx, `
 		SELECT id::text FROM business_price_type
 		WHERE deleted_at IS NULL AND is_active = true
 		ORDER BY is_default DESC, display_order, label
@@ -73,25 +74,25 @@ func ResolveDefaultPriceTypeID(ctx context.Context, conn *sql.Conn) (string, err
 }
 
 // ResolvePriceTypeIDForContact returns the price type for a contact, or tenant default.
-func ResolvePriceTypeIDForContact(ctx context.Context, conn *sql.Conn, contactID string) (string, error) {
+func ResolvePriceTypeIDForContact(ctx context.Context, scope appdb.TenantScope, contactID string) (string, error) {
 	contactID = strings.TrimSpace(contactID)
 	if contactID == "" {
-		return ResolveDefaultPriceTypeID(ctx, conn)
+		return ResolveDefaultPriceTypeID(ctx, scope)
 	}
 	var priceTypeID sql.NullString
-	err := conn.QueryRowContext(ctx, `
+	err := scope.QueryRowContext(ctx, `
 		SELECT price_type_id::text FROM contact
 		WHERE id = $1::uuid AND deleted_at IS NULL`, contactID,
 	).Scan(&priceTypeID)
 	if err == sql.ErrNoRows {
-		return ResolveDefaultPriceTypeID(ctx, conn)
+		return ResolveDefaultPriceTypeID(ctx, scope)
 	}
 	if err != nil {
 		return "", apperr.Internal("load contact price type failed")
 	}
 	if priceTypeID.Valid && strings.TrimSpace(priceTypeID.String) != "" {
 		var active bool
-		if err := conn.QueryRowContext(ctx, `
+		if err := scope.QueryRowContext(ctx, `
 			SELECT is_active FROM business_price_type
 			WHERE id = $1::uuid AND deleted_at IS NULL`,
 			priceTypeID.String,
@@ -99,13 +100,13 @@ func ResolvePriceTypeIDForContact(ctx context.Context, conn *sql.Conn, contactID
 			return priceTypeID.String, nil
 		}
 	}
-	return ResolveDefaultPriceTypeID(ctx, conn)
+	return ResolveDefaultPriceTypeID(ctx, scope)
 }
 
 // ResolveCatalogUnitPrice returns unit price for a catalog row and price type.
-func ResolveCatalogUnitPrice(ctx context.Context, conn *sql.Conn, catalogItemID, priceTypeID string) (float64, error) {
+func ResolveCatalogUnitPrice(ctx context.Context, scope appdb.TenantScope, catalogItemID, priceTypeID string) (float64, error) {
 	var price sql.NullFloat64
-	err := conn.QueryRowContext(ctx, `
+	err := scope.QueryRowContext(ctx, `
 		SELECT p.price
 		FROM business_catalog_item_price p
 		WHERE p.catalog_item_id = $1::uuid AND p.price_type_id = $2::uuid`,
@@ -118,7 +119,7 @@ func ResolveCatalogUnitPrice(ctx context.Context, conn *sql.Conn, catalogItemID,
 		return 0, apperr.Internal("load catalog price failed")
 	}
 
-	err = conn.QueryRowContext(ctx, `
+	err = scope.QueryRowContext(ctx, `
 		SELECT sell_price FROM business_catalog_item
 		WHERE id = $1::uuid AND deleted_at IS NULL`, catalogItemID,
 	).Scan(&price)

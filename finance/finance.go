@@ -15,9 +15,9 @@ import (
 	"encore.dev/rlog"
 	"encore.dev/storage/sqldb"
 
+	appdb "encore.app/wabantu/shared/db"
 	appErrs "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/types"
-	"encore.app/wabantu/tenant"
 	"encore.app/wabantu/usage"
 )
 
@@ -37,10 +37,6 @@ func mustUser(ctx context.Context) (*types.AuthUser, error) {
 	return u, nil
 }
 
-func tenantConn(ctx context.Context, schema string) (*sql.Conn, error) {
-	return tenant.TenantConn(ctx, schema)
-}
-
 func isOwner(u *types.AuthUser) bool { return u.CanPerformOwnerActions() }
 
 func assertOwner(u *types.AuthUser) error {
@@ -58,9 +54,9 @@ func moneyString(v float64) string {
 }
 
 // periodLocked returns true if the given YYYY-MM period is locked.
-func periodLocked(ctx context.Context, conn *sql.Conn, period string) (bool, error) {
+func periodLocked(ctx context.Context, sch appdb.SchemaSQL, q finQuerier, period string) (bool, error) {
 	var exists bool
-	err := conn.QueryRowContext(ctx,
+	err := qrow(ctx, sch, q,
 		`SELECT EXISTS(SELECT 1 FROM fin_period_lock WHERE period=$1)`, period,
 	).Scan(&exists)
 	return exists, err
@@ -76,8 +72,8 @@ func walletPeriod(d string) string {
 }
 
 // refreshWalletBalance recalculates and upserts fin_wallet_balance for one wallet.
-func refreshWalletBalance(ctx context.Context, conn *sql.Conn, walletID string) error {
-	const q = `
+func refreshWalletBalance(ctx context.Context, sch appdb.SchemaSQL, querier finQuerier, walletID string) error {
+	const query = `
 		WITH delta AS (
 			SELECT
 				COALESCE(SUM(CASE
@@ -131,15 +127,15 @@ func refreshWalletBalance(ctx context.Context, conn *sql.Conn, walletID string) 
 		SELECT $1, init.ib + delta.net, now() FROM delta, init
 		ON CONFLICT (wallet_id) DO UPDATE
 		SET balance = EXCLUDED.balance, computed_at = EXCLUDED.computed_at`
-	_, err := conn.ExecContext(ctx, q, walletID)
+	_, err := qexec(ctx, sch, querier, query, walletID)
 	return err
 }
 
 // auditFinance writes a finance audit record.
-func auditFinance(ctx context.Context, conn *sql.Conn, u *types.AuthUser, entityType, entityID, action string, before, after any) {
+func auditFinance(ctx context.Context, sch appdb.SchemaSQL, q finQuerier, u *types.AuthUser, entityType, entityID, action string, before, after any) {
 	beforeJSON, _ := json.Marshal(before)
 	afterJSON, _ := json.Marshal(after)
-	conn.ExecContext(ctx,
+	qexec(ctx, sch, q,
 		`INSERT INTO fin_audit_log (entity_type, entity_id, action, actor_id, actor_role, before_data, after_data)
 		 VALUES ($1,$2,$3,$4,$5,$6,$7)`,
 		entityType, entityID, action, u.AccountID, u.Role, beforeJSON, afterJSON,
@@ -216,18 +212,18 @@ func ListWallets(ctx context.Context) (*WalletListResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantPool()
 
 	ownerOnly := ""
 	if !isOwner(u) {
 		ownerOnly = " AND w.visibility = 'all'"
 	}
 
-	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
+	rows, err := qquery(ctx, sch, pool, fmt.Sprintf(`
 		SELECT w.id, w.name, w.type, w.institution, w.account_no, w.currency,
 		       w.initial_balance, w.color, w.icon, w.is_active, w.visibility,
 		       w.display_order, COALESCE(b.balance, w.initial_balance), w.created_at
@@ -303,14 +299,14 @@ func CreateWallet(ctx context.Context, p *CreateWalletParams) (*Wallet, error) {
 		p.Visibility = "all"
 	}
 
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantPool()
 
 	var id string
-	err = conn.QueryRowContext(ctx,
+	err = qrow(ctx, sch, pool,
 		`INSERT INTO fin_wallet (name,type,institution,account_no,currency,initial_balance,color,icon,is_active,visibility,display_order,created_by)
 		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,true,$9,$10,$11) RETURNING id`,
 		strings.TrimSpace(p.Name), p.Type, p.Institution, p.AccountNo,
@@ -320,12 +316,12 @@ func CreateWallet(ctx context.Context, p *CreateWalletParams) (*Wallet, error) {
 		return nil, appErrs.Internal(err.Error())
 	}
 
-	conn.ExecContext(ctx,
+	qexec(ctx, sch, pool,
 		`INSERT INTO fin_wallet_balance (wallet_id, balance) VALUES ($1,$2) ON CONFLICT DO NOTHING`,
 		id, p.InitialBalance,
 	)
 
-	auditFinance(ctx, conn, u, "wallet", id, "create", nil, p)
+	auditFinance(ctx, sch, pool, u, "wallet", id, "create", nil, p)
 	w := &Wallet{ID: id, Name: p.Name, Type: p.Type, Currency: p.Currency,
 		InitialBalance: fmt.Sprintf("%.2f", p.InitialBalance),
 		Balance:        fmt.Sprintf("%.2f", p.InitialBalance),
@@ -343,11 +339,11 @@ func UpdateWallet(ctx context.Context, id string, p *UpdateWalletParams) (*Walle
 	if err := assertOwner(u); err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantPool()
 
 	sets := []string{"updated_at=now()"}
 	args := []any{}
@@ -388,28 +384,28 @@ func UpdateWallet(ctx context.Context, id string, p *UpdateWalletParams) (*Walle
 		return nil, appErrs.BadRequest("tidak ada perubahan")
 	}
 	args = append(args, id)
-	_, err = conn.ExecContext(ctx,
+	_, err = qexec(ctx, sch, pool,
 		fmt.Sprintf(`UPDATE fin_wallet SET %s WHERE id=$%d AND deleted_at IS NULL`,
 			strings.Join(sets, ","), i), args...)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	auditFinance(ctx, conn, u, "wallet", id, "edit", nil, p)
+	auditFinance(ctx, sch, pool, u, "wallet", id, "edit", nil, p)
 	return &Wallet{ID: id}, nil
 }
 
-func walletDeleteBlocked(ctx context.Context, conn *sql.Conn, walletID string) error {
+func walletDeleteBlocked(ctx context.Context, sch appdb.SchemaSQL, q finQuerier, walletID string) error {
 	var txnCount, assetCount, recurringCount int
-	_ = conn.QueryRowContext(ctx, `
+	_ = qrow(ctx, sch, q, `
 		SELECT COUNT(*) FROM fin_transaction
 		WHERE deleted_at IS NULL AND (wallet_id=$1 OR to_wallet_id=$1)`, walletID,
 	).Scan(&txnCount)
-	if finAssetTableReady(ctx, conn) {
-		_ = conn.QueryRowContext(ctx, `
+	if finAssetTableReady(ctx, sch, q) {
+		_ = qrow(ctx, sch, q, `
 			SELECT COUNT(*) FROM fin_asset WHERE wallet_id=$1 AND is_active=true`, walletID,
 		).Scan(&assetCount)
 	}
-	_ = conn.QueryRowContext(ctx, `
+	_ = qrow(ctx, sch, q, `
 		SELECT COUNT(*) FROM fin_recurring
 		WHERE deleted_at IS NULL AND (wallet_id=$1 OR to_wallet_id=$1)`, walletID,
 	).Scan(&recurringCount)
@@ -438,14 +434,14 @@ func DeleteWallet(ctx context.Context, id string) (*OKResponse, error) {
 	if strings.TrimSpace(id) == "" {
 		return nil, appErrs.BadRequest("dompet tidak valid")
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantPool()
 
 	var exists bool
-	if err := conn.QueryRowContext(ctx,
+	if err := qrow(ctx, sch, pool,
 		`SELECT EXISTS(SELECT 1 FROM fin_wallet WHERE id=$1 AND deleted_at IS NULL)`, id,
 	).Scan(&exists); err != nil {
 		return nil, appErrs.Internal(err.Error())
@@ -454,11 +450,11 @@ func DeleteWallet(ctx context.Context, id string) (*OKResponse, error) {
 		return nil, appErrs.NotFound("dompet tidak ditemukan")
 	}
 
-	if err := walletDeleteBlocked(ctx, conn, id); err != nil {
+	if err := walletDeleteBlocked(ctx, sch, pool, id); err != nil {
 		return nil, err
 	}
 
-	res, err := conn.ExecContext(ctx,
+	res, err := qexec(ctx, sch, pool,
 		`UPDATE fin_wallet SET deleted_at=now() WHERE id=$1 AND deleted_at IS NULL`, id)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
@@ -466,7 +462,7 @@ func DeleteWallet(ctx context.Context, id string) (*OKResponse, error) {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return nil, appErrs.NotFound("dompet tidak ditemukan")
 	}
-	auditFinance(ctx, conn, u, "wallet", id, "delete", nil, nil)
+	auditFinance(ctx, sch, pool, u, "wallet", id, "delete", nil, nil)
 	return &OKResponse{OK: true}, nil
 }
 
@@ -505,13 +501,13 @@ func ListCategories(ctx context.Context) (*CategoryListResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantPool()
 
-	rows, err := conn.QueryContext(ctx,
+	rows, err := qquery(ctx, sch, pool,
 		`SELECT id, name, type, parent_id, icon, color, is_system, display_order, created_at
 		 FROM fin_category WHERE deleted_at IS NULL ORDER BY display_order, name`)
 	if err != nil {
@@ -556,14 +552,14 @@ func CreateCategory(ctx context.Context, p *CreateCategoryParams) (*Category, er
 	if strings.TrimSpace(p.Name) == "" {
 		return nil, appErrs.BadRequest("nama kategori tidak boleh kosong")
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantPool()
 
 	var id string
-	err = conn.QueryRowContext(ctx,
+	err = qrow(ctx, sch, pool,
 		`INSERT INTO fin_category (name,type,parent_id,icon,color,is_system,display_order)
 		 VALUES ($1,$2,$3,$4,$5,false,$6) RETURNING id`,
 		strings.TrimSpace(p.Name), p.Type, p.ParentID, p.Icon, p.Color, p.DisplayOrder,
@@ -584,13 +580,13 @@ func DeleteCategory(ctx context.Context, id string) (*OKResponse, error) {
 	if err := assertOwner(u); err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantPool()
 	var isSystem bool
-	if err := conn.QueryRowContext(ctx,
+	if err := qrow(ctx, sch, pool,
 		`SELECT is_system FROM fin_category WHERE id=$1 AND deleted_at IS NULL`, id,
 	).Scan(&isSystem); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -601,7 +597,7 @@ func DeleteCategory(ctx context.Context, id string) (*OKResponse, error) {
 	if isSystem {
 		return nil, appErrs.BadRequest("kategori bawaan tidak bisa dihapus")
 	}
-	res, err := conn.ExecContext(ctx, `UPDATE fin_category SET deleted_at=now() WHERE id=$1 AND deleted_at IS NULL`, id)
+	res, err := qexec(ctx, sch, pool, `UPDATE fin_category SET deleted_at=now() WHERE id=$1 AND deleted_at IS NULL`, id)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
@@ -715,11 +711,11 @@ func ListTransactions(ctx context.Context, p *ListTransactionsParams) (*ListTran
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantPool()
 
 	if p.Page <= 0 {
 		p.Page = 1
@@ -801,7 +797,7 @@ func ListTransactions(ctx context.Context, p *ListTransactionsParams) (*ListTran
 		LEFT JOIN fin_asset a ON a.id = t.asset_id
 		WHERE %s`, where)
 	var total int
-	conn.QueryRowContext(ctx, countQ, args...).Scan(&total)
+	qrow(ctx, sch, pool, countQ, args...).Scan(&total)
 
 	args = append(args, p.PageSize, offset)
 	dataQ := fmt.Sprintf(`
@@ -821,7 +817,7 @@ func ListTransactions(ctx context.Context, p *ListTransactionsParams) (*ListTran
 		ORDER BY t.transaction_date DESC, t.created_at DESC
 		LIMIT $%d OFFSET $%d`, where, i, i+1)
 
-	rows, err := conn.QueryContext(ctx, dataQ, args...)
+	rows, err := qquery(ctx, sch, pool, dataQ, args...)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
@@ -911,17 +907,17 @@ func CreateTransaction(ctx context.Context, p *CreateTransactionParams) (*Transa
 		return nil, err
 	}
 
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantPool()
 
 	if p.TransactionDate == "" {
-		p.TransactionDate = financeToday(ctx, conn)
+		p.TransactionDate = financeToday(ctx, sch, pool)
 	}
 
-	txnType, err := loadTransactionTypeByCode(ctx, conn, p.Type)
+	txnType, err := loadTransactionTypeByCode(ctx, sch, pool, p.Type)
 	if err != nil {
 		return nil, err
 	}
@@ -930,18 +926,18 @@ func CreateTransaction(ctx context.Context, p *CreateTransactionParams) (*Transa
 			return nil, err
 		}
 	}
-	if err := assertWalletAccessible(ctx, conn, u, p.WalletID); err != nil {
+	if err := assertWalletAccessible(ctx, sch, pool, u, p.WalletID); err != nil {
 		return nil, err
 	}
 	if p.ToWalletID != nil && *p.ToWalletID != "" {
-		if err := assertWalletAccessible(ctx, conn, u, *p.ToWalletID); err != nil {
+		if err := assertWalletAccessible(ctx, sch, pool, u, *p.ToWalletID); err != nil {
 			return nil, err
 		}
 	}
 
 	status := "approved"
 	if !isOwner(u) {
-		cfg, err := loadApprovalConfig(ctx, conn)
+		cfg, err := loadApprovalConfig(ctx, sch, pool)
 		if err != nil {
 			return nil, appErrs.Internal(err.Error())
 		}
@@ -951,7 +947,7 @@ func CreateTransaction(ctx context.Context, p *CreateTransactionParams) (*Transa
 	}
 
 	period := walletPeriod(p.TransactionDate)
-	if err := ensurePeriodUnlocked(ctx, conn, period); err != nil {
+	if err := ensurePeriodUnlocked(ctx, sch, pool, period); err != nil {
 		return nil, err
 	}
 
@@ -960,14 +956,14 @@ func CreateTransaction(ctx context.Context, p *CreateTransactionParams) (*Transa
 		tags = []string{}
 	}
 
-	dbTx, err := conn.BeginTx(ctx, nil)
+	dbTx, err := pool.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer dbTx.Rollback()
 
 	var id string
-	err = dbTx.QueryRowContext(ctx,
+	err = qrow(ctx, sch, dbTx,
 		`INSERT INTO fin_transaction
 		 (type,amount,currency,wallet_id,to_wallet_id,category_id,description,notes,
 		  reference_no,transaction_date,status,tags,created_by)
@@ -986,13 +982,13 @@ func CreateTransaction(ctx context.Context, p *CreateTransactionParams) (*Transa
 	}
 
 	if status == "approved" {
-		refreshWallets(ctx, conn, p.WalletID, p.ToWalletID)
+		refreshWallets(ctx, sch, pool, p.WalletID, p.ToWalletID)
 	}
 
 	// Record usage event
 	usage.RecordEvent(ctx, u.TenantSchema, "fin_transaction_created", 1, nil)
 
-	auditFinance(ctx, conn, u, "transaction", id, "create", nil, p)
+	auditFinance(ctx, sch, pool, u, "transaction", id, "create", nil, p)
 
 	return &Transaction{
 		ID: id, Type: p.Type,
@@ -1011,15 +1007,15 @@ func UpdateTransaction(ctx context.Context, id string, p *UpdateTransactionParam
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantPool()
 
 	// Fetch existing to check ownership and period lock
 	var txType, txDate, txStatus, createdBy string
-	if err := conn.QueryRowContext(ctx,
+	if err := qrow(ctx, sch, pool,
 		`SELECT type, transaction_date::text, status, created_by FROM fin_transaction
 		 WHERE id=$1 AND deleted_at IS NULL`, id,
 	).Scan(&txType, &txDate, &txStatus, &createdBy); err != nil {
@@ -1040,12 +1036,12 @@ func UpdateTransaction(ctx context.Context, id string, p *UpdateTransactionParam
 	}
 
 	period := walletPeriod(txDate)
-	if err := ensurePeriodUnlocked(ctx, conn, period); err != nil {
+	if err := ensurePeriodUnlocked(ctx, sch, pool, period); err != nil {
 		return nil, err
 	}
 	if p.TransactionDate != nil {
 		newPeriod := walletPeriod(*p.TransactionDate)
-		if err := ensurePeriodUnlocked(ctx, conn, newPeriod); err != nil {
+		if err := ensurePeriodUnlocked(ctx, sch, pool, newPeriod); err != nil {
 			return nil, err
 		}
 	}
@@ -1084,7 +1080,7 @@ func UpdateTransaction(ctx context.Context, id string, p *UpdateTransactionParam
 	}
 
 	args = append(args, id)
-	_, err = conn.ExecContext(ctx,
+	_, err = qexec(ctx, sch, pool,
 		fmt.Sprintf(`UPDATE fin_transaction SET %s WHERE id=$%d`, strings.Join(sets, ","), i),
 		args...)
 	if err != nil {
@@ -1094,17 +1090,17 @@ func UpdateTransaction(ctx context.Context, id string, p *UpdateTransactionParam
 	if (p.Amount != nil || p.TransactionDate != nil) && txStatus == "approved" {
 		var walletID string
 		var toWalletID sql.NullString
-		conn.QueryRowContext(ctx,
+		qrow(ctx, sch, pool,
 			`SELECT wallet_id, to_wallet_id FROM fin_transaction WHERE id=$1`, id,
 		).Scan(&walletID, &toWalletID)
 		var toPtr *string
 		if toWalletID.Valid && toWalletID.String != "" {
 			toPtr = &toWalletID.String
 		}
-		refreshWallets(ctx, conn, walletID, toPtr)
+		refreshWallets(ctx, sch, pool, walletID, toPtr)
 	}
 
-	auditFinance(ctx, conn, u, "transaction", id, "edit", txStatus, p)
+	auditFinance(ctx, sch, pool, u, "transaction", id, "edit", txStatus, p)
 	return &Transaction{ID: id, Type: txType, Status: txStatus}, nil
 }
 
@@ -1117,31 +1113,31 @@ func DeleteTransaction(ctx context.Context, id string) (*OKResponse, error) {
 	if err := assertOwner(u); err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantPool()
 
 	var walletID, txDate string
 	var toWalletID sql.NullString
-	if err := conn.QueryRowContext(ctx,
+	if err := qrow(ctx, sch, pool,
 		`SELECT wallet_id, to_wallet_id, transaction_date::text FROM fin_transaction WHERE id=$1 AND deleted_at IS NULL`, id,
 	).Scan(&walletID, &toWalletID, &txDate); err != nil {
 		return nil, appErrs.NotFound("transaksi tidak ditemukan")
 	}
 
-	if err := ensurePeriodUnlocked(ctx, conn, walletPeriod(txDate)); err != nil {
+	if err := ensurePeriodUnlocked(ctx, sch, pool, walletPeriod(txDate)); err != nil {
 		return nil, err
 	}
 
-	conn.ExecContext(ctx, `DELETE FROM fin_transaction WHERE id=$1`, id)
+	qexec(ctx, sch, pool, `DELETE FROM fin_transaction WHERE id=$1`, id)
 	var toPtr *string
 	if toWalletID.Valid && toWalletID.String != "" {
 		toPtr = &toWalletID.String
 	}
-	refreshWallets(ctx, conn, walletID, toPtr)
-	auditFinance(ctx, conn, u, "transaction", id, "delete", nil, nil)
+	refreshWallets(ctx, sch, pool, walletID, toPtr)
+	auditFinance(ctx, sch, pool, u, "transaction", id, "delete", nil, nil)
 	return &OKResponse{OK: true}, nil
 }
 
@@ -1167,15 +1163,15 @@ func ApproveTransaction(ctx context.Context, p *ApproveParams) (*Transaction, er
 	if p.Action != "approve" && p.Action != "reject" {
 		return nil, appErrs.BadRequest("action harus approve atau reject")
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantPool()
 
 	var walletID, curStatus string
 	var toWalletID sql.NullString
-	if err := conn.QueryRowContext(ctx,
+	if err := qrow(ctx, sch, pool,
 		`SELECT wallet_id, to_wallet_id, status FROM fin_transaction WHERE id=$1 AND deleted_at IS NULL`, p.ID,
 	).Scan(&walletID, &toWalletID, &curStatus); err != nil {
 		return nil, appErrs.NotFound("transaksi tidak ditemukan")
@@ -1188,7 +1184,7 @@ func ApproveTransaction(ctx context.Context, p *ApproveParams) (*Transaction, er
 	if p.Action == "reject" {
 		newStatus = "rejected"
 	}
-	_, err = conn.ExecContext(ctx,
+	_, err = qexec(ctx, sch, pool,
 		`UPDATE fin_transaction SET status=$1, approved_by=$2, approved_at=now(),
 		 rejected_reason=CASE WHEN $1='rejected' THEN $3 ELSE NULL END,
 		 updated_at=now()
@@ -1202,9 +1198,9 @@ func ApproveTransaction(ctx context.Context, p *ApproveParams) (*Transaction, er
 		if toWalletID.Valid && toWalletID.String != "" {
 			toPtr = &toWalletID.String
 		}
-		refreshWallets(ctx, conn, walletID, toPtr)
+		refreshWallets(ctx, sch, pool, walletID, toPtr)
 	}
-	auditFinance(ctx, conn, u, "transaction", p.ID, p.Action, curStatus, newStatus)
+	auditFinance(ctx, sch, pool, u, "transaction", p.ID, p.Action, curStatus, newStatus)
 	return &Transaction{ID: p.ID, Status: newStatus}, nil
 }
 
@@ -1223,14 +1219,14 @@ func GetApprovalSetting(ctx context.Context) (*ApprovalSettingParams, error) {
 	if err := assertOwner(u); err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantPool()
 	var s ApprovalSettingParams
 	var threshold sql.NullFloat64
-	conn.QueryRowContext(ctx,
+	qrow(ctx, sch, pool,
 		`SELECT enabled, amount_threshold, require_for_types FROM fin_approval_setting WHERE id=$1`,
 		approvalSettingID,
 	).Scan(&s.Enabled, &threshold, &s.RequireForTypes)
@@ -1252,16 +1248,16 @@ func UpdateApprovalSetting(ctx context.Context, p *ApprovalSettingParams) (*Appr
 	if err := assertOwner(u); err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantPool()
 	types := p.RequireForTypes
 	if types == nil {
 		types = []string{}
 	}
-	_, err = conn.ExecContext(ctx,
+	_, err = qexec(ctx, sch, pool,
 		`INSERT INTO fin_approval_setting (id, enabled, amount_threshold, require_for_types, updated_by)
 		 VALUES ($1,$2,$3,$4,$5)
 		 ON CONFLICT (id) DO UPDATE SET
@@ -1295,18 +1291,18 @@ func LockPeriod(ctx context.Context, p *LockPeriodParams) (*OKResponse, error) {
 	if err := assertOwner(u); err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer tenant.CloseTenantConn(conn)
-	_, err = conn.ExecContext(ctx,
+	pool := tenantPool()
+	_, err = qexec(ctx, sch, pool,
 		`INSERT INTO fin_period_lock (period, locked_by, note) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`,
 		p.Period, u.AccountID, p.Note)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	auditFinance(ctx, conn, u, "period_lock", u.TenantID, "lock_period", nil, p)
+	auditFinance(ctx, sch, pool, u, "period_lock", u.TenantID, "lock_period", nil, p)
 	return &OKResponse{OK: true}, nil
 }
 
@@ -1316,12 +1312,12 @@ func ListLockedPeriods(ctx context.Context) (*LockedPeriodsResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer tenant.CloseTenantConn(conn)
-	rows, err := conn.QueryContext(ctx, `SELECT period FROM fin_period_lock ORDER BY period DESC`)
+	pool := tenantPool()
+	rows, err := qquery(ctx, sch, pool, `SELECT period FROM fin_period_lock ORDER BY period DESC`)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
@@ -1362,20 +1358,20 @@ func DuplicateTransactions(ctx context.Context, p *DuplicateParams) (*CountRespo
 	if p.TargetDate == "" {
 		return nil, appErrs.BadRequest("tanggal target harus diisi")
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantPool()
 
-	if err := ensurePeriodUnlocked(ctx, conn, walletPeriod(p.TargetDate)); err != nil {
+	if err := ensurePeriodUnlocked(ctx, sch, pool, walletPeriod(p.TargetDate)); err != nil {
 		return nil, err
 	}
 
 	count := 0
 	for _, txID := range p.TransactionIDs {
 		var newID string
-		err := conn.QueryRowContext(ctx,
+		err := qrow(ctx, sch, pool,
 			`INSERT INTO fin_transaction
 			 (type,amount,currency,wallet_id,to_wallet_id,category_id,description,notes,
 			  tags,status,transaction_date,created_by)
@@ -1389,7 +1385,7 @@ func DuplicateTransactions(ctx context.Context, p *DuplicateParams) (*CountRespo
 			rlog.Warn("duplicate txn failed", "src", txID, "err", err)
 			continue
 		}
-		refreshWalletsForTransaction(ctx, conn, newID)
+		refreshWalletsForTransaction(ctx, sch, pool, newID)
 		count++
 	}
 	return &CountResponse{Count: count}, nil
@@ -1429,15 +1425,15 @@ func GetDashboard(ctx context.Context, p *DashboardParams) (*DashboardSummary, e
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantPool()
 
 	period := p.Period
 	if period == "" {
-		period = financePeriod(ctx, conn)
+		period = financePeriod(ctx, sch, pool)
 	}
 
 	flowSQL := flowFallbackSQL("t.type")
@@ -1446,7 +1442,7 @@ func GetDashboard(ctx context.Context, p *DashboardParams) (*DashboardSummary, e
 		walletFilter = staffWalletBalanceFilter()
 	}
 	var income, expense float64
-	conn.QueryRowContext(ctx, fmt.Sprintf(`
+	qrow(ctx, sch, pool, fmt.Sprintf(`
 		SELECT
 		  COALESCE(SUM(CASE WHEN %s = 'income' THEN t.amount ELSE 0 END),0),
 		  COALESCE(SUM(CASE WHEN %s = 'expense' THEN t.amount ELSE 0 END),0)
@@ -1458,7 +1454,7 @@ func GetDashboard(ctx context.Context, p *DashboardParams) (*DashboardSummary, e
 	).Scan(&income, &expense)
 
 	var totalWallets float64
-	conn.QueryRowContext(ctx, fmt.Sprintf(`
+	qrow(ctx, sch, pool, fmt.Sprintf(`
 		SELECT COALESCE(SUM(b.balance),0) FROM fin_wallet_balance b
 		 JOIN fin_wallet w ON w.id=b.wallet_id
 		 WHERE w.deleted_at IS NULL AND w.is_active=true%s`, walletFilter),
@@ -1466,7 +1462,7 @@ func GetDashboard(ctx context.Context, p *DashboardParams) (*DashboardSummary, e
 
 	var pendingCount int
 	if isOwner(u) {
-		conn.QueryRowContext(ctx,
+		qrow(ctx, sch, pool,
 			`SELECT COUNT(*) FROM fin_transaction WHERE status='pending_approval' AND deleted_at IS NULL`,
 		).Scan(&pendingCount)
 	}
@@ -1476,7 +1472,7 @@ func GetDashboard(ctx context.Context, p *DashboardParams) (*DashboardSummary, e
 	if !isOwner(u) {
 		walletVisibility = " AND w.visibility='all'"
 	}
-	rows, _ := conn.QueryContext(ctx, fmt.Sprintf(`
+	rows, _ := qquery(ctx, sch, pool, fmt.Sprintf(`
 		SELECT w.id, w.name, w.type, COALESCE(b.balance,w.initial_balance), w.currency, w.color, w.icon
 		FROM fin_wallet w
 		LEFT JOIN fin_wallet_balance b ON b.wallet_id=w.id
@@ -1551,11 +1547,11 @@ func GetAuditLog(ctx context.Context, p *AuditLogParams) (*AuditLogResponse, err
 	if err := assertOwner(u); err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantPool()
 
 	limit := p.Limit
 	if limit <= 0 || limit > 200 {
@@ -1580,7 +1576,7 @@ func GetAuditLog(ctx context.Context, p *AuditLogParams) (*AuditLogResponse, err
 		FROM fin_audit_log WHERE %s ORDER BY created_at DESC LIMIT $%d`,
 		strings.Join(conditions, " AND "), i)
 
-	rows, err := conn.QueryContext(ctx, q, args...)
+	rows, err := qquery(ctx, sch, pool, q, args...)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
@@ -1600,7 +1596,7 @@ func GetAuditLog(ctx context.Context, p *AuditLogParams) (*AuditLogResponse, err
 		items = []AuditEntry{}
 	}
 	// record the audit-log read itself
-	auditFinance(ctx, conn, u, "audit_log", u.TenantID, "export_audit", nil, p)
+	auditFinance(ctx, sch, pool, u, "audit_log", u.TenantID, "export_audit", nil, p)
 	return &AuditLogResponse{Items: items}, nil
 }
 

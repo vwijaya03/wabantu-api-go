@@ -14,6 +14,7 @@ import (
 	appErrs "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/entitlement"
 	"encore.app/wabantu/shared/types"
+	"encore.app/wabantu/tenant"
 )
 
 var db = sqldb.Named("tenant")
@@ -41,6 +42,13 @@ type CreateBranchResponse struct {
 	Branch Branch `json:"branch"`
 }
 
+func openTenantScope(ctx context.Context, schema string) (appdb.TenantScope, error) {
+	if err := tenant.PrepareTenantAccess(ctx, schema); err != nil {
+		return appdb.TenantScope{}, err
+	}
+	return appdb.OpenTenantScope(db.Stdlib(), schema), nil
+}
+
 //encore:api auth method=GET path=/api/v1/branches
 func ListBranches(ctx context.Context) (*ListBranchesResponse, error) {
 	u, err := user(ctx)
@@ -50,13 +58,12 @@ func ListBranches(ctx context.Context) (*ListBranchesResponse, error) {
 	if err := entitlement.Require(ctx, u.TenantSchema, entitlement.FeatureMultiBranch); err != nil {
 		return nil, err
 	}
-	conn, err := tConn(ctx, u.TenantSchema)
+	ts, err := openTenantScope(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal("database connection failed")
 	}
-	defer appdb.CloseTenantConn(conn)
 
-	rows, err := conn.QueryContext(ctx, `
+	rows, err := ts.QueryContext(ctx, `
 		SELECT id, name, slug, is_default, created_at
 		FROM branch WHERE deleted_at IS NULL ORDER BY is_default DESC, name ASC`)
 	if err != nil {
@@ -90,20 +97,19 @@ func CreateBranch(ctx context.Context, req *CreateBranchRequest) (*CreateBranchR
 		return nil, appErrs.BadRequest("name and slug required (slug: lowercase alphanumeric)")
 	}
 
-	conn, err := tConn(ctx, u.TenantSchema)
+	ts, err := openTenantScope(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal("database connection failed")
 	}
-	defer appdb.CloseTenantConn(conn)
 
 	var count int
-	if err := conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM branch WHERE deleted_at IS NULL`).Scan(&count); err != nil {
+	if err := ts.QueryRowContext(ctx, `SELECT COUNT(*) FROM branch WHERE deleted_at IS NULL`).Scan(&count); err != nil {
 		return nil, appErrs.Internal("branch count failed")
 	}
 	isDefault := count == 0
 
 	var b Branch
-	err = conn.QueryRowContext(ctx, `
+	err = ts.QueryRowContext(ctx, `
 		INSERT INTO branch (name, slug, is_default)
 		VALUES ($1, $2, $3)
 		RETURNING id, name, slug, is_default, created_at`,
@@ -129,18 +135,13 @@ func user(ctx context.Context) (*types.AuthUser, error) {
 	return u, nil
 }
 
-func tConn(ctx context.Context, schema string) (*sql.Conn, error) {
-	return appdb.TenantConn(ctx, db.Stdlib(), schema)
-}
-
 func DefaultBranchID(ctx context.Context, schema string) (string, error) {
-	conn, err := tConn(ctx, schema)
+	ts, err := openTenantScope(ctx, schema)
 	if err != nil {
 		return "", err
 	}
-	defer appdb.CloseTenantConn(conn)
 	var id string
-	err = conn.QueryRowContext(ctx, `
+	err = ts.QueryRowContext(ctx, `
 		SELECT id FROM branch WHERE deleted_at IS NULL AND is_default = true LIMIT 1`,
 	).Scan(&id)
 	if err == sql.ErrNoRows {
@@ -151,19 +152,18 @@ func DefaultBranchID(ctx context.Context, schema string) (string, error) {
 
 // EnsureDefaultBranch creates a default branch for tenants without multi-branch (single branch).
 func EnsureDefaultBranch(ctx context.Context, schema string) error {
-	conn, err := tConn(ctx, schema)
+	ts, err := openTenantScope(ctx, schema)
 	if err != nil {
 		return err
 	}
-	defer appdb.CloseTenantConn(conn)
 	var n int
-	if err := conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM branch WHERE deleted_at IS NULL`).Scan(&n); err != nil {
+	if err := ts.QueryRowContext(ctx, `SELECT COUNT(*) FROM branch WHERE deleted_at IS NULL`).Scan(&n); err != nil {
 		return err
 	}
 	if n > 0 {
 		return nil
 	}
-	_, err = conn.ExecContext(ctx, `
+	_, err = ts.ExecContext(ctx, `
 		INSERT INTO branch (name, slug, is_default) VALUES ('Cabang Utama', 'main', true)`)
 	return err
 }

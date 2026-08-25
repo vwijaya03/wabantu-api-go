@@ -1,6 +1,7 @@
 package inventory
 
 import (
+	appdb "encore.app/wabantu/shared/db"
 	"context"
 	"database/sql"
 	"errors"
@@ -10,7 +11,6 @@ import (
 
 	"encore.app/wabantu/finance"
 	appErrs "encore.app/wabantu/shared/errs"
-	"encore.app/wabantu/tenant"
 )
 
 const (
@@ -77,12 +77,12 @@ func ListStockTransactions(ctx context.Context, p *ListStockTransactionsParams) 
 	if err := ensureInventoryModuleSchema(ctx, u.TenantSchema); err != nil {
 		return nil, err
 	}
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
-	if err := ensureStockTxnBackfill(ctx, conn, u.TenantSchema); err != nil {
+	pool := tenantDB()
+	if err := ensureStockTxnBackfill(ctx, sch, pool, u.TenantSchema); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 
@@ -107,12 +107,12 @@ func ListStockTransactions(ctx context.Context, p *ListStockTransactionsParams) 
 		idx++
 	}
 	var total int
-	if err := conn.QueryRowContext(ctx,
+	if err := qrow(ctx, sch, pool,
 		fmt.Sprintf(`SELECT COUNT(*) FROM inv_stock_transaction t %s`, where), args...).Scan(&total); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	args = append(args, pageSize, (page-1)*pageSize)
-	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
+	rows, err := qquery(ctx, sch, pool, fmt.Sprintf(`
 		SELECT t.id, t.doc_no, t.kind, t.transaction_date::text, COALESCE(t.note,''),
 		       COALESCE(t.catalog_item_id::text,''), COALESCE(t.warehouse_id::text,''),
 		       COALESCE(t.from_warehouse_id::text,''), COALESCE(t.to_warehouse_id::text,''),
@@ -161,12 +161,12 @@ func GetStockTransaction(ctx context.Context, id string) (*StockTransaction, err
 	if err := ensureInventoryModuleSchema(ctx, u.TenantSchema); err != nil {
 		return nil, err
 	}
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
-	return loadStockTransaction(ctx, conn, id)
+	pool := tenantDB()
+	return loadStockTransaction(ctx, sch, pool, id)
 }
 
 //encore:api auth method=DELETE path=/api/v1/inventory/stock-transactions/:id
@@ -178,16 +178,16 @@ func DeleteStockTransaction(ctx context.Context, id string) error {
 	if err := requireOwner(u); err != nil {
 		return err
 	}
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return appErrs.Internal(err.Error())
+		return err
 	}
-	defer tenant.CloseTenantConn(conn)
-	if err := ensureInventoryModuleReady(ctx, conn, u.TenantSchema); err != nil {
+	pool := tenantDB()
+	if err := ensureInventoryModuleSchema(ctx, u.TenantSchema); err != nil {
 		return err
 	}
 
-	txn, err := loadStockTransaction(ctx, conn, id)
+	txn, err := loadStockTransaction(ctx, sch, pool, id)
 	if err != nil {
 		return err
 	}
@@ -195,7 +195,7 @@ func DeleteStockTransaction(ctx context.Context, id string) error {
 		return err
 	}
 
-	movs, err := collectMovementsByRef(ctx, conn, txnKindRefType(txn.Kind), id)
+	movs, err := collectMovementsByRef(ctx, sch, pool, txnKindRefType(txn.Kind), id)
 	if err != nil {
 		return err
 	}
@@ -204,16 +204,16 @@ func DeleteStockTransaction(ctx context.Context, id string) error {
 		return err
 	}
 
-	tx, terr := conn.BeginTx(ctx, nil)
+	tx, terr := pool.BeginTx(ctx, nil)
 	if terr != nil {
 		return appErrs.Internal(terr.Error())
 	}
 	defer tx.Rollback()
 
-	if _, err := purgeMovementsByRef(ctx, tx, txnKindRefType(txn.Kind), id); err != nil {
+	if _, err := purgeMovementsByRef(ctx, sch, tx, txnKindRefType(txn.Kind), id); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM inv_stock_transaction WHERE id = $1`, id); err != nil {
+	if _, err := qexec(ctx, sch, tx, `DELETE FROM inv_stock_transaction WHERE id = $1`, id); err != nil {
 		return appErrs.Internal(err.Error())
 	}
 	return tx.Commit()
@@ -238,19 +238,19 @@ func docTypeForKind(kind string) (docType, prefix string, err error) {
 	}
 }
 
-func insertStockTransactionHeader(ctx context.Context, tx *sql.Tx, kind, txnDate, note, createdBy string) (id, docNo string, err error) {
+func insertStockTransactionHeader(ctx context.Context, sch appdb.SchemaSQL, tx *sql.Tx, kind, txnDate, note, createdBy string) (id, docNo string, err error) {
 	docType, prefix, derr := docTypeForKind(kind)
 	if derr != nil {
 		return "", "", derr
 	}
-	docNo, err = nextDocNumber(ctx, tx, docType, prefix)
+	docNo, err = nextDocNumber(ctx, sch, tx, docType, prefix)
 	if err != nil {
 		return "", "", appErrs.Internal(err.Error())
 	}
 	if strings.TrimSpace(txnDate) == "" {
 		txnDate = time.Now().Format("2006-01-02")
 	}
-	err = tx.QueryRowContext(ctx, `
+	err = qrow(ctx, sch, tx, `
 		INSERT INTO inv_stock_transaction (doc_no, kind, transaction_date, note, created_by)
 		VALUES ($1,$2,$3,$4,$5)
 		RETURNING id`, docNo, kind, txnDate, nullStr(note), nullUUID(createdBy)).Scan(&id)
@@ -260,8 +260,8 @@ func insertStockTransactionHeader(ctx context.Context, tx *sql.Tx, kind, txnDate
 	return id, docNo, nil
 }
 
-func loadStockTransaction(ctx context.Context, conn *sql.Conn, id string) (*StockTransaction, error) {
-	row := conn.QueryRowContext(ctx, `
+func loadStockTransaction(ctx context.Context, sch appdb.SchemaSQL, q querier, id string) (*StockTransaction, error) {
+	row := qrow(ctx, sch, q, `
 		SELECT id, doc_no, kind, transaction_date::text, COALESCE(note,''),
 		       COALESCE(catalog_item_id::text,''), COALESCE(warehouse_id::text,''),
 		       COALESCE(from_warehouse_id::text,''), COALESCE(to_warehouse_id::text,''),
@@ -274,7 +274,7 @@ func loadStockTransaction(ctx context.Context, conn *sql.Conn, id string) (*Stoc
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	rows, err := conn.QueryContext(ctx, `
+	rows, err := qquery(ctx, sch, q, `
 		SELECT l.id, l.catalog_item_id, COALESCE(ci.name,''), l.warehouse_id, COALESCE(w.name,''),
 		       l.qty, l.unit_cost, l.batch_no, l.movement_id::text
 		FROM inv_stock_transaction_line l
@@ -351,20 +351,20 @@ func scanStockTxnHeader(scan func(dest ...any) error) (StockTransaction, error) 
 }
 
 // resolveRefDocNo maps movement ref to human-readable document number.
-func resolveRefDocNo(ctx context.Context, q querier, refType string, refID string) string {
+func resolveRefDocNo(ctx context.Context, sch appdb.SchemaSQL, q querier, refType string, refID string) string {
 	if refID == "" {
 		return ""
 	}
 	var docNo string
 	switch refType {
 	case "bill":
-		_ = q.QueryRowContext(ctx, `SELECT bill_no FROM pur_bill WHERE id = $1`, refID).Scan(&docNo)
+		_ = qrow(ctx, sch, q, `SELECT bill_no FROM pur_bill WHERE id = $1`, refID).Scan(&docNo)
 	case "order":
 		return formatOrderRef(refID)
 	case TxnKindAdjustment, TxnKindTransfer, TxnKindOpeningBalance, TxnKindRevaluation:
-		_ = q.QueryRowContext(ctx, `SELECT doc_no FROM inv_stock_transaction WHERE id = $1`, refID).Scan(&docNo)
+		_ = qrow(ctx, sch, q, `SELECT doc_no FROM inv_stock_transaction WHERE id = $1`, refID).Scan(&docNo)
 	case "sales_return":
-		_ = q.QueryRowContext(ctx, `SELECT return_no FROM inv_sales_return WHERE id = $1`, refID).Scan(&docNo)
+		_ = qrow(ctx, sch, q, `SELECT return_no FROM inv_sales_return WHERE id = $1`, refID).Scan(&docNo)
 	default:
 		return ""
 	}

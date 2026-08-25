@@ -7,6 +7,7 @@ import (
 
 	"encore.dev/rlog"
 
+	appdb "encore.app/wabantu/shared/db"
 	"encore.app/wabantu/shared/strutil"
 	"encore.app/wabantu/tenant"
 	"encore.app/wabantu/whatsapp"
@@ -14,26 +15,28 @@ import (
 
 func sendPaymentProofConversationMessage(ctx context.Context, tenantSchema, conversationID, text string) error {
 	text = strings.TrimSpace(text)
-	if text == "" || conversationID == "" {
+	if conversationID == "" || text == "" {
 		return nil
 	}
-	conn, err := tenant.TenantConn(ctx, tenantSchema)
-	if err != nil {
+	if err := tenant.PrepareTenantAccess(ctx, tenantSchema); err != nil {
 		return err
 	}
-	defer tenant.CloseTenantConn(conn)
+	sch := appdb.SchemaSQL{Schema: tenantSchema}
+	pool := db.Stdlib()
 
 	var contactID, channelID string
-	err = conn.QueryRowContext(ctx,
-		`SELECT contact_id::text, channel_id::text FROM conversation WHERE id = $1::uuid`, conversationID,
+	err := pool.QueryRowContext(ctx, fmt.Sprintf(
+		`SELECT contact_id::text, channel_id::text FROM %s WHERE id = $1::uuid`, sch.T("conversation")),
+		conversationID,
 	).Scan(&contactID, &channelID)
 	if err != nil {
 		return fmt.Errorf("conversation not found: %w", err)
 	}
 
 	var contactPhone string
-	err = conn.QueryRowContext(ctx,
-		`SELECT COALESCE(phone_number, '') FROM contact WHERE id = $1::uuid`, contactID,
+	err = pool.QueryRowContext(ctx, fmt.Sprintf(
+		`SELECT COALESCE(phone_number, '') FROM %s WHERE id = $1::uuid`, sch.T("contact")),
+		contactID,
 	).Scan(&contactPhone)
 	if err != nil {
 		return fmt.Errorf("contact not found: %w", err)
@@ -41,9 +44,10 @@ func sendPaymentProofConversationMessage(ctx context.Context, tenantSchema, conv
 
 	var chStatus, chAccessToken, chProvider string
 	var chMetaPhoneNumberID *string
-	err = conn.QueryRowContext(ctx,
-		`SELECT status, COALESCE(access_token,''), provider, meta_phone_number_id
-		 FROM whatsapp_channel WHERE id = $1::uuid`, channelID,
+	err = pool.QueryRowContext(ctx, fmt.Sprintf(`
+		SELECT status, COALESCE(access_token,''), provider, meta_phone_number_id
+		 FROM %s WHERE id = $1::uuid`, sch.T("whatsapp_channel")),
+		channelID,
 	).Scan(&chStatus, &chAccessToken, &chProvider, &chMetaPhoneNumberID)
 	if err != nil {
 		return fmt.Errorf("channel not found: %w", err)
@@ -66,17 +70,17 @@ func sendPaymentProofConversationMessage(ctx context.Context, tenantSchema, conv
 		return err
 	}
 
-	_, err = conn.ExecContext(ctx, fmt.Sprintf(`
-		INSERT INTO "%s".message (conversation_id, external_id, direction, author, type, body, metadata, status)
+	_, err = pool.ExecContext(ctx, fmt.Sprintf(`
+		INSERT INTO %s (conversation_id, external_id, direction, author, type, body, metadata, status)
 		VALUES ($1::uuid, $2, 'out', 'system', 'text', $3, '{}'::jsonb, 'sent')`,
-		tenantSchema), conversationID, extID, text)
+		sch.T("message")), conversationID, extID, text)
 	if err != nil {
 		return fmt.Errorf("save message: %w", err)
 	}
 
 	preview := strutil.TruncateUTF8(text, 280)
-	_, _ = conn.ExecContext(ctx,
-		`UPDATE conversation SET last_message_at = NOW(), last_message_preview = $1, status = 'open' WHERE id = $2::uuid`,
-		preview, conversationID)
+	_, _ = pool.ExecContext(ctx, fmt.Sprintf(
+		`UPDATE %s SET last_message_at = NOW(), last_message_preview = $1, status = 'open' WHERE id = $2::uuid`,
+		sch.T("conversation")), preview, conversationID)
 	return nil
 }

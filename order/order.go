@@ -15,6 +15,7 @@ import (
 
 	"encore.app/wabantu/finance"
 	"encore.app/wabantu/inventory"
+	appdb "encore.app/wabantu/shared/db"
 	appErrs "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/pricing"
 	"encore.app/wabantu/shared/tenantschema"
@@ -863,6 +864,9 @@ func orderStockItems(items []OrderItem) []inventory.OrderStockItem {
 }
 
 func normalizeOrderItems(ctx context.Context, schema, contactID string, raw []OrderItem) ([]OrderItem, error) {
+	if err := tenant.PrepareTenantAccess(ctx, schema); err != nil {
+		return nil, appErrs.Internal(err.Error())
+	}
 	conn, err := tenant.TenantConn(ctx, schema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
@@ -871,7 +875,8 @@ func normalizeOrderItems(ctx context.Context, schema, contactID string, raw []Or
 	if err := pricing.EnsureSchema(ctx, conn, schema); err != nil {
 		return nil, appErrs.Internal("prepare pricing failed")
 	}
-	priceTypeID, err := pricing.ResolvePriceTypeIDForContact(ctx, conn, contactID)
+	scope := appdb.OpenTenantScope(db.Stdlib(), schema)
+	priceTypeID, err := pricing.ResolvePriceTypeIDForContact(ctx, scope, contactID)
 	if err != nil {
 		return nil, err
 	}
@@ -946,12 +951,8 @@ func loadCatalogOrderItem(ctx context.Context, schema, priceTypeID, condition st
 	if err := row.Scan(&item.CatalogItemID, &item.ExternalCode, &item.Name, &unit); err != nil {
 		return OrderItem{}, appErrs.NotFound("catalog item not found")
 	}
-	conn, err := tenant.TenantConn(ctx, schema)
-	if err != nil {
-		return OrderItem{}, appErrs.Internal(err.Error())
-	}
-	defer tenant.CloseTenantConn(conn)
-	unitPrice, err := pricing.ResolveCatalogUnitPrice(ctx, conn, item.CatalogItemID, priceTypeID)
+	scope := appdb.OpenTenantScope(db.Stdlib(), schema)
+	unitPrice, err := pricing.ResolveCatalogUnitPrice(ctx, scope, item.CatalogItemID, priceTypeID)
 	if err != nil {
 		return OrderItem{}, err
 	}

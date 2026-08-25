@@ -16,7 +16,7 @@ type contactPatientFields struct {
 	Phone     string
 }
 
-func resolvePatientContact(ctx context.Context, conn *sql.Conn, p *CreatePatientParams) (*contactPatientFields, error) {
+func resolvePatientContact(ctx context.Context, ts tenantScope, p *CreatePatientParams) (*contactPatientFields, error) {
 	if p == nil {
 		return nil, appErrs.BadRequest("data pasien wajib diisi")
 	}
@@ -30,7 +30,7 @@ func resolvePatientContact(ctx context.Context, conn *sql.Conn, p *CreatePatient
 
 	var displayName, phone, notes sql.NullString
 	var birthDate sql.NullString
-	err := conn.QueryRowContext(ctx, `
+	err := ts.QueryRowContext(ctx, `
 		SELECT display_name, phone_number, birth_date::text, notes
 		FROM contact
 		WHERE id=$1::uuid AND deleted_at IS NULL`, contactID,

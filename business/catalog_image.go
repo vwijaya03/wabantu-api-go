@@ -436,11 +436,10 @@ func CommitCatalogImageImport(ctx context.Context, jobId string, req *CommitCata
 	}
 	_ = staging
 
-	conn, err := tConn(ctx, user.TenantSchema)
+	ts, err := openTenantScope(ctx, user.TenantSchema)
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer closeTenantConn(conn)
 
 	var saved, skipped int
 	for _, it := range req.Items {
@@ -464,7 +463,7 @@ func CommitCatalogImageImport(ctx context.Context, jobId string, req *CommitCata
 		}
 		price := it.SellPrice
 
-		_, err := conn.ExecContext(ctx, `
+		_, err := ts.ExecContext(ctx, `
 			INSERT INTO business_catalog_item
 				(external_code, name, description, sell_price, sell_unit, is_active, source)
 			VALUES ($1,$2,$3,$4,$5,true,$6)

@@ -48,18 +48,18 @@ func ListBudgets(ctx context.Context, p *BudgetListParams) (*BudgetListResponse,
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	q := tenantPool()
 
 	period := p.Period
 	if period == "" {
-		period = financePeriod(ctx, conn)
+		period = financePeriod(ctx, sch, q)
 	}
 
-	rows, err := conn.QueryContext(ctx, `
+	rows, err := qquery(ctx, sch, q, `
 		SELECT b.id, b.category_id, COALESCE(c.name,''), b.period, b.amount,
 		       COALESCE(SUM(t.amount),0) AS spent,
 		       b.created_at
@@ -125,18 +125,18 @@ func UpsertBudget(ctx context.Context, p *UpsertBudgetParams) (*Budget, error) {
 	if p.CategoryID == "" {
 		return nil, appErrs.BadRequest("kategori harus dipilih")
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	q := tenantPool()
 
 	if p.Period == "" {
-		p.Period = financePeriod(ctx, conn)
+		p.Period = financePeriod(ctx, sch, q)
 	}
 
 	var id string
-	err = conn.QueryRowContext(ctx,
+	err = qrow(ctx, sch, q,
 		`INSERT INTO fin_budget (category_id, period, amount, created_by)
 		 VALUES ($1,$2,$3,$4)
 		 ON CONFLICT (category_id, period) DO UPDATE SET amount=$3, updated_at=now()
@@ -146,7 +146,7 @@ func UpsertBudget(ctx context.Context, p *UpsertBudgetParams) (*Budget, error) {
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	auditFinance(ctx, conn, u, "budget", id, "upsert", nil, p)
+	auditFinance(ctx, sch, q, u, "budget", id, "upsert", nil, p)
 	return &Budget{ID: id, CategoryID: p.CategoryID, Period: p.Period,
 		Amount: fmt.Sprintf("%.2f", p.Amount), CreatedAt: time.Now()}, nil
 }
@@ -160,12 +160,12 @@ func DeleteBudget(ctx context.Context, id string) (*OKResponse, error) {
 	if err := assertOwner(u); err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
-	conn.ExecContext(ctx, `DELETE FROM fin_budget WHERE id=$1`, id)
+	q := tenantPool()
+	qexec(ctx, sch, q, `DELETE FROM fin_budget WHERE id=$1`, id)
 	return &OKResponse{OK: true}, nil
 }
 
@@ -185,18 +185,18 @@ func BudgetSummary(ctx context.Context, p *BudgetListParams) (*BudgetSummaryResp
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	q := tenantPool()
 
 	period := p.Period
 	if period == "" {
-		period = financePeriod(ctx, conn)
+		period = financePeriod(ctx, sch, q)
 	}
 
-	rows, err := conn.QueryContext(ctx, `
+	rows, err := qquery(ctx, sch, q, `
 		SELECT COALESCE(c.name,''), b.amount,
 		       COALESCE(SUM(t.amount),0) AS spent
 		FROM fin_budget b
@@ -264,18 +264,18 @@ func CategorySpending(ctx context.Context, p *BudgetListParams) (*CategorySpendi
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	q := tenantPool()
 
 	period := p.Period
 	if period == "" {
-		period = financePeriod(ctx, conn)
+		period = financePeriod(ctx, sch, q)
 	}
 
-	rows, err := conn.QueryContext(ctx, `
+	rows, err := qquery(ctx, sch, q, `
 		SELECT COALESCE(t.category_id::text,''), COALESCE(c.name,'(Tanpa Kategori)'),
 		       SUM(t.amount), COUNT(*)
 		FROM fin_transaction t
@@ -325,18 +325,18 @@ func MonthlyComparison(ctx context.Context, p *MonthlyComparisonParams) (*Monthl
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	defer conn.Close()
+	q := tenantPool()
 
 	months := p.Months
 	if months <= 0 || months > 24 {
 		months = 6
 	}
 
-	periods := financePeriods(ctx, conn, months)
+	periods := financePeriods(ctx, sch, q, months)
 
 	placeholders := make([]string, len(periods))
 	args := make([]any, len(periods))
@@ -345,7 +345,7 @@ func MonthlyComparison(ctx context.Context, p *MonthlyComparisonParams) (*Monthl
 		args[i] = p
 	}
 
-	q := fmt.Sprintf(`
+	dataQ := fmt.Sprintf(`
 		SELECT to_char(transaction_date,'YYYY-MM') AS period,
 		       COALESCE(SUM(CASE WHEN type IN ('income','dividend','interest','cashback') THEN amount ELSE 0 END),0),
 		       COALESCE(SUM(CASE WHEN type IN ('expense','investment_buy') THEN amount ELSE 0 END),0)
@@ -355,7 +355,7 @@ func MonthlyComparison(ctx context.Context, p *MonthlyComparisonParams) (*Monthl
 		GROUP BY to_char(transaction_date,'YYYY-MM')
 		ORDER BY period DESC`, strings.Join(placeholders, ","))
 
-	rows, err := conn.QueryContext(ctx, q, args...)
+	rows, err := qquery(ctx, sch, q, dataQ, args...)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}

@@ -1,6 +1,7 @@
 package inventory
 
 import (
+	appdb "encore.app/wabantu/shared/db"
 	"context"
 	"database/sql"
 
@@ -9,32 +10,32 @@ import (
 
 // replayPairInTx rebuilds cost layers, movement costs, and balance for one
 // (item, warehouse) from remaining ledger rows. Used after hard-deleting movements.
-func replayPairInTx(ctx context.Context, tx *sql.Tx, item, warehouse string) error {
-	cc, err := loadCostingContext(ctx, tx, item)
+func replayPairInTx(ctx context.Context, sch appdb.SchemaSQL, tx *sql.Tx, item, warehouse string) error {
+	cc, err := loadCostingContext(ctx, sch, tx, item)
 	if err != nil {
 		return err
 	}
-	movs, err := loadReplayMovements(ctx, tx, item, warehouse)
+	movs, err := loadReplayMovements(ctx, sch, tx, item, warehouse)
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
 	res := replayMovements(movs, cc.method)
 
 	for _, s := range res.Snapshots {
-		if _, err := tx.ExecContext(ctx, `
+		if _, err := qexec(ctx, sch, tx, `
 			UPDATE inv_stock_movement
 			SET total_cost = $2, unit_cost = $3, qty_after = $4, avg_cost_after = $5
 			WHERE id = $1`, s.MovementID, s.TotalCost, s.UnitCost, s.QtyAfter, s.AvgAfter); err != nil {
 			return appErrs.Internal(err.Error())
 		}
 	}
-	if _, err := tx.ExecContext(ctx,
+	if _, err := qexec(ctx, sch, tx,
 		`DELETE FROM inv_cost_layer WHERE catalog_item_id = $1 AND warehouse_id = $2`,
 		item, warehouse); err != nil {
 		return appErrs.Internal(err.Error())
 	}
 	for _, l := range res.Layers {
-		if _, err := tx.ExecContext(ctx, `
+		if _, err := qexec(ctx, sch, tx, `
 			INSERT INTO inv_cost_layer
 			  (catalog_item_id, warehouse_id, qty_remaining, unit_cost, source_movement_id, received_at)
 			VALUES ($1,$2,$3,$4,$5, now())`,
@@ -42,7 +43,7 @@ func replayPairInTx(ctx context.Context, tx *sql.Tx, item, warehouse string) err
 			return appErrs.Internal(err.Error())
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `
+	if _, err := qexec(ctx, sch, tx, `
 		INSERT INTO inv_stock_balance (catalog_item_id, warehouse_id, on_hand, avg_unit_cost, total_value, updated_at)
 		VALUES ($1,$2,$3,$4,$5, now())
 		ON CONFLICT (catalog_item_id, warehouse_id)
@@ -53,7 +54,7 @@ func replayPairInTx(ctx context.Context, tx *sql.Tx, item, warehouse string) err
 	return nil
 }
 
-func replayPairsInTx(ctx context.Context, tx *sql.Tx, pairs []itemWarehouse) error {
+func replayPairsInTx(ctx context.Context, sch appdb.SchemaSQL, tx *sql.Tx, pairs []itemWarehouse) error {
 	seen := map[itemWarehouse]struct{}{}
 	for _, p := range pairs {
 		if p.item == "" || p.warehouse == "" {
@@ -63,7 +64,7 @@ func replayPairsInTx(ctx context.Context, tx *sql.Tx, pairs []itemWarehouse) err
 			continue
 		}
 		seen[p] = struct{}{}
-		if err := replayPairInTx(ctx, tx, p.item, p.warehouse); err != nil {
+		if err := replayPairInTx(ctx, sch, tx, p.item, p.warehouse); err != nil {
 			return err
 		}
 	}
@@ -74,8 +75,8 @@ type movementRef struct {
 	id, item, warehouse string
 }
 
-func collectMovementsByRef(ctx context.Context, q querier, refType, refID string) ([]movementRef, error) {
-	rows, err := q.QueryContext(ctx, `
+func collectMovementsByRef(ctx context.Context, sch appdb.SchemaSQL, q querier, refType, refID string) ([]movementRef, error) {
+	rows, err := qquery(ctx, sch, q, `
 		SELECT id::text, catalog_item_id::text, warehouse_id::text
 		FROM inv_stock_movement
 		WHERE ref_type = $1 AND ref_id = $2::uuid`, refType, refID)
@@ -110,20 +111,20 @@ func pairsFromMovements(movs []movementRef) []itemWarehouse {
 
 // purgeMovementsByRef hard-deletes movements for a document reference and replays
 // affected balances.
-func purgeMovementsByRef(ctx context.Context, tx *sql.Tx, refType, refID string) ([]itemWarehouse, error) {
-	movs, err := collectMovementsByRef(ctx, tx, refType, refID)
+func purgeMovementsByRef(ctx context.Context, sch appdb.SchemaSQL, tx *sql.Tx, refType, refID string) ([]itemWarehouse, error) {
+	movs, err := collectMovementsByRef(ctx, sch, tx, refType, refID)
 	if err != nil {
 		return nil, err
 	}
 	pairs := pairsFromMovements(movs)
 	if len(movs) > 0 {
-		if _, err := tx.ExecContext(ctx,
+		if _, err := qexec(ctx, sch, tx,
 			`DELETE FROM inv_stock_movement WHERE ref_type = $1 AND ref_id = $2::uuid`,
 			refType, refID); err != nil {
 			return nil, appErrs.Internal(err.Error())
 		}
 	}
-	if err := replayPairsInTx(ctx, tx, pairs); err != nil {
+	if err := replayPairsInTx(ctx, sch, tx, pairs); err != nil {
 		return nil, err
 	}
 	return pairs, nil

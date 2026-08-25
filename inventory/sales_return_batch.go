@@ -1,14 +1,13 @@
 package inventory
 
 import (
+	appdb "encore.app/wabantu/shared/db"
 	"context"
-	"database/sql"
 	"fmt"
 	"strings"
 
 	"encore.app/wabantu/finance"
 	appErrs "encore.app/wabantu/shared/errs"
-	"encore.app/wabantu/tenant"
 )
 
 type ReturnableLine struct {
@@ -32,27 +31,27 @@ func GetReturnableOrderLines(ctx context.Context, orderID string) (*ReturnableOr
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
-	return loadReturnableOrderLines(ctx, conn, orderID)
+	pool := tenantDB()
+	return loadReturnableOrderLines(ctx, sch, pool, orderID)
 }
 
-func loadReturnableOrderLines(ctx context.Context, conn *sql.Conn, orderID string) (*ReturnableOrderLines, error) {
-	_, lines, _, status, err := loadOrderForInvoice(ctx, conn, orderID)
+func loadReturnableOrderLines(ctx context.Context, sch appdb.SchemaSQL, q querier, orderID string) (*ReturnableOrderLines, error) {
+	_, lines, _, status, err := loadOrderForInvoice(ctx, sch, q, orderID)
 	if err != nil {
 		return nil, err
 	}
 	if !isInvoiceEligibleStatus(status) {
 		return nil, appErrs.BadRequest("status pesanan harus Dalam pengiriman atau Selesai")
 	}
-	costByItem, err := orderItemSaleCost(ctx, conn, orderID)
+	costByItem, err := orderItemSaleCost(ctx, sch, q, orderID)
 	if err != nil {
 		return nil, err
 	}
-	alreadyReturned, err := orderReturnedQty(ctx, conn, orderID)
+	alreadyReturned, err := orderReturnedQty(ctx, sch, q, orderID)
 	if err != nil {
 		return nil, err
 	}
@@ -119,11 +118,11 @@ func BatchCreateSalesReturns(ctx context.Context, p *BatchCreateSalesReturnsPara
 		return nil, appErrs.BadRequest(fmt.Sprintf("maksimal %d pesanan per aksi", maxBatchOrderActions))
 	}
 
-	conn, err := tenant.TenantConn(ctx, u.TenantSchema)
+	sch, err := prepareTenant(ctx, u.TenantSchema)
 	if err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, err
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantDB()
 
 	resp := &BatchCreateSalesReturnsResponse{
 		Results: make([]BatchSalesReturnResultLine, 0, len(p.Orders)),
@@ -142,7 +141,7 @@ func BatchCreateSalesReturns(ctx context.Context, p *BatchCreateSalesReturnsPara
 			resp.Results = append(resp.Results, line)
 			continue
 		}
-		ret, rerr := createSalesReturnConn(ctx, conn, u.TenantSchema, u.AccountID, &CreateSalesReturnParams{
+		ret, rerr := createSalesReturnConn(ctx, sch, pool, u.TenantSchema, u.AccountID, &CreateSalesReturnParams{
 			OrderID: line.OrderID,
 			Note:    o.Note,
 			Lines:   o.Lines,
@@ -160,7 +159,7 @@ func BatchCreateSalesReturns(ctx context.Context, p *BatchCreateSalesReturnsPara
 	return resp, nil
 }
 
-func createSalesReturnConn(ctx context.Context, conn *sql.Conn, tenantSchema, accountID string, p *CreateSalesReturnParams) (*SalesReturn, error) {
+func createSalesReturnConn(ctx context.Context, sch appdb.SchemaSQL, q querier, tenantSchema, accountID string, p *CreateSalesReturnParams) (*SalesReturn, error) {
 	if strings.TrimSpace(p.OrderID) == "" {
 		return nil, appErrs.BadRequest("orderId wajib diisi")
 	}
@@ -171,7 +170,7 @@ func createSalesReturnConn(ctx context.Context, conn *sql.Conn, tenantSchema, ac
 		return nil, err
 	}
 
-	_, _, _, status, err := loadOrderForInvoice(ctx, conn, p.OrderID)
+	_, _, _, status, err := loadOrderForInvoice(ctx, sch, q, p.OrderID)
 	if err != nil {
 		return nil, err
 	}
@@ -179,15 +178,15 @@ func createSalesReturnConn(ctx context.Context, conn *sql.Conn, tenantSchema, ac
 		return nil, appErrs.BadRequest("status pesanan harus Dalam pengiriman atau Selesai")
 	}
 
-	contactID, _, _, _, err := loadOrderForInvoice(ctx, conn, p.OrderID)
+	contactID, _, _, _, err := loadOrderForInvoice(ctx, sch, q, p.OrderID)
 	if err != nil {
 		return nil, err
 	}
-	costByItem, err := orderItemSaleCost(ctx, conn, p.OrderID)
+	costByItem, err := orderItemSaleCost(ctx, sch, q, p.OrderID)
 	if err != nil {
 		return nil, err
 	}
-	alreadyReturned, err := orderReturnedQty(ctx, conn, p.OrderID)
+	alreadyReturned, err := orderReturnedQty(ctx, sch, q, p.OrderID)
 	if err != nil {
 		return nil, err
 	}
@@ -203,18 +202,19 @@ func createSalesReturnConn(ctx context.Context, conn *sql.Conn, tenantSchema, ac
 		}
 	}
 
-	tx, err := conn.BeginTx(ctx, nil)
+	pool := tenantDB()
+	tx, err := pool.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	defer tx.Rollback()
 
-	returnNo, err := nextDocNumber(ctx, tx, DocReturn, DocReturn)
+	returnNo, err := nextDocNumber(ctx, sch, tx, DocReturn, DocReturn)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
 	var returnID string
-	if err := tx.QueryRowContext(ctx, `
+	if err := qrow(ctx, sch, tx, `
 		INSERT INTO inv_sales_return (return_no, order_id, contact_id, status, note, total_cost, created_by)
 		VALUES ($1,$2,$3,'posted',$4,0,$5)
 		RETURNING id`,
@@ -226,15 +226,15 @@ func createSalesReturnConn(ctx context.Context, conn *sql.Conn, tenantSchema, ac
 	for _, l := range p.Lines {
 		wh := strings.TrimSpace(l.WarehouseID)
 		if wh == "" {
-			wh, _ = defaultWarehouseID(ctx, conn)
+			wh, _ = defaultWarehouseID(ctx, sch, q)
 		}
 		unitCost := weightedItemCost(costByItem, l.CatalogItemID)
-		srcMovement := orderSaleMovementID(ctx, conn, p.OrderID, l.CatalogItemID)
-		cc, cerr := loadCostingContext(ctx, tx, l.CatalogItemID)
+		srcMovement := orderSaleMovementID(ctx, sch, q, p.OrderID, l.CatalogItemID)
+		cc, cerr := loadCostingContext(ctx, sch, tx, l.CatalogItemID)
 		if cerr != nil {
 			return nil, cerr
 		}
-		res, merr := PostMovement(ctx, tx, MovementInput{
+		res, merr := PostMovement(ctx, sch, tx, MovementInput{
 			CatalogItemID: l.CatalogItemID, WarehouseID: wh,
 			Type: MovementReturnIn, Direction: dirIn, Qty: round4(l.Qty),
 			UnitCost: unitCost, CostingMethod: cc.method, BlockNegative: false,
@@ -246,7 +246,7 @@ func createSalesReturnConn(ctx context.Context, conn *sql.Conn, tenantSchema, ac
 		}
 		lineCost := round4(unitCost * l.Qty)
 		totalCost += lineCost
-		if _, err := tx.ExecContext(ctx, `
+		if _, err := qexec(ctx, sch, tx, `
 			INSERT INTO inv_sales_return_line
 			  (sales_return_id, catalog_item_id, warehouse_id, qty, unit_cost, movement_id, source_movement_id)
 			VALUES ($1,$2,$3,$4,$5,$6,$7)`,
@@ -254,7 +254,7 @@ func createSalesReturnConn(ctx context.Context, conn *sql.Conn, tenantSchema, ac
 			return nil, appErrs.Internal(err.Error())
 		}
 	}
-	if _, err := tx.ExecContext(ctx,
+	if _, err := qexec(ctx, sch, tx,
 		`UPDATE inv_sales_return SET total_cost=$2, updated_at=now() WHERE id=$1`, returnID, round4(totalCost)); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
@@ -262,12 +262,12 @@ func createSalesReturnConn(ctx context.Context, conn *sql.Conn, tenantSchema, ac
 		return nil, appErrs.Internal(err.Error())
 	}
 
-	_, postExpense, _, serr := loadSyncSetting(ctx, conn)
+	_, postExpense, _, serr := loadSyncSetting(ctx, sch, q)
 	if serr == nil && !postExpense && totalCost > 0 {
 		if err := finance.RecordInventoryEntry(ctx, tenantSchema, accountID,
 			"ret:"+returnID, "income", finCatHPP, "Retur penjualan "+returnNo, round2(totalCost), ""); err != nil {
 			return nil, err
 		}
 	}
-	return getSalesReturn(ctx, conn, returnID)
+	return getSalesReturn(ctx, sch, q, returnID)
 }

@@ -37,7 +37,11 @@ func EnsureKnowledgeBaseSchema(ctx context.Context, schemaName string) error {
 }
 
 func alwaysApplyKnowledgeBasePatch(ctx context.Context, conn *sql.Conn) error {
-	exists, err := tenantschema.TableExists(ctx, conn, "knowledge_base_entry")
+	schemaName, err := tenantSchemaFromConn(ctx, conn)
+	if err != nil {
+		return err
+	}
+	exists, err := tenantschema.TableExists(ctx, conn, schemaName, "knowledge_base_entry")
 	if err != nil || exists {
 		return err
 	}

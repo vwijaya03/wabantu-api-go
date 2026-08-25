@@ -62,19 +62,17 @@ type PublicSlotOption struct {
 	Available int    `json:"available"`
 }
 
-func countTherapySlots(ctx context.Context, q interface {
-	QueryRowContext(context.Context, string, ...any) *sql.Row
-}, eventID, therapyID string) (int, error) {
+func countTherapySlots(ctx context.Context, ts tenantScope, eventID, therapyID string) (int, error) {
 	var n int
-	err := q.QueryRowContext(ctx, `
+	err := ts.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM evt_time_slot
 		WHERE event_id=$1::uuid AND therapy_id=$2::uuid`, eventID, therapyID,
 	).Scan(&n)
 	return n, err
 }
 
-func listPublicSlotOptions(ctx context.Context, conn *sql.Conn, eventID, therapyID string) ([]PublicSlotOption, error) {
-	rows, err := conn.QueryContext(ctx, `
+func listPublicSlotOptions(ctx context.Context, ts tenantScope, eventID, therapyID string) ([]PublicSlotOption, error) {
+	rows, err := ts.QueryContext(ctx, `
 		SELECT id::text, slot_date::text, start_time::text, end_time::text, capacity, booked_count
 		FROM evt_time_slot
 		WHERE event_id=$1::uuid AND therapy_id=$2::uuid AND booked_count < capacity
@@ -103,10 +101,10 @@ func listPublicSlotOptions(ctx context.Context, conn *sql.Conn, eventID, therapy
 }
 
 // pickSlotForRegistration assigns a slot. strictPreferred=true (public): must match preferred time exactly.
-func pickSlotForRegistration(ctx context.Context, tx *sql.Tx, eventID, therapyID, preferred string, strictPreferred bool) (string, error) {
+func pickSlotForRegistration(ctx context.Context, ts tenantScope, eventID, therapyID, preferred string, strictPreferred bool) (string, error) {
 	preferred = normalizePreferredTime(preferred)
 
-	total, err := countTherapySlots(ctx, tx, eventID, therapyID)
+	total, err := countTherapySlots(ctx, ts, eventID, therapyID)
 	if err != nil {
 		return "", err
 	}
@@ -114,7 +112,7 @@ func pickSlotForRegistration(ctx context.Context, tx *sql.Tx, eventID, therapyID
 		return "", appErrs.BadRequest("jadwal slot belum dibuat untuk terapi ini — owner perlu generate slot di tab Jadwal")
 	}
 
-	rows, err := tx.QueryContext(ctx, `
+	rows, err := ts.QueryContext(ctx, `
 		SELECT id::text, start_time::text, capacity, booked_count
 		FROM evt_time_slot
 		WHERE event_id=$1::uuid AND therapy_id=$2::uuid AND booked_count < capacity
@@ -164,29 +162,29 @@ func pickSlotForRegistration(ctx context.Context, tx *sql.Tx, eventID, therapyID
 
 // assignPatientSlotBestEffort links a patient to a slot when possible; import must not fail if slots are full/missing.
 func assignPatientSlotBestEffort(ctx context.Context, tenantSchema, eventID, patientID, therapyID, preferred string) error {
-	conn, err := tenantConn(ctx, tenantSchema)
+	ts, err := openTenant(ctx, tenantSchema)
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
-	tx, err := conn.BeginTx(ctx, nil)
+	tx, err := ts.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	if err := tryAssignPatientSlot(ctx, tx, eventID, patientID, therapyID, preferred, false); err != nil {
+	txTS := ts.WithQ(tx)
+	if err := tryAssignPatientSlot(ctx, txTS, eventID, patientID, therapyID, preferred, false); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
-func tryAssignPatientSlot(ctx context.Context, tx *sql.Tx, eventID, patientID, therapyID, preferred string, strict bool) error {
+func tryAssignPatientSlot(ctx context.Context, ts tenantScope, eventID, patientID, therapyID, preferred string, strict bool) error {
 	preferred = strings.TrimSpace(preferred)
 	if preferred == "" {
 		return nil
 	}
 	var existing sql.NullString
-	if err := tx.QueryRowContext(ctx, `
+	if err := ts.QueryRowContext(ctx, `
 		SELECT slot_id::text FROM evt_patient WHERE id=$1::uuid AND deleted_at IS NULL`,
 		patientID).Scan(&existing); err != nil {
 		return err
@@ -194,14 +192,14 @@ func tryAssignPatientSlot(ctx context.Context, tx *sql.Tx, eventID, patientID, t
 	if existing.Valid {
 		return nil
 	}
-	sid, err := pickSlotForRegistration(ctx, tx, eventID, therapyID, preferred, strict)
+	sid, err := pickSlotForRegistration(ctx, ts, eventID, therapyID, preferred, strict)
 	if err != nil {
 		return err
 	}
-	if err := lockAndIncrementSlot(ctx, tx, sid); err != nil {
+	if err := lockAndIncrementSlot(ctx, ts, sid); err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `
+	_, err = ts.ExecContext(ctx, `
 		UPDATE evt_patient SET slot_id=$1::uuid, updated_at=now() WHERE id=$2::uuid`, sid, patientID)
 	return err
 }

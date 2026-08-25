@@ -1,6 +1,7 @@
 package inventory
 
 import (
+	appdb "encore.app/wabantu/shared/db"
 	"context"
 	"database/sql"
 	"errors"
@@ -10,7 +11,6 @@ import (
 
 	"encore.app/wabantu/finance"
 	appErrs "encore.app/wabantu/shared/errs"
-	"encore.app/wabantu/tenant"
 )
 
 // OrderStockItem is a tenant-agnostic view of an order line, used by the order
@@ -65,13 +65,13 @@ func SyncOrderStock(ctx context.Context, tenantSchema, orderID, status string, i
 	if strings.TrimSpace(orderID) == "" {
 		return nil
 	}
-	conn, err := tenant.TenantConn(ctx, tenantSchema)
+	sch, err := prepareTenant(ctx, tenantSchema)
 	if err != nil {
-		return appErrs.Internal(err.Error())
+		return err
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantDB()
 
-	setup, postExpense, _, err := loadSyncSetting(ctx, conn)
+	setup, postExpense, _, err := loadSyncSetting(ctx, sch, pool)
 	if err != nil {
 		return err
 	}
@@ -79,19 +79,19 @@ func SyncOrderStock(ctx context.Context, tenantSchema, orderID, status string, i
 		return nil
 	}
 
-	defaultWarehouse, err := defaultWarehouseID(ctx, conn)
+	defaultWarehouse, err := defaultWarehouseID(ctx, sch, pool)
 	if err != nil {
 		return err
 	}
 
 	required := map[reqKey]float64{}
 	if IsCommittedOrderStatus(status) {
-		required, err = resolveOrderRequirements(ctx, conn, items, defaultWarehouse)
+		required, err = resolveOrderRequirements(ctx, sch, pool, items, defaultWarehouse)
 		if err != nil {
 			return err
 		}
 	}
-	netIssued, err := orderNetIssued(ctx, conn, orderID)
+	netIssued, err := orderNetIssued(ctx, sch, pool, orderID)
 	if err != nil {
 		return err
 	}
@@ -105,7 +105,7 @@ func SyncOrderStock(ctx context.Context, tenantSchema, orderID, status string, i
 	}
 
 	if len(keys) > 0 {
-		tx, terr := conn.BeginTx(ctx, nil)
+		tx, terr := pool.BeginTx(ctx, nil)
 		if terr != nil {
 			return appErrs.Internal(terr.Error())
 		}
@@ -114,11 +114,11 @@ func SyncOrderStock(ctx context.Context, tenantSchema, orderID, status string, i
 		for k := range keys {
 			delta := round4(required[k] - netIssued[k].qty)
 			if delta > epsilon {
-				cc, cerr := loadCostingContext(ctx, tx, k.item)
+				cc, cerr := loadCostingContext(ctx, sch, tx, k.item)
 				if cerr != nil {
 					return cerr
 				}
-				if _, merr := PostMovement(ctx, tx, MovementInput{
+				if _, merr := PostMovement(ctx, sch, tx, MovementInput{
 					CatalogItemID: k.item, WarehouseID: k.warehouse,
 					Type: MovementSaleIssue, Direction: dirOut, Qty: delta,
 					CostingMethod: cc.method, BlockNegative: cc.blockNegative,
@@ -133,11 +133,11 @@ func SyncOrderStock(ctx context.Context, tenantSchema, orderID, status string, i
 				if netIssued[k].qty > epsilon {
 					unitCost = round4(netIssued[k].cost / netIssued[k].qty)
 				}
-				cc, cerr := loadCostingContext(ctx, tx, k.item)
+				cc, cerr := loadCostingContext(ctx, sch, tx, k.item)
 				if cerr != nil {
 					return cerr
 				}
-				if _, merr := PostMovement(ctx, tx, MovementInput{
+				if _, merr := PostMovement(ctx, sch, tx, MovementInput{
 					CatalogItemID: k.item, WarehouseID: k.warehouse,
 					Type: MovementSaleCancelRestore, Direction: dirIn, Qty: restoreQty,
 					UnitCost: unitCost, CostingMethod: cc.method, BlockNegative: false,
@@ -153,7 +153,7 @@ func SyncOrderStock(ctx context.Context, tenantSchema, orderID, status string, i
 		}
 	}
 
-	return resyncOrderCOGS(ctx, tenantSchema, conn, orderID, postExpense, createdBy)
+	return resyncOrderCOGS(ctx, tenantSchema, sch, pool, orderID, postExpense, createdBy)
 }
 
 // StockShortageLine describes one item+warehouse line that lacks stock for an order.
@@ -171,13 +171,13 @@ type StockShortageLine struct {
 // committed status would oversell a tracked item under block_negative_stock. orderID
 // may be empty for a brand-new order.
 func PrecheckOrderStock(ctx context.Context, tenantSchema, orderID string, items []OrderStockItem) error {
-	conn, err := tenant.TenantConn(ctx, tenantSchema)
+	sch, err := prepareTenant(ctx, tenantSchema)
 	if err != nil {
-		return appErrs.Internal(err.Error())
+		return err
 	}
-	defer tenant.CloseTenantConn(conn)
+	pool := tenantDB()
 
-	shortages, err := analyzeOrderStockShortageConn(ctx, conn, orderID, items)
+	shortages, err := analyzeOrderStockShortageConn(ctx, sch, pool, orderID, items)
 	if err != nil {
 		return err
 	}
@@ -191,23 +191,23 @@ func PrecheckOrderStock(ctx context.Context, tenantSchema, orderID string, items
 
 // analyzeOrderStockShortageConn returns shortage lines when block_negative_stock is on
 // and committed stock would oversell. Empty slice means no shortage (or checks skipped).
-func analyzeOrderStockShortageConn(ctx context.Context, conn *sql.Conn, orderID string, items []OrderStockItem) ([]StockShortageLine, error) {
-	setup, _, block, err := loadSyncSetting(ctx, conn)
+func analyzeOrderStockShortageConn(ctx context.Context, sch appdb.SchemaSQL, q querier, orderID string, items []OrderStockItem) ([]StockShortageLine, error) {
+	setup, _, block, err := loadSyncSetting(ctx, sch, q)
 	if err != nil {
 		return nil, err
 	}
 	if !setup || !block {
 		return nil, nil
 	}
-	defaultWarehouse, err := defaultWarehouseID(ctx, conn)
+	defaultWarehouse, err := defaultWarehouseID(ctx, sch, q)
 	if err != nil {
 		return nil, err
 	}
-	required, err := resolveOrderRequirements(ctx, conn, items, defaultWarehouse)
+	required, err := resolveOrderRequirements(ctx, sch, q, items, defaultWarehouse)
 	if err != nil {
 		return nil, err
 	}
-	netIssued, err := orderNetIssued(ctx, conn, orderID)
+	netIssued, err := orderNetIssued(ctx, sch, q, orderID)
 	if err != nil {
 		return nil, err
 	}
@@ -220,7 +220,8 @@ func analyzeOrderStockShortageConn(ctx context.Context, conn *sql.Conn, orderID 
 		}
 	}
 	batch := &singleOrderBatch{
-		conn:             conn,
+		sch:              sch,
+		q:                q,
 		defaultWarehouse: defaultWarehouse,
 		onHand:           map[reqKey]float64{},
 		itemNames:        map[string]string{},
@@ -268,8 +269,8 @@ func analyzeOrderStockShortageConn(ctx context.Context, conn *sql.Conn, orderID 
 
 // ---------- helpers ----------
 
-func loadSyncSetting(ctx context.Context, conn *sql.Conn) (setup, postExpense, block bool, err error) {
-	err = conn.QueryRowContext(ctx,
+func loadSyncSetting(ctx context.Context, sch appdb.SchemaSQL, q querier) (setup, postExpense, block bool, err error) {
+	err = qrow(ctx, sch, q,
 		`SELECT setup_completed, purchase_posts_expense, block_negative_stock FROM inv_setting ORDER BY created_at LIMIT 1`).
 		Scan(&setup, &postExpense, &block)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -281,9 +282,9 @@ func loadSyncSetting(ctx context.Context, conn *sql.Conn) (setup, postExpense, b
 	return setup, postExpense, block, nil
 }
 
-func defaultWarehouseID(ctx context.Context, conn *sql.Conn) (string, error) {
+func defaultWarehouseID(ctx context.Context, sch appdb.SchemaSQL, q querier) (string, error) {
 	var id sql.NullString
-	err := conn.QueryRowContext(ctx,
+	err := qrow(ctx, sch, q,
 		`SELECT id::text FROM inv_warehouse WHERE is_default = true AND deleted_at IS NULL LIMIT 1`).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
@@ -294,20 +295,20 @@ func defaultWarehouseID(ctx context.Context, conn *sql.Conn) (string, error) {
 	return id.String, nil
 }
 
-func resolveOrderRequirements(ctx context.Context, q rowsQuerier, items []OrderStockItem, defaultWarehouse string) (map[reqKey]float64, error) {
-	cache := newSkuBundleCache(q)
+func resolveOrderRequirements(ctx context.Context, sch appdb.SchemaSQL, q rowsQuerier, items []OrderStockItem, defaultWarehouse string) (map[reqKey]float64, error) {
+	cache := newSkuBundleCache(sch, q)
 	if err := cache.preload(ctx, collectCatalogIDsFromOrders(items)); err != nil {
 		return nil, err
 	}
 	return resolveOrderRequirementsWithCache(cache, items, defaultWarehouse), nil
 }
 
-func orderNetIssued(ctx context.Context, conn *sql.Conn, orderID string) (map[reqKey]netEntry, error) {
+func orderNetIssued(ctx context.Context, sch appdb.SchemaSQL, q querier, orderID string) (map[reqKey]netEntry, error) {
 	out := map[reqKey]netEntry{}
 	if strings.TrimSpace(orderID) == "" {
 		return out, nil
 	}
-	rows, err := conn.QueryContext(ctx, `
+	rows, err := qquery(ctx, sch, q, `
 		SELECT catalog_item_id::text, warehouse_id::text, movement_type, qty, total_cost
 		FROM inv_stock_movement
 		WHERE ref_type='order' AND ref_id=$1::uuid
@@ -336,14 +337,14 @@ func orderNetIssued(ctx context.Context, conn *sql.Conn, orderID string) (map[re
 	return out, rows.Err()
 }
 
-func resyncOrderCOGS(ctx context.Context, tenantSchema string, conn *sql.Conn, orderID string, postExpense bool, createdBy string) error {
+func resyncOrderCOGS(ctx context.Context, tenantSchema string, sch appdb.SchemaSQL, q querier, orderID string, postExpense bool, createdBy string) error {
 	ref := cogsRefPrefix + orderID
 	// Cashflow mode already expensed the purchase; ensure no stale COGS lingers.
 	if postExpense {
 		return finance.RemoveInventoryEntry(ctx, tenantSchema, ref)
 	}
 	var net float64
-	if err := conn.QueryRowContext(ctx, `
+	if err := qrow(ctx, sch, q, `
 		SELECT COALESCE(SUM(CASE
 		  WHEN movement_type='sale_issue' THEN total_cost
 		  WHEN movement_type='sale_cancel_restore' THEN -total_cost
@@ -358,7 +359,7 @@ func resyncOrderCOGS(ctx context.Context, tenantSchema string, conn *sql.Conn, o
 	if net <= 0 {
 		return nil
 	}
-	walletID, err := orderIncomeWalletID(ctx, conn, orderID)
+	walletID, err := orderIncomeWalletID(ctx, sch, q, orderID)
 	if err != nil {
 		return err
 	}
@@ -374,9 +375,9 @@ func orderCOGSDescription(orderID string) string {
 	return fmt.Sprintf("HPP pesanan #%s — harga pokok penjualan", short)
 }
 
-func orderIncomeWalletID(ctx context.Context, conn *sql.Conn, orderID string) (string, error) {
+func orderIncomeWalletID(ctx context.Context, sch appdb.SchemaSQL, q querier, orderID string) (string, error) {
 	var wallet sql.NullString
-	err := conn.QueryRowContext(ctx, `
+	err := qrow(ctx, sch, q, `
 		SELECT income_wallet_id::text FROM "order" WHERE id = $1::uuid`, orderID).Scan(&wallet)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
@@ -390,9 +391,9 @@ func orderIncomeWalletID(ctx context.Context, conn *sql.Conn, orderID string) (s
 	return "", nil
 }
 
-func itemName(ctx context.Context, conn *sql.Conn, catalogItemID string) string {
+func itemName(ctx context.Context, sch appdb.SchemaSQL, q querier, catalogItemID string) string {
 	var name string
-	if err := conn.QueryRowContext(ctx,
+	if err := qrow(ctx, sch, q,
 		`SELECT COALESCE(name,'') FROM business_catalog_item WHERE id=$1`, catalogItemID).Scan(&name); err != nil {
 		return "item"
 	}
@@ -402,9 +403,9 @@ func itemName(ctx context.Context, conn *sql.Conn, catalogItemID string) string 
 	return name
 }
 
-func warehouseName(ctx context.Context, conn *sql.Conn, warehouseID string) string {
+func warehouseName(ctx context.Context, sch appdb.SchemaSQL, q querier, warehouseID string) string {
 	var name string
-	if err := conn.QueryRowContext(ctx,
+	if err := qrow(ctx, sch, q,
 		`SELECT COALESCE(name,'') FROM inv_warehouse WHERE id=$1`, warehouseID).Scan(&name); err != nil {
 		return "gudang"
 	}

@@ -20,7 +20,6 @@ import (
 	"encore.app/wabantu/shared/pii"
 	"encore.app/wabantu/shared/tenantschema"
 	"encore.app/wabantu/shared/strutil"
-	"encore.app/wabantu/shared/tenantctx"
 	"encore.app/wabantu/shared/types"
 	"encore.app/wabantu/tenant"
 	"encore.app/wabantu/whatsapp"
@@ -209,14 +208,6 @@ func currentUser() (*types.AuthUser, error) {
 	return data, nil
 }
 
-func tConn(ctx context.Context, schema string) (*sql.Conn, error) {
-	return appdb.TenantConn(ctx, db.Stdlib(), schema)
-}
-
-func tenantConn(ctx context.Context, user *types.AuthUser) (*sql.Conn, error) {
-	return tenantctx.Conn(ctx, db.Stdlib(), user)
-}
-
 func queryBool(s string) bool {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "true", "1", "yes":
@@ -284,11 +275,10 @@ func ListConversations(ctx context.Context, p *ListConversationsParams) (*ListCo
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tConn(ctx, user.TenantSchema)
+	ts, err := openTenantScope(ctx, user.TenantSchema)
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer appdb.CloseTenantConn(conn)
 
 	limit := clampLimit(p.Limit, 30, 100)
 	hasSearch := strings.TrimSpace(p.Search) != ""
@@ -309,7 +299,7 @@ func ListConversations(ctx context.Context, p *ListConversationsParams) (*ListCo
 	idx := 1
 
 	if hasSearch {
-		piiActive, _ := tenantschema.ContactPIIActiveConn(ctx, conn, user.TenantSchema)
+		piiActive, _ := tenantschema.ContactPIIActive(ctx, ts, user.TenantSchema)
 		like := "%" + strings.ToLower(strings.TrimSpace(p.Search)) + "%"
 		searchParts := []string{fmt.Sprintf(`LOWER(COALESCE(c.last_message_preview,'')) LIKE $%d`, idx)}
 		args = append(args, like)
@@ -355,7 +345,7 @@ func ListConversations(ctx context.Context, p *ListConversationsParams) (*ListCo
 	q += fmt.Sprintf(` ORDER BY c.last_message_at DESC NULLS LAST, c.id DESC LIMIT $%d`, idx)
 	args = append(args, limit+1)
 
-	rows, qErr := conn.QueryContext(ctx, q, args...)
+	rows, qErr := ts.QueryContext(ctx, q, args...)
 	if qErr != nil {
 		rlog.Error("list conversations failed", "err", qErr)
 		return nil, apperr.Internal("failed to list conversations")
@@ -388,8 +378,8 @@ func ListConversations(ctx context.Context, p *ListConversationsParams) (*ListCo
 		return &ListConversationsResponse{Items: []ConversationItem{}}, nil
 	}
 
-	contactMap := loadContacts(ctx, conn, uniqueIDs(rr, func(r row) string { return r.contactID }))
-	channelMap := loadChannels(ctx, conn, uniqueIDs(rr, func(r row) string { return r.channelID }))
+	contactMap := loadContacts(ctx, ts, uniqueIDs(rr, func(r row) string { return r.contactID }))
+	channelMap := loadChannels(ctx, ts, uniqueIDs(rr, func(r row) string { return r.channelID }))
 
 	items := make([]ConversationItem, len(rr))
 	for i, r := range rr {
@@ -425,11 +415,10 @@ func UpdateConversation(ctx context.Context, id string, p *UpdateConversationPar
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tConn(ctx, user.TenantSchema)
+	ts, err := openTenantScope(ctx, user.TenantSchema)
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer appdb.CloseTenantConn(conn)
 
 	sets := []string{}
 	args := []interface{}{}
@@ -472,7 +461,7 @@ func UpdateConversation(ctx context.Context, id string, p *UpdateConversationPar
 		strings.Join(sets, ", "), idx)
 
 	var resp UpdateConversationResponse
-	if err := conn.QueryRowContext(ctx, q, args...).Scan(&resp.ID, &resp.Status, &resp.AIHandled); err != nil {
+	if err := ts.QueryRowContext(ctx, q, args...).Scan(&resp.ID, &resp.Status, &resp.AIHandled); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, apperr.NotFound("Percakapan tidak ditemukan")
 		}
@@ -494,16 +483,15 @@ func GetMessages(ctx context.Context, id string, p *GetMessagesParams) (*GetMess
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tConn(ctx, user.TenantSchema)
+	ts, err := openTenantScope(ctx, user.TenantSchema)
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer appdb.CloseTenantConn(conn)
 
 	take := clampLimit(p.Limit, 50, 100)
 
 	var exists bool
-	if err := conn.QueryRowContext(ctx,
+	if err := ts.QueryRowContext(ctx,
 		`SELECT EXISTS(SELECT 1 FROM conversation WHERE id = $1)`, id,
 	).Scan(&exists); err != nil || !exists {
 		return nil, apperr.NotFound("Percakapan tidak ditemukan")
@@ -524,7 +512,7 @@ func GetMessages(ctx context.Context, id string, p *GetMessagesParams) (*GetMess
 		if tErr != nil {
 			return nil, apperr.BadRequest("Cursor pesan tidak valid.")
 		}
-		rows, queryErr = conn.QueryContext(ctx,
+		rows, queryErr = ts.QueryContext(ctx,
 			`SELECT m.id, m.conversation_id, m.external_id, m.direction, m.author, m.type, m.body, m.status, m.created_at, m.metadata,
 			        (SELECT o.id::text FROM "order" o WHERE o.payment_proof_message_id = m.id AND o.deleted_at IS NULL LIMIT 1)
 			 FROM message m
@@ -540,7 +528,7 @@ func GetMessages(ctx context.Context, id string, p *GetMessagesParams) (*GetMess
 				offset = 500_000
 			}
 		}
-		rows, queryErr = conn.QueryContext(ctx,
+		rows, queryErr = ts.QueryContext(ctx,
 			`SELECT m.id, m.conversation_id, m.external_id, m.direction, m.author, m.type, m.body, m.status, m.created_at, m.metadata,
 			        (SELECT o.id::text FROM "order" o WHERE o.payment_proof_message_id = m.id AND o.deleted_at IS NULL LIMIT 1)
 			 FROM message m
@@ -612,27 +600,26 @@ func SendMessage(ctx context.Context, id string, p *SendMessageParams) (*SendMes
 		return nil, apperr.BadRequest("Isi pesan tidak boleh kosong")
 	}
 
-	conn, err := tConn(ctx, user.TenantSchema)
+	ts, err := openTenantScope(ctx, user.TenantSchema)
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer appdb.CloseTenantConn(conn)
 
 	var convoContactID, convoChannelID string
-	if err := conn.QueryRowContext(ctx,
+	if err := ts.QueryRowContext(ctx,
 		`SELECT contact_id, channel_id FROM conversation WHERE id = $1`, id,
 	).Scan(&convoContactID, &convoChannelID); err != nil {
 		return nil, apperr.NotFound("Percakapan tidak ditemukan")
 	}
 
-	contactPhone, err := contactPhoneByID(ctx, conn, convoContactID)
+	contactPhone, err := contactPhoneByID(ctx, ts, user.TenantSchema, convoContactID)
 	if err != nil {
 		return nil, apperr.NotFound("Kontak tidak ditemukan")
 	}
 
 	var chStatus, chAccessToken, chProvider string
 	var chMetaPhoneNumberID *string
-	if err := conn.QueryRowContext(ctx,
+	if err := ts.QueryRowContext(ctx,
 		`SELECT status, COALESCE(access_token,''), provider, meta_phone_number_id
 		 FROM whatsapp_channel WHERE id = $1`, convoChannelID,
 	).Scan(&chStatus, &chAccessToken, &chProvider, &chMetaPhoneNumberID); err != nil {
@@ -655,7 +642,7 @@ func SendMessage(ctx context.Context, id string, p *SendMessageParams) (*SendMes
 	}
 
 	var m MessageItem
-	if err := conn.QueryRowContext(ctx,
+	if err := ts.QueryRowContext(ctx,
 		`INSERT INTO message (conversation_id, external_id, direction, author, type, body, metadata, status)
 		 VALUES ($1, $2, 'out', 'human', 'text', $3, '{}'::jsonb, 'sent')
 		 RETURNING id, conversation_id, external_id, direction, author, type, body, status, created_at`,
@@ -666,7 +653,7 @@ func SendMessage(ctx context.Context, id string, p *SendMessageParams) (*SendMes
 	}
 
 	preview := strutil.TruncateUTF8(text, 280)
-	_, _ = conn.ExecContext(ctx,
+	_, _ = ts.ExecContext(ctx,
 		`UPDATE conversation SET last_message_at = $1, last_message_preview = $2, status = 'open' WHERE id = $3`,
 		m.CreatedAt, preview, id)
 
@@ -695,25 +682,24 @@ func ListContacts(ctx context.Context, p *ListContactsParams) (*ListContactsResp
 		p.PageSize = 100
 	}
 
-	conn, err := tConn(ctx, user.TenantSchema)
+	ts, err := openTenantScope(ctx, user.TenantSchema)
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer appdb.CloseTenantConn(conn)
-	if err := ensureContactRuntimeSchema(ctx, conn, user.TenantSchema); err != nil {
+	if err := ensureContactRuntimeSchema(ctx, user.TenantSchema); err != nil {
 		rlog.Error("ensure contact schema failed", "err", err)
 		return nil, apperr.Internal("prepare contacts failed")
 	}
-	if err := syncContactsFromLeadAndConversation(ctx, conn); err != nil {
+	if err := syncContactsFromLeadAndConversation(ctx, ts); err != nil {
 		rlog.Warn("sync contacts from lead/conversation failed", "err", err)
 	}
 
-	piiActive, _ := tenantschema.ContactPIIActiveConn(ctx, conn, user.TenantSchema)
+	piiActive, _ := tenantschema.ContactPIIActive(ctx, ts, user.TenantSchema)
 	args := []any{}
 	where := buildContactSearchWhere(strings.TrimSpace(p.Q), piiActive, &args)
 
 	var total int
-	if err := conn.QueryRowContext(ctx, fmt.Sprintf(
+	if err := ts.QueryRowContext(ctx, fmt.Sprintf(
 		`SELECT COUNT(*) FROM contact WHERE %s`, where), args...).Scan(&total); err != nil {
 		return nil, apperr.Internal("count contacts failed")
 	}
@@ -722,8 +708,8 @@ func ListContacts(ctx context.Context, p *ListContactsParams) (*ListContactsResp
 	queryArgs = append(queryArgs, p.PageSize, (p.Page-1)*p.PageSize)
 	limitParam := len(queryArgs) - 1
 	offsetParam := len(queryArgs)
-	rows, err := conn.QueryContext(ctx, fmt.Sprintf(`
-		`+contactSelectFor(ctx, conn)+`
+	rows, err := ts.QueryContext(ctx, fmt.Sprintf(`
+		`+contactSelectFor(ctx, ts, user.TenantSchema)+`
 		WHERE %s
 		ORDER BY updated_at DESC, created_at DESC
 		LIMIT $%d OFFSET $%d`, where, limitParam, offsetParam), queryArgs...)
@@ -758,12 +744,11 @@ func CreateContact(ctx context.Context, p *CreateContactParams) (*UpdateContactR
 	if phone == "" {
 		return nil, apperr.BadRequest("phoneNumber is required")
 	}
-	conn, err := tConn(ctx, user.TenantSchema)
+	ts, err := openTenantScope(ctx, user.TenantSchema)
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer appdb.CloseTenantConn(conn)
-	if err := ensureContactRuntimeSchema(ctx, conn, user.TenantSchema); err != nil {
+	if err := ensureContactRuntimeSchema(ctx, user.TenantSchema); err != nil {
 		return nil, apperr.Internal("prepare contacts failed")
 	}
 
@@ -785,7 +770,7 @@ func CreateContact(ctx context.Context, p *CreateContactParams) (*UpdateContactR
 	if displayName != nil {
 		displayStr = *displayName
 	}
-	c, err := upsertContactPII(ctx, conn, phone, displayStr, birthPtr, notes, status, p.PriceTypeID, string(tagsJSON))
+	c, err := upsertContactPII(ctx, ts, user.TenantSchema, phone, displayStr, birthPtr, notes, status, p.PriceTypeID, string(tagsJSON))
 	if err != nil {
 		return nil, apperr.Internal("create contact failed")
 	}
@@ -800,16 +785,15 @@ func GetContact(ctx context.Context, id string) (*GetContactResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tConn(ctx, user.TenantSchema)
+	ts, err := openTenantScope(ctx, user.TenantSchema)
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer appdb.CloseTenantConn(conn)
-	if err := ensureContactRuntimeSchema(ctx, conn, user.TenantSchema); err != nil {
+	if err := ensureContactRuntimeSchema(ctx, user.TenantSchema); err != nil {
 		return nil, apperr.Internal("prepare contacts failed")
 	}
 
-	c, err := scanContactPII(conn.QueryRowContext(ctx, contactSelectFor(ctx, conn)+` WHERE id = $1 AND deleted_at IS NULL`, id))
+	c, err := scanContactPII(ts.QueryRowContext(ctx, contactSelectFor(ctx, ts, user.TenantSchema)+` WHERE id = $1 AND deleted_at IS NULL`, id))
 	if err != nil {
 		return nil, apperr.NotFound("Kontak tidak ditemukan")
 	}
@@ -824,12 +808,11 @@ func UpdateContact(ctx context.Context, id string, p *UpdateContactParams) (*Upd
 	if err != nil {
 		return nil, err
 	}
-	conn, err := tConn(ctx, user.TenantSchema)
+	ts, err := openTenantScope(ctx, user.TenantSchema)
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer appdb.CloseTenantConn(conn)
-	if err := ensureContactRuntimeSchema(ctx, conn, user.TenantSchema); err != nil {
+	if err := ensureContactRuntimeSchema(ctx, user.TenantSchema); err != nil {
 		return nil, apperr.Internal("prepare contacts failed")
 	}
 
@@ -882,7 +865,7 @@ func UpdateContact(ctx context.Context, id string, p *UpdateContactParams) (*Upd
 		args = append(args, id)
 		q := fmt.Sprintf(`UPDATE contact SET %s WHERE id = $%d AND deleted_at IS NULL`,
 			strings.Join(sets, ", "), idx)
-		res, err := conn.ExecContext(ctx, q, args...)
+		res, err := ts.ExecContext(ctx, q, args...)
 		if err != nil {
 			return nil, apperr.Internal("update failed")
 		}
@@ -892,9 +875,9 @@ func UpdateContact(ctx context.Context, id string, p *UpdateContactParams) (*Upd
 		}
 	}
 	if piiDisplay != nil || piiBirth != nil {
-		piiActive, _ := tenantschema.ContactPIIActiveConn(ctx, conn, user.TenantSchema)
+		piiActive, _ := tenantschema.ContactPIIActive(ctx, ts, user.TenantSchema)
 		if piiActive && pii.ValidateKey(encKey()) == nil {
-			if err := applyContactFieldPII(ctx, conn, id, piiDisplay, piiBirth); err != nil {
+			if err := applyContactFieldPII(ctx, ts, id, piiDisplay, piiBirth); err != nil {
 				return nil, apperr.Internal("update contact fields failed")
 			}
 		} else {
@@ -916,13 +899,13 @@ func UpdateContact(ctx context.Context, id string, p *UpdateContactParams) (*Upd
 				legArgs = append(legArgs, id)
 				q := fmt.Sprintf(`UPDATE contact SET %s WHERE id = $%d AND deleted_at IS NULL`,
 					strings.Join(legSets, ", "), li)
-				if _, err := conn.ExecContext(ctx, q, legArgs...); err != nil {
+				if _, err := ts.ExecContext(ctx, q, legArgs...); err != nil {
 					return nil, apperr.Internal("update contact fields failed")
 				}
 			}
 		}
 	}
-	c, err := scanContactPII(conn.QueryRowContext(ctx, contactSelectFor(ctx, conn)+` WHERE id = $1 AND deleted_at IS NULL`, id))
+	c, err := scanContactPII(ts.QueryRowContext(ctx, contactSelectFor(ctx, ts, user.TenantSchema)+` WHERE id = $1 AND deleted_at IS NULL`, id))
 	if err != nil {
 		return nil, apperr.NotFound("Kontak tidak ditemukan")
 	}
@@ -937,17 +920,16 @@ func DeleteContact(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	conn, err := tConn(ctx, user.TenantSchema)
+	ts, err := openTenantScope(ctx, user.TenantSchema)
 	if err != nil {
 		return apperr.Internal("database connection failed")
 	}
-	defer appdb.CloseTenantConn(conn)
-	if err := ensureContactRuntimeSchema(ctx, conn, user.TenantSchema); err != nil {
+	if err := ensureContactRuntimeSchema(ctx, user.TenantSchema); err != nil {
 		return apperr.Internal("prepare contacts failed")
 	}
 
 	uid, _ := auth.UserID()
-	res, err := conn.ExecContext(ctx, `
+	res, err := ts.ExecContext(ctx, `
 		UPDATE contact
 		SET deleted_at = NOW(), deleted_by = $1, updated_at = NOW()
 		WHERE id = $2 AND deleted_at IS NULL`, string(uid), id)
@@ -977,18 +959,17 @@ func BatchUpdateContactStatus(ctx context.Context, p *BatchContactStatusParams) 
 	if len(placeholders) == 0 {
 		return nil, apperr.BadRequest("ids are required")
 	}
-	conn, err := tConn(ctx, user.TenantSchema)
+	ts, err := openTenantScope(ctx, user.TenantSchema)
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer appdb.CloseTenantConn(conn)
-	if err := ensureContactRuntimeSchema(ctx, conn, user.TenantSchema); err != nil {
+	if err := ensureContactRuntimeSchema(ctx, user.TenantSchema); err != nil {
 		return nil, apperr.Internal("prepare contacts failed")
 	}
 
 	execArgs := []any{status}
 	execArgs = append(execArgs, args...)
-	res, err := conn.ExecContext(ctx, fmt.Sprintf(`
+	res, err := ts.ExecContext(ctx, fmt.Sprintf(`
 		UPDATE contact
 		SET status = $1, updated_at = NOW()
 		WHERE id IN (%s) AND deleted_at IS NULL`, strings.Join(placeholders, ", ")), execArgs...)
@@ -1011,19 +992,18 @@ func BatchDeleteContacts(ctx context.Context, p *BatchContactDeleteParams) (*Bat
 	if len(placeholders) == 0 {
 		return nil, apperr.BadRequest("ids are required")
 	}
-	conn, err := tConn(ctx, user.TenantSchema)
+	ts, err := openTenantScope(ctx, user.TenantSchema)
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer appdb.CloseTenantConn(conn)
-	if err := ensureContactRuntimeSchema(ctx, conn, user.TenantSchema); err != nil {
+	if err := ensureContactRuntimeSchema(ctx, user.TenantSchema); err != nil {
 		return nil, apperr.Internal("prepare contacts failed")
 	}
 
 	uid, _ := auth.UserID()
 	execArgs := []any{string(uid)}
 	execArgs = append(execArgs, args...)
-	res, err := conn.ExecContext(ctx, fmt.Sprintf(`
+	res, err := ts.ExecContext(ctx, fmt.Sprintf(`
 		UPDATE contact
 		SET deleted_at = NOW(), deleted_by = $1, updated_at = NOW()
 		WHERE id IN (%s) AND deleted_at IS NULL`, strings.Join(placeholders, ", ")), execArgs...)
@@ -1038,13 +1018,13 @@ func BatchDeleteContacts(ctx context.Context, p *BatchContactDeleteParams) (*Bat
 // Batch loaders
 // ---------------------------------------------------------------------------
 
-func loadContacts(ctx context.Context, conn *sql.Conn, ids []string) map[string]ContactBrief {
+func loadContacts(ctx context.Context, q appdb.TenantQuerier, ids []string) map[string]ContactBrief {
 	m := make(map[string]ContactBrief, len(ids))
 	if len(ids) == 0 {
 		return m
 	}
 	placeholders, args := inClause(ids)
-	rows, err := conn.QueryContext(ctx,
+	rows, err := q.QueryContext(ctx,
 		`SELECT id,
 		        COALESCE(phone_number_enc,''), COALESCE(phone_number,''),
 		        COALESCE(display_name_enc,''), COALESCE(display_name,''),
@@ -1078,13 +1058,13 @@ func loadContacts(ctx context.Context, conn *sql.Conn, ids []string) map[string]
 	return m
 }
 
-func loadChannels(ctx context.Context, conn *sql.Conn, ids []string) map[string]ChannelBrief {
+func loadChannels(ctx context.Context, q appdb.TenantQuerier, ids []string) map[string]ChannelBrief {
 	m := make(map[string]ChannelBrief, len(ids))
 	if len(ids) == 0 {
 		return m
 	}
 	placeholders, args := inClause(ids)
-	rows, err := conn.QueryContext(ctx,
+	rows, err := q.QueryContext(ctx,
 		`SELECT id, display_name, phone_number FROM whatsapp_channel WHERE id IN (`+placeholders+`)`, args...)
 	if err != nil {
 		return m
@@ -1125,8 +1105,14 @@ func cleanTags(tags []string) []string {
 	return out
 }
 
-func ensureContactRuntimeSchema(ctx context.Context, conn *sql.Conn, tenantSchema string) error {
-	ready, err := tenantschema.ContactRuntimeReady(ctx, conn)
+func ensureContactRuntimeSchema(ctx context.Context, tenantSchema string) error {
+	conn, err := appdb.TenantConn(ctx, db.Stdlib(), tenantSchema)
+	if err != nil {
+		return err
+	}
+	defer appdb.CloseTenantConn(conn)
+
+	ready, err := tenantschema.ContactRuntimeReadyConn(ctx, conn)
 	if err != nil {
 		return err
 	}
@@ -1150,7 +1136,7 @@ func ensureContactRuntimeSchema(ctx context.Context, conn *sql.Conn, tenantSchem
 			}
 		}
 	}
-	return ensurePIISchema(ctx, conn)
+	return ensurePIISchema(ctx, conn, tenantSchema)
 }
 
 func nullableUUID(value *string) any {
@@ -1175,11 +1161,11 @@ func nullableDate(value *string) any {
 	return v
 }
 
-func syncContactsFromLeadAndConversation(ctx context.Context, conn *sql.Conn) error {
+func syncContactsFromLeadAndConversation(ctx context.Context, q appdb.TenantQuerier) error {
 	if err := pii.ValidateKey(encKey()); err == nil {
 		return nil
 	}
-	if _, err := conn.ExecContext(ctx, `
+	if _, err := q.ExecContext(ctx, `
 		INSERT INTO contact (phone_number, display_name, notes, status, tags, created_at, updated_at)
 		SELECT DISTINCT ON (l.phone_number)
 		       l.phone_number,
@@ -1200,7 +1186,7 @@ func syncContactsFromLeadAndConversation(ctx context.Context, conn *sql.Conn) er
 		return err
 	}
 
-	_, err := conn.ExecContext(ctx, `
+	_, err := q.ExecContext(ctx, `
 		UPDATE contact c
 		SET deleted_at = NULL,
 		    deleted_by = NULL,

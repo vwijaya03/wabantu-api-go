@@ -17,7 +17,11 @@ ALTER TABLE contact ALTER COLUMN phone_number DROP NOT NULL;
 
 // RunPIISchemaPatchesOnConn applies PII DDL on an open tenant connection.
 func RunPIISchemaPatchesOnConn(ctx context.Context, conn *sql.Conn) error {
-	ready, err := tenantschema.PIIReady(ctx, conn)
+	schema, err := SchemaFromConn(ctx, conn)
+	if err != nil {
+		return err
+	}
+	ready, err := tenantschema.PIIReady(ctx, conn, schema)
 	if err != nil {
 		return err
 	}

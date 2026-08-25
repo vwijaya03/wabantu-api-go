@@ -37,11 +37,10 @@ func imageContextJobFromPaymentProof(job *PaymentProofJob) *ImageContextJob {
 }
 
 func processImageContextJob(ctx context.Context, job *ImageContextJob) error {
-	conn, err := openTenantConn(ctx, job.TenantSchema)
+	ts, err := openTenantScope(ctx, job.TenantSchema)
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
 
 	scope := orderAccessScope{
 		ConversationID: job.ConversationID,
@@ -51,7 +50,7 @@ func processImageContextJob(ctx context.Context, job *ImageContextJob) error {
 		return nil
 	}
 
-	msg, err := loadMessage(ctx, conn, job.MessageID)
+	msg, err := loadMessage(ctx, ts, job.MessageID)
 	if err != nil {
 		return err
 	}
@@ -60,7 +59,7 @@ func processImageContextJob(ctx context.Context, job *ImageContextJob) error {
 		return nil
 	}
 
-	convo, err := loadConversation(ctx, conn, job.ConversationID)
+	convo, err := loadConversation(ctx, ts, job.ConversationID)
 	if err != nil {
 		return err
 	}
@@ -69,20 +68,20 @@ func processImageContextJob(ctx context.Context, job *ImageContextJob) error {
 		return nil
 	}
 
-	profile, err := loadBusinessProfile(ctx, conn)
+	profile, err := loadBusinessProfile(ctx, ts)
 	if err != nil {
 		return err
 	}
 
 	if profile != nil && profile.AIEnabled {
-		if handled, herr := tryProductImageMatch(ctx, conn, job, profile); herr != nil {
+		if handled, herr := tryProductImageMatch(ctx, ts, job, profile); herr != nil {
 			return herr
 		} else if handled {
 			return nil
 		}
 	}
 
-	return sendImageContextFallback(ctx, conn, job)
+	return sendImageContextFallback(ctx, ts, job)
 }
 
 // shouldProcessImageContext — Fase 3c/3d hanya untuk gambar tanpa caption (autoreply 3a menangani caption).
@@ -96,13 +95,13 @@ func shouldProcessImageContext(msg *dbMessage) bool {
 	return msg.Body == ""
 }
 
-func tryProductImageMatch(ctx context.Context, q tenantQuerier, job *ImageContextJob, profile *dbBusinessProfile) (bool, error) {
+func tryProductImageMatch(ctx context.Context, ts tenantScopedQuerier, job *ImageContextJob, profile *dbBusinessProfile) (bool, error) {
 	if !checkImageContextVisionRateLimit(ctx, job.TenantSchema, job.ContactID) {
 		rlog.Info("image context vision rate limited", "contactId", job.ContactID)
 		return false, nil
 	}
 
-	catalog, err := loadActiveCatalog(ctx, q, 40)
+	catalog, err := loadActiveCatalog(ctx, ts, 40)
 	if err != nil {
 		return false, err
 	}
@@ -145,7 +144,7 @@ func tryProductImageMatch(ctx context.Context, q tenantQuerier, job *ImageContex
 		return false, nil
 	}
 
-	enrichCatalogStock(ctx, q, []dbCatalogItem{*match})
+	enrichCatalogStock(ctx, ts, []dbCatalogItem{*match})
 	formal := profile != nil && strOrEmpty(profile.Tone) == "formal"
 	reply := buildCatalogItemReply(formal, match, 0)
 	if strings.TrimSpace(reply) == "" {
@@ -153,7 +152,7 @@ func tryProductImageMatch(ctx context.Context, q tenantQuerier, job *ImageContex
 	}
 
 	meta := metaNoLLM(reasonAIGenerated, PathProductImageMatch)
-	if err := sendImageContextOutbound(ctx, q, job, reply, meta); err != nil {
+	if err := sendImageContextOutbound(ctx, ts, job, reply, meta); err != nil {
 		return false, err
 	}
 
@@ -194,7 +193,7 @@ func matchCatalogFromVision(extract aivision.ProductImageMatchExtract, catalog [
 	return nil
 }
 
-func sendImageContextFallback(ctx context.Context, q tenantQuerier, job *ImageContextJob) error {
+func sendImageContextFallback(ctx context.Context, ts tenantScopedQuerier, job *ImageContextJob) error {
 	meta := metaNoLLM(reasonAIGenerated, PathImageFallback)
 	_ = usage.RecordAIActivity(ctx, usage.AIActivityParams{
 		TenantSchema:   job.TenantSchema,
@@ -205,7 +204,7 @@ func sendImageContextFallback(ctx context.Context, q tenantQuerier, job *ImageCo
 		Path:           PathImageFallback,
 		LLMUsed:        false,
 	})
-	if err := sendImageContextOutbound(ctx, q, job, imageContextFallbackMsg, meta); err != nil {
+	if err := sendImageContextOutbound(ctx, ts, job, imageContextFallbackMsg, meta); err != nil {
 		return err
 	}
 	if job.TenantID != "" && svc != nil && svc.rdb != nil {
@@ -214,26 +213,26 @@ func sendImageContextFallback(ctx context.Context, q tenantQuerier, job *ImageCo
 	return nil
 }
 
-func sendImageContextOutbound(ctx context.Context, q tenantQuerier, job *ImageContextJob, text string, meta AiReplyMeta) error {
+func sendImageContextOutbound(ctx context.Context, ts tenantScopedQuerier, job *ImageContextJob, text string, meta AiReplyMeta) error {
 	if svc == nil {
 		return fmt.Errorf("ai service not initialized")
 	}
-	convo, err := loadConversation(ctx, q, job.ConversationID)
+	convo, err := loadConversation(ctx, ts, job.ConversationID)
 	if err != nil {
 		return err
 	}
 	if convo == nil {
 		return fmt.Errorf("conversation not found")
 	}
-	contact, err := loadContact(ctx, q, convo.ContactID)
+	contact, err := loadContact(ctx, ts, convo.ContactID)
 	if err != nil {
 		return err
 	}
-	channel, err := loadChannel(ctx, q, convo.ChannelID)
+	channel, err := loadChannel(ctx, ts, convo.ChannelID)
 	if err != nil {
 		return err
 	}
-	return svc.sendAiMessage(ctx, q, job.TenantID, convo, channel, contact, text, "ai", meta)
+	return svc.sendAiMessage(ctx, ts, job.TenantID, convo, channel, contact, text, "ai", meta)
 }
 
 func checkImageContextVisionRateLimit(ctx context.Context, tenantSchema, contactID string) bool {
