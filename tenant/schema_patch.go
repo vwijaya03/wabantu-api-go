@@ -236,6 +236,22 @@ func RunSchemaPatches(ctx context.Context, schemaName string) error {
 	return runFinanceSchemaAndSeed(ctx, conn)
 }
 
+// runTenantBootstrapPatches applies patches + seeds during signup on an open tenant
+// connection. Skips re-running admin DDL (RunTenantDDL already did) and avoids TenantConn
+// so lazy background migration cannot race with bootstrap.
+func runTenantBootstrapPatches(ctx context.Context, conn *sql.Conn, schemaName string) error {
+	if !schemaNameRe.MatchString(schemaName) {
+		return fmt.Errorf("invalid schema name: %q", schemaName)
+	}
+	if err := runPIISchemaOnConn(ctx, conn); err != nil {
+		return err
+	}
+	if err := runAlwaysApplyPatches(ctx, conn); err != nil {
+		return err
+	}
+	return runFinanceSchemaAndSeed(ctx, conn)
+}
+
 // runAlwaysApplyPatches applies DDL that must run on every migration call regardless
 // of TenantPatchReady / FinanceModuleReady guards.  Every statement MUST be idempotent
 // (IF NOT EXISTS / IF EXISTS / ON CONFLICT).

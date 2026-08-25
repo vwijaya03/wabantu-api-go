@@ -330,20 +330,8 @@ func RunTenantDDL(ctx context.Context, schemaName string) error {
 	if err := applyCloudAdminTenantDDL(ctx, schemaName); err != nil {
 		return fmt.Errorf("cloud admin DDL: %w", err)
 	}
-	if err := RunSchemaPatches(ctx, schemaName); err != nil {
+	if err := runTenantBootstrapPatches(ctx, conn, schemaName); err != nil {
 		return fmt.Errorf("schema patches: %w", err)
-	}
-	if err := seedFinanceTransactionTypes(ctx, conn); err != nil {
-		return fmt.Errorf("seed finance transaction types: %w", err)
-	}
-	if err := seedFinanceCategories(ctx, conn); err != nil {
-		return fmt.Errorf("seed finance categories: %w", err)
-	}
-	if err := seedFinanceWallet(ctx, conn); err != nil {
-		return fmt.Errorf("seed finance wallet: %w", err)
-	}
-	if err := seedFinanceApprovalSetting(ctx, conn); err != nil {
-		return fmt.Errorf("seed finance approval setting: %w", err)
 	}
 	if err := ensureCloudSchemaDeployGrants(ctx, conn, schemaName); err != nil {
 		return fmt.Errorf("cloud schema grants final: %w", err)
