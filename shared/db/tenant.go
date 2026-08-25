@@ -27,11 +27,16 @@ func TenantConn(ctx context.Context, pool *sql.DB, schema string) (*sql.Conn, er
 }
 
 // CloseTenantConn resets session state before returning the connection to the pool.
+// DEALLOCATE ALL is required because pgx caches server-side prepared statements per
+// connection; RESET search_path alone leaves stale plans that can reference the
+// wrong tenant schema (or dropped OIDs) after the path changes.
 func CloseTenantConn(conn *sql.Conn) {
 	if conn == nil {
 		return
 	}
-	_, _ = conn.ExecContext(context.Background(), "RESET search_path")
-	_, _ = conn.ExecContext(context.Background(), "RESET ROLE")
+	ctx := context.Background()
+	_, _ = conn.ExecContext(ctx, "DEALLOCATE ALL")
+	_, _ = conn.ExecContext(ctx, "RESET search_path")
+	_, _ = conn.ExecContext(ctx, "RESET ROLE")
 	conn.Close()
 }
