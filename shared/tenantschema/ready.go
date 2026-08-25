@@ -100,7 +100,7 @@ func FinanceModuleReady(ctx context.Context, q any, schema string) (bool, error)
 // EventsModuleReady — events module tables through latest patch.
 func EventsModuleReady(ctx context.Context, q any, schema string) (bool, error) {
 	q = Q(q)
-	for _, t := range []string{"evt_event", "evt_patient", "evt_staff_roster", "evt_export_job"} {
+	for _, t := range []string{"evt_event", "evt_patient", "evt_staff_roster", "evt_export_job", "evt_therapy"} {
 		ok, err := TableExists(ctx, q, schema, t)
 		if err != nil || !ok {
 			return false, err

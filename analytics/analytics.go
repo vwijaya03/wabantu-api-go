@@ -101,10 +101,6 @@ func Overview(ctx context.Context, req *OverviewRequest) (*OverviewResponse, err
 		return nil, err
 	}
 
-	if err := tenant.EnsureTenantSchemaProvisioned(ctx, u.TenantSchema); err != nil {
-		return nil, e.Internal("tenant schema not ready")
-	}
-
 	days := req.Days
 	if days < 1 || days > 90 {
 		days = 30

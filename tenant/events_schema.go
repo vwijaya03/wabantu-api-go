@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 
+	appdb "encore.app/wabantu/shared/db"
+	"encore.app/wabantu/shared/tenantschema"
 	"encore.dev"
 )
 
@@ -281,13 +283,13 @@ CREATE INDEX IF NOT EXISTS idx_evt_event_therapy_event ON evt_event_therapy(even
 CREATE INDEX IF NOT EXISTS idx_evt_event_status_start ON evt_event(status, start_date DESC) WHERE deleted_at IS NULL;
 `
 
-func runEventsSchemaAndSeed(ctx context.Context, conn *sql.Conn) error {
+func runEventsSchemaAndSeed(ctx context.Context, schemaName string, conn *sql.Conn) error {
 	// Always apply idempotent evt_* DDL so new ALTERs in eventsSchemaPatchSQL
 	// run on tenants that already passed an older EventsModuleReady check.
 	if _, err := conn.ExecContext(ctx, eventsSchemaPatchSQL); err != nil {
 		return err
 	}
-	return seedEventsMasterData(ctx, conn)
+	return seedEventsMasterData(ctx, schemaName, conn)
 }
 
 // SeedEventsMasterDataOnly inserts default evt_* master rows when tables exist (no DDL).
@@ -300,7 +302,7 @@ func SeedEventsMasterDataOnly(ctx context.Context, schemaName string) error {
 		return err
 	}
 	defer conn.Close()
-	return seedEventsMasterData(ctx, conn)
+	return seedEventsMasterData(ctx, schemaName, conn)
 }
 
 // RunEventsSchemaPatches applies idempotent evt_* DDL on tenants that already have evt_event
@@ -314,43 +316,52 @@ func RunEventsSchemaPatches(ctx context.Context, schemaName string) error {
 			return fmt.Errorf("events cloud DDL: %w", err)
 		}
 	}
-	conn, err := TenantConn(ctx, schemaName)
+	conn, err := tenantMigrationConn(ctx, schemaName)
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
-	return runEventsSchemaAndSeed(ctx, conn)
+	return runEventsSchemaAndSeed(ctx, schemaName, conn)
 }
 
-func seedEventsMasterData(ctx context.Context, conn *sql.Conn) error {
+func seedEventsMasterData(ctx context.Context, schemaName string, raw any) error {
+	q := tenantschema.Q(raw)
+	sch := appdb.SchemaSQL{Schema: schemaName}
+	therapyTable := sch.T("evt_therapy")
+	roleTable := sch.T("evt_volunteer_role")
+	taskTable := sch.T("evt_task")
+
 	var n int
-	if err := conn.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM evt_therapy WHERE deleted_at IS NULL`).Scan(&n); err != nil {
+	if err := q.QueryRowContext(ctx,
+		fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE deleted_at IS NULL`, therapyTable),
+	).Scan(&n); err != nil {
 		return err
 	}
 	if n == 0 {
 		for i, name := range []string{"Terapi 5 Elemen", "Terapi Shijie", "Terapi Energi Dewa"} {
-			if _, err := conn.ExecContext(ctx, `
-				INSERT INTO evt_therapy (therapy_name, description, display_order)
-				VALUES ($1, '', $2)`, name, i+1); err != nil {
+			if _, err := q.ExecContext(ctx, fmt.Sprintf(`
+				INSERT INTO %s (therapy_name, description, display_order)
+				VALUES ($1, '', $2)`, therapyTable), name, i+1); err != nil {
 				return err
 			}
 		}
 	}
-	if err := conn.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM evt_volunteer_role WHERE deleted_at IS NULL`).Scan(&n); err != nil {
+	if err := q.QueryRowContext(ctx,
+		fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE deleted_at IS NULL`, roleTable),
+	).Scan(&n); err != nil {
 		return err
 	}
 	if n == 0 {
 		for i, name := range []string{"Relawan Depan", "Relawan Bakar Fu", "Relawan Pintu Keluar"} {
-			if _, err := conn.ExecContext(ctx, `
-				INSERT INTO evt_volunteer_role (role_name, display_order) VALUES ($1, $2)`, name, i+1); err != nil {
+			if _, err := q.ExecContext(ctx, fmt.Sprintf(`
+				INSERT INTO %s (role_name, display_order) VALUES ($1, $2)`, roleTable), name, i+1); err != nil {
 				return err
 			}
 		}
 	}
-	if err := conn.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM evt_task WHERE deleted_at IS NULL`).Scan(&n); err != nil {
+	if err := q.QueryRowContext(ctx,
+		fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE deleted_at IS NULL`, taskTable),
+	).Scan(&n); err != nil {
 		return err
 	}
 	if n == 0 {
@@ -363,9 +374,9 @@ func seedEventsMasterData(ctx context.Context, conn *sql.Conn) error {
 			{"Koordinator Tengah", "FIXED"},
 		}
 		for i, t := range tasks {
-			if _, err := conn.ExecContext(ctx, `
-				INSERT INTO evt_task (task_name, assignment_type, display_order)
-				VALUES ($1, $2, $3)`, t.name, t.atype, i+1); err != nil {
+			if _, err := q.ExecContext(ctx, fmt.Sprintf(`
+				INSERT INTO %s (task_name, assignment_type, display_order)
+				VALUES ($1, $2, $3)`, taskTable), t.name, t.atype, i+1); err != nil {
 				return err
 			}
 		}

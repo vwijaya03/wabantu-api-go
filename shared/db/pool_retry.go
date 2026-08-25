@@ -28,7 +28,18 @@ func (r retryRow) Scan(dest ...any) error {
 	}
 	defer conn.Close()
 	ResetPreparedStatements(r.ctx, conn)
-	return conn.QueryRowContext(r.ctx, r.query, r.args...).Scan(dest...)
+	err = conn.QueryRowContext(r.ctx, r.query, r.args...).Scan(dest...)
+	if err == nil || !IsStalePreparedStatement(err) {
+		return err
+	}
+	// Connection still broken — acquire a fresh one and retry without returning bad conn to pool.
+	conn2, cerr2 := r.pool.Conn(r.ctx)
+	if cerr2 != nil {
+		return err
+	}
+	defer conn2.Close()
+	ResetPreparedStatements(r.ctx, conn2)
+	return conn2.QueryRowContext(r.ctx, r.query, r.args...).Scan(dest...)
 }
 
 // PoolQueryRow returns a row that retries once on stale pgx prepared statements (08P01).

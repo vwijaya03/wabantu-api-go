@@ -222,15 +222,7 @@ func tenantSchemaBaseProvisioned(ctx context.Context, schemaName string) (bool, 
 	if !schemaNameRe.MatchString(schemaName) {
 		return false, fmt.Errorf("invalid schema name: %q", schemaName)
 	}
-	conn, err := DataDB.Stdlib().Conn(ctx)
-	if err != nil {
-		return false, err
-	}
-	defer conn.Close()
-	if _, err := conn.ExecContext(ctx, fmt.Sprintf(`SET search_path TO %s, public`, quoteIdent(schemaName))); err != nil {
-		return false, err
-	}
-	return tenantschema.TableExists(ctx, conn, schemaName, "contact")
+	return tenantschema.TableExists(ctx, DataDB.Stdlib(), schemaName, "contact")
 }
 
 // diffOrphanSchemas returns schemas in all but not in registered (test helper).
