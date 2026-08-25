@@ -2,11 +2,9 @@ package tenant
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"strings"
 
-	"encore.app/wabantu/shared/tenantschema"
 	"encore.app/wabantu/system"
 	"encore.dev"
 	"encore.dev/rlog"
@@ -214,57 +212,6 @@ func listCloudDeployBlockers(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	return blockers, nil
-}
-
-// applyCloudAdminTenantDDL runs idempotent admin-owned DDL patches on Encore Cloud.
-func applyCloudAdminTenantDDL(ctx context.Context, schemaName string) error {
-	if !isEncoreCloud() {
-		return nil
-	}
-	return withTenantAdminTx(ctx, schemaName, func(ctx context.Context, tx *sql.Tx) error {
-		stmts := []struct {
-			label string
-			sql   string
-		}{
-			{"cloud tenant patch", tenantschema.CloudTenantPatchSQL},
-			{"pii patch", tenantschema.PIISchemaPatchSQL},
-			{"inventory patch", tenantschema.InventorySchemaSQL},
-			{"knowledge base patch", knowledgeBaseEntryPatchSQL},
-		}
-		for _, s := range stmts {
-			if strings.TrimSpace(s.sql) == "" {
-				continue
-			}
-			if _, err := tx.ExecContext(ctx, s.sql); err != nil {
-				return fmt.Errorf("%s: %w", s.label, err)
-			}
-		}
-		return nil
-	})
-}
-
-func withTenantAdminTx(ctx context.Context, schemaName string, fn func(context.Context, *sql.Tx) error) error {
-	tx, err := DataDB.Stdlib().BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
-	}
-	defer tx.Rollback()
-
-	if _, err := tx.ExecContext(ctx, fmt.Sprintf("SET LOCAL ROLE %s", cloudDBTenantAdmin)); err != nil {
-		var currentUser string
-		_ = tx.QueryRowContext(ctx, `SELECT current_user`).Scan(&currentUser)
-		return fmt.Errorf(
-			"set tenant admin role as %s — jalankan POST /api/v1/admin/migrate-tenant-schemas: %w",
-			currentUser, err,
-		)
-	}
-	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`SET LOCAL search_path TO %s, public`, quoteIdent(schemaName))); err != nil {
-		return fmt.Errorf("set search_path: %w", err)
-	}
-	if err := fn(ctx, tx); err != nil {
-		return err
-	}
-	return tx.Commit()
 }
 
 // diffOrphanSchemas returns schemas in all but not in registered (test helper).

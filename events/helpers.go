@@ -211,10 +211,9 @@ func ensureEventsMissingColumns(ctx context.Context, conn *sql.Conn, schema stri
 		return nil
 	}
 	if encore.Meta().Environment.Cloud != encore.CloudLocal {
-		return fmt.Errorf(
-			"kolom %s.%s belum ada di cloud: jalankan migrate tenant schemas untuk environment %s",
-			missing.table, missing.column, encore.Meta().Environment.Name,
-		)
+		if err := tenant.EnsureCloudAdminTenantDDL(ctx, schema); err != nil {
+			return err
+		}
 	}
 	return tenant.RunEventsSchemaPatches(ctx, schema)
 }

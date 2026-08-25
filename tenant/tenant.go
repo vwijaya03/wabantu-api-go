@@ -322,6 +322,10 @@ func RunTenantDDL(ctx context.Context, schemaName string) error {
 	if _, err := conn.ExecContext(ctx, tenantDDL); err != nil {
 		return fmt.Errorf("run DDL: %w", err)
 	}
+	// On Encore Cloud, inventory/PII/KB DDL needs db_tenant_admin (app role cannot CREATE inv_*).
+	if err := applyCloudAdminTenantDDL(ctx, schemaName); err != nil {
+		return fmt.Errorf("cloud admin DDL: %w", err)
+	}
 	if err := RunSchemaPatches(ctx, schemaName); err != nil {
 		return fmt.Errorf("schema patches: %w", err)
 	}

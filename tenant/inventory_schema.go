@@ -39,12 +39,17 @@ func runInventorySchemaAndSeed(ctx context.Context, conn *sql.Conn) error {
 	}
 	if !ready {
 		if encore.Meta().Environment.Cloud != encore.CloudLocal {
-			return fmt.Errorf(
-				"inventory schema belum lengkap di cloud: jalankan ./scripts/apply-inventory-schema-cloud.sh %s",
-				encore.Meta().Environment.Name,
-			)
-		}
-		if _, err := conn.ExecContext(ctx, tenantschema.InventorySchemaSQL); err != nil {
+			if err := ensureCloudAdminDDLForConn(ctx, conn); err != nil {
+				return fmt.Errorf("inventory cloud DDL: %w", err)
+			}
+			ready, err = tenantschema.InventoryModuleReady(ctx, conn)
+			if err != nil {
+				return fmt.Errorf("inventory schema recheck: %w", err)
+			}
+			if !ready {
+				return fmt.Errorf("inventory schema masih belum lengkap setelah cloud DDL")
+			}
+		} else if _, err := conn.ExecContext(ctx, tenantschema.InventorySchemaSQL); err != nil {
 			return fmt.Errorf("inventory DDL: %w", err)
 		}
 	}

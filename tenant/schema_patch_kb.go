@@ -3,7 +3,6 @@ package tenant
 import (
 	"context"
 	"database/sql"
-	"fmt"
 
 	"encore.dev"
 
@@ -43,10 +42,7 @@ func alwaysApplyKnowledgeBasePatch(ctx context.Context, conn *sql.Conn) error {
 		return err
 	}
 	if encore.Meta().Environment.Cloud != encore.CloudLocal {
-		return fmt.Errorf(
-			"tabel knowledge_base_entry belum ada di cloud: jalankan ./scripts/apply-tenant-schema-cloud.sh %s",
-			encore.Meta().Environment.Name,
-		)
+		return ensureCloudAdminDDLForConn(ctx, conn)
 	}
 	_, err = conn.ExecContext(ctx, knowledgeBaseEntryPatchSQL)
 	return err
