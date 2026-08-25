@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"encore.app/wabantu/shared/tenantschema"
+	"encore.dev"
 )
 
 // financeSchemaPatchSQL creates finance tables on existing tenant schemas (idempotent).
@@ -344,11 +345,22 @@ func runFinanceSchemaAndSeed(ctx context.Context, conn *sql.Conn) error {
 		return fmt.Errorf("finance schema check: %w", err)
 	}
 	if !ready {
-		if _, err := conn.ExecContext(ctx, financeSchemaPatchSQL); err != nil {
-			return fmt.Errorf("finance DDL: %w", err)
+		if encore.Meta().Environment.Cloud != encore.CloudLocal {
+			if err := ensureCloudAdminDDLForConn(ctx, conn); err != nil {
+				return fmt.Errorf("finance cloud DDL: %w", err)
+			}
+			ready, err = tenantschema.FinanceModuleReady(ctx, conn)
+			if err != nil {
+				return fmt.Errorf("finance schema recheck: %w", err)
+			}
 		}
-		if _, err := conn.ExecContext(ctx, financeCategoryDedupeSQL); err != nil {
-			return fmt.Errorf("finance category dedupe: %w", err)
+		if !ready {
+			if _, err := conn.ExecContext(ctx, financeSchemaPatchSQL); err != nil {
+				return fmt.Errorf("finance DDL: %w", err)
+			}
+			if _, err := conn.ExecContext(ctx, financeCategoryDedupeSQL); err != nil {
+				return fmt.Errorf("finance category dedupe: %w", err)
+			}
 		}
 	}
 	if err := seedFinanceTransactionTypes(ctx, conn); err != nil {

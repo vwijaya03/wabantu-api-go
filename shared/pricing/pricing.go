@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"strings"
 
+	"encore.app/wabantu/tenant"
 	apperr "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/tenantschema"
+	"encore.dev"
 )
 
 // EnsureSchema applies idempotent DDL for price types and catalog prices.
@@ -18,6 +20,13 @@ func EnsureSchema(ctx context.Context, conn *sql.Conn) error {
 	}
 	if ready {
 		return nil
+	}
+	if encore.Meta().Environment.Cloud != encore.CloudLocal {
+		var schemaName string
+		if err := conn.QueryRowContext(ctx, `SELECT current_schema()`).Scan(&schemaName); err != nil {
+			return err
+		}
+		return tenant.EnsureCloudAdminTenantDDL(ctx, schemaName)
 	}
 	_, err = conn.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS business_price_type (

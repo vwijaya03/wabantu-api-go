@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"encore.app/wabantu/shared/tenantschema"
+	"encore.dev"
 )
 
 // piiConstraintPatchSQL drops legacy uniqueness that conflicts with encrypted placeholders.
@@ -21,9 +22,16 @@ func RunPIISchemaPatchesOnConn(ctx context.Context, conn *sql.Conn) error {
 		return err
 	}
 	if !ready {
-		if _, err = conn.ExecContext(ctx, tenantschema.PIISchemaPatchSQL); err != nil {
+		if encore.Meta().Environment.Cloud != encore.CloudLocal {
+			if err := ensureCloudAdminDDLForConn(ctx, conn); err != nil {
+				return err
+			}
+		} else if _, err = conn.ExecContext(ctx, tenantschema.PIISchemaPatchSQL); err != nil {
 			return err
 		}
+	}
+	if encore.Meta().Environment.Cloud != encore.CloudLocal {
+		return nil
 	}
 	_, err = conn.ExecContext(ctx, piiConstraintPatchSQL)
 	return err

@@ -9,6 +9,8 @@ import (
 	apperr "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/pricing"
 	"encore.app/wabantu/shared/tenantschema"
+	"encore.app/wabantu/tenant"
+	"encore.dev"
 )
 
 type CatalogItemPrice struct {
@@ -38,6 +40,13 @@ func ensureCatalogIndexes(ctx context.Context, conn *sql.Conn) error {
 	}
 	if exists {
 		return nil
+	}
+	if encore.Meta().Environment.Cloud != encore.CloudLocal {
+		var schemaName string
+		if err := conn.QueryRowContext(ctx, `SELECT current_schema()`).Scan(&schemaName); err != nil {
+			return err
+		}
+		return tenant.EnsureCloudAdminTenantDDL(ctx, schemaName)
 	}
 	_, err = conn.ExecContext(ctx, `
 		DROP INDEX IF EXISTS idx_catalog_source_code;

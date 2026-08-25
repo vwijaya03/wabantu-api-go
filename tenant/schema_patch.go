@@ -221,8 +221,10 @@ func RunSchemaPatches(ctx context.Context, schemaName string) error {
 		return err
 	}
 	if !ready {
-		if _, err = conn.ExecContext(ctx, tenantSchemaPatchSQL); err != nil {
-			return err
+		if encore.Meta().Environment.Cloud == encore.CloudLocal {
+			if _, err = conn.ExecContext(ctx, tenantSchemaPatchSQL); err != nil {
+				return err
+			}
 		}
 	}
 	if err := runPIISchemaOnConn(ctx, conn); err != nil {
