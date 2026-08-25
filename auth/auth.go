@@ -240,7 +240,7 @@ func Register(w http.ResponseWriter, req *http.Request) {
 	// --- bootstrap tenant schema ---
 	if err := tenant.RunTenantDDL(ctx, schemaName); err != nil {
 		// Clean up committed system rows so the user can retry.
-		cleanupRegistration(ctx, accountID, companyID, tenantID)
+		cleanupRegistration(ctx, accountID, companyID, tenantID, schemaName)
 		writeError(w, http.StatusInternalServerError, "schema bootstrap failed: "+err.Error())
 		return
 	}
@@ -538,7 +538,12 @@ func lookupTenantDisplay(ctx context.Context, tenantID string) (slug, name strin
 	return slug, name
 }
 
-func cleanupRegistration(ctx context.Context, accountID, companyID, tenantID string) {
+func cleanupRegistration(ctx context.Context, accountID, companyID, tenantID, schemaName string) {
+	if schemaName != "" {
+		if err := tenant.DropTenantSchema(ctx, schemaName); err != nil {
+			rlog.Warn("signup cleanup: drop tenant schema failed", "schema", schemaName, "err", err)
+		}
+	}
 	system.DB.Exec(ctx, "DELETE FROM tenant_account WHERE id = $1", accountID)
 	system.DB.Exec(ctx, "DELETE FROM tenant_company WHERE id = $1", companyID)
 	system.DB.Exec(ctx, "DELETE FROM tenant WHERE id = $1", tenantID)
