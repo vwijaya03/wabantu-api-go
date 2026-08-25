@@ -10,6 +10,7 @@ import (
 	"encore.dev/rlog"
 
 	apperr "encore.app/wabantu/shared/errs"
+	appdb "encore.app/wabantu/shared/db"
 	"encore.app/wabantu/shared/triagereport"
 )
 
@@ -178,7 +179,7 @@ type reportableMessage struct {
 }
 
 func loadReportableMessage(ctx context.Context, q interface {
-	QueryRowContext(context.Context, string, ...any) *sql.Row
+	QueryRowContext(context.Context, string, ...any) appdb.Scannable
 }, messageID string) (reportableMessage, error) {
 	var m reportableMessage
 	var direction, author string

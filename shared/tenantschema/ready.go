@@ -6,22 +6,9 @@ import (
 	"strings"
 )
 
-// Querier runs a single-row query (pool, conn, or tx).
-type Querier interface {
-	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
-}
-
-func scanExists(ctx context.Context, q Querier, query string, args ...any) (bool, error) {
-	var exists bool
-	if err := q.QueryRowContext(ctx, query, args...).Scan(&exists); err != nil {
-		return false, err
-	}
-	return exists, nil
-}
-
 // TableExists reports whether a named table exists in the given tenant schema.
-func TableExists(ctx context.Context, q Querier, schema, table string) (bool, error) {
-	return scanExists(ctx, q, `
+func TableExists(ctx context.Context, q any, schema, table string) (bool, error) {
+	return scanExists(ctx, Q(q), `
 		SELECT EXISTS (
 		  SELECT 1
 		  FROM pg_catalog.pg_class c
@@ -33,8 +20,8 @@ func TableExists(ctx context.Context, q Querier, schema, table string) (bool, er
 }
 
 // ColumnExists reports whether a column exists on a table in the given schema.
-func ColumnExists(ctx context.Context, q Querier, schema, table, column string) (bool, error) {
-	return scanExists(ctx, q, `
+func ColumnExists(ctx context.Context, q any, schema, table, column string) (bool, error) {
+	return scanExists(ctx, Q(q), `
 		SELECT EXISTS (
 		  SELECT 1
 		  FROM pg_catalog.pg_attribute a
@@ -49,8 +36,8 @@ func ColumnExists(ctx context.Context, q Querier, schema, table, column string) 
 }
 
 // IndexExists reports whether a named index exists in the given schema.
-func IndexExists(ctx context.Context, q Querier, schema, indexName string) (bool, error) {
-	return scanExists(ctx, q, `
+func IndexExists(ctx context.Context, q any, schema, indexName string) (bool, error) {
+	return scanExists(ctx, Q(q), `
 		SELECT EXISTS (
 		  SELECT 1
 		  FROM pg_catalog.pg_class c
@@ -62,7 +49,8 @@ func IndexExists(ctx context.Context, q Querier, schema, indexName string) (bool
 }
 
 // ContactRuntimeReady — inbox + pricing contact columns.
-func ContactRuntimeReady(ctx context.Context, q Querier, schema string) (bool, error) {
+func ContactRuntimeReady(ctx context.Context, q any, schema string) (bool, error) {
+	q = Q(q)
 	for _, col := range []string{"status", "price_type_id", "birth_date"} {
 		ok, err := ColumnExists(ctx, q, schema, "contact", col)
 		if err != nil || !ok {
@@ -73,7 +61,8 @@ func ContactRuntimeReady(ctx context.Context, q Querier, schema string) (bool, e
 }
 
 // PricingReady — multi-price catalog tables.
-func PricingReady(ctx context.Context, q Querier, schema string) (bool, error) {
+func PricingReady(ctx context.Context, q any, schema string) (bool, error) {
+	q = Q(q)
 	for _, t := range []string{"business_price_type", "business_catalog_item_price"} {
 		ok, err := TableExists(ctx, q, schema, t)
 		if err != nil || !ok {
@@ -84,12 +73,13 @@ func PricingReady(ctx context.Context, q Querier, schema string) (bool, error) {
 }
 
 // CatalogIndexReady — partial unique index on catalog SKU.
-func CatalogIndexReady(ctx context.Context, q Querier, schema string) (bool, error) {
+func CatalogIndexReady(ctx context.Context, q any, schema string) (bool, error) {
 	return IndexExists(ctx, q, schema, "idx_catalog_source_code")
 }
 
 // FinanceModuleReady — finance tables through latest patch.
-func FinanceModuleReady(ctx context.Context, q Querier, schema string) (bool, error) {
+func FinanceModuleReady(ctx context.Context, q any, schema string) (bool, error) {
+	q = Q(q)
 	for _, t := range []string{
 		"fin_wallet", "fin_transaction", "fin_report_job",
 		"fin_category", "fin_transaction_type",
@@ -108,7 +98,8 @@ func FinanceModuleReady(ctx context.Context, q Querier, schema string) (bool, er
 }
 
 // EventsModuleReady — events module tables through latest patch.
-func EventsModuleReady(ctx context.Context, q Querier, schema string) (bool, error) {
+func EventsModuleReady(ctx context.Context, q any, schema string) (bool, error) {
+	q = Q(q)
 	for _, t := range []string{"evt_event", "evt_patient", "evt_staff_roster", "evt_export_job"} {
 		ok, err := TableExists(ctx, q, schema, t)
 		if err != nil || !ok {
@@ -123,12 +114,13 @@ func EventsModuleReady(ctx context.Context, q Querier, schema string) (bool, err
 }
 
 // KnowledgeBaseReady — Q/A table for AI knowledge base module.
-func KnowledgeBaseReady(ctx context.Context, q Querier, schema string) (bool, error) {
+func KnowledgeBaseReady(ctx context.Context, q any, schema string) (bool, error) {
 	return TableExists(ctx, q, schema, "knowledge_base_entry")
 }
 
 // TenantPatchReady — schema_patch.go fully applied (branches, workflow, indexes).
-func TenantPatchReady(ctx context.Context, q Querier, schema string) (bool, error) {
+func TenantPatchReady(ctx context.Context, q any, schema string) (bool, error) {
+	q = Q(q)
 	for _, t := range []string{"branch", "workflow_rule"} {
 		ok, err := TableExists(ctx, q, schema, t)
 		if err != nil || !ok {
@@ -147,7 +139,8 @@ func TenantPatchReady(ctx context.Context, q Querier, schema string) (bool, erro
 }
 
 // OrderPaymentProofPatchReady — Fase 2 payment proof columns on order + business_profile.
-func OrderPaymentProofPatchReady(ctx context.Context, q Querier, schema string) (bool, error) {
+func OrderPaymentProofPatchReady(ctx context.Context, q any, schema string) (bool, error) {
+	q = Q(q)
 	ok, err := ColumnExists(ctx, q, schema, "order", "payment_status")
 	if err != nil || !ok {
 		return false, err
@@ -160,7 +153,8 @@ func OrderPaymentProofPatchReady(ctx context.Context, q Querier, schema string) 
 }
 
 // OrderIncomePatchReady — order income wallet column (+ dedup index when finance exists).
-func OrderIncomePatchReady(ctx context.Context, q Querier, schema string) (bool, error) {
+func OrderIncomePatchReady(ctx context.Context, q any, schema string) (bool, error) {
+	q = Q(q)
 	ok, err := ColumnExists(ctx, q, schema, "order", "income_wallet_id")
 	if err != nil || !ok {
 		return false, err
@@ -173,7 +167,8 @@ func OrderIncomePatchReady(ctx context.Context, q Querier, schema string) (bool,
 }
 
 // PIIReady — encrypted PII columns present (contact + lead).
-func PIIReady(ctx context.Context, q Querier, schema string) (bool, error) {
+func PIIReady(ctx context.Context, q any, schema string) (bool, error) {
+	q = Q(q)
 	for _, col := range []string{"phone_number_enc", "phone_number_idx"} {
 		ok, err := ColumnExists(ctx, q, schema, "contact", col)
 		if err != nil || !ok {
@@ -185,7 +180,8 @@ func PIIReady(ctx context.Context, q Querier, schema string) (bool, error) {
 }
 
 // InventoryModuleReady — inventory/HPP module tables present.
-func InventoryModuleReady(ctx context.Context, q Querier, schema string) (bool, error) {
+func InventoryModuleReady(ctx context.Context, q any, schema string) (bool, error) {
+	q = Q(q)
 	for _, t := range []string{
 		"inv_setting", "inv_warehouse", "inv_sku",
 		"inv_cost_layer", "inv_stock_balance", "inv_stock_movement",
@@ -204,8 +200,9 @@ func InventoryModuleReady(ctx context.Context, q Querier, schema string) (bool, 
 }
 
 // CloudTenantReady — migrated / fully provisioned tenant (skip all runtime DDL).
-func CloudTenantReady(ctx context.Context, q Querier, schema string) (bool, error) {
-	checks := []func(context.Context, Querier, string) (bool, error){
+func CloudTenantReady(ctx context.Context, q any, schema string) (bool, error) {
+	q = Q(q)
+	checks := []func(context.Context, any, string) (bool, error){
 		TenantPatchReady,
 		PricingReady,
 		KnowledgeBaseReady,

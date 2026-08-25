@@ -5,13 +5,13 @@ import (
 	"database/sql"
 )
 
-func currentSchema(ctx context.Context, db columnChecker) string {
+func currentSchema(ctx context.Context, db Querier) string {
 	var schema string
 	_ = db.QueryRowContext(ctx, `SELECT current_schema()`).Scan(&schema)
 	return schema
 }
 
-func contactPIIActiveUncached(ctx context.Context, db columnChecker, schema string) (bool, error) {
+func contactPIIActiveUncached(ctx context.Context, db Querier, schema string) (bool, error) {
 	ready, err := ColumnExists(ctx, db, schema, "contact", "phone_number_idx")
 	if err == nil {
 		storeContactPII(schema, ready)
@@ -19,7 +19,7 @@ func contactPIIActiveUncached(ctx context.Context, db columnChecker, schema stri
 	return ready, err
 }
 
-func leadPIIActiveUncached(ctx context.Context, db columnChecker, schema string) (bool, error) {
+func leadPIIActiveUncached(ctx context.Context, db Querier, schema string) (bool, error) {
 	ready, err := ColumnExists(ctx, db, schema, "lead", "phone_number_idx")
 	if err == nil {
 		storeLeadPII(schema, ready)
@@ -28,14 +28,15 @@ func leadPIIActiveUncached(ctx context.Context, db columnChecker, schema string)
 }
 
 // ContactPIIActive reports whether contact encrypted columns exist (cached per schema).
-func ContactPIIActive(ctx context.Context, db columnChecker, schema string) (bool, error) {
+func ContactPIIActive(ctx context.Context, db any, schema string) (bool, error) {
+	q := Q(db)
 	if schema == "" {
-		schema = currentSchema(ctx, db)
+		schema = currentSchema(ctx, q)
 	}
 	if active, ok := cachedContactPII(schema); ok {
 		return active, nil
 	}
-	return contactPIIActiveUncached(ctx, db, schema)
+	return contactPIIActiveUncached(ctx, q, schema)
 }
 
 // ContactPIIActiveConn is ContactPIIActive for *sql.Conn.
@@ -49,14 +50,15 @@ func ContactPIIActiveDB(ctx context.Context, db *sql.DB, schema string) (bool, e
 }
 
 // LeadPIIActive reports whether lead encrypted columns exist (cached per schema).
-func LeadPIIActive(ctx context.Context, db columnChecker, schema string) (bool, error) {
+func LeadPIIActive(ctx context.Context, db any, schema string) (bool, error) {
+	q := Q(db)
 	if schema == "" {
-		schema = currentSchema(ctx, db)
+		schema = currentSchema(ctx, q)
 	}
 	if active, ok := cachedLeadPII(schema); ok {
 		return active, nil
 	}
-	return leadPIIActiveUncached(ctx, db, schema)
+	return leadPIIActiveUncached(ctx, q, schema)
 }
 
 // LeadPIIActiveDB is LeadPIIActive for *sql.DB.
@@ -65,13 +67,15 @@ func LeadPIIActiveDB(ctx context.Context, db *sql.DB, schema string) (bool, erro
 }
 
 // TableColumnExists checks a column in an explicit Postgres schema.
-func TableColumnExists(ctx context.Context, db columnChecker, schema, table, column string) (bool, error) {
-	var exists bool
-	err := db.QueryRowContext(ctx, `
+func TableColumnExists(ctx context.Context, db any, schema, table, column string) (bool, error) {
+	q := Q(db)
+	const query = `
 		SELECT EXISTS (
 		  SELECT 1 FROM information_schema.columns
 		  WHERE table_schema = $1 AND table_name = $2 AND column_name = $3
-		)`, schema, table, column).Scan(&exists)
+		)`
+	var exists bool
+	err := q.QueryRowContext(ctx, query, schema, table, column).Scan(&exists)
 	return exists, err
 }
 

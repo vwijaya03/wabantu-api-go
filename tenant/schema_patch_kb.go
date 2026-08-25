@@ -33,7 +33,7 @@ func EnsureKnowledgeBaseSchema(ctx context.Context, schemaName string) error {
 	return alwaysApplyKnowledgeBasePatch(ctx, pool, schemaName)
 }
 
-func alwaysApplyKnowledgeBasePatch(ctx context.Context, q appdb.TenantQuerier, schemaName string) error {
+func alwaysApplyKnowledgeBasePatch(ctx context.Context, q any, schemaName string) error {
 	exists, err := tenantschema.TableExists(ctx, q, schemaName, "knowledge_base_entry")
 	if err != nil || exists {
 		return err
@@ -43,7 +43,8 @@ func alwaysApplyKnowledgeBasePatch(ctx context.Context, q appdb.TenantQuerier, s
 	}
 	sch := appdb.SchemaSQL{Schema: schemaName}
 	kbTable := sch.T("knowledge_base_entry")
-	_, err = q.ExecContext(ctx, fmt.Sprintf(`
+	querier := tenantschema.Q(q)
+	_, err = querier.ExecContext(ctx, fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
 		    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 		    question    VARCHAR(500) NOT NULL,
