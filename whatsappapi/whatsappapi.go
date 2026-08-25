@@ -111,7 +111,7 @@ func ListChannels(ctx context.Context) (*ListChannelsResponse, error) {
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer conn.Close()
+	defer appdb.CloseTenantConn(conn)
 
 	rows, err := conn.QueryContext(ctx, `
 		SELECT id, provider, display_name, phone_number,
@@ -247,7 +247,7 @@ func CompleteMetaConnect(ctx context.Context, p *MetaConnectCallbackParams) (*Ch
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer conn.Close()
+	defer appdb.CloseTenantConn(conn)
 
 	ch, err := upsertChannel(ctx, conn, channelConnectParams{
 		DisplayName:       p.DisplayName,
@@ -285,7 +285,7 @@ func DisconnectChannel(ctx context.Context, id string) (*Channel, error) {
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer conn.Close()
+	defer appdb.CloseTenantConn(conn)
 
 	var ch Channel
 	err = conn.QueryRowContext(ctx, `
@@ -541,7 +541,7 @@ func SendTestMessage(ctx context.Context, id string, req *SendTestMessageRequest
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer conn.Close()
+	defer appdb.CloseTenantConn(conn)
 
 	var token, phoneNumberID, status string
 	err = conn.QueryRowContext(ctx, `

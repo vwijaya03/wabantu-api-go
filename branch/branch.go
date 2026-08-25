@@ -54,7 +54,7 @@ func ListBranches(ctx context.Context) (*ListBranchesResponse, error) {
 	if err != nil {
 		return nil, appErrs.Internal("database connection failed")
 	}
-	defer conn.Close()
+	defer appdb.CloseTenantConn(conn)
 
 	rows, err := conn.QueryContext(ctx, `
 		SELECT id, name, slug, is_default, created_at
@@ -94,7 +94,7 @@ func CreateBranch(ctx context.Context, req *CreateBranchRequest) (*CreateBranchR
 	if err != nil {
 		return nil, appErrs.Internal("database connection failed")
 	}
-	defer conn.Close()
+	defer appdb.CloseTenantConn(conn)
 
 	var count int
 	if err := conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM branch WHERE deleted_at IS NULL`).Scan(&count); err != nil {
@@ -138,7 +138,7 @@ func DefaultBranchID(ctx context.Context, schema string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer conn.Close()
+	defer appdb.CloseTenantConn(conn)
 	var id string
 	err = conn.QueryRowContext(ctx, `
 		SELECT id FROM branch WHERE deleted_at IS NULL AND is_default = true LIMIT 1`,
@@ -155,7 +155,7 @@ func EnsureDefaultBranch(ctx context.Context, schema string) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer appdb.CloseTenantConn(conn)
 	var n int
 	if err := conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM branch WHERE deleted_at IS NULL`).Scan(&n); err != nil {
 		return err

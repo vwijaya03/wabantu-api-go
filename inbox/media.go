@@ -13,6 +13,7 @@ import (
 	"encore.dev/rlog"
 
 	appauth "encore.app/wabantu/auth"
+	appdb "encore.app/wabantu/shared/db"
 	apperr "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/mediastorage"
 	"encore.app/wabantu/whatsapp"
@@ -184,7 +185,7 @@ func fetchMessageMediaBytes(ctx context.Context, tenantSchema string, row *messa
 	if err != nil {
 		return nil, "", apperr.Internal("database connection failed")
 	}
-	defer conn.Close()
+	defer appdb.CloseTenantConn(conn)
 
 	token, err := loadChannelAccessToken(ctx, conn, row.ChannelID)
 	if err != nil {
@@ -210,7 +211,7 @@ func FetchMessageMediaBytes(ctx context.Context, tenantSchema, messageID string)
 	if err != nil {
 		return nil, "", apperr.Internal("database connection failed")
 	}
-	defer conn.Close()
+	defer appdb.CloseTenantConn(conn)
 	row, err := loadMessageMediaRow(ctx, conn, messageID)
 	if err != nil {
 		return nil, "", err
@@ -253,7 +254,7 @@ func GetMessageMedia(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	defer conn.Close()
+	defer appdb.CloseTenantConn(conn)
 
 	row, err := loadMessageMediaRow(ctx, conn, messageID)
 	if err != nil {

@@ -81,7 +81,7 @@ func ListCatalog(ctx context.Context, p *ListCatalogParams) (*ListCatalogRespons
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	defer closeTenantConn(conn)
 
 	if err := ensurePricingSchema(ctx, conn); err != nil {
 		return nil, apperr.Internal("prepare catalog pricing failed")
@@ -176,7 +176,7 @@ func CreateCatalog(ctx context.Context, req *CreateCatalogRequest) (*CatalogItem
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer conn.Close()
+	defer closeTenantConn(conn)
 
 	if err := ensurePricingSchema(ctx, conn); err != nil {
 		return nil, apperr.Internal("prepare catalog pricing failed")
@@ -223,7 +223,7 @@ func UpdateCatalog(ctx context.Context, id string, req *UpdateCatalogRequest) (*
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer conn.Close()
+	defer closeTenantConn(conn)
 
 	if err := ensurePricingSchema(ctx, conn); err != nil {
 		return nil, apperr.Internal("prepare catalog pricing failed")
@@ -321,7 +321,7 @@ func DeleteCatalog(ctx context.Context, id string) error {
 	if err != nil {
 		return apperr.Internal("database connection failed")
 	}
-	defer conn.Close()
+	defer closeTenantConn(conn)
 
 	uid, _ := auth.UserID()
 	res, err := conn.ExecContext(ctx, `

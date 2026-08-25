@@ -440,7 +440,7 @@ func CommitCatalogImageImport(ctx context.Context, jobId string, req *CommitCata
 	if err != nil {
 		return nil, apperr.Internal("database connection failed")
 	}
-	defer conn.Close()
+	defer closeTenantConn(conn)
 
 	var saved, skipped int
 	for _, it := range req.Items {

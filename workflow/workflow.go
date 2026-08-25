@@ -79,7 +79,7 @@ func ListRules(ctx context.Context) (*ListRulesResponse, error) {
 	if err != nil {
 		return nil, appErrs.Internal("database connection failed")
 	}
-	defer conn.Close()
+	defer appdb.CloseTenantConn(conn)
 
 	rows, err := conn.QueryContext(ctx, `
 		SELECT id, name, trigger_type, trigger_value, action_type, action_payload,
@@ -136,7 +136,7 @@ func CreateRule(ctx context.Context, req *CreateRuleRequest) (*CreateRuleRespons
 	if err != nil {
 		return nil, appErrs.Internal("database connection failed")
 	}
-	defer conn.Close()
+	defer appdb.CloseTenantConn(conn)
 
 	var r Rule
 	var branchID sql.NullString
@@ -189,7 +189,7 @@ func UpdateRule(ctx context.Context, id string, req *UpdateRuleRequest) (*Update
 	if err != nil {
 		return nil, appErrs.Internal("database connection failed")
 	}
-	defer conn.Close()
+	defer appdb.CloseTenantConn(conn)
 
 	var r Rule
 	var branchID sql.NullString
@@ -229,7 +229,7 @@ func DeleteRule(ctx context.Context, id string) error {
 	if err != nil {
 		return appErrs.Internal("database connection failed")
 	}
-	defer conn.Close()
+	defer appdb.CloseTenantConn(conn)
 	res, err := conn.ExecContext(ctx, `
 		UPDATE workflow_rule SET deleted_at = NOW(), updated_at = NOW() WHERE id = $1 AND deleted_at IS NULL`, id)
 	if err != nil {
@@ -255,7 +255,7 @@ func TryRun(ctx context.Context, schema, conversationID, messageBody string) (bo
 	if err != nil {
 		return false, err
 	}
-	defer conn.Close()
+	defer appdb.CloseTenantConn(conn)
 
 	bodyLower := strings.ToLower(messageBody)
 	rows, err := conn.QueryContext(ctx, `
