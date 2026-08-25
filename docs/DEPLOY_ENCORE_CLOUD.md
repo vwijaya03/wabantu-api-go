@@ -487,7 +487,8 @@ Ganti `staging` dengan nama env Encore yang gagal.
 - Setelah **migrasi lokal → cloud**: selalu `./scripts/fix-cloud-db-grants.sh <env>` lalu `./scripts/verify-cloud-deploy-ready.sh <env>` (lihat cheat sheet di bawah).
 - Sebelum push deploy yang menyentuh DB/migrasi: jalankan `verify-cloud-deploy-ready.sh` — script ini menolak orphan dan tabel dengan owner yang memblokir dynamic grants.
 - Jangan biarkan schema uji (`t_example`, dll.) menumpuk di staging; prune setelah eksperimen registrasi.
-- Kode runtime (`tenant/cloud_schema_grants.go`) setelah signup cloud ikut transfer owner tabel ke `db_tenant_admin` agar tenant baru tidak memblokir deploy berikutnya — **tetap** jalankan script ops di atas untuk sisa orphan / restore lama.
+- Kode runtime (`tenant/cloud_schema_grants.go` + `repair_tenant_schema_grants()`) memperbaiki owner setelah signup/migrate — **POST /api/v1/admin/migrate-tenant-schemas** menjalankan prune orphan + repair grants + DDL cloud sebelum patch per tenant.
+- Untuk DB yang sudah rusak **sebelum** deploy migration `4_repair_tenant_schema_grants_fn`: tetap jalankan script ops sekali (diagnose → prune → fix-grants → verify).
 
 Ringkas di tabel troubleshooting: baris *Deploy gagal: `permission denied for table business_profile`*.
 

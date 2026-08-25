@@ -447,7 +447,7 @@ curl -X POST http://localhost:4000/api/v1/internal/platform-admin/bootstrap \
 | `DELETE /api/v1/admin/tenant/:id?confirmSchemaName=...` | Hapus tenant permanen: `DROP SCHEMA ... CASCADE` + soft-delete metadata (wajib konfirmasi schema) |
 | `POST /api/v1/admin/impersonate/:tenantId` | Pantau tenant (update session Redis) |
 | `POST /api/v1/admin/stop-impersonation` | Keluar dari mode pantau |
-| `POST /api/v1/admin/migrate-tenant-schemas` | Patch DDL semua tenant (termasuk tabel `fin_*`) — super_admin |
+| `POST /api/v1/admin/migrate-tenant-schemas` | Patch DDL semua tenant + **repair cloud grants** (super_admin) |
 
 ### Curl / Postman examples
 
