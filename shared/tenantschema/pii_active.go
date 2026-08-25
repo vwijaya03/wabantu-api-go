@@ -12,7 +12,7 @@ func currentSchema(ctx context.Context, db columnChecker) string {
 }
 
 func contactPIIActiveUncached(ctx context.Context, db columnChecker, schema string) (bool, error) {
-	ready, err := columnExistsChecker(ctx, db, "contact", "phone_number_idx")
+	ready, err := ColumnExists(ctx, db, schema, "contact", "phone_number_idx")
 	if err == nil {
 		storeContactPII(schema, ready)
 	}
@@ -20,7 +20,7 @@ func contactPIIActiveUncached(ctx context.Context, db columnChecker, schema stri
 }
 
 func leadPIIActiveUncached(ctx context.Context, db columnChecker, schema string) (bool, error) {
-	ready, err := columnExistsChecker(ctx, db, "lead", "phone_number_idx")
+	ready, err := ColumnExists(ctx, db, schema, "lead", "phone_number_idx")
 	if err == nil {
 		storeLeadPII(schema, ready)
 	}

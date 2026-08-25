@@ -59,8 +59,8 @@ func encKey() string {
 	return strings.TrimSpace(secrets.DataEncryptionKey)
 }
 
-func ensurePIISchema(ctx context.Context, conn *sql.Conn, tenantSchema string) error {
-	active, err := tenantschema.ContactPIIActiveConn(ctx, conn, tenantSchema)
+func ensurePIISchema(ctx context.Context, q appdb.TenantQuerier, tenantSchema string) error {
+	active, err := tenantschema.ContactPIIActive(ctx, q, tenantSchema)
 	if err != nil {
 		return err
 	}
@@ -71,7 +71,7 @@ func ensurePIISchema(ctx context.Context, conn *sql.Conn, tenantSchema string) e
 		}
 		tenantschema.InvalidateContactPIICache(tenantSchema)
 		tenantschema.InvalidateLeadPIICache(tenantSchema)
-		if ok, _ := tenantschema.ContactPIIActiveConn(ctx, conn, tenantSchema); ok {
+		if ok, _ := tenantschema.ContactPIIActive(ctx, q, tenantSchema); ok {
 			tenantschema.MarkContactPIIActive(tenantSchema)
 			tenantschema.MarkLeadPIIActive(tenantSchema)
 		}

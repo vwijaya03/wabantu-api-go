@@ -1106,13 +1106,8 @@ func cleanTags(tags []string) []string {
 }
 
 func ensureContactRuntimeSchema(ctx context.Context, tenantSchema string) error {
-	conn, err := appdb.TenantConn(ctx, db.Stdlib(), tenantSchema)
-	if err != nil {
-		return err
-	}
-	defer appdb.CloseTenantConn(conn)
-
-	ready, err := tenantschema.ContactRuntimeReadyConn(ctx, conn)
+	pool := db.Stdlib()
+	ready, err := tenantschema.ContactRuntimeReady(ctx, pool, tenantSchema)
 	if err != nil {
 		return err
 	}
@@ -1125,18 +1120,20 @@ func ensureContactRuntimeSchema(ctx context.Context, tenantSchema string) error 
 				return err
 			}
 		} else {
-			_, err = conn.ExecContext(ctx, `
-				ALTER TABLE contact ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active';
-				UPDATE contact SET status = 'active' WHERE status IS NULL OR TRIM(status) = '';
-				ALTER TABLE contact ADD COLUMN IF NOT EXISTS price_type_id UUID;
-				ALTER TABLE contact ADD COLUMN IF NOT EXISTS birth_date DATE;
-			`)
+			sch := appdb.SchemaSQL{Schema: tenantSchema}
+			contact := sch.T("contact")
+			_, err = pool.ExecContext(ctx, fmt.Sprintf(`
+				ALTER TABLE %s ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active';
+				UPDATE %s SET status = 'active' WHERE status IS NULL OR TRIM(status) = '';
+				ALTER TABLE %s ADD COLUMN IF NOT EXISTS price_type_id UUID;
+				ALTER TABLE %s ADD COLUMN IF NOT EXISTS birth_date DATE;
+			`, contact, contact, contact, contact))
 			if err != nil {
 				return err
 			}
 		}
 	}
-	return ensurePIISchema(ctx, conn, tenantSchema)
+	return ensurePIISchema(ctx, pool, tenantSchema)
 }
 
 func nullableUUID(value *string) any {

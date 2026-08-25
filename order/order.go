@@ -867,15 +867,11 @@ func normalizeOrderItems(ctx context.Context, schema, contactID string, raw []Or
 	if err := tenant.PrepareTenantAccess(ctx, schema); err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	conn, err := tenant.TenantConn(ctx, schema)
-	if err != nil {
-		return nil, appErrs.Internal(err.Error())
-	}
-	defer tenant.CloseTenantConn(conn)
-	if err := pricing.EnsureSchema(ctx, conn, schema); err != nil {
+	pool := db.Stdlib()
+	if err := pricing.EnsureSchema(ctx, pool, schema); err != nil {
 		return nil, appErrs.Internal("prepare pricing failed")
 	}
-	scope := appdb.OpenTenantScope(db.Stdlib(), schema)
+	scope := appdb.OpenTenantScope(pool, schema)
 	priceTypeID, err := pricing.ResolvePriceTypeIDForContact(ctx, scope, contactID)
 	if err != nil {
 		return nil, err
