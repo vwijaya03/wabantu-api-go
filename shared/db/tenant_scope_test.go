@@ -22,6 +22,19 @@ func TestQualifySQL(t *testing.T) {
 	}
 }
 
+func TestQualifySQLOrderTableQuoted(t *testing.T) {
+	sch := SchemaSQL{Schema: "t_omah_apparel"}
+	in := `(SELECT o.id::text FROM "order" o WHERE o.payment_proof_message_id = m.id AND o.deleted_at IS NULL LIMIT 1)`
+	out := QualifySQL(sch, in)
+	want := `(SELECT o.id::text FROM "t_omah_apparel"."order" o WHERE o.payment_proof_message_id = m.id AND o.deleted_at IS NULL LIMIT 1)`
+	if out != want {
+		t.Fatalf("QualifySQL() = %q, want %q", out, want)
+	}
+	if contains(out, `"order""`) {
+		t.Fatalf("QualifySQL() must not produce double-quoted order table: %q", out)
+	}
+}
+
 func containsAll(s string, subs ...string) bool {
 	for _, sub := range subs {
 		if !contains(s, sub) {

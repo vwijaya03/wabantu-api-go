@@ -49,17 +49,7 @@ func (p poolRetryQuerier) ExecContext(ctx context.Context, query string, args ..
 }
 
 func (p poolRetryQuerier) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
-	rows, err := p.pool.QueryContext(ctx, query, args...)
-	if !IsStalePreparedStatement(err) {
-		return rows, err
-	}
-	conn, cerr := p.pool.Conn(ctx)
-	if cerr != nil {
-		return rows, err
-	}
-	defer conn.Close()
-	ResetPreparedStatements(ctx, conn)
-	return conn.QueryContext(ctx, query, args...)
+	return QueryContextPool(ctx, p.pool, query, args...)
 }
 
 func (p poolRetryQuerier) QueryRowContext(ctx context.Context, query string, args ...any) Scannable {
