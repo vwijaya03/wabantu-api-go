@@ -322,6 +322,10 @@ func RunTenantDDL(ctx context.Context, schemaName string) error {
 	if _, err := conn.ExecContext(ctx, tenantDDL); err != nil {
 		return fmt.Errorf("run DDL: %w", err)
 	}
+	// Transfer encore_container_* table ownership to db_tenant_admin before admin DDL (ALTER contact, etc.).
+	if err := RepairTenantSchemaDeployGrants(ctx, schemaName); err != nil {
+		return fmt.Errorf("cloud grants before admin DDL: %w", err)
+	}
 	// On Encore Cloud, inventory/PII/KB DDL needs db_tenant_admin (app role cannot CREATE inv_*).
 	if err := applyCloudAdminTenantDDL(ctx, schemaName); err != nil {
 		return fmt.Errorf("cloud admin DDL: %w", err)
