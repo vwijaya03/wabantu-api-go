@@ -39,7 +39,7 @@ func RunCloudMigrationPrep(ctx context.Context) (*CloudMigrationPrepResult, erro
 	}
 	out.RepairFnMissing = !fnOK
 	if !fnOK {
-		rlog.Warn("repair_tenant_schema_grants() missing — jalankan deploy Encore terbaru atau fix-cloud-db-grants.sh")
+		rlog.Warn("repair_tenant_schema_grants() missing — deploy migration 4/5 belum terpasang")
 	}
 
 	pruned, err := pruneOrphanTenantSchemas(ctx)
@@ -48,17 +48,11 @@ func RunCloudMigrationPrep(ctx context.Context) (*CloudMigrationPrepResult, erro
 	}
 	out.OrphansPruned = pruned
 
-	targets, err := listAllSchemaMigrationTargets(ctx)
+	repaired, err := repairAllTenantSchemaDeployGrants(ctx)
 	if err != nil {
 		return nil, err
 	}
-	for _, target := range targets {
-		if err := RepairTenantSchemaDeployGrants(ctx, target.SchemaName); err != nil {
-			rlog.Warn("cloud prep grant repair failed", "schema", target.SchemaName, "err", err)
-			continue
-		}
-		out.GrantsRepaired++
-	}
+	out.GrantsRepaired = repaired
 
 	blockers, err := listCloudDeployBlockers(ctx)
 	if err != nil {
@@ -92,6 +86,26 @@ func RepairTenantSchemaDeployGrants(ctx context.Context, schemaName string) erro
 	}
 	defer conn.Close()
 	return ensureCloudSchemaDeployGrants(ctx, conn, schemaName)
+}
+
+// repairAllTenantSchemaDeployGrants repairs every t_* schema (registered + orphan leftovers).
+func repairAllTenantSchemaDeployGrants(ctx context.Context) (int, error) {
+	if !isEncoreCloud() {
+		return 0, nil
+	}
+	schemas, err := ListSchemaNames(ctx)
+	if err != nil {
+		return 0, err
+	}
+	repaired := 0
+	for _, schema := range schemas {
+		if err := RepairTenantSchemaDeployGrants(ctx, schema); err != nil {
+			rlog.Warn("cloud grant repair failed", "schema", schema, "err", err)
+			continue
+		}
+		repaired++
+	}
+	return repaired, nil
 }
 
 func repairTenantSchemaGrantsFunctionExists(ctx context.Context) (bool, error) {
@@ -240,7 +254,7 @@ func withTenantAdminTx(ctx context.Context, schemaName string, fn func(context.C
 		var currentUser string
 		_ = tx.QueryRowContext(ctx, `SELECT current_user`).Scan(&currentUser)
 		return fmt.Errorf(
-			"set tenant admin role as %s (jalankan fix-cloud-db-grants.sh): %w",
+			"set tenant admin role as %s — jalankan POST /api/v1/admin/migrate-tenant-schemas: %w",
 			currentUser, err,
 		)
 	}

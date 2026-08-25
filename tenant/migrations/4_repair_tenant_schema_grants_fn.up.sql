@@ -74,16 +74,8 @@ BEGIN
 END;
 $$;
 
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'db_tenant_admin') THEN
-    BEGIN
-      EXECUTE 'ALTER FUNCTION public.repair_tenant_schema_grants(text) OWNER TO db_tenant_admin';
-    EXCEPTION WHEN OTHERS THEN
-      RAISE NOTICE 'repair_tenant_schema_grants owner transfer skipped: %', SQLERRM;
-    END;
-  END IF;
-END $$;
+-- Jangan pindahkan owner ke db_tenant_admin: definer harus tetap role migrator Encore
+-- (privileged) agar ALTER OWNER dari encore_container_* berhasil (sama seperti drop_tenant_schema v2).
 
 DO $$
 BEGIN
