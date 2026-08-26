@@ -115,10 +115,9 @@ func EnqueueSchemaMigration(ctx context.Context, req *MigrateSchemasRequest, mig
 		enqueued += n
 	}
 
-	_, _ = system.DB.Exec(ctx, `
-		UPDATE tenant_schema_migration_job SET status = $2 WHERE id = $1::uuid`,
-		jobID, migrationJobStatusRunning,
-	)
+	if err := syncJobStatusAfterEnqueue(ctx, jobID); err != nil {
+		return nil, err
+	}
 
 	return &MigrateSchemasEnqueueResponse{
 		Async:    true,
@@ -178,21 +177,15 @@ func EnqueueBehindSchemaMigration(ctx context.Context, migratedBy string) (*Migr
 
 	_, err = system.DB.Exec(ctx, `
 		UPDATE tenant_schema_migration_job
-		SET total_count = $2, status = $3
+		SET total_count = $2
 		WHERE id = $1::uuid`,
-		jobID, totalItems, migrationJobStatusRunning,
+		jobID, totalItems,
 	)
 	if err != nil {
 		return nil, err
 	}
-
-	if totalItems == 0 {
-		_, _ = system.DB.Exec(ctx, `
-			UPDATE tenant_schema_migration_job
-			SET status = $2, completed_at = now()
-			WHERE id = $1::uuid`,
-			jobID, migrationJobStatusCompleted,
-		)
+	if err := syncJobStatusAfterEnqueue(ctx, jobID); err != nil {
+		return nil, err
 	}
 
 	return &MigrateSchemasEnqueueResponse{
@@ -430,6 +423,28 @@ func handleTenantSchemaMigrate(ctx context.Context, msg *TenantSchemaMigrateMess
 
 	markMigrationItemSucceeded(ctx, msg.ItemID, msg.JobID)
 	return nil
+}
+
+// syncJobStatusAfterEnqueue marks a job running, or completed when every item was
+// finished during enqueue (e.g. all tenants already up to date and skipped).
+func syncJobStatusAfterEnqueue(ctx context.Context, jobID string) error {
+	_, err := system.DB.Exec(ctx, `
+		UPDATE tenant_schema_migration_job
+		SET status = CASE
+			WHEN total_count > 0 AND done_count + failed_count >= total_count THEN $3
+			WHEN total_count = 0 THEN $3
+			ELSE $2
+		END,
+		completed_at = CASE
+			WHEN (total_count > 0 AND done_count + failed_count >= total_count) OR total_count = 0
+			THEN COALESCE(completed_at, now())
+			ELSE completed_at
+		END
+		WHERE id = $1::uuid
+		  AND status NOT IN ($3, $4)`,
+		jobID, migrationJobStatusRunning, migrationJobStatusCompleted, migrationJobStatusCancelled,
+	)
+	return err
 }
 
 func incrementJobCounter(ctx context.Context, jobID string, success bool) error {

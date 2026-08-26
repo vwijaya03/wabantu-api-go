@@ -164,6 +164,18 @@ func maybeRecoverStaleMigrationJobItems(ctx context.Context) {
 	if err := RecoverStaleMigrationJobItems(ctx); err != nil {
 		rlog.Warn("recover stale migration items failed", "err", err)
 	}
+	maybeFinalizeCompletedMigrationJobs(ctx)
+}
+
+func maybeFinalizeCompletedMigrationJobs(ctx context.Context) {
+	_, _ = system.DB.Exec(ctx, `
+		UPDATE tenant_schema_migration_job
+		SET status = $1, completed_at = COALESCE(completed_at, now())
+		WHERE status = $2
+		  AND total_count > 0
+		  AND done_count + failed_count >= total_count`,
+		migrationJobStatusCompleted, migrationJobStatusRunning,
+	)
 }
 
 func enqueueMigrationTarget(
