@@ -71,6 +71,12 @@ var conversationRegressionCases = []conversationRegressionCase{
 }
 
 // TestConversationRegression — loop regresi cepat dari bug percakapan nyata.
+//
+// Menambah case baru (sampai internal/buyerflow selesai):
+//  1. Tambah entry di conversationRegressionCases di bawah.
+//  2. Jalankan: ./scripts/run-ai-regression-tests.sh
+//  3. Setelah fase 2 (internal/buyerflow): pindah case ke internal/buyerflow/regression_cases.go
+//
 // Jalankan: ./scripts/run-ai-regression-tests.sh
 func TestConversationRegression(t *testing.T) {
 	sim := newOmahSimulator()

@@ -4,8 +4,12 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-echo "Checking Encore test Postgres cluster..."
-./scripts/fix-encore-test-db.sh
+if [[ "${GITHUB_ACTIONS:-}" != "true" ]]; then
+  echo "Checking Encore test Postgres cluster..."
+  ./scripts/fix-encore-test-db.sh
+else
+  echo "CI: skip fix-encore-test-db (runner fresh)."
+fi
 
 echo ""
 echo "Running AI conversation regression loop..."
