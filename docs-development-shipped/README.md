@@ -7,9 +7,48 @@ Folder ini berisi **catatan implementasi** fitur yang sudah (atau sedang) di-mer
 | [`docs/`](../docs/) | Spesifikasi, riset, roadmap (belum tentu sudah di-build) |
 | **`docs-development-shipped/`** (di sini) | Apa yang benar-benar di-ship: perilaku runtime, endpoint, file kunci, PR |
 
-Setiap file `*.md` di folder ini = satu entri rilis.
+## Konvensi penamaan file
+
+Entri baru memakai format:
+
+```
+YYYY-MM-DD_HHMMSS_slug.md
+```
+
+| Bagian | Keterangan |
+|--------|------------|
+| `YYYY-MM-DD` | Tanggal ship / merge (atau tanggal PR jika belum merge) |
+| `HHMMSS` | Waktu 24 jam (UTC+7) — untuk sort **terbaru di atas** saat diurutkan descending |
+| `slug` | Ringkasan tema, kebab-case |
+
+Contoh: `2026-08-25_233200_tenant-schema-qualified-pool-retry.md`
+
+Setiap file `*.md` = satu batch rilis (bisa mencakup beberapa PR bertema sama). Struktur isi:
+
+- **Masalah / Kebutuhan**
+- **Perubahan**
+- **File utama**
+- **Testing**
+- **Catatan deploy**
+
+Entri lama tanpa prefix datetime (mis. `inbox-media-fase1.md`) tetap valid; entri baru mengikuti konvensi di atas.
 
 **Roadmap WhatsApp (media, bukti transfer, stok):** [`docs/WHATSAPP_INBOX_MEDIA_PAYMENT_STOCK.md`](../docs/WHATSAPP_INBOX_MEDIA_PAYMENT_STOCK.md).
+
+---
+
+## Entri terbaru (2026-08)
+
+| File | Isi | Status |
+|------|-----|--------|
+| [2026-08-26_142400_tenant-access-consent.md](./2026-08-26_142400_tenant-access-consent.md) | Consent owner sebelum super admin Pantau tenant | PR [#130](https://github.com/vwijaya03/wabantu-api-go/pull/130) |
+| [2026-08-26_142000_finance-audit-perf-quick-wins.md](./2026-08-26_142000_finance-audit-perf-quick-wins.md) | Test HPP wallet, timeout HTTP, index inbox, lazy migrate `sync.Once` | PR [#129](https://github.com/vwijaya03/wabantu-api-go/pull/129) |
+| [2026-08-26_090100_events-super-admin-cross-tenant.md](./2026-08-26_090100_events-super-admin-cross-tenant.md) | Hint 403 super_admin saat acara milik tenant lain | PR [#128](https://github.com/vwijaya03/wabantu-api-go/pull/128) |
+| [2026-08-25_233200_tenant-schema-qualified-pool-retry.md](./2026-08-25_233200_tenant-schema-qualified-pool-retry.md) | Schema-qualified SQL, pool retry 08P01, readiness gate | PR [#121](https://github.com/vwijaya03/wabantu-api-go/pull/121)–[#127](https://github.com/vwijaya03/wabantu-api-go/pull/127) |
+
+---
+
+## Entri sebelumnya (WhatsApp / AI)
 
 | Entri | Isi |
 |-------|-----|
