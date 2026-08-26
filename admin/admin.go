@@ -35,6 +35,7 @@ type Tenant struct {
 	SchemaMigratedAt   *time.Time `json:"schemaMigratedAt,omitempty"`
 	SchemaPatchVersion int        `json:"schemaPatchVersion"`
 	IsSchemaBehind     bool       `json:"isSchemaBehind"`
+	IsSchemaMigrating  bool       `json:"isSchemaMigrating"`
 }
 
 type TenantDetail struct {
@@ -139,6 +140,10 @@ func ListTenants(ctx context.Context, p *ListTenantsParams) (*ListTenantsRespons
 	}
 
 	queryArgs := append([]any{}, args...)
+	itemStatusParam := len(queryArgs) + 1
+	queryArgs = append(queryArgs, []string{"queued", "running"})
+	jobStatusParam := len(queryArgs) + 1
+	queryArgs = append(queryArgs, []string{"pending", "running"})
 	queryArgs = append(queryArgs, p.PageSize, (p.Page-1)*p.PageSize)
 	limitParam := len(queryArgs) - 1
 	offsetParam := len(queryArgs)
@@ -147,7 +152,15 @@ func ListTenants(ctx context.Context, p *ListTenantsParams) (*ListTenantsRespons
 		SELECT t.id, t.name, tc.schema_name, t.status, t.created_at,
 			COALESCE(owner.email, '') AS owner_email,
 			tc.schema_migrated_at,
-			COALESCE(tc.schema_patch_version, 0)
+			COALESCE(tc.schema_patch_version, 0),
+			EXISTS (
+				SELECT 1
+				FROM tenant_schema_migration_job_item ji
+				JOIN tenant_schema_migration_job j ON j.id = ji.job_id
+				WHERE ji.tenant_id = t.id
+				  AND ji.status = ANY($%d::text[])
+				  AND j.status = ANY($%d::text[])
+			) AS is_schema_migrating
 		FROM tenant t
 		JOIN tenant_company tc ON tc.tenant_id = t.id
 		LEFT JOIN LATERAL (
@@ -158,7 +171,7 @@ func ListTenants(ctx context.Context, p *ListTenantsParams) (*ListTenantsRespons
 		WHERE %s
 		ORDER BY t.created_at DESC
 		LIMIT $%d OFFSET $%d
-	`, where, limitParam, offsetParam), queryArgs...)
+	`, itemStatusParam, jobStatusParam, where, limitParam, offsetParam), queryArgs...)
 	if err != nil {
 		return nil, &errs.Error{Code: errs.Internal, Message: "query failed"}
 	}
@@ -169,7 +182,7 @@ func ListTenants(ctx context.Context, p *ListTenantsParams) (*ListTenantsRespons
 		var t Tenant
 		var status string
 		var migratedAt sql.NullTime
-		if err := rows.Scan(&t.ID, &t.CompanyName, &t.SchemaName, &status, &t.CreatedAt, &t.OwnerEmail, &migratedAt, &t.SchemaPatchVersion); err != nil {
+		if err := rows.Scan(&t.ID, &t.CompanyName, &t.SchemaName, &status, &t.CreatedAt, &t.OwnerEmail, &migratedAt, &t.SchemaPatchVersion, &t.IsSchemaMigrating); err != nil {
 			return nil, &errs.Error{Code: errs.Internal, Message: "scan failed"}
 		}
 		if migratedAt.Valid {
@@ -472,6 +485,24 @@ func GetMigrateTenantSchemasJob(ctx context.Context, jobId string) (*tenant.Sche
 		return nil, &errs.Error{Code: errs.Internal, Message: err.Error()}
 	}
 	return summary, nil
+}
+
+type ListActiveMigrateJobsResponse struct {
+	Jobs []tenant.SchemaMigrationJobSummary `json:"jobs"`
+}
+
+// ListActiveMigrateTenantSchemasJobs returns pending/running schema migration jobs.
+//
+//encore:api auth method=GET path=/api/v1/admin/migrate-tenant-schemas/active-jobs tag:super_admin
+func ListActiveMigrateTenantSchemasJobs(ctx context.Context) (*ListActiveMigrateJobsResponse, error) {
+	if _, err := requireSuperAdmin(ctx); err != nil {
+		return nil, err
+	}
+	jobs, err := tenant.ListActiveSchemaMigrationJobs(ctx)
+	if err != nil {
+		return nil, &errs.Error{Code: errs.Internal, Message: err.Error()}
+	}
+	return &ListActiveMigrateJobsResponse{Jobs: jobs}, nil
 }
 
 // ---------- Helpers ----------
