@@ -62,8 +62,11 @@ func TestEndpointPathsWellFormed(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, ep := range eps {
-		if !strings.HasPrefix(ep.Path, "/api/") && !strings.HasPrefix(ep.Path, "/webhook/") && !strings.HasPrefix(ep.Path, "/whatsapp/") {
-			t.Errorf("%s:%d path %q should start with /api/, /webhook/, or /whatsapp/", ep.File, ep.Line, ep.Path)
+		if !strings.HasPrefix(ep.Path, "/api/") &&
+			!strings.HasPrefix(ep.Path, "/webhook/") &&
+			!strings.HasPrefix(ep.Path, "/whatsapp/") &&
+			!strings.HasPrefix(ep.Path, "/internal/") {
+			t.Errorf("%s:%d path %q should start with /api/, /webhook/, /whatsapp/, or /internal/", ep.File, ep.Line, ep.Path)
 		}
 		if ep.Access != "auth" && ep.Access != "public" && ep.Access != "private" {
 			t.Errorf("%s:%d invalid access %q", ep.File, ep.Line, ep.Access)

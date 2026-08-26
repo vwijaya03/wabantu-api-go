@@ -1,6 +1,6 @@
 {
-  "total_services": 28,
-  "total_endpoints": 335,
+  "total_services": 29,
+  "total_endpoints": 336,
   "services": {
     "admin": 24,
     "ai": 3,
@@ -17,6 +17,7 @@
     "health": 2,
     "importcsv": 3,
     "inbox": 21,
+    "internal": 1,
     "inventory": 57,
     "kb": 4,
     "leads": 3,
