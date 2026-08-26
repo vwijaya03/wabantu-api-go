@@ -1,6 +1,6 @@
 # API HTTP Smoke Tests
 
-Encore integration smoke untuk **28 service / 335 endpoint** — bootstrap tenant + auth, panggil handler typed API (`et.OverrideAuthInfo`).
+Encore integration smoke untuk **29 service / 336 endpoint** — bootstrap tenant + auth, panggil handler typed API (`et.OverrideAuthInfo`).
 
 ## Prasyarat
 
@@ -33,7 +33,7 @@ encore test ./internal/apitest/ -count=1 -v
 
 Skip DB/Redis: `encore test ./internal/apitest/ -short`
 
-## Cakupan endpoint (335)
+## Cakupan endpoint (336)
 
 Katalog endpoint di-generate dari `//encore:api`:
 

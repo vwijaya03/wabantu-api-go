@@ -1,30 +1,31 @@
 # API Endpoint Registry
 
-Inventaris **335+ endpoint** Encore (`//encore:api`) dengan regression struktural cepat (`go test`, tanpa HTTP).
+Inventaris **336 endpoint** Encore (`//encore:api`) dengan regression struktural cepat (`go test`, tanpa HTTP).
 
 ## Kenapa bukan regression HTTP per endpoint?
 
 | Aspek | AI buyerflow (`internal/buyerflow`) | Semua endpoint HTTP |
 |-------|-------------------------------------|---------------------|
-| Jumlah | ~10 golden cases | **335+ route** |
+| Jumlah | ~10 golden cases | **336 route** |
 | Infra | Pure Go | Auth JWT, tenant schema, Redis, WA, Midtrans, … |
 | Waktu | <1 detik | Menit–jam (fixtures per domain) |
 | PR scope | Satu concern | Epic multi-PR per modul |
 
-**Kesimpulan:** regression **perilaku** untuk 335 endpoint = project terpisah (per-domain integration tests), bukan satu PR.
+**Kesimpulan:** regression **perilaku** untuk 336 endpoint = project terpisah (per-domain integration tests), bukan satu PR.
 
 Yang kita punya sekarang (production-ready):
 
-1. **`internal/apiregistry`** — scan `//encore:api`, cek duplikat, golden snapshot (335 endpoint, 28 service)
+1. **`internal/apiregistry`** — scan `//encore:api`, cek duplikat, golden snapshot (**336 endpoint, 29 service**)
 2. **`internal/buyerflow`** — regression routing AI (simulator = production FSM) + triage autogen
-3. **Encore smoke (master)** — subset `encore test ./ai/`
+3. **`internal/apitest`** — HTTP smoke Encore per service (28 service produksi + `internal/apitest` ping)
+4. **Encore smoke (master)** — subset `encore test ./ai/` + workflow CI terpisah
 
 ## Regression per service (struktural)
 
 `internal/apiregistry/service_regression_test.go` memvalidasi:
 
 - Setiap service punya ≥1 endpoint
-- Golden `service_counts.json` (28 service, drift = regenerate)
+- Golden `service_counts.json` (29 service, drift = regenerate)
 - Endpoint non-raw punya HTTP method
 - Route publik kritis (health, auth, webhook) ada
 
