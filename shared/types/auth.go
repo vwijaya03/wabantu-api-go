@@ -1,5 +1,7 @@
 package types
 
+import "time"
+
 // AuthUser is extracted from the JWT/session on every authenticated request.
 // Returned by the Encore auth handler and accessible via auth.Data().
 // TenantID/TenantSchema are effective values (impersonation target when active).
@@ -19,6 +21,9 @@ type AuthUser struct {
 	Impersonating           bool   `json:"-"`
 	ImpersonationTenantName string `json:"-"`
 	ImpersonationTenantSlug string `json:"-"`
+	ImpersonationScope      string `json:"-"` // "full" | "limited"; empty when not impersonating
+	ImpersonationModules    []string `json:"-"` // empty = full access within grant
+	ImpersonationExpiresAt  *time.Time `json:"-"`
 }
 
 // HasEffectiveTenantContext is true when tenant-scoped APIs may run.

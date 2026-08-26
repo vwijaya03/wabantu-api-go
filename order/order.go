@@ -830,6 +830,9 @@ func getUser() (*types.AuthUser, error) {
 	if !u.HasEffectiveTenantContext() {
 		return nil, appErrs.Forbidden("tenant context required — pantau tenant dari konsol admin")
 	}
+	if err := u.RequireModule("sales"); err != nil {
+		return nil, err
+	}
 	return u, nil
 }
 

@@ -85,6 +85,12 @@ func currentUser(ctx context.Context) (*types.AuthUser, error) {
 	if !ok {
 		return nil, e.Unauthenticated("invalid auth data")
 	}
+	if !u.HasEffectiveTenantContext() {
+		return nil, e.Forbidden("tenant context required — pantau tenant dari konsol admin")
+	}
+	if err := u.RequireModule("main"); err != nil {
+		return nil, err
+	}
 	return u, nil
 }
 

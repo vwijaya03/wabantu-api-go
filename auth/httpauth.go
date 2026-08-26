@@ -33,6 +33,9 @@ func AuthenticateHTTP(ctx context.Context, r *http.Request) (*types.AuthUser, er
 	if err := reconcileSessionTenant(ctx, sess); err != nil {
 		return nil, errs.Unauthenticated("session invalid")
 	}
+	if err := reconcileImpersonationGrant(ctx, accountID, sessionID, sess); err != nil {
+		return nil, errs.Unauthenticated("session invalid")
+	}
 
 	return buildAuthUser(sess, sessionID), nil
 }

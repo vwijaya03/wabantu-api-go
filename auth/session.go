@@ -28,6 +28,10 @@ type SessionData struct {
 	ActAsTenantSchema string `json:"actAsTenantSchema,omitempty"`
 	ActAsTenantName   string `json:"actAsTenantName,omitempty"`
 	ActAsTenantSlug   string `json:"actAsTenantSlug,omitempty"`
+	ActAsScope        string `json:"actAsScope,omitempty"`
+	ActAsModules      []string `json:"actAsModules,omitempty"`
+	ActAsGrantID      string `json:"actAsGrantId,omitempty"`
+	ActAsGrantExpiresAt int64  `json:"actAsGrantExpiresAt,omitempty"` // unix sec; 0 = permanent
 }
 
 type Session struct {
