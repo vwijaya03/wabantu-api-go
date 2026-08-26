@@ -6,7 +6,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"encore.app/wabantu/auth"
 	"encore.app/wabantu/shared/types"
 	"encore.app/wabantu/system"
 
@@ -39,7 +38,7 @@ func (f *SuperAdminFixture) AuthUser() *types.AuthUser {
 	}
 }
 
-// BootstrapSuperAdmin inserts a super_admin row in system DB and issues a JWT.
+// BootstrapSuperAdmin inserts a super_admin row in system DB (typed API via WithSuperAdminAuth).
 func BootstrapSuperAdmin(t *testing.T) *SuperAdminFixture {
 	t.Helper()
 	RequireEncoreInfra(t)
@@ -65,22 +64,11 @@ func BootstrapSuperAdmin(t *testing.T) *SuperAdminFixture {
 		t.Fatalf("insert super_admin: %v", err)
 	}
 
-	token, err := auth.IssueTestAccessToken(ctx, auth.SessionData{
-		AccountID: accountID,
-		Role:      superAdminRole,
-		Email:     email,
-		Name:      name,
-	})
-	if err != nil {
-		t.Fatalf("issue super_admin token: %v", err)
-	}
-
 	return &SuperAdminFixture{
 		AccountID: accountID,
 		Email:     email,
 		Password:  password,
 		Name:      name,
-		Token:     token,
 	}
 }
 

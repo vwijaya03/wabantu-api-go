@@ -68,9 +68,15 @@ func BootstrapTenant(t *testing.T) *TenantFixture {
 	return bootstrapTenant(t, defaultSmokePassword, true)
 }
 
-// BootstrapOwner provisions a tenant and returns owner credentials with JWT (register/login smoke).
+// BootstrapOwner provisions a tenant for typed API smokes (et.OverrideAuthInfo; no Redis/JWT).
 func BootstrapOwner(t *testing.T) *TenantFixture {
 	RequireEncoreInfra(t)
+	return bootstrapTenant(t, defaultSmokePassword, false)
+}
+
+// BootstrapOwnerWithToken provisions tenant + JWT (requires Redis; for auth HTTP smokes).
+func BootstrapOwnerWithToken(t *testing.T) *TenantFixture {
+	RequireRedis(t)
 	return bootstrapTenant(t, defaultSmokePassword, true)
 }
 
@@ -189,7 +195,7 @@ func bootstrapTenant(t *testing.T, password string, issueToken bool) *TenantFixt
 // LoginOwner verifies credentials and issues a fresh JWT (mirrors auth/login without raw HTTP).
 func LoginOwner(t *testing.T, email, password string) *TenantFixture {
 	t.Helper()
-	RequireEncoreInfra(t)
+	RequireRedis(t)
 
 	ctx := context.Background()
 	emailHash := hashEmail(email)
