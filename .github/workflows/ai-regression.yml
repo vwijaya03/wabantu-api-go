@@ -3,8 +3,20 @@ name: AI Regression
 on:
   pull_request:
     branches: [master]
+    paths:
+      - "ai/**"
+      - "scripts/run-ai-regression-tests.sh"
+      - "scripts/fix-encore-test-db.sh"
+      - "go.mod"
+      - "go.sum"
+      - "encore.app"
+      - ".github/workflows/ai-regression.yml"
   push:
     branches: [master]
+
+concurrency:
+  group: ai-regression-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   ai-regression:
@@ -19,10 +31,25 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
+      - name: Cache Encore CLI
+        id: encore-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.encore/bin
+            ~/.encore/cache
+          key: encore-cli-${{ runner.os }}-${{ hashFiles('go.mod', 'encore.app') }}
+          restore-keys: |
+            encore-cli-${{ runner.os }}-
+
       - name: Install Encore CLI
         run: |
-          curl -L https://encore.dev/install.sh | bash
+          set -euo pipefail
+          if [[ ! -x "$HOME/.encore/bin/encore" ]]; then
+            curl -L https://encore.dev/install.sh | bash
+          fi
           echo "$HOME/.encore/bin" >> "$GITHUB_PATH"
+          encore version
 
       - name: Authenticate Encore CLI
         env:
@@ -33,7 +60,11 @@ jobs:
             echo "GitHub secret ENCORE_AUTH_KEY wajib — buat di Encore Cloud > App Settings > Auth Keys" >&2
             exit 1
           fi
+          encore telemetry disable
           encore auth login --auth-key="$ENCORE_AUTH_KEY"
+
+      - name: Pre-pull Encore test Postgres image
+        run: docker pull encoredotdev/postgres:18
 
       - name: Run AI conversation regression
         run: ./scripts/run-ai-regression-tests.sh
