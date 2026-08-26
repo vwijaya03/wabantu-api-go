@@ -86,7 +86,7 @@ func CreateExportJob(ctx context.Context, eventId string, p *CreateExportJobPara
 		return nil, appErrs.Internal(err.Error())
 	}
 
-	if err := assertEventExists(ctx, ts, eventId); err != nil {
+	if err := assertEventExists(ctx, u, ts, eventId); err != nil {
 		return nil, err
 	}
 
@@ -194,7 +194,7 @@ func ListExportJobs(ctx context.Context, eventId string) (*ExportJobListResponse
 		return nil, appErrs.Internal(err.Error())
 	}
 
-	if err := assertEventExists(ctx, ts, eventId); err != nil {
+	if err := assertEventExists(ctx, u, ts, eventId); err != nil {
 		return nil, err
 	}
 

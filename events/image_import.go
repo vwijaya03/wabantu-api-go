@@ -395,7 +395,7 @@ func previewStaffImages(ctx context.Context, u *types.AuthUser, eventID string, 
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	if err := assertEventExists(ctx, ts, eventID); err != nil {
+	if err := assertEventExists(ctx, u, ts, eventID); err != nil {
 		return nil, err
 	}
 	if err := validateImageBatch(files); err != nil {
@@ -546,7 +546,7 @@ func previewPatientImages(ctx context.Context, u *types.AuthUser, eventID string
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	if err := assertEventExists(ctx, ts, eventID); err != nil {
+	if err := assertEventExists(ctx, u, ts, eventID); err != nil {
 		return nil, err
 	}
 	if err := validateImageBatch(files); err != nil {

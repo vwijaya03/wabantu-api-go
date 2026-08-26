@@ -99,7 +99,7 @@ func ListPatients(ctx context.Context, eventId string, p *ListPatientsParams) (*
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	if err := assertEventExists(ctx, ts, eventId); err != nil {
+	if err := assertEventExists(ctx, u, ts, eventId); err != nil {
 		return nil, err
 	}
 	page, pageSize := paginate(p.Page, p.PageSize)
@@ -464,7 +464,7 @@ func createPatientForEvent(
 		if err := assertEventMutable(ctx, ts, eventID); err != nil {
 			return "", err
 		}
-	} else if err := assertEventExists(ctx, ts, eventID); err != nil {
+	} else if err := assertEventExists(ctx, nil, ts, eventID); err != nil {
 		return "", err
 	} else if err := assertEventMutable(ctx, ts, eventID); err != nil {
 		return "", err
