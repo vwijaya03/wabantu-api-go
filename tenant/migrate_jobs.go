@@ -108,28 +108,11 @@ func EnqueueSchemaMigration(ctx context.Context, req *MigrateSchemasRequest, mig
 
 	enqueued := 0
 	for _, target := range filtered {
-		var itemID string
-		err = system.DB.QueryRow(ctx, `
-			INSERT INTO tenant_schema_migration_job_item (job_id, tenant_id, schema_name, status)
-			VALUES ($1::uuid, $2::uuid, $3, $4)
-			RETURNING id::text`,
-			jobID, target.TenantID, target.SchemaName, migrationItemStatusQueued,
-		).Scan(&itemID)
+		n, err := enqueueMigrationTarget(ctx, jobID, target, migratedBy)
 		if err != nil {
 			return nil, err
 		}
-		msg := &TenantSchemaMigrateMessage{
-			JobID:        jobID,
-			ItemID:       itemID,
-			TenantID:     target.TenantID,
-			SchemaName:   target.SchemaName,
-			PatchVersion: CurrentSchemaPatchVersion,
-			MigratedBy:   migratedBy,
-		}
-		if _, err := SchemaMigrateTopic.Publish(ctx, msg); err != nil {
-			return nil, fmt.Errorf("publish migration job: %w", err)
-		}
-		enqueued++
+		enqueued += n
 	}
 
 	_, _ = system.DB.Exec(ctx, `
@@ -162,6 +145,7 @@ func EnqueueBehindSchemaMigration(ctx context.Context, migratedBy string) (*Migr
 		return nil, err
 	}
 
+	totalItems := 0
 	totalEnqueued := 0
 	offset := 0
 	for {
@@ -179,28 +163,12 @@ func EnqueueBehindSchemaMigration(ctx context.Context, migratedBy string) (*Migr
 		}
 
 		for _, target := range filtered {
-			var itemID string
-			err = system.DB.QueryRow(ctx, `
-				INSERT INTO tenant_schema_migration_job_item (job_id, tenant_id, schema_name, status)
-				VALUES ($1::uuid, $2::uuid, $3, $4)
-				RETURNING id::text`,
-				jobID, target.TenantID, target.SchemaName, migrationItemStatusQueued,
-			).Scan(&itemID)
+			n, err := enqueueMigrationTarget(ctx, jobID, target, migratedBy)
 			if err != nil {
 				return nil, err
 			}
-			msg := &TenantSchemaMigrateMessage{
-				JobID:        jobID,
-				ItemID:       itemID,
-				TenantID:     target.TenantID,
-				SchemaName:   target.SchemaName,
-				PatchVersion: CurrentSchemaPatchVersion,
-				MigratedBy:   migratedBy,
-			}
-			if _, err := SchemaMigrateTopic.Publish(ctx, msg); err != nil {
-				return nil, fmt.Errorf("publish migration job: %w", err)
-			}
-			totalEnqueued++
+			totalItems++
+			totalEnqueued += n
 		}
 		offset += len(targets)
 		if len(targets) < migrationEnqueueBatchSize {
@@ -212,13 +180,13 @@ func EnqueueBehindSchemaMigration(ctx context.Context, migratedBy string) (*Migr
 		UPDATE tenant_schema_migration_job
 		SET total_count = $2, status = $3
 		WHERE id = $1::uuid`,
-		jobID, totalEnqueued, migrationJobStatusRunning,
+		jobID, totalItems, migrationJobStatusRunning,
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	if totalEnqueued == 0 {
+	if totalItems == 0 {
 		_, _ = system.DB.Exec(ctx, `
 			UPDATE tenant_schema_migration_job
 			SET status = $2, completed_at = now()
@@ -236,6 +204,7 @@ func EnqueueBehindSchemaMigration(ctx context.Context, migratedBy string) (*Migr
 
 // ListActiveSchemaMigrationJobs returns pending/running jobs for admin UI.
 func ListActiveSchemaMigrationJobs(ctx context.Context) ([]SchemaMigrationJobSummary, error) {
+	maybeRecoverStaleMigrationJobItems(ctx)
 	rows, err := system.DB.Query(ctx, `
 		SELECT id::text, patch_version, status, total_count, done_count, failed_count,
 		       started_by::text, created_at, completed_at
@@ -286,6 +255,7 @@ func GetSchemaMigrationJob(ctx context.Context, jobID string) (*SchemaMigrationJ
 	if jobID == "" {
 		return nil, fmt.Errorf("jobId required")
 	}
+	maybeRecoverStaleMigrationJobItems(ctx)
 
 	var summary SchemaMigrationJobSummary
 	var startedBy sql.NullString
@@ -367,9 +337,6 @@ func processTenantSchemaMigrationLocked(ctx context.Context, tenantID, schemaNam
 	if err := RepairTenantSchemaDeployGrants(ctx, schemaName); err != nil {
 		return fmt.Errorf("repair deploy grants: %w", err)
 	}
-	if err := applyCloudAdminTenantDDL(ctx, schemaName); err != nil {
-		return fmt.Errorf("cloud admin DDL: %w", err)
-	}
 
 	// Module-specific evt_* DDL (new columns) is idempotent and must run even when
 	// tenant schema_patch_version is already current.
@@ -426,16 +393,19 @@ func handleTenantSchemaMigrate(ctx context.Context, msg *TenantSchemaMigrateMess
 		return err
 	}
 
+	upToDate, upErr := tenantSchemaMigrationUpToDate(ctx, msg.TenantID, msg.SchemaName)
+	if upErr != nil {
+		return upErr
+	}
+	if upToDate {
+		markMigrationItemSucceeded(ctx, msg.ItemID, msg.JobID)
+		return nil
+	}
+
 	procErr := ProcessTenantSchemaMigration(ctx, msg.TenantID, msg.SchemaName, msg.MigratedBy)
 	if procErr != nil {
 		if errors.Is(procErr, errSchemaMigrationBusy) {
-			_, _ = system.DB.Exec(ctx, `
-				UPDATE tenant_schema_migration_job_item
-				SET status = $2, updated_at = now()
-				WHERE id = $1::uuid`,
-				msg.ItemID, migrationItemStatusQueued,
-			)
-			return procErr
+			return handleMigrationItemBusy(ctx, msg)
 		}
 		_, _ = system.DB.Exec(ctx, `
 			UPDATE tenant_schema_migration_job_item
@@ -449,13 +419,7 @@ func handleTenantSchemaMigrate(ctx context.Context, msg *TenantSchemaMigrateMess
 		return procErr
 	}
 
-	_, _ = system.DB.Exec(ctx, `
-		UPDATE tenant_schema_migration_job_item
-		SET status = $2, error_text = NULL, updated_at = now()
-		WHERE id = $1::uuid`,
-		msg.ItemID, migrationItemStatusSucceeded,
-	)
-	_ = incrementJobCounter(ctx, msg.JobID, true)
+	markMigrationItemSucceeded(ctx, msg.ItemID, msg.JobID)
 	return nil
 }
 
@@ -619,6 +583,11 @@ func PublishLazySchemaMigration(ctx context.Context, tenantID, schemaName string
 func publishLazySchemaMigration(ctx context.Context, tenantID, schemaName string) {
 	provisioned, err := tenantSchemaBaseProvisioned(ctx, schemaName)
 	if err != nil || !provisioned {
+		return
+	}
+
+	active, err := schemaMigrationJobActive(ctx, schemaName)
+	if err != nil || active {
 		return
 	}
 
