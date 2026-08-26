@@ -9,3 +9,4 @@ scripts/node_modules/
 
 # Local DB dumps (dev only)
 .db-migrate/
+.DS_Store
