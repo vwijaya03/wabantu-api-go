@@ -13,15 +13,7 @@ const (
 	PlanRoutingHybridPriority  PlanAIRouting = "hybrid_priority"   // PRO
 )
 
-// MessageComplexity drives Haiku vs Sonnet within hybrid plans.
-type MessageComplexity string
-
-const (
-	ComplexitySimple  MessageComplexity = "simple"
-	ComplexityComplex MessageComplexity = "complex"
-)
-
-// RoutingDecision is the resolved model for one LLM call.
+// PlanAIRouting describes which routing strategy a subscription plan uses.
 type RoutingDecision struct {
 	Model      string            `json:"model"`
 	Tier       string            `json:"tier"` // haiku | sonnet

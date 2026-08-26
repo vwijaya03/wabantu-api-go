@@ -1,19 +1,19 @@
-package ai
+package buyerflow
 
 // OrderFlowInput — pure order FSM step (no Redis/DB/WA).
 type OrderFlowInput struct {
 	UserText string
-	State    *orderState
-	Catalog  []dbCatalogItem
-	History  []dbMessage
-	Profile  *dbBusinessProfile
-	KB       []dbKBEntry
+	State    *OrderState
+	Catalog  []CatalogItem
+	History  []Message
+	Profile  *BusinessProfile
+	KB       []KBEntry
 	ScopeKW  []string
 }
 
 // OrderFlowResult — outcome of one FSM advance.
 type OrderFlowResult struct {
-	State        *orderState
+	State        *OrderState
 	Reply        string
 	Path         string
 	Completed    bool
@@ -22,14 +22,14 @@ type OrderFlowResult struct {
 	OrderID      string
 }
 
-type persistOrderFunc func(st orderState) (string, error)
+type persistOrderFunc = PersistOrderFunc
 
-func buildOrderFlowReply(st orderState, prompt string, catalog []dbCatalogItem) string {
+func buildOrderFlowReply(st OrderState, prompt string, catalog []CatalogItem) string {
 	line := catalogConfirmLine(st)
 	if line != "" {
 		prompt = line + "\n\n" + prompt
 	}
-	if st.Qty > 0 && st.productComplete() {
+	if st.Qty > 0 && st.ProductComplete() {
 		if upsell := formatUpsellBlock(st, catalog); upsell != "" {
 			prompt += "\n\n" + upsell
 		}
@@ -53,7 +53,7 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 	}
 
 	hints := parseOrderHints(userText)
-	copyBase := func(st orderState) orderState {
+	copyBase := func(st OrderState) OrderState {
 		st = normalizeOrderState(st)
 		if state != nil {
 			base := normalizeOrderState(*state)
@@ -129,13 +129,13 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 
 	if state == nil && (IsOrderRevisionMessage(userText) || mentionsOrderQty(userText)) {
 		if match := matchCatalogFromRecentOutbound(history, catalog); match != nil {
-			st := orderState{Step: "ask_variant"}
+			st := OrderState{Step: "ask_variant"}
 			applyCatalogMatch(&st, match)
 			if q, ok := parseOrderQty(userText); ok {
 				st.Qty = q
 			}
 			inferVariantFromProductName(&st)
-			if st.variantComplete() && st.Qty > 0 {
+			if st.VariantComplete() && st.Qty > 0 {
 				st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
 				if blocked {
 					return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
@@ -157,7 +157,7 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 	}
 
 	if state == nil {
-		st := orderState{Step: "ask_product"}
+		st := OrderState{Step: "ask_product"}
 		if match := matchCatalogItem(userText, catalog); match != nil {
 			applyCatalogMatch(&st, match)
 			sz, cl := parseSizeAndColor(userText)
@@ -170,7 +170,7 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 			if hints.HasQty {
 				st.Qty = hints.Qty
 			}
-			if st.variantComplete() {
+			if st.VariantComplete() {
 				if st.Qty > 0 {
 					st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
 				if blocked {
@@ -203,7 +203,7 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 
 	stateNorm := normalizeOrderState(*state)
 
-	if IsOrderTotalRequest(userText) && stateNorm.productComplete() && stateNorm.Qty > 0 {
+	if IsOrderTotalRequest(userText) && stateNorm.ProductComplete() && stateNorm.Qty > 0 {
 		msg := formatOrderSummary(stateNorm)
 		if upsell := formatUpsellBlock(stateNorm, catalog); upsell != "" {
 			msg += "\n\n" + upsell
@@ -216,7 +216,7 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 		if IsOffBusinessProductRequest(userText, in.ScopeKW) {
 			return OrderFlowResult{Cleared: true, Path: PathOutOfScope, Reply: outOfScopeReply(profile)}
 		}
-		st := copyBase(orderState{Step: "ask_product"})
+		st := copyBase(OrderState{Step: "ask_product"})
 		match := matchCatalogItem(userText, catalog)
 		if match == nil {
 			msg := "Maaf kak, produknya belum ketemu di katalog. Sebut nama produk yang ada di katalog ya."
@@ -236,7 +236,7 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 		if hints.HasQty {
 			st.Qty = hints.Qty
 		}
-		if !st.variantComplete() {
+		if !st.VariantComplete() {
 			st.Step = "ask_variant"
 			return OrderFlowResult{
 				State: &st, Path: PathOrderFlow,
@@ -268,7 +268,7 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 			st.Qty = q
 		}
 		inferVariantFromProductName(&st)
-		if !catalogItemNeedsVariant(&dbCatalogItem{Name: st.ProductName, ExternalCode: st.ExternalCode}) {
+		if !catalogItemNeedsVariant(&CatalogItem{Name: st.ProductName, ExternalCode: st.ExternalCode}) {
 			if st.Qty < 1 {
 				if q, ok := parseOrderQty(userText); ok {
 					st.Qty = q
@@ -298,7 +298,7 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 		if cl != "" {
 			st.Color = cl
 		}
-		if st.variantComplete() && st.Qty > 0 {
+		if st.VariantComplete() && st.Qty > 0 {
 			st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
 				if blocked {
 				return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
@@ -309,7 +309,7 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 				Reply: buildOrderFlowReply(st, tmpl.AskRecipient, catalog),
 			}
 		}
-		if !st.variantComplete() {
+		if !st.VariantComplete() {
 			if IsCatalogBrowsingIntent(userText) || isGeneralStoreCatalogQuestion(userText) {
 				if catReply, ok := replyFromBusinessCatalog(userText, profile, catalog, history); ok {
 					return OrderFlowResult{Cleared: true, CatalogReply: true, Path: PathCatalogDB, Reply: catReply}
@@ -388,7 +388,7 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 		if st.RecipientName == "" || st.RecipientPhone == "" {
 			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: tmpl.AskRecipient}
 		}
-		if st.shippingComplete() {
+		if st.ShippingComplete() {
 			if missing := missingOrderDataPrompt(st, tmpl); missing != "" {
 				return OrderFlowResult{
 					State: &st, Path: PathOrderFlow,
@@ -433,7 +433,7 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 			}
 		}
 		mergeShippingText(&st, userText)
-		if !st.shippingComplete() {
+		if !st.ShippingComplete() {
 			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: tmpl.ClarifyAddress}
 		}
 		if missing := missingOrderDataPrompt(st, tmpl); missing != "" {

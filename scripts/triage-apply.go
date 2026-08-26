@@ -18,7 +18,7 @@ import (
 
 func main() {
 	jobID := flag.String("job-id", "", "ai_triage_job id")
-	outPath := flag.String("out", "ai/conversation_regression_auto_gen_test.go", "output path relative to api-go root")
+	outPath := flag.String("out", "internal/buyerflow/regression_autogen_test.go", "output path relative to api-go root")
 	flag.Parse()
 
 	if strings.TrimSpace(*jobID) == "" {

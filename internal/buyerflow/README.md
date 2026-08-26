@@ -1,4 +1,4 @@
-# internal/buyerflow — rencana regresi AI <10 detik
+# internal/buyerflow — regresi AI <10 detik
 
 ## Tujuan
 
@@ -8,55 +8,36 @@ Jalankan **golden regression** percakapan WA (simulator, tanpa LLM/DB) dengan:
 go test ./internal/buyerflow/ -count=1
 ```
 
-Target CI: **<10 detik** (vs ~60–90s `encore test` karena compile app + Postgres Docker).
+Target CI: **<10 detik** (pure `go test`, tanpa `encore test`/Postgres).
 
-## Kenapa belum di sini?
-
-Logika routing buyer (`ConversationSimulator.Turn`) masih di paket `ai/` yang terikat `encore test` lewat:
-
-- `sqldb` di `autoreply.go`
-- Import `order`, `inventory`, `usage`, dll. yang memicu init Encore
-
-Memisahkan dengan build tag `airegress` di seluruh `ai/` terlalu rapuh (banyak coupling).
-
-## Arsitektur target (production-ready)
+## Arsitektur
 
 ```
-internal/buyerflow/          # pure Go, no Encore
-  simulator.go                 # Turn() — sumber kebenaran routing
-  order_fsm.go                 # AdvanceOrderFlow (tanpa persist DB)
-  intent.go, greeting.go, ...  # helper routing
-  fixtures_omah.go
-  regression_cases.go          # ← TAMBAH CASE BARU DI SINI
-  regression_test.go           # loop + assert
-  regression_autogen_test.go   # output triage loop
+internal/buyerflow/          # pure Go — sumber kebenaran routing
+  simulator.go                 Turn() — routing multi-turn
+  order_fsm.go                 AdvanceOrderFlow() — checkout FSM
+  regression_cases.go          ← TAMBAH CASE BARU DI SINI
+  regression_test.go           loop + assert
+  export.go                    API untuk paket ai/
 
 ai/
-  autoreply.go                 # panggil buyerflow.Turn / AdvanceOrderFlow
-  conversation_sim.go          # thin wrapper / type alias
+  buyerflow_bridge.go          type alias + delegate ke buyerflow
+  order_flow_handler.go        handleOrderFlow → AdvanceOrderFlow (production)
 ```
 
-**Aturan tambah regression test baru:**
+**Satu implementasi** untuk simulator (test) dan production (`handleOrderFlow` memanggil `AdvanceOrderFlow`).
 
-1. Tambah entry di `regression_cases.go` (golden) atau terima auto-gen dari triage.
-2. Jalankan lokal: `go test ./internal/buyerflow/ -run TestRegression -v`
-3. PR: check **AI Regression** (fast) wajib hijau.
+## Menambah regression test baru
 
-Triage loop (`scripts/triage-apply.go`) akan ditulis ke `internal/buyerflow/regression_autogen_test.go`.
+1. Tambah entry di `regression_cases.go`
+2. Lokal: `go test ./internal/buyerflow/ -run TestRegression/nama_case -v`
+3. PR: check **AI Regression** (fast) wajib hijau
 
-## Fase implementasi
+Triage loop (`scripts/triage-apply.go`) menulis ke `internal/buyerflow/regression_autogen_test.go`.
 
-| Fase | Isi | Durasi estimasi |
-|------|-----|-----------------|
-| **1 (sekarang)** | PR #138 cache CI + doc ini | selesai |
-| **2** | Ekstrak tipe + `AdvanceOrderFlow` + `Turn` ke `buyerflow` | 1–2 hari |
-| **3** | Wire `ai/autoreply` → `buyerflow`, hapus duplikasi | 0.5 hari |
-| **4** | Pindah test + update triage-apply + CI `go test` | 0.5 hari |
-| **5** | `encore test` smoke hanya di push master (sudah ada di workflow) | selesai |
+## CI
 
-## Paritas production
-
-Simulator **harus** memanggil fungsi yang sama dengan `autoreply.go` (bukan copy logic).
-Setelah fase 3, satu implementasi `buyerflow.Turn` dipakai production + test.
-
-Sampai fase 4 selesai, gate PR tetap `encore test` via `scripts/run-ai-regression-tests.sh` (sudah dioptimasi cache).
+| Job | Kapan | Perintah |
+|-----|-------|----------|
+| `regression-fast` | Setiap PR | `go test ./internal/buyerflow/` |
+| `regression-encore-smoke` | Push master | `encore test ./ai/` subset |

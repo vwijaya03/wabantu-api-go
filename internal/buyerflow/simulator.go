@@ -1,12 +1,12 @@
-package ai
+package buyerflow
 
-// ConversationSimulator — multi-turn WhatsApp buyer flow tanpa Redis/DB.
-type ConversationSimulator struct {
-	Profile *dbBusinessProfile
-	Catalog []dbCatalogItem
-	History []dbMessage
-	KB      []dbKBEntry
-	Order   *orderState
+// Simulator — multi-turn WhatsApp buyer flow tanpa Redis/DB.
+type Simulator struct {
+	Profile *BusinessProfile
+	Catalog []CatalogItem
+	History []Message
+	KB      []KBEntry
+	Order   *OrderState
 	ScopeKW []string
 }
 
@@ -14,31 +14,33 @@ type ConversationSimulator struct {
 type TurnOutcome struct {
 	Path      string
 	Intent    SalesIntent
-	Order     *orderState
+	Order     *OrderState
 	Completed bool
 	Canceled  bool
 	Reply     string
 	BrokeFlow bool
 }
 
-func (s *ConversationSimulator) inScope(userText string) bool {
+func (s *Simulator) inScope(userText string) bool {
 	if s.ScopeKW == nil && s.Profile != nil {
 		s.ScopeKW = businessScopeKeywords(s.Profile)
 	}
 	return IsWithinBusinessScope(userText, s.ScopeKW, nil)
 }
 
-func (s *ConversationSimulator) appendHistory(in, out string) {
+func (s *Simulator) InScope(userText string) bool { return s.inScope(userText) }
+
+func (s *Simulator) appendHistory(in, out string) {
 	if in != "" {
-		s.History = append(s.History, dbMessage{Direction: "in", Body: in})
+		s.History = append(s.History, Message{Direction: "in", Body: in})
 	}
 	if out != "" {
-		s.History = append(s.History, dbMessage{Direction: "out", Body: out})
+		s.History = append(s.History, Message{Direction: "out", Body: out})
 	}
 }
 
 // Turn memproses satu pesan pembeli (routing + FSM).
-func (s *ConversationSimulator) Turn(userText string) TurnOutcome {
+func (s *Simulator) Turn(userText string) TurnOutcome {
 	out := TurnOutcome{}
 
 	// Match autoreply.go: third-party buyer lookup denied before other routing.
@@ -115,7 +117,7 @@ func (s *ConversationSimulator) Turn(userText string) TurnOutcome {
 				Profile:  s.Profile,
 				KB:       s.KB,
 				ScopeKW:  s.ScopeKW,
-			}, func(st orderState) (string, error) {
+			}, func(st OrderState) (string, error) {
 				return "sim-" + st.ProductName, nil
 			})
 			out.Path = res.Path
@@ -146,7 +148,7 @@ func (s *ConversationSimulator) Turn(userText string) TurnOutcome {
 			Profile:  s.Profile,
 			KB:       s.KB,
 			ScopeKW:  s.ScopeKW,
-		}, func(st orderState) (string, error) { return "sim-order", nil })
+		}, func(st OrderState) (string, error) { return "sim-order", nil })
 		out.Path = res.Path
 		out.Reply = res.Reply
 		out.Completed = res.Completed
@@ -170,7 +172,7 @@ func (s *ConversationSimulator) Turn(userText string) TurnOutcome {
 			Profile:  s.Profile,
 			KB:       s.KB,
 			ScopeKW:  s.ScopeKW,
-		}, func(st orderState) (string, error) { return "sim-order", nil })
+		}, func(st OrderState) (string, error) { return "sim-order", nil })
 		out.Path = res.Path
 		out.Reply = res.Reply
 		out.Completed = res.Completed
@@ -216,7 +218,7 @@ func (s *ConversationSimulator) Turn(userText string) TurnOutcome {
 }
 
 // RunScript menjalankan urutan pesan dan mengembalikan outcome terakhir.
-func (s *ConversationSimulator) RunScript(msgs ...string) []TurnOutcome {
+func (s *Simulator) RunScript(msgs ...string) []TurnOutcome {
 	outcomes := make([]TurnOutcome, 0, len(msgs))
 	for _, m := range msgs {
 		outcomes = append(outcomes, s.Turn(m))
@@ -224,9 +226,9 @@ func (s *ConversationSimulator) RunScript(msgs ...string) []TurnOutcome {
 	return outcomes
 }
 
-func newOmahSimulator() *ConversationSimulator {
+func newOmahSimulator() *Simulator {
 	p := omahProfile()
-	return &ConversationSimulator{
+	return &Simulator{
 		Profile: p,
 		Catalog: omahCatalog(),
 		KB:      omahPaymentKB(),
@@ -234,9 +236,9 @@ func newOmahSimulator() *ConversationSimulator {
 	}
 }
 
-func omahPaymentKB() []dbKBEntry {
+func omahPaymentKB() []KBEntry {
 	cat := "Nomor Rekening"
-	return []dbKBEntry{{
+	return []KBEntry{{
 		Question: "Nomor Rekening",
 		Answer:   "BCA 110220330 atas nama Omah Apparel\nMandiri 311211111 atas nama Omah Apparel",
 		Category: &cat,

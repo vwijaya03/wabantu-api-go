@@ -1,49 +1,33 @@
-# AI regression: percepat CI + rencana <10 detik
+# AI regression fast path — fase 2 selesai
 
 **Tanggal:** 2026-08-26  
-**PR:** #138 (cache CI), branch `feat/ai-regression-fast-gotest` (workflow + doc)  
-**Status:** Fase 1 selesai; fase 2 (internal/buyerflow) direncanakan
+**PR:** #139 (`feat/ai-regression-fast-gotest`)
 
-## Masalah
+## Ringkasan
 
-- Workflow **AI Regression** 1–3 menit (kadang 10 menit antrian/cache miss).
-- Eksekusi test simulator sebenarnya **<1 detik**; bottleneck = `encore test` (compile monorepo + Postgres Docker).
+Ekstraksi routing buyer ke `internal/buyerflow` — pure Go, tanpa Encore/Postgres.
 
-## Fase 1 — CI cache (sekarang)
+| Sebelum | Sesudah |
+|---------|---------|
+| `encore test ./ai/` ~60–90s | `go test ./internal/buyerflow/` **<1s** |
+| Simulator & production duplikat FSM | `handleOrderFlow` → `AdvanceOrderFlow` |
 
-- Cache Encore CLI (`~/.encore/bin`, `~/.encore/cache`)
-- Pre-pull `encoredotdev/postgres:18`
-- `paths` filter PR (skip jika hanya docs)
-- `concurrency` cancel-in-progress
-- Skip `fix-encore-test-db.sh` di GHA
+## Perubahan utama
 
-Target: **~60–90s** saat cache warm (bukan <10s).
+1. **`internal/buyerflow/`** — `Turn`, `AdvanceOrderFlow`, intent detectors, catalog, FSM
+2. **`ai/buyerflow_bridge.go`** — type alias + delegate (Encore layer tetap di `ai/`)
+3. **`ai/order_flow_handler.go`** — production memanggil `AdvanceOrderFlow` (hapus ~485 baris duplikat)
+4. **CI `regression-fast`** — `go test ./internal/buyerflow/` (tanpa Encore di PR gate)
+5. **Smoke master** — `encore test ./ai/` subset tetap jalan
 
-## Fase 2 — `internal/buyerflow` (rencana)
+## Menambah regression test
 
-Ekstrak routing buyer murni ke `internal/buyerflow/` agar:
+Tambah case di `internal/buyerflow/regression_cases.go`, jalankan:
 
 ```bash
-go test ./internal/buyerflow/ -count=1   # <10s di CI
+./scripts/run-ai-regression-tests.sh
 ```
 
-Detail: [`internal/buyerflow/README.md`](../../internal/buyerflow/README.md).
+## PR #138
 
-### Menambah regression test baru (setelah fase 2)
-
-1. Edit `internal/buyerflow/regression_cases.go` — tambah `regressionCase{...}`.
-2. Lokal: `go test ./internal/buyerflow/ -run TestRegression/your_case -v`
-3. Bug dari WA nyata → bisa juga lewat AI Triage → auto-gen file.
-
-Sampai fase 2: tetap edit `ai/conversation_regression_test.go` + `./scripts/run-ai-regression-tests.sh`.
-
-## Dua tier CI
-
-| Job | Kapan | Tool |
-|-----|-------|------|
-| `regression-fast` | Setiap PR | `encore test` (→ `go test` buyerflow) |
-| `regression-encore-smoke` | Push master | `encore test` subset tambahan |
-
-## Catatan
-
-Build tag `airegress` di paket `ai/` **tidak** dipakai — coupling terlalu dalam (`order`, `autoreply`, `triage`). Ekstrak paket terpisah lebih aman untuk maintenance jangka panjang.
+Ditutup — digabung ke #139.

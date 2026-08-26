@@ -1,4 +1,4 @@
-package ai
+package buyerflow
 
 import (
 	"strings"
@@ -66,7 +66,7 @@ func ClassifyComplexity(userText string, classifierLabel string, kbTopScore floa
 }
 
 // topKBMatchScore returns the best hybrid KB overlap score for the query.
-func topKBMatchScore(query string, kb []dbKBEntry) float64 {
+func topKBMatchScore(query string, kb []KBEntry) float64 {
 	if len(kb) == 0 {
 		return 0
 	}
@@ -88,7 +88,7 @@ func topKBMatchScore(query string, kb []dbKBEntry) float64 {
 }
 
 // tryFAQDirectAnswer returns a KB answer without calling the LLM (cost optimization).
-func tryFAQDirectAnswer(query string, kb []dbKBEntry) (answer string, ok bool) {
+func tryFAQDirectAnswer(query string, kb []KBEntry) (answer string, ok bool) {
 	if IsThirdPartyBuyerLookup(query) || IsSelfBuyerOrderLookup(query) || IsOrderStatusInquiry(query) {
 		return "", false
 	}
@@ -102,7 +102,7 @@ func tryFAQDirectAnswer(query string, kb []dbKBEntry) (answer string, ok bool) {
 	qTokens := tokenize(query)
 	qScope := ExtractScopeKeywords(query)
 
-	var best dbKBEntry
+	var best KBEntry
 	var bestScore float64
 	for _, entry := range kb {
 		text := entry.Question + " " + entry.Answer

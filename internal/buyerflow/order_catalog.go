@@ -1,34 +1,10 @@
-package ai
+package buyerflow
 
 import (
-	"context"
 	"fmt"
 	"regexp"
 	"strings"
 )
-
-type catalogStockLine struct {
-	WarehouseID   string
-	WarehouseName string
-	CustomerLabel string
-	IsDefault     bool
-	DisplayOrder  int
-	Available     float64
-}
-
-type dbCatalogItem struct {
-	ID           string
-	ExternalCode string
-	Name         string
-	SellPrice    float64
-	SellUnit     string
-	// Stock fields populated by enrichCatalogStock when the inventory module is
-	// set up for the tenant. Default zero values keep non-inventory tenants and
-	// unit tests (which build items directly) unaffected.
-	StockTracked     bool
-	StockAvailable   float64
-	StockByWarehouse []catalogStockLine
-}
 
 func warehouseBuyerLabel(customerLabel, warehouseName string) string {
 	if s := strings.TrimSpace(customerLabel); s != "" {
@@ -37,100 +13,13 @@ func warehouseBuyerLabel(customerLabel, warehouseName string) string {
 	return strings.TrimSpace(warehouseName)
 }
 
-// enrichCatalogStock annotates catalog items with per-warehouse available stock when the
-// inventory module is active for the tenant. Best-effort: any error leaves the catalog as-is.
-func enrichCatalogStock(ctx context.Context, ts tenantScopedQuerier, catalog []dbCatalogItem) {
-	if len(catalog) == 0 {
-		return
-	}
-	var setup bool
-	if err := ts.QueryRowContext(ctx, fmt.Sprintf(
-		`SELECT setup_completed FROM %s ORDER BY created_at LIMIT 1`, ts.T("inv_setting"))).Scan(&setup); err != nil || !setup {
-		return
-	}
-	rows, err := ts.QueryContext(ctx, fmt.Sprintf(`
-		SELECT s.catalog_item_id::text, w.id::text, COALESCE(w.customer_label, ''), w.name,
-		       w.is_default, w.display_order,
-		       COALESCE(GREATEST(b.on_hand - b.reserved, 0), 0)
-		FROM %s s
-		INNER JOIN %s b ON b.catalog_item_id = s.catalog_item_id
-		INNER JOIN %s w ON w.id = b.warehouse_id
-		WHERE s.track_stock = true AND s.is_bundle = false
-		  AND w.deleted_at IS NULL AND w.is_active = true
-		ORDER BY s.catalog_item_id, w.is_default DESC, w.display_order, w.name`,
-		ts.T("inv_sku"), ts.T("inv_stock_balance"), ts.T("inv_warehouse")))
-	if err != nil {
-		return
-	}
-	defer rows.Close()
-	byItem := map[string][]catalogStockLine{}
-	for rows.Next() {
-		var itemID, whID, customerLabel, whName string
-		var isDefault bool
-		var displayOrder int
-		var avail float64
-		if rows.Scan(&itemID, &whID, &customerLabel, &whName, &isDefault, &displayOrder, &avail) != nil {
-			continue
-		}
-		if avail <= 0 {
-			continue
-		}
-		byItem[itemID] = append(byItem[itemID], catalogStockLine{
-			WarehouseID:   whID,
-			WarehouseName: whName,
-			CustomerLabel: customerLabel,
-			IsDefault:     isDefault,
-			DisplayOrder:  displayOrder,
-			Available:     avail,
-		})
-	}
-	for i := range catalog {
-		lines, ok := byItem[catalog[i].ID]
-		if !ok {
-			continue
-		}
-		catalog[i].StockTracked = true
-		catalog[i].StockByWarehouse = lines
-		var total float64
-		for _, ln := range lines {
-			total += ln.Available
-		}
-		catalog[i].StockAvailable = total
-	}
-}
-
 var (
 	postalCodeIDRe = regexp.MustCompile(`\b(\d{5})\b`)
 	phoneIDRe      = regexp.MustCompile(`(?:\+62|62|0)8[0-9]{8,11}`)
 	colorHintRe    = regexp.MustCompile(`(?i)(warna|color|colour)\s*[:\-]?\s*([a-z]+)`)
 )
 
-func loadActiveCatalog(ctx context.Context, ts tenantScopedQuerier, limit int) ([]dbCatalogItem, error) {
-	if limit < 1 || limit > 100 {
-		limit = 40
-	}
-	rows, err := ts.QueryContext(ctx, fmt.Sprintf(`
-		SELECT id::text, external_code, name,
-		       COALESCE(sell_price, 0), COALESCE(sell_unit, 'pcs')
-		FROM %s
-		WHERE deleted_at IS NULL AND is_active = true
-		ORDER BY name ASC LIMIT $1`, ts.T("business_catalog_item")), limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []dbCatalogItem
-	for rows.Next() {
-		var it dbCatalogItem
-		if err := rows.Scan(&it.ID, &it.ExternalCode, &it.Name, &it.SellPrice, &it.SellUnit); err != nil {
-			return nil, err
-		}
-		out = append(out, it)
-	}
-	return out, rows.Err()
-}
-
-func matchCatalogItem(userText string, catalog []dbCatalogItem) *dbCatalogItem {
+func matchCatalogItem(userText string, catalog []CatalogItem) *CatalogItem {
 	if len(catalog) == 0 {
 		return nil
 	}
@@ -144,7 +33,7 @@ func matchCatalogItem(userText string, catalog []dbCatalogItem) *dbCatalogItem {
 	preferPria := strings.Contains(text, "pria") || strings.Contains(text, "cowok")
 	preferAnak := strings.Contains(text, "anak") || strings.Contains(text, "perempuan")
 
-	var best *dbCatalogItem
+	var best *CatalogItem
 	var bestScore float64
 	for i := range catalog {
 		it := &catalog[i]
@@ -227,7 +116,7 @@ func catalogPhraseBoost(text, nameLower string) float64 {
 }
 
 // tryApplyProductRevision — ganti produk saat checkout ("bukan hello kitty", "mono spot bukan ...").
-func tryApplyProductRevision(st *orderState, userText string, catalog []dbCatalogItem) bool {
+func tryApplyProductRevision(st *OrderState, userText string, catalog []CatalogItem) bool {
 	if st == nil || len(catalog) == 0 {
 		return false
 	}
@@ -258,7 +147,7 @@ func tryApplyProductRevision(st *orderState, userText string, catalog []dbCatalo
 	return st.CatalogItemID != prevID || st.ProductName != match.Name
 }
 
-func formatCatalogPicker(catalog []dbCatalogItem, max int) string {
+func formatCatalogPicker(catalog []CatalogItem, max int) string {
 	if len(catalog) == 0 {
 		return ""
 	}
@@ -352,7 +241,7 @@ func normalizePhoneID(p string) string {
 	return p
 }
 
-func mergeShippingText(st *orderState, userText string) {
+func mergeShippingText(st *OrderState, userText string) {
 	if st == nil {
 		return
 	}
@@ -457,7 +346,7 @@ var idCityHints = []struct {
 	{"depok", "Depok", "Jawa Barat"},
 }
 
-func parseUnstructuredAddress(st *orderState, lower, raw string) {
+func parseUnstructuredAddress(st *OrderState, lower, raw string) {
 	if st == nil {
 		return
 	}
@@ -501,7 +390,7 @@ func labelValue(line string) string {
 	return strings.TrimSpace(line)
 }
 
-func (st orderState) shippingComplete() bool {
+func (st OrderState) ShippingComplete() bool {
 	if st.RecipientName == "" || st.RecipientPhone == "" {
 		return false
 	}
@@ -514,15 +403,15 @@ func (st orderState) shippingComplete() bool {
 	return postalCodeIDRe.MatchString(st.PostalCode)
 }
 
-func (st orderState) productComplete() bool {
-	if st.hasMultiItems() {
-		return st.structuredLinesReady()
+func (st OrderState) ProductComplete() bool {
+	if st.HasMultiItems() {
+		return st.StructuredLinesReady()
 	}
 	return strings.TrimSpace(st.ProductName) != "" || strings.TrimSpace(st.CatalogItemID) != ""
 }
 
 // catalogItemNeedsVariant — apparel/ukuran; makanan & produk tanpa varian dilewati.
-func catalogItemNeedsVariant(it *dbCatalogItem) bool {
+func catalogItemNeedsVariant(it *CatalogItem) bool {
 	if it == nil {
 		return false
 	}
@@ -544,15 +433,15 @@ func catalogItemNeedsVariant(it *dbCatalogItem) bool {
 	return false
 }
 
-func (st orderState) variantComplete() bool {
-	it := &dbCatalogItem{Name: st.ProductName, ExternalCode: st.ExternalCode}
+func (st OrderState) VariantComplete() bool {
+	it := &CatalogItem{Name: st.ProductName, ExternalCode: st.ExternalCode}
 	if !catalogItemNeedsVariant(it) {
 		return true
 	}
 	return st.Size != "" || st.Color != ""
 }
 
-func applyCatalogMatch(st *orderState, it *dbCatalogItem) {
+func applyCatalogMatch(st *OrderState, it *CatalogItem) {
 	if st == nil || it == nil {
 		return
 	}
@@ -567,7 +456,7 @@ func applyCatalogMatch(st *orderState, it *dbCatalogItem) {
 	inferVariantFromProductName(st)
 }
 
-func catalogConfirmLine(st orderState) string {
+func catalogConfirmLine(st OrderState) string {
 	summary := formatOrderSummary(st)
 	if summary != "" {
 		return summary
@@ -575,7 +464,7 @@ func catalogConfirmLine(st orderState) string {
 	if st.ProductName == "" {
 		return ""
 	}
-	it := &dbCatalogItem{
+	it := &CatalogItem{
 		Name:       st.ProductName,
 		SellPrice:  st.UnitPrice,
 		SellUnit:   st.SellUnit,
@@ -584,17 +473,17 @@ func catalogConfirmLine(st orderState) string {
 	return strings.TrimSpace("Produk:\n" + st.ProductName + "\n\nHarga:\n" + formatCatalogPrice(it))
 }
 
-func missingOrderDataPrompt(st orderState, tmpl orderFlowTemplates) string {
+func missingOrderDataPrompt(st OrderState, tmpl orderFlowTemplates) string {
 	st = normalizeOrderState(st)
-	if st.hasMultiItems() {
-		if !st.structuredLinesReady() {
+	if st.HasMultiItems() {
+		if !st.StructuredLinesReady() {
 			return tmpl.AskVariant
 		}
 	} else {
-		if !st.productComplete() {
+		if !st.ProductComplete() {
 			return tmpl.AskProduct
 		}
-		if !st.variantComplete() {
+		if !st.VariantComplete() {
 			return tmpl.AskVariant
 		}
 		if st.Qty < 1 {
@@ -604,7 +493,7 @@ func missingOrderDataPrompt(st orderState, tmpl orderFlowTemplates) string {
 	if strings.TrimSpace(st.RecipientName) == "" || strings.TrimSpace(st.RecipientPhone) == "" {
 		return tmpl.AskRecipient
 	}
-	if !st.shippingComplete() {
+	if !st.ShippingComplete() {
 		return tmpl.ClarifyAddress
 	}
 	return ""

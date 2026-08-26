@@ -1,6 +1,11 @@
-package ai
+package buyerflow
 
 import "strings"
+
+var sensitiveKeywords = []string{
+	"penipuan", "fraud", "komplain keras", "lapor polisi",
+	"ancam", "refund gagal", "tagihan salah",
+}
 
 // Sales state constants — satu sumber kebenaran routing AI sales.
 const (
@@ -39,11 +44,11 @@ type SalesIntent struct {
 // ResolveSalesIntent menggabungkan rule-based signals menjadi satu keputusan routing.
 func ResolveSalesIntent(
 	userText string,
-	history []dbMessage,
+	history []Message,
 	orderActive bool,
 	inScope bool,
-	profile *dbBusinessProfile,
-	catalog []dbCatalogItem,
+	profile *BusinessProfile,
+	catalog []CatalogItem,
 ) SalesIntent {
 	text := strings.ToLower(strings.TrimSpace(userText))
 
@@ -183,14 +188,14 @@ func ResolveSalesIntent(
 	return SalesIntent{State: SalesStateConsulting, Topic: SalesTopicGeneral, Confidence: 0.7}
 }
 
-func productHintFromText(userText string, catalog []dbCatalogItem) string {
+func productHintFromText(userText string, catalog []CatalogItem) string {
 	if match := matchCatalogItem(userText, catalog); match != nil {
 		return shortDisplayName(match.Name)
 	}
 	return ""
 }
 
-func productHintFromHistory(history []dbMessage, catalog []dbCatalogItem) string {
+func productHintFromHistory(history []Message, catalog []CatalogItem) string {
 	if match := matchCatalogFromFocusedHistory(history, catalog); match != nil {
 		return shortDisplayName(match.Name)
 	}
@@ -198,19 +203,19 @@ func productHintFromHistory(history []dbMessage, catalog []dbCatalogItem) string
 }
 
 // salesIntentToClassifier maps SalesIntent ke label classifier lama (kompatibilitas).
-func salesIntentToClassifier(intent SalesIntent) classifyResult {
+func salesIntentToClassifier(intent SalesIntent) ClassifyResult {
 	switch intent.State {
 	case SalesStateSensitive:
-		return classifyResult{Label: "sensitive_escalate", Confidence: intent.Confidence}
+		return ClassifyResult{Label: "sensitive_escalate", Confidence: intent.Confidence}
 	case SalesStateOutOfScope:
-		return classifyResult{Label: "out_of_scope", Confidence: intent.Confidence}
+		return ClassifyResult{Label: "out_of_scope", Confidence: intent.Confidence}
 	case SalesStateCartReady, SalesStateCheckout:
-		return classifyResult{Label: "order_intent", Confidence: intent.Confidence}
+		return ClassifyResult{Label: "order_intent", Confidence: intent.Confidence}
 	case SalesStateGreeting:
-		return classifyResult{Label: "in_scope_non_question", Confidence: intent.Confidence}
+		return ClassifyResult{Label: "in_scope_non_question", Confidence: intent.Confidence}
 	case SalesStateBrowsing, SalesStateConsulting, SalesStateProductSelected, SalesStateCorrection:
-		return classifyResult{Label: "in_scope_question", Confidence: intent.Confidence}
+		return ClassifyResult{Label: "in_scope_question", Confidence: intent.Confidence}
 	default:
-		return classifyResult{Label: "in_scope_question", Confidence: intent.Confidence}
+		return ClassifyResult{Label: "in_scope_question", Confidence: intent.Confidence}
 	}
 }

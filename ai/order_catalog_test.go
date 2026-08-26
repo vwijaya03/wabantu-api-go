@@ -34,7 +34,7 @@ Kecamatan: Setiabudi
 Kota: Jakarta Selatan
 Provinsi: DKI Jakarta
 Kode pos: 12910`)
-	if !st.shippingComplete() {
+	if !st.ShippingComplete() {
 		t.Fatalf("expected complete address, got %+v", st)
 	}
 }
@@ -51,7 +51,7 @@ Kecamatan: Magelang
 Kota/Kab: Magelang
 Provinsi: Jawa Timur
 Kode pos: 60600`)
-	if !st.shippingComplete() {
+	if !st.ShippingComplete() {
 		t.Fatalf("expected complete shipping from single message, got %+v", st)
 	}
 	if st.RecipientName != "Antoni Budianto" {
@@ -61,7 +61,7 @@ Kode pos: 60600`)
 
 func TestVariantCompleteSkipsNonApparel(t *testing.T) {
 	st := orderState{ProductName: "Abon Sapi 500G"}
-	if !st.variantComplete() {
+	if !st.VariantComplete() {
 		t.Fatal("food product should skip variant step")
 	}
 }

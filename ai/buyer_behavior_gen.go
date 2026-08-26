@@ -306,7 +306,7 @@ func allBuyerBehaviorCases() []buyerCase {
 			st := orderState{}
 			mergeShippingText(&st, fullAddressBlock())
 			mergeShippingText(&st, recipientBlock("Rina", "081299988877"))
-			if !st.shippingComplete() {
+			if !st.ShippingComplete() {
 				return fmt.Errorf("expected shipping complete")
 			}
 			return nil

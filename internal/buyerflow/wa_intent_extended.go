@@ -1,4 +1,4 @@
-package ai
+package buyerflow
 
 import "strings"
 
