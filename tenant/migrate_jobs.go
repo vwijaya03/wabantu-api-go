@@ -382,7 +382,16 @@ func handleTenantSchemaMigrate(ctx context.Context, msg *TenantSchemaMigrateMess
 		return err
 	}
 
-	_, err := system.DB.Exec(ctx, `
+	cancelled, err := migrationJobCancelled(ctx, msg.JobID)
+	if err != nil {
+		return err
+	}
+	if cancelled {
+		skipMigrationItemIfPending(ctx, msg.ItemID, msg.JobID)
+		return nil
+	}
+
+	_, err = system.DB.Exec(ctx, `
 		UPDATE tenant_schema_migration_job_item
 		SET status = $2, attempts = attempts + 1, updated_at = now()
 		WHERE id = $1::uuid AND status = ANY($3::text[])`,

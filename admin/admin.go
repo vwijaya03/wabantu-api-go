@@ -505,6 +505,26 @@ func ListActiveMigrateTenantSchemasJobs(ctx context.Context) (*ListActiveMigrate
 	return &ListActiveMigrateJobsResponse{Jobs: jobs}, nil
 }
 
+// CancelMigrateTenantSchemasJob stops a stuck pending/running schema migration job.
+//
+//encore:api auth method=POST path=/api/v1/admin/migrate-tenant-schemas/jobs/:jobId/cancel tag:super_admin
+func CancelMigrateTenantSchemasJob(ctx context.Context, jobId string) (*tenant.SchemaMigrationJobSummary, error) {
+	if _, err := requireSuperAdmin(ctx); err != nil {
+		return nil, err
+	}
+	summary, err := tenant.CancelSchemaMigrationJob(ctx, jobId)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return nil, &errs.Error{Code: errs.NotFound, Message: err.Error()}
+		}
+		if strings.Contains(err.Error(), "tidak aktif") {
+			return nil, &errs.Error{Code: errs.InvalidArgument, Message: err.Error()}
+		}
+		return nil, &errs.Error{Code: errs.Internal, Message: err.Error()}
+	}
+	return summary, nil
+}
+
 // ---------- Helpers ----------
 
 func requireSuperAdmin(ctx context.Context) (*types.AuthUser, error) {
