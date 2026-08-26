@@ -35,6 +35,16 @@ func TestQualifySQLOrderTableQuoted(t *testing.T) {
 	}
 }
 
+func TestQualifySQLOrderTableLeftJoin(t *testing.T) {
+	sch := SchemaSQL{Schema: "t_omah_apparel"}
+	in := `LEFT JOIN "order" o ON o.payment_proof_message_id = m.id AND o.deleted_at IS NULL`
+	out := QualifySQL(sch, in)
+	want := `LEFT JOIN "t_omah_apparel"."order" o ON o.payment_proof_message_id = m.id AND o.deleted_at IS NULL`
+	if out != want {
+		t.Fatalf("QualifySQL() = %q, want %q", out, want)
+	}
+}
+
 func containsAll(s string, subs ...string) bool {
 	for _, sub := range subs {
 		if !contains(s, sub) {

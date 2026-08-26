@@ -314,7 +314,7 @@ func callMidtransCharge(orderID string, amount int64) (*midtransChargeResp, erro
 	req.Header.Set("Accept", "application/json")
 	req.SetBasicAuth(secrets.MidtransServerKey, "")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("midtrans request failed: %w", err)
 	}

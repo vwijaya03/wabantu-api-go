@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	appErrs "encore.app/wabantu/shared/errs"
 )
@@ -185,7 +186,7 @@ func roPost(path string, form url.Values) (json.RawMessage, error) {
 }
 
 func doRequest(req *http.Request) (json.RawMessage, error) {
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
 	if err != nil {
 		return nil, appErrs.Unavailable("RajaOngkir API unavailable")
 	}
