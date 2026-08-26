@@ -234,6 +234,52 @@ func EnqueueBehindSchemaMigration(ctx context.Context, migratedBy string) (*Migr
 	}, nil
 }
 
+// ListActiveSchemaMigrationJobs returns pending/running jobs for admin UI.
+func ListActiveSchemaMigrationJobs(ctx context.Context) ([]SchemaMigrationJobSummary, error) {
+	rows, err := system.DB.Query(ctx, `
+		SELECT id::text, patch_version, status, total_count, done_count, failed_count,
+		       started_by::text, created_at, completed_at
+		FROM tenant_schema_migration_job
+		WHERE status = ANY($1::text[])
+		ORDER BY created_at DESC
+		LIMIT 20`,
+		[]string{migrationJobStatusPending, migrationJobStatusRunning},
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []SchemaMigrationJobSummary
+	for rows.Next() {
+		var summary SchemaMigrationJobSummary
+		var startedBy sql.NullString
+		var completedAt sql.NullTime
+		if err := rows.Scan(
+			&summary.JobID, &summary.PatchVersion, &summary.Status,
+			&summary.TotalCount, &summary.DoneCount, &summary.FailedCount,
+			&startedBy, &summary.CreatedAt, &completedAt,
+		); err != nil {
+			return nil, err
+		}
+		if startedBy.Valid {
+			summary.StartedBy = startedBy.String
+		}
+		if completedAt.Valid {
+			t := completedAt.Time
+			summary.CompletedAt = &t
+		}
+		out = append(out, summary)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if out == nil {
+		out = []SchemaMigrationJobSummary{}
+	}
+	return out, nil
+}
+
 // GetSchemaMigrationJob returns job progress for admin UI polling.
 func GetSchemaMigrationJob(ctx context.Context, jobID string) (*SchemaMigrationJobSummary, error) {
 	jobID = strings.TrimSpace(jobID)
@@ -382,6 +428,15 @@ func handleTenantSchemaMigrate(ctx context.Context, msg *TenantSchemaMigrateMess
 
 	procErr := ProcessTenantSchemaMigration(ctx, msg.TenantID, msg.SchemaName, msg.MigratedBy)
 	if procErr != nil {
+		if errors.Is(procErr, errSchemaMigrationBusy) {
+			_, _ = system.DB.Exec(ctx, `
+				UPDATE tenant_schema_migration_job_item
+				SET status = $2, updated_at = now()
+				WHERE id = $1::uuid`,
+				msg.ItemID, migrationItemStatusQueued,
+			)
+			return procErr
+		}
 		_, _ = system.DB.Exec(ctx, `
 			UPDATE tenant_schema_migration_job_item
 			SET status = $2, error_text = $3, updated_at = now()

@@ -257,8 +257,26 @@ CREATE TABLE IF NOT EXISTS evt_staff_roster_volunteer (
     is_pencatat       BOOLEAN NOT NULL DEFAULT false
 );
 
-ALTER TABLE evt_patient ADD COLUMN IF NOT EXISTS contact_id UUID REFERENCES contact(id);
-ALTER TABLE contact ADD COLUMN IF NOT EXISTS birth_date DATE;
+DO $evt_contact$
+BEGIN
+    IF to_regclass('evt_patient') IS NOT NULL THEN
+        ALTER TABLE evt_patient ADD COLUMN IF NOT EXISTS contact_id UUID;
+    END IF;
+    IF to_regclass('contact') IS NOT NULL THEN
+        ALTER TABLE contact ADD COLUMN IF NOT EXISTS birth_date DATE;
+    END IF;
+    IF to_regclass('evt_patient') IS NOT NULL AND to_regclass('contact') IS NOT NULL THEN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint c
+            JOIN pg_class r ON r.oid = c.conrelid
+            WHERE r.relname = 'evt_patient' AND c.conname = 'evt_patient_contact_id_fkey'
+        ) THEN
+            ALTER TABLE evt_patient
+                ADD CONSTRAINT evt_patient_contact_id_fkey
+                FOREIGN KEY (contact_id) REFERENCES contact(id);
+        END IF;
+    END IF;
+END $evt_contact$;
 
 CREATE TABLE IF NOT EXISTS evt_export_job (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
