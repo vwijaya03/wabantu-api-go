@@ -331,6 +331,9 @@ ALTER TABLE "order" ADD COLUMN IF NOT EXISTS payment_proof_meta JSONB NOT NULL D
 CREATE INDEX IF NOT EXISTS idx_order_payment_status
     ON "order"(payment_status, created_at DESC)
     WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_order_payment_proof_message
+    ON "order"(payment_proof_message_id)
+    WHERE deleted_at IS NULL AND payment_proof_message_id IS NOT NULL;
 `
 
 func alwaysApplyPaymentProofPatch(ctx context.Context, conn *sql.Conn) error {

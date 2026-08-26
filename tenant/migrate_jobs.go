@@ -527,11 +527,28 @@ func RecordNewTenantSchemaVersion(ctx context.Context, tenantID string) error {
 }
 
 var (
-	lazyMigrateMu    sync.Mutex
-	lazyMigrateUntil = map[string]time.Time{}
+	lazyMigrateOnceMu sync.Mutex
+	lazyMigrateOnce   = map[string]*sync.Once{}
 )
 
-// PublishLazySchemaMigration enqueues a single-tenant migration if behind (non-blocking dedupe).
+func lazyMigrateOnceFor(schemaName string) *sync.Once {
+	lazyMigrateOnceMu.Lock()
+	defer lazyMigrateOnceMu.Unlock()
+	if o, ok := lazyMigrateOnce[schemaName]; ok {
+		return o
+	}
+	o := &sync.Once{}
+	lazyMigrateOnce[schemaName] = o
+	return o
+}
+
+func resetLazyMigrateOnce(schemaName string) {
+	lazyMigrateOnceMu.Lock()
+	delete(lazyMigrateOnce, schemaName)
+	lazyMigrateOnceMu.Unlock()
+}
+
+// PublishLazySchemaMigration enqueues a single-tenant migration if behind (once per schema per process).
 func PublishLazySchemaMigration(ctx context.Context, tenantID, schemaName string) {
 	tenantID = strings.TrimSpace(tenantID)
 	schemaName = strings.TrimSpace(schemaName)
@@ -539,14 +556,12 @@ func PublishLazySchemaMigration(ctx context.Context, tenantID, schemaName string
 		return
 	}
 
-	lazyMigrateMu.Lock()
-	if until, ok := lazyMigrateUntil[schemaName]; ok && time.Now().Before(until) {
-		lazyMigrateMu.Unlock()
-		return
-	}
-	lazyMigrateUntil[schemaName] = time.Now().Add(5 * time.Minute)
-	lazyMigrateMu.Unlock()
+	lazyMigrateOnceFor(schemaName).Do(func() {
+		publishLazySchemaMigration(ctx, tenantID, schemaName)
+	})
+}
 
+func publishLazySchemaMigration(ctx context.Context, tenantID, schemaName string) {
 	provisioned, err := tenantSchemaBaseProvisioned(ctx, schemaName)
 	if err != nil || !provisioned {
 		return
@@ -564,6 +579,7 @@ func PublishLazySchemaMigration(ctx context.Context, tenantID, schemaName string
 		Lazy:         true,
 	}
 	if _, pubErr := SchemaMigrateTopic.Publish(ctx, msg); pubErr != nil {
+		resetLazyMigrateOnce(schemaName)
 		rlog.Warn("lazy schema migration publish failed", "tenantId", tenantID, "err", pubErr)
 	}
 }

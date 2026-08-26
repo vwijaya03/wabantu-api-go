@@ -3,7 +3,9 @@ package ai
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
+	"time"
 
 	"encore.dev/rlog"
 	"github.com/anthropics/anthropic-sdk-go"
@@ -44,7 +46,10 @@ func NewAnthropicClient(apiKey string, cfg AnthropicConfig) *AnthropicClient {
 		cfg.MaxTokens = 512
 	}
 	return &AnthropicClient{
-		client: anthropic.NewClient(option.WithAPIKey(apiKey)),
+		client: anthropic.NewClient(
+			option.WithAPIKey(apiKey),
+			option.WithHTTPClient(&http.Client{Timeout: 20 * time.Second}),
+		),
 		model:  cfg.Model,
 		maxTok: int64(cfg.MaxTokens),
 	}

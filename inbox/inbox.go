@@ -513,9 +513,7 @@ func GetMessages(ctx context.Context, id string, p *GetMessagesParams) (*GetMess
 			return nil, apperr.BadRequest("Cursor pesan tidak valid.")
 		}
 		rows, queryErr = ts.QueryContext(ctx,
-			`SELECT m.id, m.conversation_id, m.external_id, m.direction, m.author, m.type, m.body, m.status, m.created_at, m.metadata,
-			        (SELECT o.id::text FROM "order" o WHERE o.payment_proof_message_id = m.id AND o.deleted_at IS NULL LIMIT 1)
-			 FROM message m
+			messageListSelectSQL+`
 			 WHERE m.conversation_id = $1
 			   AND ((m.created_at < $2) OR (m.created_at = $2 AND m.id < $3::uuid))
 			 ORDER BY m.created_at DESC, m.id DESC
@@ -529,9 +527,7 @@ func GetMessages(ctx context.Context, id string, p *GetMessagesParams) (*GetMess
 			}
 		}
 		rows, queryErr = ts.QueryContext(ctx,
-			`SELECT m.id, m.conversation_id, m.external_id, m.direction, m.author, m.type, m.body, m.status, m.created_at, m.metadata,
-			        (SELECT o.id::text FROM "order" o WHERE o.payment_proof_message_id = m.id AND o.deleted_at IS NULL LIMIT 1)
-			 FROM message m
+			messageListSelectSQL+`
 			 WHERE m.conversation_id = $1
 			 ORDER BY m.created_at DESC, m.id DESC
 			 LIMIT $2 OFFSET $3`,
