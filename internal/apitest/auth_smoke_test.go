@@ -49,6 +49,7 @@ func TestAuthSmoke_Register(t *testing.T) {
 }
 
 func TestAuthSmoke_Login(t *testing.T) {
+	RequireRedis(t)
 	fx := BootstrapOwner(t)
 
 	rr := httptest.NewRecorder()
@@ -75,7 +76,8 @@ func TestAuthSmoke_Login(t *testing.T) {
 }
 
 func TestAuthSmoke_Me(t *testing.T) {
-	fx := BootstrapOwner(t)
+	RequireRedis(t)
+	fx := BootstrapOwnerWithToken(t)
 
 	rr := httptest.NewRecorder()
 	req := NewGetRequest("/api/v1/auth/me", BearerHeader(fx.Token))

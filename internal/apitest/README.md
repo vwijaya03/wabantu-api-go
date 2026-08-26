@@ -9,7 +9,7 @@ Encore integration smoke untuk **28 service / 335 endpoint** — bootstrap tenan
 | **Encore CLI** | `encore version` | Wajib untuk `encore test` |
 | **Docker** | `docker info` | Postgres test cluster + Redis |
 | **Postgres test** | otomatis via Encore | `./scripts/fix-encore-test-db.sh` jika role `encore-migrator` hilang |
-| **Redis** | `redis-cli -h 127.0.0.1 ping` → `PONG` | **Tidak** di-provision Encore; wajib untuk `BootstrapOwner` / session JWT |
+| **Redis** | `redis-cli -h 127.0.0.1 ping` → `PONG` | Wajib untuk smoke **auth JWT/session**; typed API smokes pakai `et.OverrideAuthInfo` tanpa Redis |
 | **Secret lokal** | `encore secret list` → `RedisURL` | Set ke `redis://127.0.0.1:6379` (hindari `localhost` → IPv6 `[::1]` refused) |
 
 ```bash
@@ -70,6 +70,14 @@ Raw handler wrappers: `auth/http_testutil.go`, `webhook/http_testutil.go`, `paym
 | **importcsv** | `ImportJobStatus` (NotFound) + unit `parseCSV`/`suggestMapping` di `importcsv/import_test.go` | `Preview` multipart via typed API gagal (`FileHeader.Open`); `Execute` + Pub/Sub belum di-smoke |
 
 Fixture super admin: `super_admin_fixture.go` (`BootstrapSuperAdmin`, `WithSuperAdminAuth`).
+
+## Encore Cloud build (`encore test ./...`)
+
+Deploy staging/production menjalankan **semua** package test termasuk `internal/apitest`. Encore Cloud **tidak** menyediakan Redis di `127.0.0.1:6379`.
+
+- Typed API smokes (`BootstrapOwner` + `WithOwnerAuth`) **tidak butuh Redis** — lulus di build cloud.
+- Auth JWT smokes (`RequireRedis`, `BootstrapOwnerWithToken`) **di-skip** otomatis bila Redis tidak reachable.
+- Smoke penuh (termasuk auth login/me) jalan di CI `api-smoke.yml` atau lokal via `./scripts/run-api-smoke-tests.sh`.
 
 ## CI
 
