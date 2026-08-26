@@ -50,10 +50,10 @@ var serviceSmokePhase = map[string]struct {
 	status string // covered | pending
 	reason string
 }{
-	"admin":        {2, "pending", "butuh fixture super_admin + impersonation"},
+	"admin":        {1, "covered", "admin_audit_smoke_test.go"},
 	"ai":           {1, "covered", "remaining_smoke_test.go"},
 	"analytics":    {1, "covered", "analytics_smoke_test.go"},
-	"audit":        {2, "pending", "ListAuditLogs butuh super_admin"},
+	"audit":        {1, "covered", "admin_audit_smoke_test.go"},
 	"auth":         {1, "covered", "auth_smoke_test.go"},
 	"billing":      {1, "covered", "billing_smoke_test.go"},
 	"branch":       {1, "covered", "branch_smoke_test.go"},
@@ -63,7 +63,7 @@ var serviceSmokePhase = map[string]struct {
 	"finance":      {1, "covered", "finance_smoke_test.go"},
 	"flag":         {1, "covered", "remaining_smoke_test.go"},
 	"health":       {1, "covered", "health_smoke_test.go"},
-	"importcsv":    {3, "pending", "butuh multipart upload + Redis staging"},
+	"importcsv":    {1, "covered", "importcsv_smoke_test.go + importcsv/import_test.go"},
 	"inbox":        {1, "covered", "inbox_smoke_test.go"},
 	"inventory":    {1, "covered", "inventory_smoke_test.go (subset)"},
 	"kb":           {1, "covered", "kb_smoke_test.go"},
@@ -77,7 +77,7 @@ var serviceSmokePhase = map[string]struct {
 	"usage":        {1, "covered", "usage_smoke_test.go"},
 	"webhook":      {1, "covered", "webhook_smoke_test.go"},
 	"whatsappapi":  {1, "covered", "remaining_smoke_test.go"},
-	"workflow":     {2, "pending", "workflow_rule table butuh RunSchemaPatches (pg_trgm di test cluster)"},
+	"workflow":     {1, "covered", "workflow_smoke_test.go"},
 }
 
 func TestCatalog_EndpointInventory(t *testing.T) {

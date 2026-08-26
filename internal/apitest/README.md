@@ -45,9 +45,9 @@ Katalog endpoint di-generate dari `//encore:api`:
 
 | Phase | Status | Service |
 |-------|--------|---------|
-| 1 | covered (smoke ada) | health, auth, order, inbox, inventory, finance, events, billing, branch, leads, analytics, business, kb, usage, webhook, payment (webhook), flag, shipping, notification, whatsappapi, ai, broadcast, tenantaccess, tenant |
-| 2 | pending | admin, audit (super_admin fixture), workflow (RunSchemaPatches/pg_trgm) |
-| 3 | pending | importcsv (multipart + Redis staging) |
+| 1 | covered (smoke ada) | health, auth, order, inbox, inventory, finance, events, billing, branch, leads, analytics, business, kb, usage, webhook, payment (webhook), flag, shipping, notification, whatsappapi, ai, broadcast, tenantaccess, tenant, **admin, audit, workflow, importcsv** |
+| 2 | pending | — |
+| 3 | pending | — |
 
 Regenerasi katalog setelah menambah endpoint baru, lalu perluas smoke per service (satu GET/list handler per service minimum).
 
@@ -59,6 +59,17 @@ Regenerasi katalog setelah menambah endpoint baru, lalu perluas smoke per servic
 4. Update `serviceSmokePhase` di `catalog_smoke_test.go`
 
 Raw handler wrappers: `auth/http_testutil.go`, `webhook/http_testutil.go`, `payment/http_testutil.go`.
+
+## Service yang butuh fixture khusus
+
+| Service | Pendekatan smoke | Catatan |
+|---------|------------------|---------|
+| **admin** | `BootstrapSuperAdmin` + `WithSuperAdminAuth` → `admin.ListTenants` | `requireSuperAdmin` cek `auth.Data().Role == super_admin`; impersonation belum di-smoke |
+| **audit** | `BootstrapSuperAdmin` + `WithSuperAdminAuth` → `audit.ListAuditLogs` | `RecordAudit` private — tidak di-smoke HTTP |
+| **workflow** | `ensureWorkflowRuleTable` (DDL minimal, tanpa `pg_trgm`) → `workflow.ListRules` | Full `RunSchemaPatches` gagal di Encore test cluster (`gin_trgm_ops` missing) |
+| **importcsv** | `ImportJobStatus` (NotFound) + unit `parseCSV`/`suggestMapping` di `importcsv/import_test.go` | `Preview` multipart via typed API gagal (`FileHeader.Open`); `Execute` + Pub/Sub belum di-smoke |
+
+Fixture super admin: `super_admin_fixture.go` (`BootstrapSuperAdmin`, `WithSuperAdminAuth`).
 
 ## CI
 
