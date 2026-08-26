@@ -105,6 +105,9 @@ func currentUser(ctx context.Context) (*types.AuthUser, error) {
 	if !u.HasEffectiveTenantContext() {
 		return nil, e.Forbidden("tenant context required")
 	}
+	if err := u.RequireModule("ai"); err != nil {
+		return nil, err
+	}
 	return u, nil
 }
 

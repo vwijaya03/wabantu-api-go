@@ -160,5 +160,8 @@ func requireOwner(ctx context.Context) (*types.AuthUser, error) {
 	if !userData.CanPerformOwnerActions() {
 		return nil, errs.Forbidden("owner access required")
 	}
+	if err := userData.RequireModule("org"); err != nil {
+		return nil, err
+	}
 	return userData, nil
 }

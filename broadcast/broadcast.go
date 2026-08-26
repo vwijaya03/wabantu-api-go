@@ -293,6 +293,12 @@ func authUser(ctx context.Context) (*types.AuthUser, error) {
 	if !ok || u == nil {
 		return nil, appErrs.Unauthenticated("not authenticated")
 	}
+	if !u.HasEffectiveTenantContext() {
+		return nil, appErrs.Forbidden("tenant context required — pantau tenant dari konsol admin")
+	}
+	if err := u.RequireModule("sales"); err != nil {
+		return nil, err
+	}
 	return u, nil
 }
 

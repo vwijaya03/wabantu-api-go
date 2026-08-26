@@ -113,6 +113,12 @@ func currentUser() (*types.AuthUser, error) {
 	if !ok || data == nil {
 		return nil, apperr.Unauthenticated("not authenticated")
 	}
+	if !data.HasEffectiveTenantContext() {
+		return nil, apperr.Forbidden("tenant context required — pantau tenant dari konsol admin")
+	}
+	if err := data.RequireModule("sales"); err != nil {
+		return nil, err
+	}
 	return data, nil
 }
 

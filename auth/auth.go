@@ -88,8 +88,11 @@ type TenantResponse struct {
 }
 
 type ImpersonationResponse struct {
-	Active bool            `json:"active"`
-	Tenant *TenantResponse `json:"tenant,omitempty"`
+	Active    bool            `json:"active"`
+	Tenant    *TenantResponse `json:"tenant,omitempty"`
+	Scope     string          `json:"scope,omitempty"`
+	Modules   []string        `json:"modules,omitempty"`
+	ExpiresAt *time.Time      `json:"expiresAt,omitempty"`
 }
 
 // MeResponse mirrors UserResponse for GET /auth/me.
@@ -119,6 +122,9 @@ func AuthHandler(ctx context.Context, token string) (encoreAuth.UID, *types.Auth
 		return "", nil, errs.Unauthenticated("session expired")
 	}
 	if err := reconcileSessionTenant(ctx, sess); err != nil {
+		return "", nil, errs.Unauthenticated("session invalid")
+	}
+	if err := reconcileImpersonationGrant(ctx, accountID, sessionID, sess); err != nil {
 		return "", nil, errs.Unauthenticated("session invalid")
 	}
 
@@ -512,14 +518,20 @@ func profileResponse(u *types.AuthUser) UserResponse {
 		return resp
 	}
 	if u.Impersonating && u.TenantID != "" {
-		resp.Impersonation = &ImpersonationResponse{
+		imp := &ImpersonationResponse{
 			Active: true,
 			Tenant: &TenantResponse{
 				ID:   u.TenantID,
 				Slug: u.ImpersonationTenantSlug,
 				Name: u.ImpersonationTenantName,
 			},
+			Scope:   u.ImpersonationScope,
+			Modules: u.ImpersonationModules,
 		}
+		if u.ImpersonationExpiresAt != nil {
+			imp.ExpiresAt = u.ImpersonationExpiresAt
+		}
+		resp.Impersonation = imp
 		resp.Tenant = resp.Impersonation.Tenant
 		return resp
 	}

@@ -34,6 +34,9 @@ func mustUser(ctx context.Context) (*types.AuthUser, error) {
 	if !ok || !u.HasEffectiveTenantContext() {
 		return nil, appErrs.Forbidden("tenant context required")
 	}
+	if err := u.RequireModule("finance"); err != nil {
+		return nil, err
+	}
 	return u, nil
 }
 
