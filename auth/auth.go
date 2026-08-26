@@ -138,6 +138,10 @@ func AuthHandler(ctx context.Context, token string) (encoreAuth.UID, *types.Auth
 //
 //encore:api public raw method=POST path=/api/v1/auth/register
 func Register(w http.ResponseWriter, req *http.Request) {
+	serveRegister(w, req)
+}
+
+func serveRegister(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 	if !allowAuthRate(ctx, req) {
 		writeError(w, http.StatusTooManyRequests, "too many attempts — coba lagi nanti")
@@ -273,6 +277,10 @@ func Register(w http.ResponseWriter, req *http.Request) {
 //
 //encore:api public raw method=POST path=/api/v1/auth/login
 func Login(w http.ResponseWriter, req *http.Request) {
+	serveLogin(w, req)
+}
+
+func serveLogin(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 	if !allowAuthRate(ctx, req) {
 		writeError(w, http.StatusTooManyRequests, "too many attempts — coba lagi nanti")
@@ -401,6 +409,10 @@ type MeEnvelopeResponse struct {
 //
 //encore:api public raw method=GET path=/api/v1/auth/me
 func Me(w http.ResponseWriter, r *http.Request) {
+	serveMe(w, r)
+}
+
+func serveMe(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userData, err := AuthenticateHTTP(ctx, r)
 	if err != nil {

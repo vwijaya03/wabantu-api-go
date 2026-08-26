@@ -131,7 +131,7 @@ func ListAuditLogs(ctx context.Context, p *ListAuditParams) (*ListAuditResponse,
 	}
 
 	q := fmt.Sprintf(
-		`SELECT id, tenant_id, COALESCE(user_id,''), action, entity_type,
+		`SELECT id, COALESCE(tenant_id::text,''), COALESCE(user_id::text,''), action, entity_type,
 		        COALESCE(entity_id,''), COALESCE(changes,'{}'), COALESCE(ip_address,''),
 		        COALESCE(user_agent,''), created_at
 		 FROM audit_log %s

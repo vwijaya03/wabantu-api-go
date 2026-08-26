@@ -207,6 +207,10 @@ func GetStatus(ctx context.Context, id string) (*PaymentStatus, error) {
 
 //encore:api public raw method=POST path=/api/v1/payment/webhook/midtrans
 func MidtransWebhook(w http.ResponseWriter, r *http.Request) {
+	serveMidtransWebhook(w, r)
+}
+
+func serveMidtransWebhook(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)

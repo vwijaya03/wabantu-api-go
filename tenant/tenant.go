@@ -407,6 +407,19 @@ CREATE TABLE IF NOT EXISTS knowledge_base_entry (
 CREATE INDEX IF NOT EXISTS idx_kb_entry_category
     ON knowledge_base_entry(category);
 
+-- branch: multi-branch org (default branch seeded at signup)
+CREATE TABLE IF NOT EXISTS branch (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name        TEXT NOT NULL,
+    slug        VARCHAR(64) NOT NULL,
+    is_default  BOOLEAN NOT NULL DEFAULT false,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted_at  TIMESTAMPTZ,
+    deleted_by  UUID
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_branch_slug ON branch(slug) WHERE deleted_at IS NULL;
+
 -- whatsapp_channel: connected WA numbers
 CREATE TABLE IF NOT EXISTS whatsapp_channel (
     id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),

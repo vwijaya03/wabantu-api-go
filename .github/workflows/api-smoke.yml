@@ -1,0 +1,76 @@
+name: API Smoke
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - "internal/apitest/**"
+      - "auth/testutil.go"
+      - "auth/http_testutil.go"
+      - "auth/auth.go"
+      - "payment/http_testutil.go"
+      - "payment/payment.go"
+      - "webhook/http_testutil.go"
+      - "tenant/tenant.go"
+      - "scripts/run-api-smoke-tests.sh"
+      - "scripts/ensure-encore-test-redis.sh"
+      - ".github/workflows/api-smoke.yml"
+
+concurrency:
+  group: api-smoke-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apitest-encore-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Cache Encore CLI
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.encore/bin
+            ~/.encore/cache
+          key: encore-cli-${{ runner.os }}-${{ hashFiles('go.mod', 'encore.app') }}
+          restore-keys: |
+            encore-cli-${{ runner.os }}-
+
+      - name: Install Encore CLI
+        run: |
+          if [[ ! -x "$HOME/.encore/bin/encore" ]]; then
+            curl -L https://encore.dev/install.sh | bash
+          fi
+          echo "$HOME/.encore/bin" >> "$GITHUB_PATH"
+
+      - name: Authenticate Encore CLI
+        env:
+          ENCORE_AUTH_KEY: ${{ secrets.ENCORE_AUTH_KEY }}
+        run: encore auth login --auth-key="$ENCORE_AUTH_KEY"
+
+      - name: Pre-pull Encore test Postgres image
+        run: docker pull encoredotdev/postgres:18
+
+      - name: Start Redis for auth sessions
+        run: |
+          docker run -d --name wabantu-apitest-redis -p 127.0.0.1:6379:6379 redis:7-alpine
+          for i in $(seq 1 30); do
+            if (echo > /dev/tcp/127.0.0.1/6379) 2>/dev/null; then
+              echo "Redis ready"
+              exit 0
+            fi
+            sleep 0.2
+          done
+          echo "Redis failed to start" >&2
+          exit 1
+
+      - name: Set local RedisURL secret
+        run: printf '%s' 'redis://127.0.0.1:6379' | encore secret set --type local RedisURL
+
+      - name: Run API smoke tests
+        run: ./scripts/run-api-smoke-tests.sh
