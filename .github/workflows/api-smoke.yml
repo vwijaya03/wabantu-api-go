@@ -13,6 +13,7 @@ on:
       - "webhook/http_testutil.go"
       - "tenant/tenant.go"
       - "scripts/run-api-smoke-tests.sh"
+      - "scripts/ensure-encore-test-redis.sh"
       - ".github/workflows/api-smoke.yml"
 
 concurrency:
@@ -54,6 +55,22 @@ jobs:
 
       - name: Pre-pull Encore test Postgres image
         run: docker pull encoredotdev/postgres:18
+
+      - name: Start Redis for auth sessions
+        run: |
+          docker run -d --name wabantu-apitest-redis -p 127.0.0.1:6379:6379 redis:7-alpine
+          for i in $(seq 1 30); do
+            if (echo > /dev/tcp/127.0.0.1/6379) 2>/dev/null; then
+              echo "Redis ready"
+              exit 0
+            fi
+            sleep 0.2
+          done
+          echo "Redis failed to start" >&2
+          exit 1
+
+      - name: Set local RedisURL secret
+        run: printf '%s' 'redis://127.0.0.1:6379' | encore secret set --type local RedisURL
 
       - name: Run API smoke tests
         run: ./scripts/run-api-smoke-tests.sh

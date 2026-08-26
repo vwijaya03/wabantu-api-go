@@ -8,5 +8,9 @@ echo "Checking Encore test Postgres cluster..."
 ./scripts/fix-encore-test-db.sh
 
 echo ""
+echo "Checking Redis for auth sessions..."
+./scripts/ensure-encore-test-redis.sh
+
+echo ""
 echo "Running API smoke tests (encore test ./internal/apitest/)..."
 encore test ./internal/apitest/ -count=1 "$@"
