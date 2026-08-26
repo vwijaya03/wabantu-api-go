@@ -300,3 +300,49 @@ func stockQtyRejectReply(st orderState, lines []catalogStockLine, formal bool) s
 }
 
 type orderFlowTemplates = bf.OrderFlowTemplates
+
+func resolveCatalogMatch(userText string, history []dbMessage, catalog []dbCatalogItem) *dbCatalogItem {
+	return bf.ResolveCatalogMatch(userText, history, catalog)
+}
+
+const catalogEmptyMarker = bf.CatalogEmptyMarker
+
+var orderAddrHintRe = bf.OrderAddrHintRe
+
+func formatStockLabel(qty float64) string { return bf.FormatStockLabel(qty) }
+
+func buildCatalogListReply(formal bool, bizName string, catalog []dbCatalogItem, profile *dbBusinessProfile) string {
+	return bf.BuildCatalogListReply(formal, bizName, catalog, profile)
+}
+
+func warehouseBuyerLabel(customerLabel, warehouseName string) string {
+	return bf.WarehouseBuyerLabel(customerLabel, warehouseName)
+}
+
+func validateOrderQtyAgainstStock(st orderState, catalog []dbCatalogItem, formal bool) (bool, string, string) {
+	return bf.ValidateOrderQtyAgainstStock(st, catalog, formal)
+}
+
+func parseRecipientLine(userText string) (string, string) {
+	return bf.ParseRecipientLine(userText)
+}
+
+func isHistoryBackedPurchaseIntent(userText string, history []dbMessage, catalog []dbCatalogItem) bool {
+	return bf.IsHistoryBackedPurchaseIntent(userText, history, catalog)
+}
+
+func wouldRepeatOutbound(history []dbMessage, outbound string) bool {
+	return bf.WouldRepeatOutbound(history, outbound)
+}
+
+func formatCatalogListBody(catalog []dbCatalogItem, maxFeatured int) string {
+	return bf.FormatCatalogListBody(catalog, maxFeatured)
+}
+
+func bracketPackCount(name string) int { return bf.BracketPackCount(name) }
+
+func buildPricingClarificationReply(formal bool, it *dbCatalogItem) string {
+	return bf.BuildPricingClarificationReply(formal, it)
+}
+
+func boxerHistory() []dbMessage { return bf.BoxerHistory() }

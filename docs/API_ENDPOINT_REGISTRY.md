@@ -15,9 +15,24 @@ Inventaris **335+ endpoint** Encore (`//encore:api`) dengan regression struktura
 
 Yang kita punya sekarang (production-ready):
 
-1. **`internal/apiregistry`** — scan `//encore:api`, cek duplikat, golden snapshot
-2. **`internal/buyerflow`** — regression routing AI (simulator = production FSM)
+1. **`internal/apiregistry`** — scan `//encore:api`, cek duplikat, golden snapshot (335 endpoint, 28 service)
+2. **`internal/buyerflow`** — regression routing AI (simulator = production FSM) + triage autogen
 3. **Encore smoke (master)** — subset `encore test ./ai/`
+
+## Regression per service (struktural)
+
+`internal/apiregistry/service_regression_test.go` memvalidasi:
+
+- Setiap service punya ≥1 endpoint
+- Golden `service_counts.json` (28 service, drift = regenerate)
+- Endpoint non-raw punya HTTP method
+- Route publik kritis (health, auth, webhook) ada
+
+Regenerate katalog + counts:
+
+```bash
+go run scripts/gen-api-catalog.go
+```
 
 ## Menambah endpoint baru
 

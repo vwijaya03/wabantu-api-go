@@ -129,8 +129,8 @@ function buildPrompt(job, analysis) {
   return `You are fixing deterministic WhatsApp AI routing in WABantu api-go.
 
 ## Scope (strict)
-- ONLY edit: ai/autoreply.go and/or ai/conversation_sim.go
-- Goal: simulator routing (ConversationSimulator.Turn) should match production paths for the cases below
+- ONLY edit: internal/buyerflow/*.go, ai/autoreply.go, and/or ai/order_flow_handler.go
+- Goal: simulator routing (buyerflow.Simulator.Turn) should match production paths for the cases below
 - Do NOT change LLM reply text generation, webhook hot path, or unrelated files
 - Minimal diff; match existing Go patterns; standard testing package only (no testify)
 - Do NOT run shell commands (no encore test) — CI runs regression after this step
@@ -153,7 +153,7 @@ ${JSON.stringify(mismatchSummary, null, 2)}
 ${JSON.stringify(fixHints, null, 2)}
 
 ## Tasks
-1. Open ai/conversation_regression_auto_gen_test.go — read failing case names above; replay priorInputs before input.
-2. Patch routing in autoreply.go / conversation_sim.go only.
+1. Open internal/buyerflow/regression_autogen_test.go — read failing case names above; replay priorInputs before input.
+2. Patch routing in internal/buyerflow/ and/or autoreply.go / order_flow_handler.go only.
 3. Summarize which paths were fixed and why.`;
 }

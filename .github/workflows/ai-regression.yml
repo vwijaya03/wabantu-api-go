@@ -71,6 +71,7 @@ jobs:
       - name: Pre-pull Encore test Postgres image
         run: docker pull encoredotdev/postgres:18
 
-      - name: Encore smoke (ai package subset)
+      - name: Encore smoke (buyerflow autogen + ai package subset)
         run: |
-          encore test ./ai/ -run 'TestConversationRegression|TestConversationRegressionAutoGen|TestBuyerBehaviorScriptHappyAbon' -count=1
+          go test ./internal/buyerflow/ -run TestRegressionAutoGen -count=1
+          encore test ./ai/ -run 'TestConversationRegression|TestBuyerBehaviorScriptHappyAbon' -count=1

@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 echo "Running AI conversation regression (go test ./internal/buyerflow/)..."
-go test ./internal/buyerflow/ -run 'TestRegression|TestTryPaymentFAQAnswer|TestIsOrderRefStatusLookup' -count=1 "$@"
+go test ./internal/buyerflow/ -run 'TestRegression|TestRegressionScript|TestRegressionAutoGen|TestTryPaymentFAQAnswer|TestIsOrderRefStatusLookup' -count=1 "$@"
 
 echo ""
 echo "Running API endpoint registry (go test ./internal/apiregistry/)..."

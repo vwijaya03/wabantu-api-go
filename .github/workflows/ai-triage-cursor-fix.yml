@@ -119,11 +119,11 @@ jobs:
         continue-on-error: true
         run: |
           set -euo pipefail
-          if git diff --quiet -- ai/autoreply.go ai/conversation_sim.go; then
-            echo "Composer tidak mengubah ai/autoreply.go atau ai/conversation_sim.go" >&2
+          if git diff --quiet -- internal/buyerflow/ ai/autoreply.go ai/order_flow_handler.go; then
+            echo "Composer tidak mengubah internal/buyerflow/, ai/autoreply.go, atau ai/order_flow_handler.go" >&2
             exit 1
           fi
-          git diff --stat -- ai/autoreply.go ai/conversation_sim.go
+          git diff --stat -- internal/buyerflow/ ai/autoreply.go ai/order_flow_handler.go
 
       - name: Run auto-gen regression tests
         id: regression
@@ -141,7 +141,7 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add ai/autoreply.go ai/conversation_sim.go
+          git add internal/buyerflow/ ai/autoreply.go ai/order_flow_handler.go
           git commit -m "fix(ai-triage): routing fix via Composer job $JOB_ID"
           if [ -n "${GITHUB_PAT:-}" ]; then
             export GH_TOKEN="$GITHUB_PAT"

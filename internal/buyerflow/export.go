@@ -30,6 +30,53 @@ func MatchCatalogItem(userText string, catalog []CatalogItem) *CatalogItem {
 	return matchCatalogItem(userText, catalog)
 }
 
+func ResolveCatalogMatch(userText string, history []Message, catalog []CatalogItem) *CatalogItem {
+	return resolveCatalogMatch(userText, history, catalog)
+}
+
+const CatalogEmptyMarker = catalogEmptyMarker
+
+func FormatStockLabel(qty float64) string { return formatStockLabel(qty) }
+
+func BuildCatalogListReply(formal bool, bizName string, catalog []CatalogItem, profile *BusinessProfile) string {
+	return buildCatalogListReply(formal, bizName, catalog, profile)
+}
+
+func WarehouseBuyerLabel(customerLabel, warehouseName string) string {
+	return warehouseBuyerLabel(customerLabel, warehouseName)
+}
+
+func ValidateOrderQtyAgainstStock(st OrderState, catalog []CatalogItem, formal bool) (reject bool, reply string, warehouseID string) {
+	return validateOrderQtyAgainstStock(st, catalog, formal)
+}
+
+func ParseRecipientLine(userText string) (name, phone string) {
+	return parseRecipientLine(userText)
+}
+
+// OrderAddrHintRe — regex for address hints in order flow (exported for tests).
+var OrderAddrHintRe = orderAddrHintRe
+
+func IsHistoryBackedPurchaseIntent(userText string, history []Message, catalog []CatalogItem) bool {
+	return isHistoryBackedPurchaseIntent(userText, history, catalog)
+}
+
+func WouldRepeatOutbound(history []Message, outbound string) bool {
+	return wouldRepeatOutbound(history, outbound)
+}
+
+func FormatCatalogListBody(catalog []CatalogItem, maxFeatured int) string {
+	return formatCatalogListBody(catalog, maxFeatured)
+}
+
+func BracketPackCount(name string) int { return bracketPackCount(name) }
+
+func BuildPricingClarificationReply(formal bool, it *CatalogItem) string {
+	return buildPricingClarificationReply(formal, it)
+}
+
+func BoxerHistory() []Message { return boxerHistory() }
+
 func ReplyFromBusinessCatalog(userText string, profile *BusinessProfile, catalog []CatalogItem, history []Message) (string, bool) {
 	return replyFromBusinessCatalog(userText, profile, catalog, history)
 }
