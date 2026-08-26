@@ -41,9 +41,19 @@ jobs:
           fi
           encore auth login --auth-key="$ENCORE_AUTH_KEY"
 
+      # git-remote-encore tunnel ke git.encore.dev:22 via SSH (token auth).
+      # Runner GHA belum punya host key → "Host key verification failed".
+      - name: Configure SSH for Encore git
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          ssh-keyscan -t rsa,ecdsa,ed25519 -H git.encore.dev >> ~/.ssh/known_hosts
+
       - name: Push to Encore (staging)
         run: |
           set -euo pipefail
+          export PATH="$HOME/.encore/bin:$PATH"
           git remote add encore "encore://wabantu-viko-8vni"
           git push encore HEAD:master
 
