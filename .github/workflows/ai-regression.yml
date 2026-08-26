@@ -3,37 +3,75 @@ name: AI Regression
 on:
   pull_request:
     branches: [master]
+    paths:
+      - "ai/**"
+      - "internal/buyerflow/**"
+      - "internal/apiregistry/**"
+      - "scripts/gen-api-catalog.go"
+      - "scripts/run-ai-regression*.sh"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/ai-regression.yml"
   push:
     branches: [master]
 
+concurrency:
+  group: ai-regression-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  ai-regression:
+  # Gate utama: golden regression via go test (<10s, tanpa Encore/Postgres).
+  regression-fast:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
+      - name: Run regression (buyerflow + apiregistry)
+        run: ./scripts/run-ai-regression-tests.sh
+
+  # Smoke Encore + auto-gen cases (push master saja).
+  regression-encore-smoke:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Cache Encore CLI
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.encore/bin
+            ~/.encore/cache
+          key: encore-cli-${{ runner.os }}-${{ hashFiles('go.mod', 'encore.app') }}
+          restore-keys: |
+            encore-cli-${{ runner.os }}-
+
       - name: Install Encore CLI
         run: |
-          curl -L https://encore.dev/install.sh | bash
+          if [[ ! -x "$HOME/.encore/bin/encore" ]]; then
+            curl -L https://encore.dev/install.sh | bash
+          fi
           echo "$HOME/.encore/bin" >> "$GITHUB_PATH"
 
       - name: Authenticate Encore CLI
         env:
           ENCORE_AUTH_KEY: ${{ secrets.ENCORE_AUTH_KEY }}
-        run: |
-          set -euo pipefail
-          if [ -z "${ENCORE_AUTH_KEY:-}" ]; then
-            echo "GitHub secret ENCORE_AUTH_KEY wajib — buat di Encore Cloud > App Settings > Auth Keys" >&2
-            exit 1
-          fi
-          encore auth login --auth-key="$ENCORE_AUTH_KEY"
+        run: encore auth login --auth-key="$ENCORE_AUTH_KEY"
 
-      - name: Run AI conversation regression
-        run: ./scripts/run-ai-regression-tests.sh
+      - name: Pre-pull Encore test Postgres image
+        run: docker pull encoredotdev/postgres:18
+
+      - name: Encore smoke (buyerflow autogen + ai package subset)
+        run: |
+          go test ./internal/buyerflow/ -run TestRegressionAutoGen -count=1
+          encore test ./ai/ -run 'TestConversationRegression|TestBuyerBehaviorScriptHappyAbon' -count=1

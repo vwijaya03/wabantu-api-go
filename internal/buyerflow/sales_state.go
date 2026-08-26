@@ -1,4 +1,4 @@
-package ai
+package buyerflow
 
 import (
 	"strings"
@@ -44,7 +44,7 @@ func hasExplicitCartReadyPhrase(text string) bool {
 }
 
 // isHistoryBackedPurchaseIntent — "mau beli 2 lusin" tanpa nama produk, produk jelas dari outbound terakhir.
-func isHistoryBackedPurchaseIntent(userText string, history []dbMessage, catalog []dbCatalogItem) bool {
+func isHistoryBackedPurchaseIntent(userText string, history []Message, catalog []CatalogItem) bool {
 	if !mentionsOrderQty(userText) {
 		return false
 	}
@@ -59,7 +59,7 @@ func isHistoryBackedPurchaseIntent(userText string, history []dbMessage, catalog
 }
 
 // IsConsultingPurchaseQuestion — "boleh beli 1 pcs?", "kalau order satu bisa?" (CONSULTING, bukan CART_READY).
-func IsConsultingPurchaseQuestion(userText string, catalog []dbCatalogItem) bool {
+func IsConsultingPurchaseQuestion(userText string, catalog []CatalogItem) bool {
 	text := strings.ToLower(strings.TrimSpace(userText))
 	if text == "" {
 		return false
@@ -103,7 +103,7 @@ func IsConsultingPurchaseQuestion(userText string, catalog []dbCatalogItem) bool
 }
 
 // isNamedProductPurchaseIntent — "mau beli abon sapi ..." dengan produk disebut eksplisit di pesan.
-func isNamedProductPurchaseIntent(userText string, catalog []dbCatalogItem) bool {
+func isNamedProductPurchaseIntent(userText string, catalog []CatalogItem) bool {
 	match := matchCatalogItem(userText, catalog)
 	if match == nil || !catalogProductExplicitlyNamed(userText, match) {
 		return false
@@ -140,7 +140,7 @@ func isBareNamedProductPurchaseQuestion(userText, text string) bool {
 	return true
 }
 
-func catalogProductExplicitlyNamed(userText string, it *dbCatalogItem) bool {
+func catalogProductExplicitlyNamed(userText string, it *CatalogItem) bool {
 	if it == nil {
 		return false
 	}
@@ -163,7 +163,7 @@ func isOrderProductContinuationStep(step string) bool {
 	return step == "ask_product" || step == "ask_variant" || step == "ask_qty"
 }
 
-func messageNamesCatalogProduct(userText string, catalog []dbCatalogItem) bool {
+func messageNamesCatalogProduct(userText string, catalog []CatalogItem) bool {
 	return len(catalog) > 0 && matchCatalogItem(userText, catalog) != nil
 }
 
@@ -265,7 +265,7 @@ func orderFlowLoopBreakReply(formal bool) string {
 }
 
 // wouldRepeatOutbound — anti-loop: jangan kirim pertanyaan yang sama 2× berturut-turut.
-func wouldRepeatOutbound(history []dbMessage, outbound string) bool {
+func wouldRepeatOutbound(history []Message, outbound string) bool {
 	want := normalizeOutboundCompare(outbound)
 	if want == "" {
 		return false

@@ -146,12 +146,12 @@ func formatCatalogToolItem(it *dbCatalogItem) catalogToolItem {
 	item := catalogToolItem{
 		Name:        it.Name,
 		Price:       formatCatalogPrice(it),
-		SellUnit:    info.unitLabel,
+		SellUnit:    info.UnitLabel,
 		ExternalRef: it.ExternalCode,
 	}
-	if info.isPackListing {
-		item.PackCount = info.packCount
-		item.PerPiece = formatMoney(info.perPiecePrice)
+	if info.IsPackListing {
+		item.PackCount = info.PackCount
+		item.PerPiece = formatMoney(info.PerPiecePrice)
 	}
 	return item
 }

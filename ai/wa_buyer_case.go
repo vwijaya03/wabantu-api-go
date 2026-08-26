@@ -92,7 +92,7 @@ func EvaluateWABuyerCase(c WABuyerCase) WABuyerActual {
 
 	intent := out.Intent
 	if intent.State == "" {
-		intent = ResolveSalesIntent(c.InputUser, sim.History, c.CurrentState != nil, sim.inScope(c.InputUser), sim.Profile, sim.Catalog)
+		intent = ResolveSalesIntent(c.InputUser, sim.History, c.CurrentState != nil, sim.InScope(c.InputUser), sim.Profile, sim.Catalog)
 		if out.Path == PathOrderFlow || out.Completed {
 			intent = SalesIntent{State: SalesStateCheckout, Topic: SalesTopicGeneral, Confidence: 0.9}
 		}

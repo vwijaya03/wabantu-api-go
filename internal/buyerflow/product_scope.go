@@ -1,4 +1,4 @@
-package ai
+package buyerflow
 
 import "strings"
 
@@ -57,7 +57,7 @@ func IsOffBusinessProductRequest(userText string, scopeKeywords []string) bool {
 }
 
 // businessScopeKeywords builds scope tokens from the tenant business profile.
-func businessScopeKeywords(profile *dbBusinessProfile) []string {
+func businessScopeKeywords(profile *BusinessProfile) []string {
 	if profile == nil {
 		return nil
 	}

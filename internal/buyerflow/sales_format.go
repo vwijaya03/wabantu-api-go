@@ -1,4 +1,4 @@
-package ai
+package buyerflow
 
 import (
 	"fmt"
@@ -13,15 +13,15 @@ var (
 	codeSizeSuffixRe    = regexp.MustCompile(`(?i)-(XS|S|M|L|XL|XXL|XXXL|3XL|4XL|5XL|\d{2,3})$`)
 )
 
-func formatCatalogPrice(it *dbCatalogItem) string {
+func formatCatalogPrice(it *CatalogItem) string {
 	if it == nil || it.SellPrice <= 0 {
 		return "Harga belum di-set"
 	}
 	info := parseCatalogPriceInfo(it)
-	if info.isPackListing {
-		return fmt.Sprintf("Rp%.0f/paket (isi %d pcs)", info.listPrice, info.packCount)
+	if info.IsPackListing {
+		return fmt.Sprintf("Rp%.0f/paket (isi %d pcs)", info.ListPrice, info.PackCount)
 	}
-	return fmt.Sprintf("Rp%.0f/%s", info.listPrice, info.unitLabel)
+	return fmt.Sprintf("Rp%.0f/%s", info.ListPrice, info.UnitLabel)
 }
 
 func formatMoney(amount float64) string {
@@ -31,7 +31,7 @@ func formatMoney(amount float64) string {
 	return fmt.Sprintf("Rp%.0f", amount)
 }
 
-func inferProductFamily(it dbCatalogItem) string {
+func inferProductFamily(it CatalogItem) string {
 	if cat := inferCatalogCategory(it); cat != "" {
 		return cat
 	}
@@ -68,7 +68,7 @@ func isValidCategoryLabel(s string) bool {
 	return true
 }
 
-func inferCatalogCategory(it dbCatalogItem) string {
+func inferCatalogCategory(it CatalogItem) string {
 	name := strings.ToLower(it.Name)
 	switch {
 	case strings.Contains(name, "abon") || strings.Contains(name, "keripik") || strings.Contains(name, "snack"):
@@ -93,7 +93,7 @@ func humanizeFamilyLabel(s string) string {
 	return strings.TrimSpace(s)
 }
 
-func extractCatalogCategories(catalog []dbCatalogItem) []string {
+func extractCatalogCategories(catalog []CatalogItem) []string {
 	seen := make(map[string]struct{})
 	var cats []string
 	for _, it := range catalog {
@@ -123,8 +123,8 @@ func shortDisplayName(name string) string {
 	return strings.TrimSpace(name)
 }
 
-func groupCatalogByCategory(catalog []dbCatalogItem) map[string][]dbCatalogItem {
-	out := make(map[string][]dbCatalogItem)
+func groupCatalogByCategory(catalog []CatalogItem) map[string][]CatalogItem {
+	out := make(map[string][]CatalogItem)
 	seen := make(map[string]struct{})
 	for _, it := range catalog {
 		cat := inferCatalogCategory(it)
@@ -161,12 +161,12 @@ func categoryEmoji(cat string) string {
 	}
 }
 
-func pickFeaturedCatalogItems(catalog []dbCatalogItem, max int) []dbCatalogItem {
+func pickFeaturedCatalogItems(catalog []CatalogItem, max int) []CatalogItem {
 	if max < 1 {
 		max = 8
 	}
 	seen := make(map[string]struct{})
-	var out []dbCatalogItem
+	var out []CatalogItem
 	for _, it := range catalog {
 		family := strings.ToLower(inferProductFamily(it))
 		if family == "" {
@@ -199,14 +199,14 @@ func formatCategoryList(categories []string, max int) string {
 	return strings.Join(lines, "\n")
 }
 
-func formatTopProductLine(it *dbCatalogItem, num int) string {
+func formatTopProductLine(it *CatalogItem, num int) string {
 	if it == nil {
 		return ""
 	}
 	return fmt.Sprintf("%d. %s\n%s", num, it.Name, formatCatalogPrice(it))
 }
 
-func formatFeaturedProductsBody(items []dbCatalogItem) string {
+func formatFeaturedProductsBody(items []CatalogItem) string {
 	var lines []string
 	for i := range items {
 		lines = append(lines, formatTopProductLine(&items[i], i+1))
@@ -237,12 +237,12 @@ func IsOrderTotalRequest(userText string) bool {
 		(strings.Contains(text, "semua") || strings.Contains(text, "bayar") || strings.Contains(text, "harga"))
 }
 
-func formatOrderSummary(st orderState) string {
+func formatOrderSummary(st OrderState) string {
 	st = normalizeOrderState(st)
-	if st.hasMultiItems() {
+	if st.HasMultiItems() {
 		return formatMultiOrderSummary(st)
 	}
-	if !st.productComplete() {
+	if !st.ProductComplete() {
 		return ""
 	}
 	qty := st.Qty
@@ -259,7 +259,7 @@ func formatOrderSummary(st orderState) string {
 	}
 	subtotal := float64(qty) * st.UnitPrice
 
-	it := &dbCatalogItem{Name: st.ProductName, ExternalCode: st.ExternalCode}
+	it := &CatalogItem{Name: st.ProductName, ExternalCode: st.ExternalCode}
 	needsVariant := catalogItemNeedsVariant(it)
 
 	var b strings.Builder
@@ -283,8 +283,8 @@ func formatOrderSummary(st orderState) string {
 	return strings.TrimSpace(b.String())
 }
 
-func formatMultiOrderSummary(st orderState) string {
-	if !st.structuredLinesReady() {
+func formatMultiOrderSummary(st OrderState) string {
+	if !st.StructuredLinesReady() {
 		return ""
 	}
 	var b strings.Builder
@@ -320,13 +320,13 @@ func formatMultiOrderSummary(st orderState) string {
 	return strings.TrimSpace(b.String())
 }
 
-func suggestRelatedProducts(st orderState, catalog []dbCatalogItem, max int) []dbCatalogItem {
+func suggestRelatedProducts(st OrderState, catalog []CatalogItem, max int) []CatalogItem {
 	if max < 1 || st.CatalogItemID == "" || len(catalog) == 0 {
 		return nil
 	}
 	baseTokens := tokenize(st.ProductName)
 	type scored struct {
-		it    dbCatalogItem
+		it    CatalogItem
 		score float64
 	}
 	var picks []scored
@@ -343,7 +343,7 @@ func suggestRelatedProducts(st orderState, catalog []dbCatalogItem, max int) []d
 	sort.Slice(picks, func(i, j int) bool { return picks[i].score > picks[j].score })
 
 	seen := make(map[string]struct{})
-	var out []dbCatalogItem
+	var out []CatalogItem
 	for _, p := range picks {
 		family := strings.ToLower(inferProductFamily(p.it))
 		if _, ok := seen[family]; ok {
@@ -358,7 +358,7 @@ func suggestRelatedProducts(st orderState, catalog []dbCatalogItem, max int) []d
 	return out
 }
 
-func formatUpsellBlock(st orderState, catalog []dbCatalogItem) string {
+func formatUpsellBlock(st OrderState, catalog []CatalogItem) string {
 	suggestions := suggestRelatedProducts(st, catalog, 2)
 	if len(suggestions) == 0 {
 		return ""
@@ -371,11 +371,11 @@ func formatUpsellBlock(st orderState, catalog []dbCatalogItem) string {
 	return strings.Join(lines, "\n\n")
 }
 
-func orderCompleteMessage(st orderState, tmpl orderFlowTemplates) string {
+func orderCompleteMessage(st OrderState, tmpl orderFlowTemplates) string {
 	return orderCompleteMessageWithRef("", st, tmpl)
 }
 
-func orderCompleteMessageWithRef(orderID string, st orderState, tmpl orderFlowTemplates) string {
+func orderCompleteMessageWithRef(orderID string, st OrderState, tmpl orderFlowTemplates) string {
 	summary := formatOrderSummary(st)
 	complete := tmpl.Complete
 	if ref := FormatOrderNumber(orderID); ref != "" {

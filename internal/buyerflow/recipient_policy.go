@@ -1,4 +1,4 @@
-package ai
+package buyerflow
 
 import "strings"
 
@@ -85,7 +85,7 @@ func buildRecipientPolicyReply(formal bool) string {
 		"Nanti pas proses pesanan saya minta nama & nomor HP/WA penerima ya."
 }
 
-func replyRecipientPolicyQuestion(userText string, kb []dbKBEntry, formal bool) string {
+func replyRecipientPolicyQuestion(userText string, kb []KBEntry, formal bool) string {
 	if ans, ok := tryFAQDirectAnswer(userText, kb); ok {
 		return ans
 	}

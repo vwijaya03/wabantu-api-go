@@ -1,0 +1,30 @@
+package buyerflow
+
+// Delivery path — how the outbound reply was produced (routing metadata).
+const (
+	PathProfileIncomplete = "profile_incomplete"
+	PathGreeting          = "greeting"
+	PathInjectionGuard    = "injection_guard"
+	PathEscalate          = "sensitive_escalate"
+	PathOutOfScope        = "out_of_scope"
+	PathNonQuestion       = "in_scope_non_question"
+	PathLowConfidence     = "low_confidence"
+	PathOrderFlow         = "order_flow"
+	PathOrderCancel       = "order_cancel"
+	PathOrderStatus       = "order_status"
+	PathOrderLookupDenied = "order_lookup_denied"
+	PathRecipientPolicy   = "recipient_policy"
+	PathCatalogDB         = "catalog_db"
+	PathConsulting        = "consulting"
+	PathFAQCache          = "faq_cache"
+	PathFAQDirect         = "faq_direct"
+	PathLLM               = "llm"
+	PathLLMTools          = "llm_tools"
+	PathLLMGrounded       = "llm_grounded"
+	PathCostLimit         = "cost_limit"
+	PathAutoFallback      = "auto_fallback"
+	PathPaymentProof      = "payment_proof"
+	PathPaymentFAQ        = "payment_faq"
+	PathProductImageMatch = "product_image_match"
+	PathImageFallback     = "image_fallback"
+)

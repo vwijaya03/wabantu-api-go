@@ -1,16 +1,16 @@
-package ai
+package buyerflow
 
 // Shared Omah Apparel fixtures for tests & conversation simulator.
 
-func omahProfile() *dbBusinessProfile {
-	return &dbBusinessProfile{
+func omahProfile() *BusinessProfile {
+	return &BusinessProfile{
 		BusinessName: "Omah Apparel",
 		Tone:         strPtr("casual"),
 	}
 }
 
-func omahCatalog() []dbCatalogItem {
-	return []dbCatalogItem{
+func omahCatalog() []CatalogItem {
+	return []CatalogItem{
 		{
 			ID: "boxer-mono-l", ExternalCode: "BOXER-MONO-L",
 			Name: "[3 PCS] CELANA DALAM BOXER PRIA MOTIF MONO SPOT - L",
@@ -40,8 +40,8 @@ func omahCatalog() []dbCatalogItem {
 	}
 }
 
-func boxerHistory() []dbMessage {
-	return []dbMessage{{
+func boxerHistory() []Message {
+	return []Message{{
 		Direction: "out",
 		Body:      "🛒 Ringkasan Pesanan\n\nProduk:\n[3 PCS] CELANA DALAM BOXER PRIA MOTIF MONO SPOT - L\n\nQty: 1",
 	}}

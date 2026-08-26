@@ -326,7 +326,7 @@ func TestMatrix_PackPricing(t *testing.T) {
 		t.Fatal("expected pack count 3")
 	}
 	info := parseCatalogPriceInfo(it)
-	if info.packCount != 3 || info.listPrice != 56900 || !info.isPackListing {
+	if info.PackCount != 3 || info.ListPrice != 56900 || !info.IsPackListing {
 		t.Fatalf("unexpected price info: %+v", info)
 	}
 	price := formatCatalogPrice(it)

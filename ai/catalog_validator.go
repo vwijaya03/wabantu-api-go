@@ -113,10 +113,10 @@ func buildAllowedCatalogPrices(items []*dbCatalogItem) []float64 {
 			continue
 		}
 		info := parseCatalogPriceInfo(it)
-		add(info.listPrice)
-		if info.isPackListing {
-			add(info.perPiecePrice)
-			add(info.listPrice * float64(info.packCount)) // legacy wrong math still in history
+		add(info.ListPrice)
+		if info.IsPackListing {
+			add(info.PerPiecePrice)
+			add(info.ListPrice * float64(info.PackCount)) // legacy wrong math still in history
 		}
 	}
 	return allowed

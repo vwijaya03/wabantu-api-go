@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Parse encore test output for TestConversationRegressionAutoGen path failures."""
+"""Parse go test output for TestRegressionAutoGen / TestConversationRegressionAutoGen path failures."""
 import json
 import re
 import sys
 
-CASE_RE = re.compile(r"--- FAIL: TestConversationRegressionAutoGen/(\S+)")
+CASE_RE = re.compile(
+    r"--- FAIL: Test(?:ConversationRegressionAutoGen|RegressionAutoGen)/(\S+)"
+)
 PATH_RE = re.compile(r'path = "([^"]*)" want "([^"]*)" reply="(.*)"\s*$')
 
 

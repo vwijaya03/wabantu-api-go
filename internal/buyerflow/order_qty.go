@@ -1,4 +1,4 @@
-package ai
+package buyerflow
 
 import (
 	"regexp"
@@ -37,7 +37,7 @@ func IsOrderRevisionMessage(userText string) bool {
 }
 
 // tryApplyQtyRevision updates qty when customer revises count mid-checkout.
-func tryApplyQtyRevision(st *orderState, userText string) bool {
+func tryApplyQtyRevision(st *OrderState, userText string) bool {
 	if st == nil {
 		return false
 	}
@@ -81,7 +81,7 @@ func casualPraiseReply(formal bool) string {
 	return "Makasih kak 😊 Ada yang masih mau ditanyain atau mau lanjut pesan?"
 }
 
-func inferVariantFromProductName(st *orderState) {
+func inferVariantFromProductName(st *OrderState) {
 	if st == nil || strings.TrimSpace(st.Size) != "" {
 		return
 	}

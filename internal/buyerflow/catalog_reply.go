@@ -1,4 +1,4 @@
-package ai
+package buyerflow
 
 import (
 	"fmt"
@@ -105,7 +105,7 @@ func isGeneralStoreCatalogQuestion(userText string) bool {
 }
 
 // IsProductSellInquiry — "jual abon sapi?" (produk tertentu dijual atau tidak).
-func IsProductSellInquiry(userText string, catalog []dbCatalogItem) bool {
+func IsProductSellInquiry(userText string, catalog []CatalogItem) bool {
 	if HasPurchaseIntent(userText) || IsConsultingPurchaseQuestion(userText, catalog) {
 		return false
 	}
@@ -198,7 +198,7 @@ func isAvailabilityQuestion(text string) bool {
 }
 
 // isGenericVisualProductInquiry — caption/foto tanpa nama produk jelas (vision WA belum dipakai).
-func isGenericVisualProductInquiry(userText string, catalog []dbCatalogItem) bool {
+func isGenericVisualProductInquiry(userText string, catalog []CatalogItem) bool {
 	text := strings.ToLower(strings.TrimSpace(userText))
 	if text == "" || !isAvailabilityQuestion(text) {
 		return false
@@ -264,14 +264,14 @@ func isCatalogListOutbound(body string) bool {
 	return false
 }
 
-func countCatalogMatchesInText(body string, catalog []dbCatalogItem) int {
+func countCatalogMatchesInText(body string, catalog []CatalogItem) int {
 	n := 0
 	seen := make(map[string]struct{})
 	for _, it := range catalog {
 		if it.ID == "" {
 			continue
 		}
-		if matchCatalogItem(body, []dbCatalogItem{it}) != nil {
+		if matchCatalogItem(body, []CatalogItem{it}) != nil {
 			if _, ok := seen[it.ID]; !ok {
 				seen[it.ID] = struct{}{}
 				n++
@@ -281,7 +281,7 @@ func countCatalogMatchesInText(body string, catalog []dbCatalogItem) int {
 	return n
 }
 
-func matchCatalogFromFocusedHistory(history []dbMessage, catalog []dbCatalogItem) *dbCatalogItem {
+func matchCatalogFromFocusedHistory(history []Message, catalog []CatalogItem) *CatalogItem {
 	if len(history) == 0 || len(catalog) == 0 {
 		return nil
 	}
@@ -302,7 +302,7 @@ func matchCatalogFromFocusedHistory(history []dbMessage, catalog []dbCatalogItem
 	return nil
 }
 
-func isStockOrAvailabilityFollowUp(userText string, catalog []dbCatalogItem) bool {
+func isStockOrAvailabilityFollowUp(userText string, catalog []CatalogItem) bool {
 	if messageNamesCatalogProduct(userText, catalog) {
 		return false
 	}
@@ -335,7 +335,7 @@ func isStockOrAvailabilityFollowUp(userText string, catalog []dbCatalogItem) boo
 	return false
 }
 
-func matchCatalogFromRecentOutbound(history []dbMessage, catalog []dbCatalogItem) *dbCatalogItem {
+func matchCatalogFromRecentOutbound(history []Message, catalog []CatalogItem) *CatalogItem {
 	if len(history) == 0 || len(catalog) == 0 {
 		return nil
 	}
@@ -352,7 +352,7 @@ func matchCatalogFromRecentOutbound(history []dbMessage, catalog []dbCatalogItem
 	return nil
 }
 
-func resolveCatalogMatch(userText string, history []dbMessage, catalog []dbCatalogItem) *dbCatalogItem {
+func resolveCatalogMatch(userText string, history []Message, catalog []CatalogItem) *CatalogItem {
 	if isGenericVisualProductInquiry(userText, catalog) {
 		return nil
 	}
@@ -396,16 +396,16 @@ func bracketPackCount(name string) int {
 	return 0
 }
 
-type catalogPriceInfo struct {
-	packCount       int
-	isPackListing   bool
-	listPrice       float64
-	unitLabel       string
-	perPiecePrice   float64
+type CatalogPriceInfo struct {
+	PackCount       int
+	IsPackListing   bool
+	ListPrice       float64
+	UnitLabel       string
+	PerPiecePrice   float64
 }
 
-func parseCatalogPriceInfo(it *dbCatalogItem) catalogPriceInfo {
-	info := catalogPriceInfo{unitLabel: "pcs"}
+func parseCatalogPriceInfo(it *CatalogItem) CatalogPriceInfo {
+	info := CatalogPriceInfo{UnitLabel: "pcs"}
 	if it == nil || it.SellPrice <= 0 {
 		return info
 	}
@@ -413,19 +413,19 @@ func parseCatalogPriceInfo(it *dbCatalogItem) catalogPriceInfo {
 	if unit == "" {
 		unit = "pcs"
 	}
-	info.listPrice = it.SellPrice
-	info.packCount = bracketPackCount(it.Name)
-	if info.packCount > 1 {
-		info.isPackListing = true
-		info.unitLabel = "paket"
-		info.perPiecePrice = it.SellPrice / float64(info.packCount)
+	info.ListPrice = it.SellPrice
+	info.PackCount = bracketPackCount(it.Name)
+	if info.PackCount > 1 {
+		info.IsPackListing = true
+		info.UnitLabel = "paket"
+		info.PerPiecePrice = it.SellPrice / float64(info.PackCount)
 	} else {
-		info.unitLabel = unit
+		info.UnitLabel = unit
 	}
 	return info
 }
 
-func buildPricingClarificationReply(formal bool, it *dbCatalogItem) string {
+func buildPricingClarificationReply(formal bool, it *CatalogItem) string {
 	if it == nil {
 		return ""
 	}
@@ -441,20 +441,20 @@ func buildPricingClarificationReply(formal bool, it *dbCatalogItem) string {
 	}
 	lines = append(lines, "")
 	lines = append(lines, fmt.Sprintf("Harga di katalog: %s.", priceLine))
-	if price.isPackListing {
+	if price.IsPackListing {
 		if formal {
-			lines = append(lines, fmt.Sprintf("1 paket berisi %d pcs.", price.packCount))
-			lines = append(lines, fmt.Sprintf("Per pcs ≈ %s (%s ÷ %d).", formatMoney(price.perPiecePrice), formatMoney(price.listPrice), price.packCount))
+			lines = append(lines, fmt.Sprintf("1 paket berisi %d pcs.", price.PackCount))
+			lines = append(lines, fmt.Sprintf("Per pcs ≈ %s (%s ÷ %d).", formatMoney(price.PerPiecePrice), formatMoney(price.ListPrice), price.PackCount))
 		} else {
-			lines = append(lines, fmt.Sprintf("Judul [%d PCS] = 1 paket isi %d pcs ya kak.", price.packCount, price.packCount))
-			lines = append(lines, fmt.Sprintf("Harga 1 biji ≈ %s (%s ÷ %d).", formatMoney(price.perPiecePrice), formatMoney(price.listPrice), price.packCount))
+			lines = append(lines, fmt.Sprintf("Judul [%d PCS] = 1 paket isi %d pcs ya kak.", price.PackCount, price.PackCount))
+			lines = append(lines, fmt.Sprintf("Harga 1 biji ≈ %s (%s ÷ %d).", formatMoney(price.PerPiecePrice), formatMoney(price.ListPrice), price.PackCount))
 		}
 	}
 	cta := "Mau pesan per pcs atau per paket? Sebut jumlahnya ya kak."
 	if formal {
 		cta = "Silakan sebutkan jumlah pesanan (per pcs atau per paket)."
 	}
-	if price.isPackListing {
+	if price.IsPackListing {
 		cta = "Kalau mau pesan, sebut berapa paket ya kak."
 		if formal {
 			cta = "Jika ingin memesan, sebutkan jumlah paket."
@@ -463,7 +463,7 @@ func buildPricingClarificationReply(formal bool, it *dbCatalogItem) string {
 	return strings.TrimSpace(strings.Join(lines, "\n") + "\n\n" + cta)
 }
 
-func buildRetailPolicyReply(formal bool, it *dbCatalogItem) string {
+func buildRetailPolicyReply(formal bool, it *CatalogItem) string {
 	if it == nil {
 		return ""
 	}
@@ -472,23 +472,23 @@ func buildRetailPolicyReply(formal bool, it *dbCatalogItem) string {
 	priceLine := formatCatalogPrice(it)
 
 	var lines []string
-	if price.isPackListing {
+	if price.IsPackListing {
 		if formal {
 			lines = append(lines, fmt.Sprintf("Untuk %s:", name))
 			lines = append(lines, "")
-			lines = append(lines, fmt.Sprintf("Dijual per paket isi %d pcs (belum eceran 1 biji terpisah).", price.packCount))
+			lines = append(lines, fmt.Sprintf("Dijual per paket isi %d pcs (belum eceran 1 biji terpisah).", price.PackCount))
 			lines = append(lines, fmt.Sprintf("Harga paket: %s.", priceLine))
-			lines = append(lines, fmt.Sprintf("Per pcs ≈ %s.", formatMoney(price.perPiecePrice)))
+			lines = append(lines, fmt.Sprintf("Per pcs ≈ %s.", formatMoney(price.PerPiecePrice)))
 		} else {
-			lines = append(lines, fmt.Sprintf("Kak, %s dijual per paket isi %d pcs ya — belum eceran 1 biji.", name, price.packCount))
-			lines = append(lines, fmt.Sprintf("Harga 1 paket: %s (~%s/biji).", priceLine, formatMoney(price.perPiecePrice)))
+			lines = append(lines, fmt.Sprintf("Kak, %s dijual per paket isi %d pcs ya — belum eceran 1 biji.", name, price.PackCount))
+			lines = append(lines, fmt.Sprintf("Harga 1 paket: %s (~%s/biji).", priceLine, formatMoney(price.PerPiecePrice)))
 		}
 	} else {
 		if formal {
-			lines = append(lines, fmt.Sprintf("Bisa kak, %s dijual per %s.", name, price.unitLabel))
+			lines = append(lines, fmt.Sprintf("Bisa kak, %s dijual per %s.", name, price.UnitLabel))
 			lines = append(lines, fmt.Sprintf("Harga: %s.", priceLine))
 		} else {
-			lines = append(lines, fmt.Sprintf("Bisa kak, %s bisa beli per %s.", name, price.unitLabel))
+			lines = append(lines, fmt.Sprintf("Bisa kak, %s bisa beli per %s.", name, price.UnitLabel))
 			lines = append(lines, fmt.Sprintf("Harganya %s.", priceLine))
 		}
 	}
@@ -513,9 +513,9 @@ func formatStockLabel(qty float64) string {
 // replyFromBusinessCatalog answers from business_catalog_item without LLM/KB hijack.
 func replyFromBusinessCatalog(
 	userText string,
-	profile *dbBusinessProfile,
-	catalog []dbCatalogItem,
-	history []dbMessage,
+	profile *BusinessProfile,
+	catalog []CatalogItem,
+	history []Message,
 ) (reply string, handled bool) {
 	if profile == nil {
 		return "", false
@@ -604,7 +604,7 @@ func replyFromBusinessCatalog(
 	return "", false
 }
 
-func buildGenericVisualProductInquiryReply(formal bool, bizName string, catalog []dbCatalogItem, profile *dbBusinessProfile) string {
+func buildGenericVisualProductInquiryReply(formal bool, bizName string, catalog []CatalogItem, profile *BusinessProfile) string {
 	var head string
 	if formal {
 		head = "Mohon maaf, saat ini kami belum bisa mengenali produk langsung dari foto di chat WhatsApp.\n\nSilakan sebut nama produknya (misalnya dari label kemasan), nanti kami cek stok dan harganya."
@@ -619,7 +619,7 @@ func buildGenericVisualProductInquiryReply(formal bool, bizName string, catalog 
 	return strings.TrimSpace(head + body + footer)
 }
 
-func buildCatalogListReply(formal bool, bizName string, catalog []dbCatalogItem, profile *dbBusinessProfile) string {
+func buildCatalogListReply(formal bool, bizName string, catalog []CatalogItem, profile *BusinessProfile) string {
 	if len(catalog) == 0 {
 		return buildCatalogEmptyReply(formal, bizName, profile)
 	}
@@ -634,7 +634,7 @@ func buildCatalogListReply(formal bool, bizName string, catalog []dbCatalogItem,
 	return strings.TrimSpace(intro + body + footer)
 }
 
-func buildCatalogEmptyReply(formal bool, bizName string, profile *dbBusinessProfile) string {
+func buildCatalogEmptyReply(formal bool, bizName string, profile *BusinessProfile) string {
 	marker := catalogEmptyMarker
 	if formal {
 		base := fmt.Sprintf("%s\n\nKak, katalog produk di sistem WABantu untuk %s saat ini belum berisi item aktif (belum ada data di business_catalog_item). Tim kami bisa bantu info produk secara manual.",
@@ -646,7 +646,7 @@ func buildCatalogEmptyReply(formal bool, bizName string, profile *dbBusinessProf
 	return strings.TrimSpace(base + catalogExternalFooter(profile, true))
 }
 
-func buildCatalogNotFoundReply(formal bool, bizName string, catalog []dbCatalogItem, profile *dbBusinessProfile) string {
+func buildCatalogNotFoundReply(formal bool, bizName string, catalog []CatalogItem, profile *BusinessProfile) string {
 	var head string
 	if formal {
 		head = fmt.Sprintf("Maaf kak, produk yang Kakak sebut belum kami temukan di katalog WABantu %s.\n\nBerikut produk yang tersedia:\n\n", bizName)
@@ -658,7 +658,7 @@ func buildCatalogNotFoundReply(formal bool, bizName string, catalog []dbCatalogI
 	return strings.TrimSpace(head + body + footer)
 }
 
-func buildCatalogItemReply(formal bool, it *dbCatalogItem, qty int) string {
+func buildCatalogItemReply(formal bool, it *CatalogItem, qty int) string {
 	if it == nil {
 		return ""
 	}
@@ -687,7 +687,7 @@ func buildCatalogItemReply(formal bool, it *dbCatalogItem, qty int) string {
 		lines = append(lines, fmt.Sprintf("Qty: %d", qty))
 		lines = append(lines, "")
 		lines = append(lines, "Subtotal:")
-		lines = append(lines, formatMoney(float64(qty)*price.listPrice))
+		lines = append(lines, formatMoney(float64(qty)*price.ListPrice))
 	}
 	cta := "Kalau mau lanjut order, sebut jumlah + data pengiriman ya kak."
 	if formal {
@@ -696,7 +696,7 @@ func buildCatalogItemReply(formal bool, it *dbCatalogItem, qty int) string {
 	return strings.TrimSpace(strings.Join(lines, "\n") + "\n\n" + cta)
 }
 
-func formatCatalogListBody(catalog []dbCatalogItem, maxFeatured int) string {
+func formatCatalogListBody(catalog []CatalogItem, maxFeatured int) string {
 	if maxFeatured < 1 || maxFeatured > 8 {
 		maxFeatured = 5
 	}
@@ -744,7 +744,7 @@ func formatCatalogListBody(catalog []dbCatalogItem, maxFeatured int) string {
 	return strings.Join(parts, "\n")
 }
 
-func catalogExternalFooter(profile *dbBusinessProfile, catalogEmpty bool) string {
+func catalogExternalFooter(profile *BusinessProfile, catalogEmpty bool) string {
 	url := strings.TrimSpace(strOrEmpty(profile.CatalogURL))
 	if url == "" {
 		return ""
@@ -756,7 +756,7 @@ func catalogExternalFooter(profile *dbBusinessProfile, catalogEmpty bool) string
 }
 
 // BuildCatalogContext injects DB catalog into LLM system context.
-func BuildCatalogContext(catalog []dbCatalogItem) string {
+func BuildCatalogContext(catalog []CatalogItem) string {
 	if len(catalog) == 0 {
 		return catalogEmptyMarker + "\nKatalog resmi (database business_catalog_item): belum ada produk aktif. Jangan mengarang nama/harga produk. Jangan mengarahkan Instagram/website sebagai daftar utama — jelaskan katalog WABantu kosong."
 	}
@@ -770,8 +770,8 @@ func BuildCatalogContext(catalog []dbCatalogItem) string {
 		price := "harga belum di-set"
 		if it.SellPrice > 0 {
 			price = formatCatalogPrice(&it)
-			if info := parseCatalogPriceInfo(&it); info.isPackListing {
-				price += fmt.Sprintf(" (~%s/pcs)", formatMoney(info.perPiecePrice))
+			if info := parseCatalogPriceInfo(&it); info.IsPackListing {
+				price += fmt.Sprintf(" (~%s/pcs)", formatMoney(info.PerPiecePrice))
 			}
 		}
 		lines = append(lines, fmt.Sprintf("- %s | %s | kode internal: %s", it.Name, price, it.ExternalCode))

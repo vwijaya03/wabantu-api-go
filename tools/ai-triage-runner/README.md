@@ -1,7 +1,7 @@
 # AI Triage Runner (CI only)
 
 Node.js runner untuk workflow GitHub Actions `ai-triage-cursor-fix.yml`.
-Memanggil Cursor SDK (`@cursor/sdk`) untuk patch routing di `ai/autoreply.go` dan `ai/conversation_sim.go`.
+Memanggil Cursor SDK (`@cursor/sdk`) untuk patch routing di `internal/buyerflow/`, `ai/autoreply.go`, dan `ai/order_flow_handler.go`.
 
 **Bukan runtime Encore** — tidak di-deploy ke production.
 
@@ -24,5 +24,5 @@ node tools/ai-triage-runner/triage-cursor-fix.mjs
 |------|--------|
 | `tools/ai-triage-runner/` | Cursor Composer fix (Node) |
 | `scripts/triage-apply.go` | Tulis auto-gen regression test (Go) |
-| `scripts/run-triage-autogen-tests.sh` | `encore test` di GHA |
+| `scripts/run-triage-autogen-tests.sh` | `go test ./internal/buyerflow/` di GHA |
 | `admin/ai_triage.go` | Orkestrasi job (Encore) |

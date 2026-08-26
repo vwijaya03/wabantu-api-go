@@ -4,43 +4,13 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	bf "encore.app/wabantu/internal/buyerflow"
 )
 
 var structuredOrderNumberedLineRe = regexp.MustCompile(`(?m)^\s*\d+\.\s*(.+)$`)
 
-// orderLineState — satu baris dalam pesanan multi-item (Redis JSON).
-type orderLineState struct {
-	CatalogItemID string  `json:"catalogItemId,omitempty"`
-	ExternalCode  string  `json:"externalCode,omitempty"`
-	ProductName   string  `json:"productName,omitempty"`
-	Size          string  `json:"size,omitempty"`
-	Color         string  `json:"color,omitempty"`
-	Qty           int     `json:"qty,omitempty"`
-	UnitPrice     float64 `json:"unitPrice,omitempty"`
-	SellUnit      string  `json:"sellUnit,omitempty"`
-	WarehouseID   string  `json:"warehouseId,omitempty"`
-}
-
-// IsStructuredOrderList — pesan berisi daftar barang bernomor, multi-baris tanpa nomor, atau header order terstruktur.
-func IsStructuredOrderList(userText string) bool {
-	text := strings.ToLower(strings.TrimSpace(userText))
-	if text == "" {
-		return false
-	}
-	if IsExplicitNewOrderStart(userText) && structuredOrderNumberedLineRe.MatchString(userText) {
-		return true
-	}
-	if strings.Contains(text, "barang yang dibeli") && structuredOrderNumberedLineRe.MatchString(userText) {
-		return true
-	}
-	if structuredOrderNumberedLineRe.MatchString(userText) && mentionsOrderQty(userText) {
-		return true
-	}
-	if countOrderCandidateLines(userText) >= 2 {
-		return true
-	}
-	return false
-}
+// IsStructuredOrderList — see buyerflow_bridge (internal/buyerflow).
 
 func isOrderListHeaderLine(line string) bool {
 	lower := strings.ToLower(strings.TrimSpace(line))
@@ -154,12 +124,9 @@ func parseSingleStructuredLine(raw string, catalog []dbCatalogItem) orderLineSta
 	if cl != "" {
 		line.Color = cl
 	}
-	match := matchCatalogItem(text, catalog)
+		match := matchCatalogItem(text, catalog)
 	if match == nil {
-		// Coba tanpa suffix ukuran/qty
-		cleaned := orderSizeLineRe.ReplaceAllString(text, "")
-		cleaned = orderQtyLusinRe.ReplaceAllString(cleaned, "")
-		cleaned = orderQtyWithUnitRe.ReplaceAllString(cleaned, "")
+		cleaned := bf.StripOrderSizeTokens(text)
 		cleaned = strings.TrimSpace(strings.TrimRight(cleaned, "ya"))
 		match = matchCatalogItem(cleaned, catalog)
 	}
@@ -179,28 +146,15 @@ func parseSingleStructuredLine(raw string, catalog []dbCatalogItem) orderLineSta
 func orderStateFromStructuredLines(lines []orderLineState) orderState {
 	st := orderState{Items: lines, Step: "ask_recipient"}
 	if len(lines) == 1 {
-		applyLineToOrderState(&st, lines[0])
+		bf.ApplyLineToOrderState(&st, lines[0])
 	}
 	return st
 }
 
-func applyLineToOrderState(st *orderState, line orderLineState) {
-	if st == nil {
-		return
-	}
-	st.CatalogItemID = line.CatalogItemID
-	st.ExternalCode = line.ExternalCode
-	st.ProductName = line.ProductName
-	st.Size = line.Size
-	st.Color = line.Color
-	st.Qty = line.Qty
-	st.UnitPrice = line.UnitPrice
-	st.SellUnit = line.SellUnit
-	st.WarehouseID = line.WarehouseID
-}
-
-func (st orderState) hasMultiItems() bool {
-	return len(st.Items) > 0
+func orderStateFromLine(line orderLineState) orderState {
+	st := orderState{}
+	bf.ApplyLineToOrderState(&st, line)
+	return st
 }
 
 func lineVariantComplete(line orderLineState) bool {
@@ -209,41 +163,6 @@ func lineVariantComplete(line orderLineState) bool {
 		return true
 	}
 	return line.Size != "" || line.Color != ""
-}
-
-func (st orderState) structuredLinesReady() bool {
-	if !st.hasMultiItems() {
-		return false
-	}
-	for _, ln := range st.Items {
-		if strings.TrimSpace(ln.CatalogItemID) == "" || ln.Qty < 1 || !lineVariantComplete(ln) {
-			return false
-		}
-	}
-	return true
-}
-
-func (st orderState) readyToPersist() bool {
-	if st.hasMultiItems() {
-		if !st.structuredLinesReady() {
-			return false
-		}
-	} else {
-		st = normalizeOrderState(st)
-		if !st.productComplete() || strings.TrimSpace(st.CatalogItemID) == "" || !st.variantComplete() || st.Qty < 1 {
-			return false
-		}
-	}
-	if strings.TrimSpace(st.RecipientName) == "" || strings.TrimSpace(st.RecipientPhone) == "" {
-		return false
-	}
-	return st.shippingComplete()
-}
-
-func orderStateFromLine(line orderLineState) orderState {
-	st := orderState{}
-	applyLineToOrderState(&st, line)
-	return st
 }
 
 func structuredOrderUnmatchedReply(formal bool, unmatched []string) string {
@@ -265,7 +184,7 @@ func structuredOrderUnmatchedReply(formal bool, unmatched []string) string {
 }
 
 func guardStructuredOrderStock(st orderState, catalog []dbCatalogItem, formal bool) (orderState, string, bool) {
-	if !st.hasMultiItems() {
+	if !st.HasMultiItems() {
 		return st, "", false
 	}
 	for i := range st.Items {
@@ -281,7 +200,7 @@ func guardStructuredOrderStock(st orderState, catalog []dbCatalogItem, formal bo
 }
 
 func guardOrderStateQty(st orderState, catalog []dbCatalogItem, formal bool, qtyStep string) (orderState, string, bool) {
-	if st.hasMultiItems() {
+	if st.HasMultiItems() {
 		return guardStructuredOrderStock(st, catalog, formal)
 	}
 	return guardOrderQtyStep(st, catalog, formal, qtyStep)
@@ -311,7 +230,7 @@ func evaluateStructuredOrder(userText string, catalog []dbCatalogItem, formal bo
 		return out
 	}
 	st := orderStateFromStructuredLines(parsed.Lines)
-	if !st.structuredLinesReady() {
+	if !st.StructuredLinesReady() {
 		st.Step = "ask_variant"
 		out.State = st
 		out.NeedVariant = true
