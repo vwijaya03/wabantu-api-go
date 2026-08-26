@@ -244,7 +244,7 @@ func SyncStaffRosterFromEvent(ctx context.Context, eventId string) (*SyncStaffRo
 		if err != nil {
 			return nil, appErrs.Internal(err.Error())
 		}
-		if err := assertEventExists(ctx, ts, eventId); err != nil {
+		if err := assertEventExists(ctx, u, ts, eventId); err != nil {
 			return nil, err
 		}
 		upserted, err := syncAllEventPeopleToRoster(ctx, ts, eventId)

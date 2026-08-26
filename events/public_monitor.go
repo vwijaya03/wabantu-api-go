@@ -76,7 +76,7 @@ func loadPublicStaffMonitor(ctx context.Context, tenantSlug, eventSlug string) (
 		resp.Location = loc.String
 	}
 
-	dash, err := loadEventDashboard(ctx, schema, eventID)
+	dash, err := loadEventDashboard(ctx, nil, schema, eventID)
 	if err != nil {
 		return nil, err
 	}

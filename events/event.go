@@ -8,6 +8,7 @@ import (
 	"time"
 
 	appErrs "encore.app/wabantu/shared/errs"
+	"encore.app/wabantu/shared/types"
 )
 
 type Event struct {
@@ -194,7 +195,7 @@ func GetEvent(ctx context.Context, eventId string) (*Event, error) {
 		return nil, err
 	}
 	run := func() (*Event, error) {
-		return loadEvent(ctx, u.TenantSchema, eventId)
+		return loadEvent(ctx, u, u.TenantSchema, eventId)
 	}
 	resp, err := run()
 	if isBadConnectionErr(err) {
@@ -203,7 +204,7 @@ func GetEvent(ctx context.Context, eventId string) (*Event, error) {
 	return resp, err
 }
 
-func loadEvent(ctx context.Context, tenantSchema, eventId string) (*Event, error) {
+func loadEvent(ctx context.Context, u *types.AuthUser, tenantSchema, eventId string) (*Event, error) {
 	ts, err := openTenant(ctx, tenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
@@ -216,7 +217,7 @@ func loadEvent(ctx context.Context, tenantSchema, eventId string) (*Event, error
 		FROM evt_event WHERE id=$1::uuid AND deleted_at IS NULL`, eventId)
 	e, err := scanEvent(row)
 	if err == sql.ErrNoRows {
-		return nil, appErrs.NotFound("acara tidak ditemukan")
+		return nil, eventAccessErr(ctx, u, eventId, tenantSchema)
 	}
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
@@ -352,7 +353,7 @@ func DeleteEvent(ctx context.Context, eventId string) error {
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	if err := assertEventExists(ctx, ts, eventId); err != nil {
+	if err := assertEventExists(ctx, u, ts, eventId); err != nil {
 		return err
 	}
 	_, err = ts.ExecContext(ctx, `UPDATE evt_event SET deleted_at=now() WHERE id=$1::uuid AND deleted_at IS NULL`, eventId)

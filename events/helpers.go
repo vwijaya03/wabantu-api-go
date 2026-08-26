@@ -232,13 +232,13 @@ func clampLen(s string, max int) string {
 	return s
 }
 
-func assertEventExists(ctx context.Context, ts tenantScope, eventID string) error {
+func assertEventExists(ctx context.Context, u *types.AuthUser, ts tenantScope, eventID string) error {
 	var one int
 	err := ts.QueryRowContext(ctx, `
 		SELECT 1 FROM evt_event WHERE id=$1::uuid AND deleted_at IS NULL`, eventID,
 	).Scan(&one)
 	if err == sql.ErrNoRows {
-		return appErrs.NotFound("acara tidak ditemukan")
+		return eventAccessErr(ctx, u, eventID, ts.Sch.Schema)
 	}
 	if err != nil {
 		return appErrs.Internal(err.Error())

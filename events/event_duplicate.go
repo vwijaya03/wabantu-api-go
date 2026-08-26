@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	appErrs "encore.app/wabantu/shared/errs"
+	"encore.app/wabantu/shared/types"
 )
 
 type DuplicateEventParams struct {
@@ -40,7 +41,7 @@ func DuplicateEvent(ctx context.Context, eventId string, p *DuplicateEventParams
 		return nil, appErrs.Internal(err.Error())
 	}
 
-	src, err := loadEventRow(ctx, ts, eventId)
+	src, err := loadEventRow(ctx, u, ts, eventId)
 	if err != nil {
 		return nil, err
 	}
@@ -132,14 +133,14 @@ type eventRow struct {
 	EndDate   string
 }
 
-func loadEventRow(ctx context.Context, ts tenantScope, eventID string) (*eventRow, error) {
+func loadEventRow(ctx context.Context, u *types.AuthUser, ts tenantScope, eventID string) (*eventRow, error) {
 	var r eventRow
 	err := ts.QueryRowContext(ctx, `
 		SELECT event_name, start_date::text, end_date::text
 		FROM evt_event WHERE id=$1::uuid AND deleted_at IS NULL`, eventID,
 	).Scan(&r.EventName, &r.StartDate, &r.EndDate)
 	if err == sql.ErrNoRows {
-		return nil, appErrs.NotFound("acara tidak ditemukan")
+		return nil, eventAccessErr(ctx, u, eventID, ts.Sch.Schema)
 	}
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())

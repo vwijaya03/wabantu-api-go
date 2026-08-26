@@ -9,6 +9,7 @@ import (
 	encoreerrs "encore.dev/beta/errs"
 
 	appErrs "encore.app/wabantu/shared/errs"
+	"encore.app/wabantu/shared/types"
 )
 
 type EventDashboard struct {
@@ -36,7 +37,7 @@ func GetEventDashboard(ctx context.Context, eventId string) (*EventDashboard, er
 		return nil, err
 	}
 	run := func() (*EventDashboard, error) {
-		return loadEventDashboard(ctx, u.TenantSchema, eventId)
+		return loadEventDashboard(ctx, u, u.TenantSchema, eventId)
 	}
 	resp, err := run()
 	if isBadConnectionErr(err) {
@@ -80,12 +81,12 @@ func resolveTherapyMaxFromMaps(
 	}
 }
 
-func loadEventDashboard(ctx context.Context, tenantSchema, eventId string) (*EventDashboard, error) {
+func loadEventDashboard(ctx context.Context, u *types.AuthUser, tenantSchema, eventId string) (*EventDashboard, error) {
 	ts, err := openTenant(ctx, tenantSchema)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	if err := assertEventExists(ctx, ts, eventId); err != nil {
+	if err := assertEventExists(ctx, u, ts, eventId); err != nil {
 		return nil, err
 	}
 
@@ -263,7 +264,7 @@ func GetEventSchedule(ctx context.Context, eventId string, p *ListSlotsParams) (
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
-	if err := assertEventExists(ctx, ts, eventId); err != nil {
+	if err := assertEventExists(ctx, u, ts, eventId); err != nil {
 		return nil, err
 	}
 
