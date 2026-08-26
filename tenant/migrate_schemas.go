@@ -80,7 +80,15 @@ func RunMigrateTenantSchemas(ctx context.Context, req *MigrateSchemasRequest, mi
 		}, nil
 	}
 
-	if !ShouldUseSyncMigration(req) {
+	targets, err := resolveSchemaMigrationTargets(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if len(targets) == 0 {
+		return &MigrateSchemasResponse{Results: []SchemaMigrationItem{}, CloudPrep: prep}, nil
+	}
+
+	if len(targets) > syncMigrationMaxTenants {
 		enq, err := EnqueueSchemaMigration(ctx, req, migratedBy)
 		if err != nil {
 			return nil, err
@@ -91,14 +99,6 @@ func RunMigrateTenantSchemas(ctx context.Context, req *MigrateSchemasRequest, mi
 			Enqueued:  enq.Enqueued,
 			CloudPrep: prep,
 		}, nil
-	}
-
-	targets, err := resolveSchemaMigrationTargets(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	if len(targets) == 0 {
-		return &MigrateSchemasResponse{Results: []SchemaMigrationItem{}, CloudPrep: prep}, nil
 	}
 
 	resp := &MigrateSchemasResponse{
