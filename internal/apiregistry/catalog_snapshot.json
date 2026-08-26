@@ -1,5 +1,5 @@
 {
-  "count": 335,
+  "count": 336,
   "endpoints": [
     {
       "service": "admin",
@@ -279,7 +279,7 @@
     {
       "service": "auth",
       "file": "auth/auth.go",
-      "line": 274,
+      "line": 278,
       "access": "public",
       "method": "POST",
       "path": "/api/v1/auth/login",
@@ -289,7 +289,7 @@
     {
       "service": "auth",
       "file": "auth/auth.go",
-      "line": 377,
+      "line": 385,
       "access": "public",
       "method": "POST",
       "path": "/api/v1/auth/logout",
@@ -299,7 +299,7 @@
     {
       "service": "auth",
       "file": "auth/auth.go",
-      "line": 402,
+      "line": 410,
       "access": "public",
       "method": "GET",
       "path": "/api/v1/auth/me",
@@ -3121,6 +3121,15 @@
       "path": "/api/v1/workflows/:id",
       "tag": "owner",
       "annotation": "auth method=PATCH path=/api/v1/workflows/:id tag:owner"
+    },
+    {
+      "service": "internal",
+      "file": "internal/apitest/service.go",
+      "line": 8,
+      "access": "private",
+      "method": "GET",
+      "path": "/internal/apitest/ping",
+      "annotation": "private method=GET path=/internal/apitest/ping"
     },
     {
       "service": "webhook",
