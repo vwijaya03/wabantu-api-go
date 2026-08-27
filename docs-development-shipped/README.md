@@ -41,6 +41,10 @@ Entri lama tanpa prefix datetime (mis. `inbox-media-fase1.md`) tetap valid; entr
 
 | File | Isi | Status |
 |------|-----|--------|
+| [2026-08-26_203200_apitest-encore-cloud-redis-fix.md](./2026-08-26_203200_apitest-encore-cloud-redis-fix.md) | Encore Cloud build tanpa Redis + fix `encore run` panic (`et` di `*_test.go`) | PR [#142](https://github.com/vwijaya03/wabantu-api-go/pull/142) merged |
+| [2026-08-26_201300_apiregistry-apitest-ping.md](./2026-08-26_201300_apiregistry-apitest-ping.md) | Izinkan path `/internal/`, snapshot **336 endpoint / 29 service** | PR [#141](https://github.com/vwijaya03/wabantu-api-go/pull/141) merged |
+| [2026-08-26_183000_api-http-smoke-apitest.md](./2026-08-26_183000_api-http-smoke-apitest.md) | HTTP smoke Encore per service (`internal/apitest`), CI `api-smoke.yml` | PR [#140](https://github.com/vwijaya03/wabantu-api-go/pull/140) merged |
+| [2026-08-26_170500_ai-regression-fast-path.md](./2026-08-26_170500_ai-regression-fast-path.md) | Buyerflow `<1s`, apiregistry golden snapshot, triage autogen → buyerflow | PR [#139](https://github.com/vwijaya03/wabantu-api-go/pull/139) merged |
 | [2026-08-26_142400_tenant-access-consent.md](./2026-08-26_142400_tenant-access-consent.md) | Consent owner sebelum super admin Pantau tenant | PR [#130](https://github.com/vwijaya03/wabantu-api-go/pull/130) |
 | [2026-08-26_142000_finance-audit-perf-quick-wins.md](./2026-08-26_142000_finance-audit-perf-quick-wins.md) | Test HPP wallet, timeout HTTP, index inbox, lazy migrate `sync.Once` | PR [#129](https://github.com/vwijaya03/wabantu-api-go/pull/129) |
 | [2026-08-26_090100_events-super-admin-cross-tenant.md](./2026-08-26_090100_events-super-admin-cross-tenant.md) | Hint 403 super_admin saat acara milik tenant lain | PR [#128](https://github.com/vwijaya03/wabantu-api-go/pull/128) |
