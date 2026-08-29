@@ -12,9 +12,9 @@ func debugBugsBatch2() []struct {
 	}{
 		{
 			"Hero Effect Loop",
-			"Browser freeze setelah Hero mount.",
-			"useEffect tanpa dependency array memicu setState tiap render.",
-			"Tambahkan dependency array yang benar atau pindahkan logic ke event handler.",
+			"Browser freezes after Hero mounts.",
+			"useEffect without a dependency array triggers setState on every render.",
+			"Add the correct dependency array or move logic to an event handler.",
 			"hard",
 			`export function Hero({ title }) {
   const [count, setCount] = useState(0);
@@ -33,9 +33,9 @@ func debugBugsBatch2() []struct {
 		},
 		{
 			"Hero Click Handler",
-			"Klik tombol langsung menambah counter tanpa interaksi.",
-			"onClick memanggil handler langsung saat render, bukan referensi function.",
-			"Pass function reference: onClick={() => handler()} bukan onClick={handler()}.",
+			"Clicking the button immediately increments the counter without interaction.",
+			"onClick invokes the handler during render instead of passing a function reference.",
+			"Pass a function reference: onClick={() => handler()} not onClick={handler()}.",
 			"medium",
 			`export function Hero({ title }) {
   const [n, setN] = useState(0);
@@ -62,9 +62,9 @@ func debugBugsBatch2() []struct {
 		},
 		{
 			"Hero Conditional Hook",
-			"Error Rules of Hooks saat showDetails false.",
-			"useState dipanggil di dalam conditional branch.",
-			"Pindahkan semua hooks ke top level komponen.",
+			"Rules of Hooks error when showDetails is false.",
+			"useState is called inside a conditional branch.",
+			"Move all hooks to the top level of the component.",
 			"hard",
 			`export function Hero({ title, showDetails }) {
   if (showDetails) {
@@ -85,9 +85,9 @@ func debugBugsBatch2() []struct {
 		},
 		{
 			"Hero Missing Return",
-			"UI kosong meski props title ada.",
-			"Arrow function implicit return hilang karena block body tanpa return.",
-			"Tambahkan return eksplisit atau gunakan parentheses pada JSX.",
+			"UI is empty even though title prop is set.",
+			"Arrow function implicit return is lost because of a block body without return.",
+			"Add an explicit return or use parentheses around JSX.",
 			"easy",
 			`export function Hero({ title }) {
   const label = title.toUpperCase();
@@ -100,9 +100,9 @@ func debugBugsBatch2() []struct {
 		},
 		{
 			"Hero Uncontrolled Input",
-			"Input tidak ter-update saat parent mengirim value baru.",
-			"defaultValue tidak sync dengan prop value berikutnya.",
-			"Gunakan controlled input: value + onChange dari props/state.",
+			"Input does not update when parent sends a new value.",
+			"defaultValue does not sync with subsequent value prop updates.",
+			"Use a controlled input: value + onChange from props/state.",
 			"medium",
 			`export function Hero({ value, onChange }) {
   return (
@@ -125,21 +125,21 @@ func debugBugsBatch2() []struct {
 func debugHintExtended(kind int) string {
 	switch kind {
 	case 0:
-		return "Perhatikan apakah ada setState yang dipanggil saat render, bukan di event handler."
+		return "Check whether setState is called during render instead of in an event handler."
 	case 1:
-		return "Perhatikan apakah state dari props ikut berubah saat parent mengirim prop baru."
+		return "Check whether state from props updates when the parent sends a new prop."
 	case 2:
-		return "Perhatikan cara me-render list `items` — React butuh key yang stabil."
+		return "Check how you render the `items` list — React needs stable keys."
 	case 3:
-		return "Perhatikan dependency array pada useEffect — kosong vs tidak ada beda perilaku."
+		return "Check the useEffect dependency array — empty vs missing behaves differently."
 	case 4:
-		return "Perhatikan cara men-pass handler ke onClick — jangan invoke function saat render."
+		return "Check how you pass handlers to onClick — do not invoke the function during render."
 	case 5:
-		return "Hooks harus dipanggil di top level, tidak di dalam if/loop."
+		return "Hooks must be called at the top level, not inside if/loop."
 	case 6:
-		return "Pastikan JSX di-return dari function component."
+		return "Make sure JSX is returned from the function component."
 	default:
-		return "Perhatikan apakah input controlled (`value`) atau uncontrolled (`defaultValue`)."
+		return "Check whether the input is controlled (`value`) or uncontrolled (`defaultValue`)."
 	}
 }
 

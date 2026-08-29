@@ -1,110 +1,110 @@
 [
   {
-    "question": "Apa yang terjadi jika useEffect tidak punya array dependency?",
+    "question": "What happens if useEffect has no dependency array?",
     "choices": [
-      {"id": "a", "text": "Effect hanya jalan sekali saat mount"},
-      {"id": "b", "text": "Effect jalan setiap re-render"},
-      {"id": "c", "text": "Effect tidak pernah jalan"},
-      {"id": "d", "text": "React throw error"}
+      {"id": "a", "text": "The effect runs only once on mount"},
+      {"id": "b", "text": "The effect runs after every re-render"},
+      {"id": "c", "text": "The effect never runs"},
+      {"id": "d", "text": "React throws an error"}
     ],
     "correct_id": "b",
-    "explanation": "Tanpa array dependency kedua, useEffect dijalankan setelah setiap render. Gunakan [] untuk mount-only, atau [dep] untuk re-run saat dep berubah.",
+    "explanation": "Without a dependency array, useEffect runs after every render. Use [] for mount-only, or [dep] to re-run when dep changes.",
     "wrong_explanations": {
-      "a": "Itu perilaku useEffect dengan dependency array kosong [], bukan tanpa array.",
-      "c": "useEffect selalu jalan minimal sekali setelah render.",
-      "d": "Tidak error — ini perilaku default React."
+      "a": "That is the behavior of useEffect with an empty dependency array [].",
+      "c": "useEffect always runs at least once after render.",
+      "d": "It does not throw — this is React's default behavior."
     },
     "best_practices": [
-      "Selalu tentukan dependency array secara eksplisit",
-      "Hindari infinite loop: jangan set state di effect tanpa kondisi",
-      "Gunakan eslint-plugin-react-hooks untuk deteksi missing deps"
+      "Always specify the dependency array explicitly",
+      "Avoid infinite loops: do not set state in an effect without conditions",
+      "Use eslint-plugin-react-hooks to catch missing deps"
     ],
-    "learning_objective": "Memahami lifecycle useEffect dan dependency array",
+    "learning_objective": "Understand useEffect lifecycle and dependency arrays",
     "points": 10,
     "tags": ["react", "hooks"],
     "difficulty": "medium",
     "topic": "react-hooks"
   },
   {
-    "question": "Manakah cara yang benar mendeklarasikan state di React?",
+    "question": "Which is the correct way to declare state in React?",
     "choices": [
       {"id": "a", "text": "const [count, setCount] = useState(0)"},
-      {"id": "b", "text": "let count = 0 dalam function component"},
+      {"id": "b", "text": "let count = 0 inside a function component"},
       {"id": "c", "text": "this.state = { count: 0 }"},
-      {"id": "d", "text": "useRef untuk semua state UI"}
+      {"id": "d", "text": "useRef for all UI state"}
     ],
     "correct_id": "a",
-    "explanation": "useState mengembalikan tuple [value, setter] dan memicu re-render saat setter dipanggil.",
+    "explanation": "useState returns a [value, setter] tuple and triggers a re-render when the setter is called.",
     "wrong_explanations": {
-      "b": "Variabel let biasa tidak memicu re-render.",
-      "c": "this.state hanya untuk class component, bukan function component modern.",
-      "d": "useRef untuk nilai yang tidak perlu re-render; state UI interaktif pakai useState."
+      "b": "A plain let variable does not trigger re-renders.",
+      "c": "this.state is for class components, not modern function components.",
+      "d": "useRef is for values that should not trigger re-renders; interactive UI state uses useState."
     },
     "best_practices": [
-      "Gunakan useState untuk state yang mempengaruhi UI",
-      "Jangan mutasi state langsung — pakai setter",
-      "Kelompokkan state terkait atau pertimbangkan useReducer untuk logic kompleks"
+      "Use useState for state that affects the UI",
+      "Do not mutate state directly — use the setter",
+      "Group related state or consider useReducer for complex logic"
     ],
-    "learning_objective": "Memahami useState di function component",
+    "learning_objective": "Understand useState in function components",
     "points": 10,
     "tags": ["react", "javascript"],
     "difficulty": "easy",
     "topic": "react-state"
   },
   {
-    "question": "Apa fungsi key pada list di React?",
+    "question": "What is the purpose of key on a React list?",
     "choices": [
-      {"id": "a", "text": "Styling elemen list"},
-      {"id": "b", "text": "Membantu React identifikasi item yang berubah, ditambah, atau dihapus"},
-      {"id": "c", "text": "Wajib agar CSS grid bekerja"},
-      {"id": "d", "text": "Menggantikan id HTML"}
+      {"id": "a", "text": "Styling list elements"},
+      {"id": "b", "text": "Help React identify items that changed, were added, or removed"},
+      {"id": "c", "text": "Required for CSS grid to work"},
+      {"id": "d", "text": "Replaces the HTML id attribute"}
     ],
     "correct_id": "b",
-    "explanation": "Key stabil membantu reconciler mempertahankan state item yang benar saat list di-reorder atau difilter.",
+    "explanation": "Stable keys help the reconciler preserve the correct item state when a list is reordered or filtered.",
     "wrong_explanations": {
-      "a": "Key tidak ada hubungannya dengan styling.",
-      "c": "CSS grid tidak bergantung pada React key.",
-      "d": "Key internal React berbeda dari atribut id DOM."
+      "a": "Keys are unrelated to styling.",
+      "c": "CSS grid does not depend on React keys.",
+      "d": "React keys are internal and differ from DOM id attributes."
     },
     "best_practices": [
-      "Gunakan id stabil dari data, bukan index array jika urutan bisa berubah",
-      "Key harus unik di antara siblings",
-      "Jangan generate key random setiap render"
+      "Use stable ids from data, not array index when order can change",
+      "Keys must be unique among siblings",
+      "Do not generate random keys on every render"
     ],
-    "learning_objective": "Memahami reconciliasi list React",
+    "learning_objective": "Understand React list reconciliation",
     "points": 10,
     "tags": ["react"],
     "difficulty": "easy",
     "topic": "react-lists"
   },
   {
-    "question": "Di CSS Flexbox, properti apa yang mengatur jarak antar item pada sumbu utama?",
+    "question": "In CSS Flexbox, which property controls spacing along the main axis?",
     "choices": [
       {"id": "a", "text": "align-items"},
       {"id": "b", "text": "justify-content"},
       {"id": "c", "text": "flex-wrap"},
-      {"id": "d", "text": "gap saja tanpa display flex"}
+      {"id": "d", "text": "gap alone without display flex"}
     ],
     "correct_id": "b",
-    "explanation": "justify-content mengatur distribusi ruang pada main axis; align-items pada cross axis.",
+    "explanation": "justify-content distributes space on the main axis; align-items on the cross axis.",
     "wrong_explanations": {
-      "a": "align-items mengatur perataan pada cross axis, bukan main axis.",
-      "c": "flex-wrap mengatur apakah item boleh wrap ke baris baru.",
-      "d": "gap bisa membantu spacing tapi justify-content mengatur distribusi pada main axis."
+      "a": "align-items aligns on the cross axis, not the main axis.",
+      "c": "flex-wrap controls whether items wrap to a new line.",
+      "d": "gap helps spacing but justify-content distributes along the main axis."
     },
     "best_practices": [
-      "Hafalkan perbedaan main axis vs cross axis",
-      "Gunakan gap untuk spacing konsisten antar item",
-      "Kombinasikan justify-content dan align-items untuk layout center"
+      "Learn the difference between main axis and cross axis",
+      "Use gap for consistent spacing between items",
+      "Combine justify-content and align-items to center content"
     ],
-    "learning_objective": "Memahami Flexbox main axis",
+    "learning_objective": "Understand Flexbox main axis",
     "points": 10,
     "tags": ["css"],
     "difficulty": "medium",
     "topic": "css-flexbox"
   },
   {
-    "question": "Apa output typeof null di JavaScript?",
+    "question": "What is the output of typeof null in JavaScript?",
     "choices": [
       {"id": "a", "text": "\"null\""},
       {"id": "b", "text": "\"object\""},
@@ -112,96 +112,96 @@
       {"id": "d", "text": "\"number\""}
     ],
     "correct_id": "b",
-    "explanation": "typeof null === \"object\" adalah bug historis JS yang dipertahankan untuk kompatibilitas.",
+    "explanation": "typeof null === \"object\" is a historical JS quirk kept for compatibility.",
     "wrong_explanations": {
-      "a": "Tidak ada tipe primitive bernama \"null\" di typeof.",
-      "c": "undefined hanya untuk variabel yang belum di-assign.",
-      "d": "null bukan number."
+      "a": "There is no typeof primitive named \"null\".",
+      "c": "undefined is only for unassigned variables.",
+      "d": "null is not a number."
     },
     "best_practices": [
-      "Gunakan === null untuk cek null eksplisit",
-      "Gunakan Array.isArray untuk cek array",
-      "Pahami perbedaan null vs undefined dalam API design"
+      "Use === null for explicit null checks",
+      "Use Array.isArray to check arrays",
+      "Understand null vs undefined in API design"
     ],
-    "learning_objective": "Memahami typeof dan null di JavaScript",
+    "learning_objective": "Understand typeof and null in JavaScript",
     "points": 10,
     "tags": ["javascript"],
     "difficulty": "easy",
     "topic": "js-types"
   },
   {
-    "question": "Kapan event handler sebaiknya didefinisikan inline di JSX?",
+    "question": "When should event handlers be defined inline in JSX?",
     "choices": [
-      {"id": "a", "text": "Selalu inline agar mudah dibaca"},
-      {"id": "b", "text": "Hindari jika membuat fungsi baru setiap render tanpa perlu"},
-      {"id": "c", "text": "Tidak boleh sama sekali di React"},
-      {"id": "d", "text": "Hanya di class component"}
+      {"id": "a", "text": "Always inline for readability"},
+      {"id": "b", "text": "Avoid if it creates a new function every render without need"},
+      {"id": "c", "text": "Never allowed in React"},
+      {"id": "d", "text": "Only in class components"}
     ],
     "correct_id": "b",
-    "explanation": "Inline arrow di JSX membuat fungsi baru tiap render; untuk child yang di-memo, ekstrak dengan useCallback.",
+    "explanation": "Inline arrows in JSX create a new function each render; for memoized children, extract with useCallback.",
     "wrong_explanations": {
-      "a": "Inline OK untuk handler sederhana, tapi bukan selalu best practice.",
-      "c": "Inline handler valid dan umum untuk kasus sederhana.",
-      "d": "Function component juga menggunakan JSX handlers."
+      "a": "Inline is fine for simple handlers, but not always best practice.",
+      "c": "Inline handlers are valid and common for simple cases.",
+      "d": "Function components use JSX handlers too."
     },
     "best_practices": [
-      "useCallback untuk handler yang diteruskan ke komponen memoized",
-      "Ekstrak handler kompleks ke fungsi bernama",
-      "Jangan premature optimize handler yang cheap"
+      "useCallback for handlers passed to memoized components",
+      "Extract complex handlers to named functions",
+      "Do not prematurely optimize cheap handlers"
     ],
-    "learning_objective": "Memahami performa handler di React",
+    "learning_objective": "Understand handler performance in React",
     "points": 10,
     "tags": ["react", "javascript"],
     "difficulty": "medium",
     "topic": "react-performance"
   },
   {
-    "question": "Apa peran semantic HTML seperti <main> dan <nav>?",
+    "question": "What is the role of semantic HTML like <main> and <nav>?",
     "choices": [
-      {"id": "a", "text": "Hanya untuk SEO, tidak mempengaruhi a11y"},
-      {"id": "b", "text": "Membantu assistive technology memahami struktur halaman"},
-      {"id": "c", "text": "Menggantikan semua div"},
-      {"id": "d", "text": "Wajib agar CSS bekerja"}
+      {"id": "a", "text": "SEO only, no effect on accessibility"},
+      {"id": "b", "text": "Help assistive technology understand page structure"},
+      {"id": "c", "text": "Replace all div elements"},
+      {"id": "d", "text": "Required for CSS to work"}
     ],
     "correct_id": "b",
-    "explanation": "Landmark elements memberi navigasi yang meaningful untuk screen reader dan keyboard users.",
+    "explanation": "Landmark elements provide meaningful navigation for screen readers and keyboard users.",
     "wrong_explanations": {
-      "a": "Semantic HTML juga penting untuk accessibility, bukan hanya SEO.",
-      "c": "div masih valid untuk layout tanpa makna semantik.",
-      "d": "CSS tidak mensyaratkan semantic tags."
+      "a": "Semantic HTML also matters for accessibility, not just SEO.",
+      "c": "div is still valid for layout without semantic meaning.",
+      "d": "CSS does not require semantic tags."
     },
     "best_practices": [
-      "Satu <main> per halaman",
-      "Gunakan heading hierarchy h1-h6 yang logis",
-      "Label form dengan <label htmlFor>"
+      "One <main> per page",
+      "Use a logical h1–h6 heading hierarchy",
+      "Label forms with <label htmlFor>"
     ],
-    "learning_objective": "Memahami semantic HTML dan a11y",
+    "learning_objective": "Understand semantic HTML and accessibility",
     "points": 10,
     "tags": ["html", "css"],
     "difficulty": "easy",
     "topic": "html-semantic"
   },
   {
-    "question": "Apa yang dimaksud controlled component?",
+    "question": "What is a controlled component?",
     "choices": [
-      {"id": "a", "text": "Input yang valuenya dikontrol React state"},
-      {"id": "b", "text": "Komponen yang hanya bisa diedit admin"},
-      {"id": "c", "text": "Komponen dengan prop types"},
-      {"id": "d", "text": "Komponen yang memakai Context API"}
+      {"id": "a", "text": "An input whose value is driven by React state"},
+      {"id": "b", "text": "A component only editable by admins"},
+      {"id": "c", "text": "A component with prop types"},
+      {"id": "d", "text": "A component using Context API"}
     ],
     "correct_id": "a",
-    "explanation": "Controlled input: value + onChange terhubung ke state React — single source of truth.",
+    "explanation": "Controlled input: value + onChange connected to React state — single source of truth.",
     "wrong_explanations": {
-      "b": "Tidak ada hubungan dengan role admin.",
-      "c": "PropTypes/TypeScript terpisah dari controlled vs uncontrolled.",
-      "d": "Context tidak mendefinisikan controlled component."
+      "b": "Unrelated to admin roles.",
+      "c": "PropTypes/TypeScript are separate from controlled vs uncontrolled.",
+      "d": "Context does not define controlled components."
     },
     "best_practices": [
-      "Satu source of truth untuk form values",
-      "Validasi sebelum submit",
-      "Pertimbangkan react-hook-form untuk form besar"
+      "Single source of truth for form values",
+      "Validate before submit",
+      "Consider react-hook-form for large forms"
     ],
-    "learning_objective": "Memahami controlled vs uncontrolled inputs",
+    "learning_objective": "Understand controlled vs uncontrolled inputs",
     "points": 10,
     "tags": ["react"],
     "difficulty": "medium",

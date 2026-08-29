@@ -138,7 +138,7 @@ func GenerateExamPaper(ctx context.Context, cfg BlueprintConfig, seed int64, exc
 			}
 		case QuestionTypeReactBuild:
 			pool := filterExcludedBuilds(bank.Builds, exclude)
-			t, err := pickBuild(pool, sec.ComponentFamily, rng)
+			t, err := pickBuild(pool, sec.ComponentFamily, sec.Difficulty, rng)
 			if err != nil {
 				return nil, err
 			}
@@ -160,7 +160,7 @@ func GenerateExamPaper(ctx context.Context, cfg BlueprintConfig, seed int64, exc
 			idx++
 		case QuestionTypeReactDebug:
 			pool := filterExcludedDebugs(bank.Debugs, exclude)
-			t, err := pickDebug(pool, sec.ComponentFamily, rng)
+			t, err := pickDebug(pool, sec.ComponentFamily, sec.Difficulty, rng)
 			if err != nil {
 				return nil, err
 			}
@@ -200,12 +200,19 @@ func pickMCQs(all []MCQItem, tags []string, difficulty string, count int, rng *r
 	return pool[:count], nil
 }
 
-func pickBuild(all []BuildTask, family string, rng *rand.Rand) (BuildTask, error) {
-	var pool []BuildTask
-	for _, t := range all {
-		if family == "" || t.Family == family {
-			pool = append(pool, t)
+func pickBuild(all []BuildTask, family, difficulty string, rng *rand.Rand) (BuildTask, error) {
+	pool := filterBuilds(all, family, difficulty)
+	if len(pool) == 0 {
+		pool = filterBuilds(all, family, "")
+	}
+	if len(pool) == 0 {
+		var fallback []BuildTask
+		for _, t := range all {
+			if family == "" || t.Family == family {
+				fallback = append(fallback, t)
+			}
 		}
+		pool = fallback
 	}
 	if len(pool) == 0 {
 		pool = all
@@ -216,12 +223,19 @@ func pickBuild(all []BuildTask, family string, rng *rand.Rand) (BuildTask, error
 	return pool[rng.Intn(len(pool))], nil
 }
 
-func pickDebug(all []DebugTask, family string, rng *rand.Rand) (DebugTask, error) {
-	var pool []DebugTask
-	for _, t := range all {
-		if family == "" || t.Family == family {
-			pool = append(pool, t)
+func pickDebug(all []DebugTask, family, difficulty string, rng *rand.Rand) (DebugTask, error) {
+	pool := filterDebugs(all, family, difficulty)
+	if len(pool) == 0 {
+		pool = filterDebugs(all, family, "")
+	}
+	if len(pool) == 0 {
+		var fallback []DebugTask
+		for _, t := range all {
+			if family == "" || t.Family == family {
+				fallback = append(fallback, t)
+			}
 		}
+		pool = fallback
 	}
 	if len(pool) == 0 {
 		pool = all
@@ -230,6 +244,34 @@ func pickDebug(all []DebugTask, family string, rng *rand.Rand) (DebugTask, error
 		return DebugTask{}, fmt.Errorf("no debug tasks in bank")
 	}
 	return pool[rng.Intn(len(pool))], nil
+}
+
+func filterBuilds(all []BuildTask, family, difficulty string) []BuildTask {
+	var out []BuildTask
+	for _, t := range all {
+		if difficulty != "" && t.Difficulty != difficulty {
+			continue
+		}
+		if family != "" && t.Family != family {
+			continue
+		}
+		out = append(out, t)
+	}
+	return out
+}
+
+func filterDebugs(all []DebugTask, family, difficulty string) []DebugTask {
+	var out []DebugTask
+	for _, t := range all {
+		if difficulty != "" && t.Difficulty != difficulty {
+			continue
+		}
+		if family != "" && t.Family != family {
+			continue
+		}
+		out = append(out, t)
+	}
+	return out
 }
 
 func tagsOverlap(itemTags, filter []string) bool {

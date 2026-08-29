@@ -15,24 +15,24 @@ func generateMCQsBatch2() []mcq {
 		o    [4]string
 		e, d string
 	}{
-		{"`useLayoutEffect` berbeda dari `useEffect` karena?", "b", [4]string{"Hanya di server", "Jalan sinkron setelah DOM mutate, sebelum paint", "Tidak bisa cleanup", "Hanya class"}, "useLayoutEffect cocok mengukur DOM sebelum user melihat flicker.", "medium"},
-		{"Portal React (`createPortal`) berguna untuk?", "a", [4]string{"Styling global", "Render subtree ke DOM node di luar parent (modal)", "Ganti router", "Memoization"}, "Portal memutus overflow/z-index parent untuk overlay.", "medium"},
-		{"`forwardRef` dipakai ketika?", "c", [4]string{"Semua komponen", "Hanya class", "Parent perlu akses DOM ref child", "Ganti props"}, "forwardRef meneruskan ref ke elemen di dalam komponen.", "medium"},
-		{"Strict Mode di dev membantu menemukan?", "d", [4]string{"CSS bug", "Network error", "SEO issue", "Side effect tidak aman / double invoke"}, "React 18 Strict Mode double-invoke effects di dev.", "medium"},
-		{"Controlled vs uncontrolled input?", "b", [4]string{"Sama", "Controlled: value dari state React", "Uncontrolled lebih aman", "Hanya di form HTML"}, "Controlled = single source of truth di React state.", "easy"},
-		{"Kapan `key` pada list harus stabil?", "a", [4]string{"Saat list bisa reorder/filter", "Tidak pernah", "Hanya di production", "Hanya string"}, "Key stabil menjaga identitas item antar render.", "easy"},
-		{"`children` sebagai function (render prop) untuk?", "c", [4]string{"SEO", "Styling", "Delegasi rendering ke parent", "Database"}, "Pattern render props membagikan logic UI.", "hard"},
-		{"Error di event handler ditangani dengan?", "b", [4]string{"Error boundary otomatis", "try/catch atau state error lokal", "Suspense", "Portal"}, "Error boundary tidak menangkap event handler errors.", "medium"},
-		{"`lazy()` + `Suspense` untuk?", "d", [4]string{"State global", "CSS", "Form validation", "Code-splitting komponen async"}, "lazy memuat komponen dinamis; Suspense fallback loading.", "medium"},
-		{"Reconciliation React mengacu pada?", "a", [4]string{"Proses diff virtual DOM", "HTTP cache", "CSS layout", "npm install"}, "Reconciler membandingkan tree lama vs baru.", "hard"},
-		{"`useId` (React 18) berguna untuk?", "c", [4]string{"Random key list", "UUID database", "ID stabil SSR/hydration untuk a11y", "Routing"}, "useId menghindari mismatch id server/client.", "medium"},
-		{"Anti-pattern: `useEffect` fetch tanpa cleanup abort?", "b", [4]string{"Best practice", "Race condition saat unmount/fast re-fetch", "Wajib", "Hanya di mobile"}, "AbortController mencegah setState pada unmounted component.", "hard"},
-		{"`memo` + `useCallback` paling masuk akal ketika?", "d", [4]string{"Selalu", "File kecil", "Tanpa profiler", "Child mahal re-render dan props stabil"}, "Optimasi prematur bisa menambah kompleksitas.", "hard"},
-		{"Fragment dengan key ditulis?", "a", [4]string{"`<React.Fragment key={id}>`", "`<key>`", "`#fragment`", "Tidak bisa"}, "Keyed fragment untuk list of fragments.", "medium"},
-		{"Hydration mismatch sering disebabkan?", "c", [4]string{"CSS", "useMemo", "HTML berbeda server vs client", "import CSS"}, "Contoh: Date.now() atau random di render awal.", "hard"},
-		{"`defaultValue` pada uncontrolled input?", "b", [4]string{"Sync tiap render", "Nilai awal saja", "Sama dengan value", "Wajib di TS"}, "defaultValue tidak mengontrol subsequent updates.", "easy"},
-		{"Context value object inline `value={{a,b}}` masalahnya?", "d", [4]string{"Tidak ada", "Lebih cepat", "SEO", "Referensi baru tiap render memicu re-render consumer"}, "Memoize value object atau pisah context.", "medium"},
-		{"`useRef` untuk menyimpan interval ID karena?", "a", [4]string{"Mutable tanpa re-render", "Lebih cepat dari state", "Wajib hooks rules", "SSR"}, "Ref cocok nilai yang tidak perlu trigger UI update.", "medium"},
+		{"`useLayoutEffect` differs from `useEffect` because?", "b", [4]string{"Server-only", "Runs synchronously after DOM mutations, before paint", "Cannot cleanup", "Class components only"}, "useLayoutEffect is good for measuring DOM before the user sees flicker.", "medium"},
+		{"React Portal (`createPortal`) is useful for?", "a", [4]string{"Global styling", "Rendering a subtree into a DOM node outside the parent (modal)", "Replacing the router", "Memoization"}, "Portal breaks parent overflow/z-index for overlays.", "medium"},
+		{"When is `forwardRef` used?", "c", [4]string{"All components", "Class components only", "Parent needs access to the child's DOM ref", "Replacing props"}, "forwardRef passes ref to an element inside the component.", "medium"},
+		{"Strict Mode in dev helps find?", "d", [4]string{"CSS bugs", "Network errors", "SEO issues", "Unsafe side effects / double invoke"}, "React 18 Strict Mode double-invokes effects in dev.", "medium"},
+		{"Controlled vs uncontrolled input?", "b", [4]string{"Same thing", "Controlled: value from React state", "Uncontrolled is safer", "HTML forms only"}, "Controlled = single source of truth in React state.", "easy"},
+		{"When should `key` on a list be stable?", "a", [4]string{"When the list can reorder/filter", "Never", "Production only", "Strings only"}, "Stable keys preserve item identity across renders.", "easy"},
+		{"`children` as a function (render prop) is for?", "c", [4]string{"SEO", "Styling", "Delegating rendering to the parent", "Database"}, "Render props pattern shares UI logic.", "hard"},
+		{"Errors in event handlers are handled with?", "b", [4]string{"Automatic error boundary", "try/catch or local error state", "Suspense", "Portal"}, "Error boundaries do not catch event handler errors.", "medium"},
+		{"`lazy()` + `Suspense` is for?", "d", [4]string{"Global state", "CSS", "Form validation", "Async component code-splitting"}, "lazy loads dynamic components; Suspense shows loading fallback.", "medium"},
+		{"React reconciliation refers to?", "a", [4]string{"Virtual DOM diff process", "HTTP cache", "CSS layout", "npm install"}, "The reconciler compares old vs new tree.", "hard"},
+		{"`useId` (React 18) is useful for?", "c", [4]string{"Random list keys", "Database UUIDs", "Stable SSR/hydration IDs for a11y", "Routing"}, "useId avoids server/client id mismatch.", "medium"},
+		{"Anti-pattern: `useEffect` fetch without cleanup abort?", "b", [4]string{"Best practice", "Race condition on unmount/fast re-fetch", "Required", "Mobile only"}, "AbortController prevents setState on unmounted component.", "hard"},
+		{"`memo` + `useCallback` makes most sense when?", "d", [4]string{"Always", "Small files", "Without a profiler", "Expensive child re-renders and stable props"}, "Premature optimization can add complexity.", "hard"},
+		{"Fragment with key is written as?", "a", [4]string{"`<React.Fragment key={id}>`", "`<key>`", "`#fragment`", "Not possible"}, "Keyed fragment for list of fragments.", "medium"},
+		{"Hydration mismatch is often caused by?", "c", [4]string{"CSS", "useMemo", "Different HTML on server vs client", "CSS imports"}, "Example: Date.now() or random in initial render.", "hard"},
+		{"`defaultValue` on uncontrolled input?", "b", [4]string{"Syncs every render", "Initial value only", "Same as value", "Required in TS"}, "defaultValue does not control subsequent updates.", "easy"},
+		{"Context value object inline `value={{a,b}}` problem?", "d", [4]string{"None", "Faster", "SEO", "New reference each render triggers consumer re-render"}, "Memoize value object or split context.", "medium"},
+		{"`useRef` for storing interval ID because?", "a", [4]string{"Mutable without re-render", "Faster than state", "Hooks rules require it", "SSR"}, "Ref is good for values that don't need to trigger UI update.", "medium"},
 	}
 	for _, it := range react {
 		add(it.q, it.c, it.o, it.e, it.d, "react", "react-v2")
@@ -43,24 +43,24 @@ func generateMCQsBatch2() []mcq {
 		o    [4]string
 		e, d string
 	}{
-		{"`Array.prototype.find` mengembalikan?", "b", [4]string{"Index", "Elemen pertama yang match atau undefined", "Array baru", "Boolean"}, "find berhenti di elemen pertama yang lolos predicate.", "easy"},
-		{"`Object.freeze` melakukan?", "c", [4]string{"Deep immutable", "Hanya array", "Shallow freeze properti", "Clone"}, "freeze shallow — nested object masih bisa diubah.", "medium"},
-		{"`??` (nullish coalescing) vs `||`?", "a", [4]string{"?? hanya null/undefined", "Sama", "|| lebih ketat", "?? untuk string kosong"}, "|| menganggap '' dan 0 falsy; ?? tidak.", "medium"},
-		{"`Promise.allSettled` berguna ketika?", "d", [4]string{"Satu gagal cancel semua", "Sync loop", "DOM", "Butuh hasil semua promise meski ada yang reject"}, "allSettled tidak short-circuit pada rejection.", "medium"},
-		{"TDZ (Temporal Dead Zone) terkait?", "b", [4]string{"var", "let/const sebelum deklarasi", "function", "import"}, "Akses let/const sebelum line deklarasi throw.", "hard"},
-		{"`structuredClone` untuk?", "c", [4]string{"JSON saja", "Shallow copy", "Deep clone built-in (terbatas)", "Immutable.js"}, "structuredClone deep clone di browser modern.", "medium"},
-		{"Event loop: setTimeout(0) vs Promise.then?", "a", [4]string{".then microtask lebih dulu", "setTimeout selalu dulu", "Random", "Parallel"}, "Microtask queue sebelum macrotask berikutnya.", "hard"},
-		{"`in` operator pada object mengecek?", "b", [4]string{"Nilai", "Keberadaan key (termasuk prototype chain)", "Tipe", "Length"}, "Object.hasOwn lebih aman untuk own property.", "medium"},
-		{"`fetch` credentials 'include'?", "d", [4]string{"Tanpa cookie", "Hanya POST", "CORS tidak perlu", "Kirim cookie cross-origin jika server allow"}, "Credentials mode untuk session cookie.", "hard"},
-		{"Debounce vs throttle?", "c", [4]string{"Sama", "Throttle tunggu idle", "Debounce tunggu pause; throttle batasi rate", "Hanya UI"}, "Debounce: search input; throttle: scroll.", "medium"},
-		{"`Map` vs plain object untuk key?", "a", [4]string{"Map boleh key non-string", "Object lebih cepat selalu", "Map tidak iterable", "Sama"}, "Map menjaga insertion order dan key arbitrary.", "medium"},
-		{"`Array.sort` default membandingkan?", "b", [4]string{"Number numerik", "String unicode", "Random", "Length"}, "Sort default string — beri compareFn untuk angka.", "easy"},
-		{"IIFE `(function(){})()` dipakai untuk?", "d", [4]string{"Import", "Class", "Hook", "Scope terisolasi / hindari pollute global"}, "Pattern lama sebelum modules.", "easy"},
-		{"`Symbol` di JS untuk?", "c", [4]string{"Math", "CSS", "Unique property key", "Async"}, "Symbol.uniq untuk key yang tidak bentrok.", "medium"},
-		{"`WeakMap` key harus?", "a", [4]string{"Object (garbage collectible)", "String", "Number", "Symbol saja"}, "WeakMap tidak mencegah GC key object.", "hard"},
-		{"`try/finally` tanpa catch?", "b", [4]string{"Illegal", "Legal — finally tetap jalan", "Hanya async", "Hanya TS"}, "finally jalan meski return di try.", "medium"},
-		{"Template literal tagged function?", "d", [4]string{"CSS only", "SQL injection", "JSON", "Custom processing string parts"}, "Tagged templates untuk i18n/styled patterns.", "hard"},
-		{"`Object.entries` mengembalikan?", "c", [4]string{"Keys saja", "Values saja", "Array [key,value] pairs", "Map"}, "entries untuk iterasi object enumerable.", "easy"},
+		{"`Array.prototype.find` returns?", "b", [4]string{"Index", "First matching element or undefined", "New array", "Boolean"}, "find stops at the first element that passes the predicate.", "easy"},
+		{"`Object.freeze` does?", "c", [4]string{"Deep immutable", "Arrays only", "Shallow freeze of properties", "Clone"}, "freeze is shallow — nested objects can still be changed.", "medium"},
+		{"`??` (nullish coalescing) vs `||`?", "a", [4]string{"?? only null/undefined", "Same", "|| is stricter", "?? for empty strings"}, "|| treats '' and 0 as falsy; ?? does not.", "medium"},
+		{"`Promise.allSettled` is useful when?", "d", [4]string{"One failure cancels all", "Sync loop", "DOM", "You need all promise results even if some reject"}, "allSettled does not short-circuit on rejection.", "medium"},
+		{"TDZ (Temporal Dead Zone) relates to?", "b", [4]string{"var", "let/const before declaration", "function", "import"}, "Accessing let/const before the declaration line throws.", "hard"},
+		{"`structuredClone` is for?", "c", [4]string{"JSON only", "Shallow copy", "Built-in deep clone (limited)", "Immutable.js"}, "structuredClone deep clones in modern browsers.", "medium"},
+		{"Event loop: setTimeout(0) vs Promise.then?", "a", [4]string{".then microtask runs first", "setTimeout always first", "Random", "Parallel"}, "Microtask queue before next macrotask.", "hard"},
+		{"`in` operator on object checks?", "b", [4]string{"Value", "Key existence (including prototype chain)", "Type", "Length"}, "Object.hasOwn is safer for own property.", "medium"},
+		{"`fetch` credentials 'include'?", "d", [4]string{"No cookies", "POST only", "CORS not needed", "Send cookies cross-origin if server allows"}, "Credentials mode for session cookies.", "hard"},
+		{"Debounce vs throttle?", "c", [4]string{"Same", "Throttle waits for idle", "Debounce waits for pause; throttle limits rate", "UI only"}, "Debounce: search input; throttle: scroll.", "medium"},
+		{"`Map` vs plain object for keys?", "a", [4]string{"Map allows non-string keys", "Object is always faster", "Map is not iterable", "Same"}, "Map preserves insertion order and arbitrary keys.", "medium"},
+		{"`Array.sort` default compares?", "b", [4]string{"Numbers numerically", "Unicode strings", "Random", "Length"}, "Default sort is string — pass compareFn for numbers.", "easy"},
+		{"IIFE `(function(){})()` is used for?", "d", [4]string{"Import", "Class", "Hook", "Isolated scope / avoid polluting global"}, "Legacy pattern before modules.", "easy"},
+		{"`Symbol` in JS is for?", "c", [4]string{"Math", "CSS", "Unique property keys", "Async"}, "Symbol.uniq for keys that don't collide.", "medium"},
+		{"`WeakMap` keys must be?", "a", [4]string{"Objects (garbage collectible)", "Strings", "Numbers", "Symbols only"}, "WeakMap does not prevent GC of key objects.", "hard"},
+		{"`try/finally` without catch?", "b", [4]string{"Illegal", "Legal — finally still runs", "Async only", "TS only"}, "finally runs even if return in try.", "medium"},
+		{"Template literal tagged function?", "d", [4]string{"CSS only", "SQL injection", "JSON", "Custom processing of string parts"}, "Tagged templates for i18n/styled patterns.", "hard"},
+		{"`Object.entries` returns?", "c", [4]string{"Keys only", "Values only", "Array of [key,value] pairs", "Map"}, "entries for iterating enumerable object properties.", "easy"},
 	}
 	for _, it := range js {
 		add(it.q, it.c, it.o, it.e, it.d, "javascript", "js-v2")
@@ -71,23 +71,23 @@ func generateMCQsBatch2() []mcq {
 		o    [4]string
 		e, d string
 	}{
-		{"`display: grid` vs `flex`?", "a", [4]string{"Grid dua dimensi, flex satu dimensi utama", "Sama", "Flex untuk table", "Grid tidak responsive"}, "Pilih flex untuk baris/kolom tunggal; grid untuk layout 2D.", "easy"},
-		{"`fr` unit di CSS Grid?", "b", [4]string{"Font relative", "Fraction sisa ruang track", "Frame rate", "Rem"}, "1fr = bagian proporsional ruang tersedia.", "medium"},
-		{"`position: sticky` perlu?", "c", [4]string{"z-index saja", "fixed parent", "Offset + ancestor scroll + tidak overflow hidden parent", "display flex"}, "Parent overflow:hidden bisa mematikan sticky.", "medium"},
-		{"`clamp(min, pref, max)` untuk?", "d", [4]string{"Animation", "Grid", "Print", "Fluid typography/spacing terbatas"}, "clamp responsif dengan batas min/max.", "medium"},
-		{"Specificity: inline style vs #id?", "b", [4]string{"#id menang", "Inline menang kecuali !important id", "Sama", "class menang"}, "Inline 1,0,0,0 — id 0,1,0,0.", "medium"},
-		{"`aspect-ratio` property?", "a", [4]string{"Menjaga rasio lebar/tinggi", "Font size", "Grid gap", "Flex order"}, "Berguna video/card responsif.", "easy"},
-		{"`@layer` di CSS untuk?", "c", [4]string{"Animation", "Font", "Mengatur urutan cascade layer", "Media query"}, "Layer mengontrol precedence tanpa specificity war.", "hard"},
-		{"`contain: layout` membantu?", "d", [4]string{"SEO", "Font", "Color", "Isolasi layout subtree performa"}, "Contain membatasi reflow ke subtree.", "hard"},
-		{"`logical` properties (`margin-inline`)?", "b", [4]string{"Print only", "Mengikuti writing mode LTR/RTL", "Grid only", "Deprecated"}, "logical props untuk i18n layout.", "medium"},
-		{"`prefers-reduced-motion`?", "a", [4]string{"Media query a11y kurangi animasi", "Dark mode", "Print", "Hover"}, "Hormati preferensi user motion sensitivity.", "easy"},
-		{"Flex `gap` vs margin pada item?", "c", [4]string{"Margin lebih modern", "Sama", "gap spacing antar item tanpa margin collapse", "gap hanya grid"}, "gap lebih bersih untuk flex/grid spacing.", "easy"},
-		{"`object-fit: cover` pada img?", "b", [4]string{"Stretch distort", "Crop isi box menjaga ratio", "Contain blur", "SVG only"}, "cover fill container crop center.", "easy"},
-		{"`::before` pseudo-element default `display`?", "d", [4]string{"block selalu", "inline selalu", "none", "inline — perlu content & sering di-set block"}, "Perlu property content untuk tampil.", "medium"},
-		{"`minmax(200px, 1fr)` di grid?", "a", [4]string{"Track min 200px max sisa", "Fixed 200", "Hanya max", "Flex only"}, "minmax fleksibel track sizing.", "medium"},
-		{"`will-change` anti-pattern jika?", "c", [4]string{"Hover kecil", "Transform animasi", "Diterapkan permanen ke banyak elemen", "GPU layer sekali"}, "Overuse will-change boros memori.", "hard"},
-		{"`color-scheme` pada root?", "b", [4]string{"Font color", "Memberi hint browser dark/light UI chrome", "Grid", "Flex"}, "Mempengaruhi scrollbar/form native theming.", "medium"},
-		{"`subgrid` (CSS Grid)?", "d", [4]string{"Flex feature", "Deprecated", "Table only", "Child grid inherit track parent"}, "subgrid align nested grid ke parent tracks.", "hard"},
+		{"`display: grid` vs `flex`?", "a", [4]string{"Grid is two-dimensional, flex is one main dimension", "Same", "Flex for tables", "Grid is not responsive"}, "Choose flex for single row/column; grid for 2D layout.", "easy"},
+		{"`fr` unit in CSS Grid?", "b", [4]string{"Font relative", "Fraction of remaining track space", "Frame rate", "Rem"}, "1fr = proportional share of available space.", "medium"},
+		{"`position: sticky` needs?", "c", [4]string{"z-index only", "fixed parent", "Offset + scroll ancestor + no overflow:hidden parent", "display flex"}, "Parent overflow:hidden can disable sticky.", "medium"},
+		{"`clamp(min, pref, max)` is for?", "d", [4]string{"Animation", "Grid", "Print", "Bounded fluid typography/spacing"}, "clamp is responsive with min/max bounds.", "medium"},
+		{"Specificity: inline style vs #id?", "b", [4]string{"#id wins", "Inline wins unless !important id", "Same", "class wins"}, "Inline 1,0,0,0 — id 0,1,0,0.", "medium"},
+		{"`aspect-ratio` property?", "a", [4]string{"Maintains width/height ratio", "Font size", "Grid gap", "Flex order"}, "Useful for responsive video/cards.", "easy"},
+		{"`@layer` in CSS is for?", "c", [4]string{"Animation", "Font", "Controlling cascade layer order", "Media query"}, "Layers control precedence without specificity wars.", "hard"},
+		{"`contain: layout` helps?", "d", [4]string{"SEO", "Font", "Color", "Layout isolation for subtree performance"}, "Contain limits reflow to the subtree.", "hard"},
+		{"`logical` properties (`margin-inline`)?", "b", [4]string{"Print only", "Follow writing mode LTR/RTL", "Grid only", "Deprecated"}, "Logical props for i18n layout.", "medium"},
+		{"`prefers-reduced-motion`?", "a", [4]string{"A11y media query to reduce animation", "Dark mode", "Print", "Hover"}, "Respect user motion sensitivity preferences.", "easy"},
+		{"Flex `gap` vs margin on items?", "c", [4]string{"Margin is more modern", "Same", "gap spaces items without margin collapse", "gap is grid only"}, "gap is cleaner for flex/grid spacing.", "easy"},
+		{"`object-fit: cover` on img?", "b", [4]string{"Stretch distort", "Crop content to box while keeping ratio", "Contain blur", "SVG only"}, "cover fills container with center crop.", "easy"},
+		{"`::before` pseudo-element default `display`?", "d", [4]string{"Always block", "Always inline", "none", "inline — needs content & often set to block"}, "Needs content property to appear.", "medium"},
+		{"`minmax(200px, 1fr)` in grid?", "a", [4]string{"Track min 200px max remaining", "Fixed 200", "Max only", "Flex only"}, "minmax for flexible track sizing.", "medium"},
+		{"`will-change` anti-pattern when?", "c", [4]string{"Small hover", "Transform animation", "Applied permanently to many elements", "One-time GPU layer"}, "Overuse of will-change wastes memory.", "hard"},
+		{"`color-scheme` on root?", "b", [4]string{"Font color", "Hints browser dark/light UI chrome", "Grid", "Flex"}, "Affects scrollbar/form native theming.", "medium"},
+		{"`subgrid` (CSS Grid)?", "d", [4]string{"Flex feature", "Deprecated", "Table only", "Child grid inherits parent tracks"}, "subgrid aligns nested grid to parent tracks.", "hard"},
 	}
 	for _, it := range css {
 		add(it.q, it.c, it.o, it.e, it.d, "css", "css-v2")
@@ -98,23 +98,23 @@ func generateMCQsBatch2() []mcq {
 		o    [4]string
 		e, d string
 	}{
-		{"`<button>` di dalam `<form>` default type?", "b", [4]string{"button", "submit", "reset", "menu"}, "Tanpa type eksplisit, button = submit.", "easy"},
-		{"`<label for>` harus match?", "a", [4]string{"id input terkait", "name", "class", "type"}, "for/id menghubungkan label ke control.", "easy"},
-		{"`<dialog>` element native?", "c", [4]string{"Tidak ada", "Hanya Safari", "Modal dialog HTML dengan showModal()", "React only"}, "dialog + ::backdrop untuk modal native.", "medium"},
-		{"`loading=\"lazy\"` pada img?", "b", [4]string{"SEO", "Defer load sampai dekat viewport", "CDN", "Blur"}, "Native lazy loading gambar.", "easy"},
-		{"Landmark `<main>` sebaiknya?", "d", [4]string{"Banyak per halaman", "Di footer", "Di nav", "Satu per halaman untuk konten utama"}, "Satu main landmark per dokumen.", "easy"},
-		{"`aria-expanded` pada accordion?", "a", [4]string{"State buka/tutup untuk AT", "Styling", "Focus", "Tab order"}, "Screen reader tahu panel terbuka.", "medium"},
-		{"`<input type=\"number\">` caveat?", "c", [4]string{"Selalu integer", "Tidak ada step", "Bisa spinner & locale quirks — validasi tambahan", "Tidak di mobile"}, "number input bukan pengganti validasi bisnis.", "medium"},
-		{"`<details>/<summary>` untuk?", "b", [4]string{"Modal", "Disclosure widget tanpa JS", "Table", "Form"}, "Native expand/collapse konten.", "easy"},
-		{"`tabindex=\"0\"`?", "d", [4]string{"Hapus dari tab order", "Hanya mouse", "Negative focus trap", "Masuk natural tab order"}, "tabindex -1 programmatic focus only.", "medium"},
-		{"`role=\"alert\"`?", "a", [4]string{"Live region urgent untuk error", "Button", "Link", "Heading"}, "Pesan error form sebaiknya role alert.", "easy"},
-		{"`<meta viewport>` mobile?", "b", [4]string{"SEO", "width=device-width initial-scale=1", "HTTPS", "PWA"}, "Viewport meta untuk responsive mobile.", "easy"},
-		{"`<picture>` + `<source>` untuk?", "c", [4]string{"Video", "Font", "Art direction / format gambar responsif", "SVG"}, "picture untuk responsive images art direction.", "medium"},
-		{"Skip link accessibility?", "d", [4]string{"SEO", "CSS", "Analytics", "Link ke main content untuk keyboard user"}, "Skip nav ke konten utama.", "medium"},
-		{"`autocomplete` attribute pada form?", "a", [4]string{"Bantu browser isi ulang field benar", "Validation", "CSRF", "Routing"}, "autocomplete=\"email\" dll untuk UX.", "easy"},
-		{"`<fieldset>` + `<legend>`?", "b", [4]string{"Table", "Kelompok form dengan judul aksesibel", "Modal", "Grid"}, "fieldset mengelompokkan radio/checkbox.", "easy"},
-		{"`hidden` attribute vs `display:none` CSS?", "c", [4]string{"Sama selalu", "hidden tidak semantik", "hidden tidak boleh ditampilkan & tidak relevan AT", "hidden untuk SEO"}, "hidden=until-found di HTML baru untuk find-in-page.", "medium"},
-		{"`<template>` content?", "d", [4]string{"Render langsung", "SEO utama", "SSR only", "Inert sampai di-clone ke DOM via JS"}, "template untuk fragment tidak aktif.", "hard"},
+		{"`<button>` inside `<form>` default type?", "b", [4]string{"button", "submit", "reset", "menu"}, "Without an explicit type, button = submit.", "easy"},
+		{"`<label for>` must match?", "a", [4]string{"Related input id", "name", "class", "type"}, "for/id connects label to control.", "easy"},
+		{"Native `<dialog>` element?", "c", [4]string{"Does not exist", "Safari only", "HTML modal dialog with showModal()", "React only"}, "dialog + ::backdrop for native modal.", "medium"},
+		{"`loading=\"lazy\"` on img?", "b", [4]string{"SEO", "Defer load until near viewport", "CDN", "Blur"}, "Native image lazy loading.", "easy"},
+		{"Landmark `<main>` should?", "d", [4]string{"Many per page", "In footer", "In nav", "One per page for main content"}, "One main landmark per document.", "easy"},
+		{"`aria-expanded` on accordion?", "a", [4]string{"Open/closed state for AT", "Styling", "Focus", "Tab order"}, "Screen reader knows panel is open.", "medium"},
+		{"`<input type=\"number\">` caveat?", "c", [4]string{"Always integer", "No step", "Spinner & locale quirks — extra validation needed", "Not on mobile"}, "number input is not a substitute for business validation.", "medium"},
+		{"`<details>/<summary>` for?", "b", [4]string{"Modal", "Disclosure widget without JS", "Table", "Form"}, "Native expand/collapse content.", "easy"},
+		{"`tabindex=\"0\"`?", "d", [4]string{"Remove from tab order", "Mouse only", "Negative focus trap", "Enter natural tab order"}, "tabindex -1 programmatic focus only.", "medium"},
+		{"`role=\"alert\"`?", "a", [4]string{"Urgent live region for errors", "Button", "Link", "Heading"}, "Form error messages should use role alert.", "easy"},
+		{"`<meta viewport>` mobile?", "b", [4]string{"SEO", "width=device-width initial-scale=1", "HTTPS", "PWA"}, "Viewport meta for responsive mobile.", "easy"},
+		{"`<picture>` + `<source>` for?", "c", [4]string{"Video", "Font", "Art direction / responsive image formats", "SVG"}, "picture for responsive images art direction.", "medium"},
+		{"Skip link accessibility?", "d", [4]string{"SEO", "CSS", "Analytics", "Link to main content for keyboard users"}, "Skip nav to main content.", "medium"},
+		{"`autocomplete` attribute on form?", "a", [4]string{"Help browser refill fields correctly", "Validation", "CSRF", "Routing"}, "autocomplete=\"email\" etc. for UX.", "easy"},
+		{"`<fieldset>` + `<legend>`?", "b", [4]string{"Table", "Accessible form group with title", "Modal", "Grid"}, "fieldset groups radio/checkbox.", "easy"},
+		{"`hidden` attribute vs `display:none` CSS?", "c", [4]string{"Always same", "hidden is not semantic", "hidden must not be shown & not relevant to AT", "hidden for SEO"}, "hidden=until-found in newer HTML for find-in-page.", "medium"},
+		{"`<template>` content?", "d", [4]string{"Renders immediately", "Main SEO", "SSR only", "Inert until cloned into DOM via JS"}, "template for inactive fragments.", "hard"},
 	}
 	for _, it := range html {
 		add(it.q, it.c, it.o, it.e, it.d, "html", "html-v2")
@@ -128,21 +128,21 @@ func generateBuildsBatch2() []buildTask {
 		title, field, diff string
 		validate           string
 	}{
-		{"UsernameForm", "username", "easy", "username minimal 3 karakter"},
-		{"OTPForm", "otpCode", "medium", "kode OTP minimal 6 digit"},
-		{"PinForm", "pin", "medium", "PIN minimal 4 digit"},
-		{"BioForm", "bio", "easy", "bio max 120 karakter"},
-		{"WebsiteForm", "siteUrl", "medium", "URL wajib mengandung https"},
-		{"AgeForm", "age", "easy", "usia wajib diisi"},
-		{"ZipCodeForm", "zipCode", "medium", "kode pos minimal 5 digit"},
-		{"TeamNameForm", "teamName", "easy", "nama tim wajib diisi"},
-		{"TaglineForm", "tagline", "medium", "tagline max 80 karakter"},
-		{"BudgetForm", "budget", "hard", "budget wajib diisi"},
-		{"DeadlineForm", "dueDate", "medium", "tanggal wajib diisi"},
-		{"PriorityForm", "priority", "easy", "priority wajib diisi"},
-		{"ChannelForm", "channel", "medium", "channel wajib diisi"},
-		{"LocaleForm", "locale", "easy", "locale wajib diisi"},
-		{"NicknameForm", "nickname", "medium", "nickname minimal 3 karakter"},
+		{"UsernameForm", "username", "easy", "username min 3 characters"},
+		{"OTPForm", "otpCode", "medium", "OTP code min 6 digits"},
+		{"PinForm", "pin", "medium", "PIN min 4 digits"},
+		{"BioForm", "bio", "easy", "bio max 120 characters"},
+		{"WebsiteForm", "siteUrl", "medium", "URL must contain https"},
+		{"AgeForm", "age", "easy", "age required"},
+		{"ZipCodeForm", "zipCode", "medium", "zip code min 5 digits"},
+		{"TeamNameForm", "teamName", "easy", "team name required"},
+		{"TaglineForm", "tagline", "medium", "tagline max 80 characters"},
+		{"BudgetForm", "budget", "hard", "budget required"},
+		{"DeadlineForm", "dueDate", "medium", "date required"},
+		{"PriorityForm", "priority", "easy", "priority required"},
+		{"ChannelForm", "channel", "medium", "channel required"},
+		{"LocaleForm", "locale", "easy", "locale required"},
+		{"NicknameForm", "nickname", "medium", "nickname min 3 characters"},
 	}
 
 	var out []buildTask
@@ -161,7 +161,7 @@ export function %s({ onSubmit }) {
   return (
     <form data-testid="%s">
       <input name="%s" placeholder="%s" />
-      <button type="submit">Kirim</button>
+      <button type="submit">Submit</button>
     </form>
   );
 }
@@ -189,17 +189,17 @@ export function %s({ onSubmit }) {
         onChange={(e) => setValue(e.target.value)}
       />
       {error && <p role="alert">{error}</p>}
-      <button type="submit">Kirim</button>
+      <button type="submit">Submit</button>
     </form>
   );
 }
 `, cmp, validation, s.field, testID, s.field, s.field, s.field, s.field),
-			SolutionExplanation: "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+			SolutionExplanation: "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
 			RubricJSON:          buildRubric,
 			TestCases:           buildAssertions(s.field, s.validate, testID),
-			BestPractices:       []string{"Controlled components", "Validasi sebelum submit", "Label htmlFor untuk a11y", "preventDefault pada form submit"},
-			CommonMistakes:      []string{"Lupa preventDefault", "Uncontrolled input", "Tidak tampilkan error"},
-			LearningObjective:   fmt.Sprintf("Form React — %s", s.title),
+			BestPractices:       []string{"Controlled components", "Validate before submit", "Label htmlFor for a11y", "preventDefault on form submit"},
+			CommonMistakes:      []string{"Forgot preventDefault", "Uncontrolled input", "Error not displayed"},
+			LearningObjective:   fmt.Sprintf("React Form — %s", s.title),
 			Difficulty:          s.diff,
 			Points:              40,
 		})

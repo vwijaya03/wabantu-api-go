@@ -126,7 +126,7 @@ func CreateSession(ctx context.Context, p *CreateSessionParams) (*CreateSessionR
 	switch {
 	case p.ReuseSessionID != "":
 		var err error
-		questions, cfg, err = loadReusableAISession(ctx, p.ReuseSessionID, accountID)
+		questions, cfg, err = loadReusableAISession(ctx, p.ReuseSessionID, accountID, parseClientToken(p.ClientToken))
 		if err != nil {
 			return nil, appErrs.BadRequest(err.Error())
 		}
@@ -189,7 +189,7 @@ func CreateSession(ctx context.Context, p *CreateSessionParams) (*CreateSessionR
 	if err != nil {
 		return nil, err
 	}
-	row, err := loadSessionForUser(ctx, id, accountID)
+	row, err := loadSessionForUser(ctx, id, accountID, parseClientToken(p.ClientToken))
 	if err != nil {
 		return nil, err
 	}
@@ -224,9 +224,10 @@ func ClaimSession(ctx context.Context, id string, p *ClaimSessionParams) (*OKRes
 }
 
 //encore:api public method=POST path=/api/v1/codesim/sessions/:id/regenerate
-func RegenerateSession(ctx context.Context, id string) (*CreateSessionResponse, error) {
+func RegenerateSession(ctx context.Context, id string, q *SessionAccessQuery) (*CreateSessionResponse, error) {
 	accountID := optionalAccountID(ctx)
-	row, err := loadSessionForUser(ctx, id, accountID)
+	clientToken := q.resolvedClientToken()
+	row, err := loadSessionForUser(ctx, id, accountID, clientToken)
 	if err != nil {
 		return nil, err
 	}
@@ -249,7 +250,7 @@ func RegenerateSession(ctx context.Context, id string) (*CreateSessionResponse, 
 	if err := updateSessionQuestions(ctx, id, seed, questions); err != nil {
 		return nil, err
 	}
-	row, err = loadSessionForUser(ctx, id, accountID)
+	row, err = loadSessionForUser(ctx, id, accountID, clientToken)
 	if err != nil {
 		return nil, err
 	}
@@ -257,9 +258,10 @@ func RegenerateSession(ctx context.Context, id string) (*CreateSessionResponse, 
 }
 
 //encore:api public method=POST path=/api/v1/codesim/sessions/:id/start
-func StartSession(ctx context.Context, id string) (*CreateSessionResponse, error) {
+func StartSession(ctx context.Context, id string, q *SessionAccessQuery) (*CreateSessionResponse, error) {
 	accountID := optionalAccountID(ctx)
-	row, err := loadSessionForUser(ctx, id, accountID)
+	clientToken := q.resolvedClientToken()
+	row, err := loadSessionForUser(ctx, id, accountID, clientToken)
 	if err != nil {
 		return nil, err
 	}
@@ -273,7 +275,7 @@ func StartSession(ctx context.Context, id string) (*CreateSessionResponse, error
 	if err := startSession(ctx, id, mins); err != nil {
 		return nil, err
 	}
-	row, err = loadSessionForUser(ctx, id, accountID)
+	row, err = loadSessionForUser(ctx, id, accountID, clientToken)
 	if err != nil {
 		return nil, err
 	}
@@ -281,9 +283,10 @@ func StartSession(ctx context.Context, id string) (*CreateSessionResponse, error
 }
 
 //encore:api public method=GET path=/api/v1/codesim/sessions/:id
-func GetSession(ctx context.Context, id string) (*CreateSessionResponse, error) {
+func GetSession(ctx context.Context, id string, q *SessionAccessQuery) (*CreateSessionResponse, error) {
 	accountID := optionalAccountID(ctx)
-	row, err := loadSessionForUser(ctx, id, accountID)
+	clientToken := q.resolvedClientToken()
+	row, err := loadSessionForUser(ctx, id, accountID, clientToken)
 	if err != nil {
 		return nil, err
 	}
@@ -295,7 +298,9 @@ func GetSession(ctx context.Context, id string) (*CreateSessionResponse, error) 
 }
 
 type SaveAnswersParams struct {
-	Answers SessionAnswers `json:"answers"`
+	ClientToken       string         `json:"clientToken,omitempty"`
+	HeaderClientToken string         `header:"X-Codesim-Client-Token"`
+	Answers           SessionAnswers `json:"answers"`
 }
 
 //encore:api public method=PUT path=/api/v1/codesim/sessions/:id/answers
@@ -304,13 +309,14 @@ func SaveAnswers(ctx context.Context, id string, p *SaveAnswersParams) (*CreateS
 	if p == nil {
 		return nil, appErrs.BadRequest("body required")
 	}
-	if _, err := loadSessionForUser(ctx, id, accountID); err != nil {
+	clientToken := resolveClientToken(p.HeaderClientToken, p.ClientToken)
+	if _, err := loadSessionForUser(ctx, id, accountID, clientToken); err != nil {
 		return nil, err
 	}
 	if err := saveAnswers(ctx, id, p.Answers); err != nil {
 		return nil, err
 	}
-	row, err := loadSessionForUser(ctx, id, accountID)
+	row, err := loadSessionForUser(ctx, id, accountID, clientToken)
 	if err != nil {
 		return nil, err
 	}
@@ -318,13 +324,19 @@ func SaveAnswers(ctx context.Context, id string, p *SaveAnswersParams) (*CreateS
 }
 
 type ProctorEventsParams struct {
-	Events []ProctorEventInput `json:"events"`
+	ClientToken       string              `json:"clientToken,omitempty"`
+	HeaderClientToken string              `header:"X-Codesim-Client-Token"`
+	Events            []ProctorEventInput `json:"events"`
 }
 
 //encore:api public method=POST path=/api/v1/codesim/sessions/:id/proctor-events
 func RecordProctorEvents(ctx context.Context, id string, p *ProctorEventsParams) (*OKResponse, error) {
 	accountID := optionalAccountID(ctx)
-	if _, err := loadSessionForUser(ctx, id, accountID); err != nil {
+	clientToken := ""
+	if p != nil {
+		clientToken = resolveClientToken(p.HeaderClientToken, p.ClientToken)
+	}
+	if _, err := loadSessionForUser(ctx, id, accountID, clientToken); err != nil {
 		return nil, err
 	}
 	if p != nil && len(p.Events) > 0 {
@@ -340,9 +352,10 @@ type OKResponse struct {
 }
 
 //encore:api public method=POST path=/api/v1/codesim/sessions/:id/submit
-func SubmitSession(ctx context.Context, id string) (*SessionReportResponse, error) {
+func SubmitSession(ctx context.Context, id string, q *SessionAccessQuery) (*SessionReportResponse, error) {
 	accountID := optionalAccountID(ctx)
-	row, err := loadSessionForUser(ctx, id, accountID)
+	clientToken := q.resolvedClientToken()
+	row, err := loadSessionForUser(ctx, id, accountID, clientToken)
 	if err != nil {
 		return nil, err
 	}
@@ -372,9 +385,10 @@ type SessionReportResponse struct {
 }
 
 //encore:api public method=GET path=/api/v1/codesim/sessions/:id/report
-func GetSessionReport(ctx context.Context, id string) (*SessionReportResponse, error) {
+func GetSessionReport(ctx context.Context, id string, q *SessionAccessQuery) (*SessionReportResponse, error) {
 	accountID := optionalAccountID(ctx)
-	row, err := loadSessionForUser(ctx, id, accountID)
+	clientToken := q.resolvedClientToken()
+	row, err := loadSessionForUser(ctx, id, accountID, clientToken)
 	if err != nil {
 		return nil, err
 	}

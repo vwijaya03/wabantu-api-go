@@ -42,11 +42,51 @@ func EnsureSeed(ctx context.Context) error {
 	if err := purgeFillerMCQs(ctx); err != nil {
 		return err
 	}
-	return ensureBlueprints(ctx)
+	if err := ensureBlueprints(ctx); err != nil {
+		return err
+	}
+	return ensureHardBlueprints(ctx)
+}
+
+func ensureHardBlueprints(ctx context.Context) error {
+	raw, err := seedFS.ReadFile("seed/tendem_blueprints_hard.json")
+	if err != nil {
+		return nil
+	}
+	var seeds []blueprintSeed
+	if err := json.Unmarshal(raw, &seeds); err != nil {
+		return err
+	}
+	for _, s := range seeds {
+		var n int
+		if err := db.QueryRow(ctx, `SELECT COUNT(*) FROM codesim_blueprint WHERE slug = $1`, s.Slug).Scan(&n); err != nil {
+			return err
+		}
+		if n > 0 {
+			_, err := db.Exec(ctx, `
+				UPDATE codesim_blueprint SET title = $2, config_json = $3
+				WHERE slug = $1`,
+				s.Slug, s.Title, s.Config,
+			)
+			if err != nil {
+				return err
+			}
+			continue
+		}
+		_, err := db.Exec(ctx, `
+			INSERT INTO codesim_blueprint (id, slug, title, config_json, is_public)
+			VALUES ($1, $2, $3, $4, true)`,
+			uuid.New(), s.Slug, s.Title, s.Config,
+		)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func importTendemBank(ctx context.Context) error {
-	for _, path := range []string{"seed/tendem_mcq.json", "seed/tendem_mcq_batch2.json"} {
+	for _, path := range []string{"seed/tendem_mcq.json", "seed/tendem_mcq_batch2.json", "seed/tendem_mcq_hard.json"} {
 		if err := importEmbeddedMCQ(ctx, path); err != nil {
 			return err
 		}
@@ -195,10 +235,60 @@ func importEmbeddedDebug(ctx context.Context, path string) error {
 }
 
 func syncTendemBankFromEmbed(ctx context.Context) error {
+	if err := syncEmbeddedMCQBank(ctx, "seed/tendem_mcq.json"); err != nil {
+		return err
+	}
+	if err := syncEmbeddedMCQBank(ctx, "seed/tendem_mcq_batch2.json"); err != nil {
+		return err
+	}
+	if err := syncEmbeddedMCQBank(ctx, "seed/tendem_mcq_hard.json"); err != nil {
+		return err
+	}
 	if err := syncEmbeddedBuildBank(ctx, "seed/tendem_build.json"); err != nil {
 		return err
 	}
 	return syncEmbeddedDebugBank(ctx, "seed/tendem_debug.json")
+}
+
+func syncEmbeddedMCQBank(ctx context.Context, path string) error {
+	raw, err := seedFS.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var items []validate.MCQInput
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return err
+	}
+	for _, it := range items {
+		if err := validate.ValidateMCQ(&it); err != nil {
+			return fmt.Errorf("sync mcq %s: %w", it.Topic, err)
+		}
+		if it.Topic == "" {
+			continue
+		}
+		wrong, _ := json.Marshal(it.WrongExplanations)
+		bp, _ := json.Marshal(it.BestPractices)
+		_, err := db.Exec(ctx, `
+			UPDATE codesim_mcq_item SET
+				tags = $2,
+				difficulty = $3,
+				question = $4,
+				choices = $5,
+				correct_id = $6,
+				explanation = $7,
+				wrong_explanations = $8,
+				best_practices = $9,
+				learning_objective = $10,
+				points = $11
+			WHERE topic = $1`,
+			it.Topic, it.Tags, it.Difficulty, it.Question, mustJSON(it.Choices),
+			it.CorrectID, it.Explanation, wrong, bp, it.LearningObjective, it.Points,
+		)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func syncEmbeddedBuildBank(ctx context.Context, path string) error {

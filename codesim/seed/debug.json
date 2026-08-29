@@ -4,20 +4,20 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const [count, setCount] = useState(0);\n  setCount(count + 1);\n  return (\n    <section data-testid=\"hero\">\n      <h1>{title}</h1>\n      <p>Views: {count}</p>\n    </section>\n  );\n}\n",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const [count, setCount] = useState(0);\n  return (\n    <section data-testid=\"hero\">\n      <h1>{title}</h1>\n      <p>Views: {count}</p>\n      <button type=\"button\" onClick={() => setCount((c) => c + 1)}>\n        +1\n      </button>\n    </section>\n  );\n}\n",
-    "bug_description": "Halaman hang / too many re-renders saat Hero ditampilkan.",
-    "root_cause": "setState dipanggil langsung di body render, memicu infinite re-render loop.",
-    "fix_explanation": "Jangan panggil setState saat render. Pindahkan increment ke event handler atau useEffect dengan dependency yang benar.",
+    "bug_description": "Page hangs / too many re-renders when Hero is shown.",
+    "root_cause": "setState is called directly in the render body, causing an infinite re-render loop.",
+    "fix_explanation": "Do not call setState during render. Move the increment to an event handler or useEffect with correct dependencies.",
     "test_cases": [{"name": "renders hero", "assert": "hero exists"}],
     "best_practices": [
-      "Jangan panggil setState langsung di body component",
-      "Gunakan React DevTools Profiler untuk deteksi re-render",
-      "Derived state bisa dihitung tanpa useState jika tidak perlu interaksi"
+      "Do not call setState directly in the component body",
+      "Use React DevTools Profiler to detect re-renders",
+      "Derived state can be computed without useState when no interaction is needed"
     ],
     "common_mistakes": [
-      "Menambah if tanpa memahami alur render",
-      "Menghapus state yang dibutuhkan UI"
+      "Adding conditionals without understanding the render flow",
+      "Removing state the UI still needs"
     ],
-    "learning_objective": "Mendebug infinite render loop di React",
+    "learning_objective": "Debug an infinite render loop in React",
     "difficulty": "medium",
     "points": 35
   },
@@ -26,20 +26,20 @@
     "family": "hero",
     "broken_code": "export function ItemList({ items }) {\n  return (\n    <ul data-testid=\"item-list\">\n      {items.map((item, index) => (\n        <li key={index}>{item.label}</li>\n      ))}\n    </ul>\n  );\n}\n",
     "solution_code": "export function ItemList({ items }) {\n  return (\n    <ul data-testid=\"item-list\">\n      {items.map((item) => (\n        <li key={item.id}>{item.label}</li>\n      ))}\n    </ul>\n  );\n}\n",
-    "bug_description": "State input di item list salah reset saat list di-filter.",
-    "root_cause": "Menggunakan index array sebagai key — React salah mengaitkan DOM node saat urutan berubah.",
-    "fix_explanation": "Gunakan id stabil dari data sebagai key, bukan index.",
+    "bug_description": "Input state inside list items resets when the list is filtered.",
+    "root_cause": "Using array index as key — React reuses the wrong DOM nodes when order changes.",
+    "fix_explanation": "Use a stable id from the data as the key, not the index.",
     "test_cases": [{"name": "renders list", "assert": "list exists"}],
     "best_practices": [
-      "Key stabil dari data (id), bukan index",
-      "Key unik antar siblings",
-      "Jangan random key tiap render"
+      "Stable keys from data (id), not index",
+      "Unique keys among siblings",
+      "Do not use random keys on every render"
     ],
     "common_mistakes": [
-      "Tetap pakai index karena 'lebih mudah'",
-      "Key dari label yang bisa duplikat"
+      "Keeping index because it is easier",
+      "Using labels that can duplicate as keys"
     ],
-    "learning_objective": "Memahami pentingnya key pada list React",
+    "learning_objective": "Understand the importance of keys on React lists",
     "difficulty": "easy",
     "points": 35
   }

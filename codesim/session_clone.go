@@ -21,8 +21,8 @@ func cloneExamQuestions(questions []ExamQuestion) ([]ExamQuestion, error) {
 	return out, nil
 }
 
-func loadReusableAISession(ctx context.Context, sessionID, accountID string) ([]ExamQuestion, BlueprintConfig, error) {
-	row, err := loadSessionForUser(ctx, sessionID, accountID)
+func loadReusableAISession(ctx context.Context, sessionID, accountID, clientToken string) ([]ExamQuestion, BlueprintConfig, error) {
+	row, err := loadSessionForUser(ctx, sessionID, accountID, clientToken)
 	if err != nil {
 		return nil, BlueprintConfig{}, err
 	}

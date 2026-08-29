@@ -1,35 +1,35 @@
 [
   {
-    "question": "`useLayoutEffect` berbeda dari `useEffect` karena?",
+    "question": "`useLayoutEffect` differs from `useEffect` because?",
     "choices": [
       {
         "id": "a",
-        "text": "Hanya di server"
+        "text": "Server-only"
       },
       {
         "id": "b",
-        "text": "Jalan sinkron setelah DOM mutate, sebelum paint"
+        "text": "Runs synchronously after DOM mutations, before paint"
       },
       {
         "id": "c",
-        "text": "Tidak bisa cleanup"
+        "text": "Cannot cleanup"
       },
       {
         "id": "d",
-        "text": "Hanya class"
+        "text": "Class components only"
       }
     ],
     "correct_id": "b",
-    "explanation": "useLayoutEffect cocok mengukur DOM sebelum user melihat flicker.",
+    "explanation": "useLayoutEffect is good for measuring DOM before the user sees flicker.",
     "wrong_explanations": {
-      "a": "Opsi \"Hanya di server\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Tidak bisa cleanup\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Hanya class\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Server-only\" is not the best answer for this question.",
+      "c": "Option \"Cannot cleanup\" is not the best answer for this question.",
+      "d": "Option \"Class components only\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "react-v2-01",
     "points": 10,
@@ -40,19 +40,19 @@
     "topic": "react-v2-01"
   },
   {
-    "question": "Portal React (`createPortal`) berguna untuk?",
+    "question": "React Portal (`createPortal`) is useful for?",
     "choices": [
       {
         "id": "a",
-        "text": "Styling global"
+        "text": "Global styling"
       },
       {
         "id": "b",
-        "text": "Render subtree ke DOM node di luar parent (modal)"
+        "text": "Rendering a subtree into a DOM node outside the parent (modal)"
       },
       {
         "id": "c",
-        "text": "Ganti router"
+        "text": "Replacing the router"
       },
       {
         "id": "d",
@@ -60,16 +60,16 @@
       }
     ],
     "correct_id": "a",
-    "explanation": "Portal memutus overflow/z-index parent untuk overlay.",
+    "explanation": "Portal breaks parent overflow/z-index for overlays.",
     "wrong_explanations": {
-      "b": "Opsi \"Render subtree ke DOM node di luar parent (modal)\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Ganti router\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Memoization\" bukan jawaban terbaik untuk soal ini."
+      "b": "Option \"Rendering a subtree into a DOM node outside the parent (modal)\" is not the best answer for this question.",
+      "c": "Option \"Replacing the router\" is not the best answer for this question.",
+      "d": "Option \"Memoization\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "react-v2-02",
     "points": 10,
@@ -80,36 +80,36 @@
     "topic": "react-v2-02"
   },
   {
-    "question": "`forwardRef` dipakai ketika?",
+    "question": "When is `forwardRef` used?",
     "choices": [
       {
         "id": "a",
-        "text": "Semua komponen"
+        "text": "All components"
       },
       {
         "id": "b",
-        "text": "Hanya class"
+        "text": "Class components only"
       },
       {
         "id": "c",
-        "text": "Parent perlu akses DOM ref child"
+        "text": "Parent needs access to the child's DOM ref"
       },
       {
         "id": "d",
-        "text": "Ganti props"
+        "text": "Replacing props"
       }
     ],
     "correct_id": "c",
-    "explanation": "forwardRef meneruskan ref ke elemen di dalam komponen.",
+    "explanation": "forwardRef passes ref to an element inside the component.",
     "wrong_explanations": {
-      "a": "Opsi \"Semua komponen\" bukan jawaban terbaik untuk soal ini.",
-      "b": "Opsi \"Hanya class\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Ganti props\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"All components\" is not the best answer for this question.",
+      "b": "Option \"Class components only\" is not the best answer for this question.",
+      "d": "Option \"Replacing props\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "react-v2-03",
     "points": 10,
@@ -120,36 +120,36 @@
     "topic": "react-v2-03"
   },
   {
-    "question": "Strict Mode di dev membantu menemukan?",
+    "question": "Strict Mode in dev helps find?",
     "choices": [
       {
         "id": "a",
-        "text": "CSS bug"
+        "text": "CSS bugs"
       },
       {
         "id": "b",
-        "text": "Network error"
+        "text": "Network errors"
       },
       {
         "id": "c",
-        "text": "SEO issue"
+        "text": "SEO issues"
       },
       {
         "id": "d",
-        "text": "Side effect tidak aman / double invoke"
+        "text": "Unsafe side effects / double invoke"
       }
     ],
     "correct_id": "d",
-    "explanation": "React 18 Strict Mode double-invoke effects di dev.",
+    "explanation": "React 18 Strict Mode double-invokes effects in dev.",
     "wrong_explanations": {
-      "a": "Opsi \"CSS bug\" bukan jawaban terbaik untuk soal ini.",
-      "b": "Opsi \"Network error\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"SEO issue\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"CSS bugs\" is not the best answer for this question.",
+      "b": "Option \"Network errors\" is not the best answer for this question.",
+      "c": "Option \"SEO issues\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "react-v2-04",
     "points": 10,
@@ -164,32 +164,32 @@
     "choices": [
       {
         "id": "a",
-        "text": "Sama"
+        "text": "Same thing"
       },
       {
         "id": "b",
-        "text": "Controlled: value dari state React"
+        "text": "Controlled: value from React state"
       },
       {
         "id": "c",
-        "text": "Uncontrolled lebih aman"
+        "text": "Uncontrolled is safer"
       },
       {
         "id": "d",
-        "text": "Hanya di form HTML"
+        "text": "HTML forms only"
       }
     ],
     "correct_id": "b",
-    "explanation": "Controlled = single source of truth di React state.",
+    "explanation": "Controlled = single source of truth in React state.",
     "wrong_explanations": {
-      "a": "Opsi \"Sama\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Uncontrolled lebih aman\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Hanya di form HTML\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Same thing\" is not the best answer for this question.",
+      "c": "Option \"Uncontrolled is safer\" is not the best answer for this question.",
+      "d": "Option \"HTML forms only\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "react-v2-05",
     "points": 10,
@@ -200,36 +200,36 @@
     "topic": "react-v2-05"
   },
   {
-    "question": "Kapan `key` pada list harus stabil?",
+    "question": "When should `key` on a list be stable?",
     "choices": [
       {
         "id": "a",
-        "text": "Saat list bisa reorder/filter"
+        "text": "When the list can reorder/filter"
       },
       {
         "id": "b",
-        "text": "Tidak pernah"
+        "text": "Never"
       },
       {
         "id": "c",
-        "text": "Hanya di production"
+        "text": "Production only"
       },
       {
         "id": "d",
-        "text": "Hanya string"
+        "text": "Strings only"
       }
     ],
     "correct_id": "a",
-    "explanation": "Key stabil menjaga identitas item antar render.",
+    "explanation": "Stable keys preserve item identity across renders.",
     "wrong_explanations": {
-      "b": "Opsi \"Tidak pernah\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Hanya di production\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Hanya string\" bukan jawaban terbaik untuk soal ini."
+      "b": "Option \"Never\" is not the best answer for this question.",
+      "c": "Option \"Production only\" is not the best answer for this question.",
+      "d": "Option \"Strings only\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "react-v2-06",
     "points": 10,
@@ -240,7 +240,7 @@
     "topic": "react-v2-06"
   },
   {
-    "question": "`children` sebagai function (render prop) untuk?",
+    "question": "`children` as a function (render prop) is for?",
     "choices": [
       {
         "id": "a",
@@ -252,7 +252,7 @@
       },
       {
         "id": "c",
-        "text": "Delegasi rendering ke parent"
+        "text": "Delegating rendering to the parent"
       },
       {
         "id": "d",
@@ -260,16 +260,16 @@
       }
     ],
     "correct_id": "c",
-    "explanation": "Pattern render props membagikan logic UI.",
+    "explanation": "Render props pattern shares UI logic.",
     "wrong_explanations": {
-      "a": "Opsi \"SEO\" bukan jawaban terbaik untuk soal ini.",
-      "b": "Opsi \"Styling\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Database\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"SEO\" is not the best answer for this question.",
+      "b": "Option \"Styling\" is not the best answer for this question.",
+      "d": "Option \"Database\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "react-v2-07",
     "points": 10,
@@ -280,15 +280,15 @@
     "topic": "react-v2-07"
   },
   {
-    "question": "Error di event handler ditangani dengan?",
+    "question": "Errors in event handlers are handled with?",
     "choices": [
       {
         "id": "a",
-        "text": "Error boundary otomatis"
+        "text": "Automatic error boundary"
       },
       {
         "id": "b",
-        "text": "try/catch atau state error lokal"
+        "text": "try/catch or local error state"
       },
       {
         "id": "c",
@@ -300,16 +300,16 @@
       }
     ],
     "correct_id": "b",
-    "explanation": "Error boundary tidak menangkap event handler errors.",
+    "explanation": "Error boundaries do not catch event handler errors.",
     "wrong_explanations": {
-      "a": "Opsi \"Error boundary otomatis\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Suspense\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Portal\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Automatic error boundary\" is not the best answer for this question.",
+      "c": "Option \"Suspense\" is not the best answer for this question.",
+      "d": "Option \"Portal\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "react-v2-08",
     "points": 10,
@@ -320,11 +320,11 @@
     "topic": "react-v2-08"
   },
   {
-    "question": "`lazy()` + `Suspense` untuk?",
+    "question": "`lazy()` + `Suspense` is for?",
     "choices": [
       {
         "id": "a",
-        "text": "State global"
+        "text": "Global state"
       },
       {
         "id": "b",
@@ -336,20 +336,20 @@
       },
       {
         "id": "d",
-        "text": "Code-splitting komponen async"
+        "text": "Async component code-splitting"
       }
     ],
     "correct_id": "d",
-    "explanation": "lazy memuat komponen dinamis; Suspense fallback loading.",
+    "explanation": "lazy loads dynamic components; Suspense shows loading fallback.",
     "wrong_explanations": {
-      "a": "Opsi \"State global\" bukan jawaban terbaik untuk soal ini.",
-      "b": "Opsi \"CSS\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Form validation\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Global state\" is not the best answer for this question.",
+      "b": "Option \"CSS\" is not the best answer for this question.",
+      "c": "Option \"Form validation\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "react-v2-09",
     "points": 10,
@@ -360,11 +360,11 @@
     "topic": "react-v2-09"
   },
   {
-    "question": "Reconciliation React mengacu pada?",
+    "question": "React reconciliation refers to?",
     "choices": [
       {
         "id": "a",
-        "text": "Proses diff virtual DOM"
+        "text": "Virtual DOM diff process"
       },
       {
         "id": "b",
@@ -380,16 +380,16 @@
       }
     ],
     "correct_id": "a",
-    "explanation": "Reconciler membandingkan tree lama vs baru.",
+    "explanation": "The reconciler compares old vs new tree.",
     "wrong_explanations": {
-      "b": "Opsi \"HTTP cache\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"CSS layout\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"npm install\" bukan jawaban terbaik untuk soal ini."
+      "b": "Option \"HTTP cache\" is not the best answer for this question.",
+      "c": "Option \"CSS layout\" is not the best answer for this question.",
+      "d": "Option \"npm install\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "react-v2-10",
     "points": 10,
@@ -400,19 +400,19 @@
     "topic": "react-v2-10"
   },
   {
-    "question": "`useId` (React 18) berguna untuk?",
+    "question": "`useId` (React 18) is useful for?",
     "choices": [
       {
         "id": "a",
-        "text": "Random key list"
+        "text": "Random list keys"
       },
       {
         "id": "b",
-        "text": "UUID database"
+        "text": "Database UUIDs"
       },
       {
         "id": "c",
-        "text": "ID stabil SSR/hydration untuk a11y"
+        "text": "Stable SSR/hydration IDs for a11y"
       },
       {
         "id": "d",
@@ -420,16 +420,16 @@
       }
     ],
     "correct_id": "c",
-    "explanation": "useId menghindari mismatch id server/client.",
+    "explanation": "useId avoids server/client id mismatch.",
     "wrong_explanations": {
-      "a": "Opsi \"Random key list\" bukan jawaban terbaik untuk soal ini.",
-      "b": "Opsi \"UUID database\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Routing\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Random list keys\" is not the best answer for this question.",
+      "b": "Option \"Database UUIDs\" is not the best answer for this question.",
+      "d": "Option \"Routing\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "react-v2-11",
     "points": 10,
@@ -440,7 +440,7 @@
     "topic": "react-v2-11"
   },
   {
-    "question": "Anti-pattern: `useEffect` fetch tanpa cleanup abort?",
+    "question": "Anti-pattern: `useEffect` fetch without cleanup abort?",
     "choices": [
       {
         "id": "a",
@@ -448,28 +448,28 @@
       },
       {
         "id": "b",
-        "text": "Race condition saat unmount/fast re-fetch"
+        "text": "Race condition on unmount/fast re-fetch"
       },
       {
         "id": "c",
-        "text": "Wajib"
+        "text": "Required"
       },
       {
         "id": "d",
-        "text": "Hanya di mobile"
+        "text": "Mobile only"
       }
     ],
     "correct_id": "b",
-    "explanation": "AbortController mencegah setState pada unmounted component.",
+    "explanation": "AbortController prevents setState on unmounted component.",
     "wrong_explanations": {
-      "a": "Opsi \"Best practice\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Wajib\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Hanya di mobile\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Best practice\" is not the best answer for this question.",
+      "c": "Option \"Required\" is not the best answer for this question.",
+      "d": "Option \"Mobile only\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "react-v2-12",
     "points": 10,
@@ -480,36 +480,36 @@
     "topic": "react-v2-12"
   },
   {
-    "question": "`memo` + `useCallback` paling masuk akal ketika?",
+    "question": "`memo` + `useCallback` makes most sense when?",
     "choices": [
       {
         "id": "a",
-        "text": "Selalu"
+        "text": "Always"
       },
       {
         "id": "b",
-        "text": "File kecil"
+        "text": "Small files"
       },
       {
         "id": "c",
-        "text": "Tanpa profiler"
+        "text": "Without a profiler"
       },
       {
         "id": "d",
-        "text": "Child mahal re-render dan props stabil"
+        "text": "Expensive child re-renders and stable props"
       }
     ],
     "correct_id": "d",
-    "explanation": "Optimasi prematur bisa menambah kompleksitas.",
+    "explanation": "Premature optimization can add complexity.",
     "wrong_explanations": {
-      "a": "Opsi \"Selalu\" bukan jawaban terbaik untuk soal ini.",
-      "b": "Opsi \"File kecil\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Tanpa profiler\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Always\" is not the best answer for this question.",
+      "b": "Option \"Small files\" is not the best answer for this question.",
+      "c": "Option \"Without a profiler\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "react-v2-13",
     "points": 10,
@@ -520,7 +520,7 @@
     "topic": "react-v2-13"
   },
   {
-    "question": "Fragment dengan key ditulis?",
+    "question": "Fragment with key is written as?",
     "choices": [
       {
         "id": "a",
@@ -536,20 +536,20 @@
       },
       {
         "id": "d",
-        "text": "Tidak bisa"
+        "text": "Not possible"
       }
     ],
     "correct_id": "a",
-    "explanation": "Keyed fragment untuk list of fragments.",
+    "explanation": "Keyed fragment for list of fragments.",
     "wrong_explanations": {
-      "b": "Opsi \"`\u003ckey\u003e`\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"`#fragment`\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Tidak bisa\" bukan jawaban terbaik untuk soal ini."
+      "b": "Option \"`\u003ckey\u003e`\" is not the best answer for this question.",
+      "c": "Option \"`#fragment`\" is not the best answer for this question.",
+      "d": "Option \"Not possible\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "react-v2-14",
     "points": 10,
@@ -560,7 +560,7 @@
     "topic": "react-v2-14"
   },
   {
-    "question": "Hydration mismatch sering disebabkan?",
+    "question": "Hydration mismatch is often caused by?",
     "choices": [
       {
         "id": "a",
@@ -572,24 +572,24 @@
       },
       {
         "id": "c",
-        "text": "HTML berbeda server vs client"
+        "text": "Different HTML on server vs client"
       },
       {
         "id": "d",
-        "text": "import CSS"
+        "text": "CSS imports"
       }
     ],
     "correct_id": "c",
-    "explanation": "Contoh: Date.now() atau random di render awal.",
+    "explanation": "Example: Date.now() or random in initial render.",
     "wrong_explanations": {
-      "a": "Opsi \"CSS\" bukan jawaban terbaik untuk soal ini.",
-      "b": "Opsi \"useMemo\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"import CSS\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"CSS\" is not the best answer for this question.",
+      "b": "Option \"useMemo\" is not the best answer for this question.",
+      "d": "Option \"CSS imports\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "react-v2-15",
     "points": 10,
@@ -600,36 +600,36 @@
     "topic": "react-v2-15"
   },
   {
-    "question": "`defaultValue` pada uncontrolled input?",
+    "question": "`defaultValue` on uncontrolled input?",
     "choices": [
       {
         "id": "a",
-        "text": "Sync tiap render"
+        "text": "Syncs every render"
       },
       {
         "id": "b",
-        "text": "Nilai awal saja"
+        "text": "Initial value only"
       },
       {
         "id": "c",
-        "text": "Sama dengan value"
+        "text": "Same as value"
       },
       {
         "id": "d",
-        "text": "Wajib di TS"
+        "text": "Required in TS"
       }
     ],
     "correct_id": "b",
-    "explanation": "defaultValue tidak mengontrol subsequent updates.",
+    "explanation": "defaultValue does not control subsequent updates.",
     "wrong_explanations": {
-      "a": "Opsi \"Sync tiap render\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Sama dengan value\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Wajib di TS\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Syncs every render\" is not the best answer for this question.",
+      "c": "Option \"Same as value\" is not the best answer for this question.",
+      "d": "Option \"Required in TS\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "react-v2-16",
     "points": 10,
@@ -640,15 +640,15 @@
     "topic": "react-v2-16"
   },
   {
-    "question": "Context value object inline `value={{a,b}}` masalahnya?",
+    "question": "Context value object inline `value={{a,b}}` problem?",
     "choices": [
       {
         "id": "a",
-        "text": "Tidak ada"
+        "text": "None"
       },
       {
         "id": "b",
-        "text": "Lebih cepat"
+        "text": "Faster"
       },
       {
         "id": "c",
@@ -656,20 +656,20 @@
       },
       {
         "id": "d",
-        "text": "Referensi baru tiap render memicu re-render consumer"
+        "text": "New reference each render triggers consumer re-render"
       }
     ],
     "correct_id": "d",
-    "explanation": "Memoize value object atau pisah context.",
+    "explanation": "Memoize value object or split context.",
     "wrong_explanations": {
-      "a": "Opsi \"Tidak ada\" bukan jawaban terbaik untuk soal ini.",
-      "b": "Opsi \"Lebih cepat\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"SEO\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"None\" is not the best answer for this question.",
+      "b": "Option \"Faster\" is not the best answer for this question.",
+      "c": "Option \"SEO\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "react-v2-17",
     "points": 10,
@@ -680,19 +680,19 @@
     "topic": "react-v2-17"
   },
   {
-    "question": "`useRef` untuk menyimpan interval ID karena?",
+    "question": "`useRef` for storing interval ID because?",
     "choices": [
       {
         "id": "a",
-        "text": "Mutable tanpa re-render"
+        "text": "Mutable without re-render"
       },
       {
         "id": "b",
-        "text": "Lebih cepat dari state"
+        "text": "Faster than state"
       },
       {
         "id": "c",
-        "text": "Wajib hooks rules"
+        "text": "Hooks rules require it"
       },
       {
         "id": "d",
@@ -700,16 +700,16 @@
       }
     ],
     "correct_id": "a",
-    "explanation": "Ref cocok nilai yang tidak perlu trigger UI update.",
+    "explanation": "Ref is good for values that don't need to trigger UI update.",
     "wrong_explanations": {
-      "b": "Opsi \"Lebih cepat dari state\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Wajib hooks rules\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"SSR\" bukan jawaban terbaik untuk soal ini."
+      "b": "Option \"Faster than state\" is not the best answer for this question.",
+      "c": "Option \"Hooks rules require it\" is not the best answer for this question.",
+      "d": "Option \"SSR\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "react-v2-18",
     "points": 10,
@@ -720,7 +720,7 @@
     "topic": "react-v2-18"
   },
   {
-    "question": "`Array.prototype.find` mengembalikan?",
+    "question": "`Array.prototype.find` returns?",
     "choices": [
       {
         "id": "a",
@@ -728,11 +728,11 @@
       },
       {
         "id": "b",
-        "text": "Elemen pertama yang match atau undefined"
+        "text": "First matching element or undefined"
       },
       {
         "id": "c",
-        "text": "Array baru"
+        "text": "New array"
       },
       {
         "id": "d",
@@ -740,16 +740,16 @@
       }
     ],
     "correct_id": "b",
-    "explanation": "find berhenti di elemen pertama yang lolos predicate.",
+    "explanation": "find stops at the first element that passes the predicate.",
     "wrong_explanations": {
-      "a": "Opsi \"Index\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Array baru\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Boolean\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Index\" is not the best answer for this question.",
+      "c": "Option \"New array\" is not the best answer for this question.",
+      "d": "Option \"Boolean\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "js-v2-19",
     "points": 10,
@@ -760,7 +760,7 @@
     "topic": "js-v2-19"
   },
   {
-    "question": "`Object.freeze` melakukan?",
+    "question": "`Object.freeze` does?",
     "choices": [
       {
         "id": "a",
@@ -768,11 +768,11 @@
       },
       {
         "id": "b",
-        "text": "Hanya array"
+        "text": "Arrays only"
       },
       {
         "id": "c",
-        "text": "Shallow freeze properti"
+        "text": "Shallow freeze of properties"
       },
       {
         "id": "d",
@@ -780,16 +780,16 @@
       }
     ],
     "correct_id": "c",
-    "explanation": "freeze shallow — nested object masih bisa diubah.",
+    "explanation": "freeze is shallow — nested objects can still be changed.",
     "wrong_explanations": {
-      "a": "Opsi \"Deep immutable\" bukan jawaban terbaik untuk soal ini.",
-      "b": "Opsi \"Hanya array\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Clone\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Deep immutable\" is not the best answer for this question.",
+      "b": "Option \"Arrays only\" is not the best answer for this question.",
+      "d": "Option \"Clone\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "js-v2-20",
     "points": 10,
@@ -804,32 +804,32 @@
     "choices": [
       {
         "id": "a",
-        "text": "?? hanya null/undefined"
+        "text": "?? only null/undefined"
       },
       {
         "id": "b",
-        "text": "Sama"
+        "text": "Same"
       },
       {
         "id": "c",
-        "text": "|| lebih ketat"
+        "text": "|| is stricter"
       },
       {
         "id": "d",
-        "text": "?? untuk string kosong"
+        "text": "?? for empty strings"
       }
     ],
     "correct_id": "a",
-    "explanation": "|| menganggap '' dan 0 falsy; ?? tidak.",
+    "explanation": "|| treats '' and 0 as falsy; ?? does not.",
     "wrong_explanations": {
-      "b": "Opsi \"Sama\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"|| lebih ketat\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"?? untuk string kosong\" bukan jawaban terbaik untuk soal ini."
+      "b": "Option \"Same\" is not the best answer for this question.",
+      "c": "Option \"|| is stricter\" is not the best answer for this question.",
+      "d": "Option \"?? for empty strings\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "js-v2-21",
     "points": 10,
@@ -840,11 +840,11 @@
     "topic": "js-v2-21"
   },
   {
-    "question": "`Promise.allSettled` berguna ketika?",
+    "question": "`Promise.allSettled` is useful when?",
     "choices": [
       {
         "id": "a",
-        "text": "Satu gagal cancel semua"
+        "text": "One failure cancels all"
       },
       {
         "id": "b",
@@ -856,20 +856,20 @@
       },
       {
         "id": "d",
-        "text": "Butuh hasil semua promise meski ada yang reject"
+        "text": "You need all promise results even if some reject"
       }
     ],
     "correct_id": "d",
-    "explanation": "allSettled tidak short-circuit pada rejection.",
+    "explanation": "allSettled does not short-circuit on rejection.",
     "wrong_explanations": {
-      "a": "Opsi \"Satu gagal cancel semua\" bukan jawaban terbaik untuk soal ini.",
-      "b": "Opsi \"Sync loop\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"DOM\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"One failure cancels all\" is not the best answer for this question.",
+      "b": "Option \"Sync loop\" is not the best answer for this question.",
+      "c": "Option \"DOM\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "js-v2-22",
     "points": 10,
@@ -880,7 +880,7 @@
     "topic": "js-v2-22"
   },
   {
-    "question": "TDZ (Temporal Dead Zone) terkait?",
+    "question": "TDZ (Temporal Dead Zone) relates to?",
     "choices": [
       {
         "id": "a",
@@ -888,7 +888,7 @@
       },
       {
         "id": "b",
-        "text": "let/const sebelum deklarasi"
+        "text": "let/const before declaration"
       },
       {
         "id": "c",
@@ -900,16 +900,16 @@
       }
     ],
     "correct_id": "b",
-    "explanation": "Akses let/const sebelum line deklarasi throw.",
+    "explanation": "Accessing let/const before the declaration line throws.",
     "wrong_explanations": {
-      "a": "Opsi \"var\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"function\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"import\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"var\" is not the best answer for this question.",
+      "c": "Option \"function\" is not the best answer for this question.",
+      "d": "Option \"import\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "js-v2-23",
     "points": 10,
@@ -920,11 +920,11 @@
     "topic": "js-v2-23"
   },
   {
-    "question": "`structuredClone` untuk?",
+    "question": "`structuredClone` is for?",
     "choices": [
       {
         "id": "a",
-        "text": "JSON saja"
+        "text": "JSON only"
       },
       {
         "id": "b",
@@ -932,7 +932,7 @@
       },
       {
         "id": "c",
-        "text": "Deep clone built-in (terbatas)"
+        "text": "Built-in deep clone (limited)"
       },
       {
         "id": "d",
@@ -940,16 +940,16 @@
       }
     ],
     "correct_id": "c",
-    "explanation": "structuredClone deep clone di browser modern.",
+    "explanation": "structuredClone deep clones in modern browsers.",
     "wrong_explanations": {
-      "a": "Opsi \"JSON saja\" bukan jawaban terbaik untuk soal ini.",
-      "b": "Opsi \"Shallow copy\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Immutable.js\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"JSON only\" is not the best answer for this question.",
+      "b": "Option \"Shallow copy\" is not the best answer for this question.",
+      "d": "Option \"Immutable.js\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "js-v2-24",
     "points": 10,
@@ -964,11 +964,11 @@
     "choices": [
       {
         "id": "a",
-        "text": ".then microtask lebih dulu"
+        "text": ".then microtask runs first"
       },
       {
         "id": "b",
-        "text": "setTimeout selalu dulu"
+        "text": "setTimeout always first"
       },
       {
         "id": "c",
@@ -980,16 +980,16 @@
       }
     ],
     "correct_id": "a",
-    "explanation": "Microtask queue sebelum macrotask berikutnya.",
+    "explanation": "Microtask queue before next macrotask.",
     "wrong_explanations": {
-      "b": "Opsi \"setTimeout selalu dulu\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Random\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Parallel\" bukan jawaban terbaik untuk soal ini."
+      "b": "Option \"setTimeout always first\" is not the best answer for this question.",
+      "c": "Option \"Random\" is not the best answer for this question.",
+      "d": "Option \"Parallel\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "js-v2-25",
     "points": 10,
@@ -1000,19 +1000,19 @@
     "topic": "js-v2-25"
   },
   {
-    "question": "`in` operator pada object mengecek?",
+    "question": "`in` operator on object checks?",
     "choices": [
       {
         "id": "a",
-        "text": "Nilai"
+        "text": "Value"
       },
       {
         "id": "b",
-        "text": "Keberadaan key (termasuk prototype chain)"
+        "text": "Key existence (including prototype chain)"
       },
       {
         "id": "c",
-        "text": "Tipe"
+        "text": "Type"
       },
       {
         "id": "d",
@@ -1020,16 +1020,16 @@
       }
     ],
     "correct_id": "b",
-    "explanation": "Object.hasOwn lebih aman untuk own property.",
+    "explanation": "Object.hasOwn is safer for own property.",
     "wrong_explanations": {
-      "a": "Opsi \"Nilai\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Tipe\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Length\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Value\" is not the best answer for this question.",
+      "c": "Option \"Type\" is not the best answer for this question.",
+      "d": "Option \"Length\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "js-v2-26",
     "points": 10,
@@ -1044,32 +1044,32 @@
     "choices": [
       {
         "id": "a",
-        "text": "Tanpa cookie"
+        "text": "No cookies"
       },
       {
         "id": "b",
-        "text": "Hanya POST"
+        "text": "POST only"
       },
       {
         "id": "c",
-        "text": "CORS tidak perlu"
+        "text": "CORS not needed"
       },
       {
         "id": "d",
-        "text": "Kirim cookie cross-origin jika server allow"
+        "text": "Send cookies cross-origin if server allows"
       }
     ],
     "correct_id": "d",
-    "explanation": "Credentials mode untuk session cookie.",
+    "explanation": "Credentials mode for session cookies.",
     "wrong_explanations": {
-      "a": "Opsi \"Tanpa cookie\" bukan jawaban terbaik untuk soal ini.",
-      "b": "Opsi \"Hanya POST\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"CORS tidak perlu\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"No cookies\" is not the best answer for this question.",
+      "b": "Option \"POST only\" is not the best answer for this question.",
+      "c": "Option \"CORS not needed\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "js-v2-27",
     "points": 10,
@@ -1084,32 +1084,32 @@
     "choices": [
       {
         "id": "a",
-        "text": "Sama"
+        "text": "Same"
       },
       {
         "id": "b",
-        "text": "Throttle tunggu idle"
+        "text": "Throttle waits for idle"
       },
       {
         "id": "c",
-        "text": "Debounce tunggu pause; throttle batasi rate"
+        "text": "Debounce waits for pause; throttle limits rate"
       },
       {
         "id": "d",
-        "text": "Hanya UI"
+        "text": "UI only"
       }
     ],
     "correct_id": "c",
     "explanation": "Debounce: search input; throttle: scroll.",
     "wrong_explanations": {
-      "a": "Opsi \"Sama\" bukan jawaban terbaik untuk soal ini.",
-      "b": "Opsi \"Throttle tunggu idle\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Hanya UI\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Same\" is not the best answer for this question.",
+      "b": "Option \"Throttle waits for idle\" is not the best answer for this question.",
+      "d": "Option \"UI only\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "js-v2-28",
     "points": 10,
@@ -1120,36 +1120,36 @@
     "topic": "js-v2-28"
   },
   {
-    "question": "`Map` vs plain object untuk key?",
+    "question": "`Map` vs plain object for keys?",
     "choices": [
       {
         "id": "a",
-        "text": "Map boleh key non-string"
+        "text": "Map allows non-string keys"
       },
       {
         "id": "b",
-        "text": "Object lebih cepat selalu"
+        "text": "Object is always faster"
       },
       {
         "id": "c",
-        "text": "Map tidak iterable"
+        "text": "Map is not iterable"
       },
       {
         "id": "d",
-        "text": "Sama"
+        "text": "Same"
       }
     ],
     "correct_id": "a",
-    "explanation": "Map menjaga insertion order dan key arbitrary.",
+    "explanation": "Map preserves insertion order and arbitrary keys.",
     "wrong_explanations": {
-      "b": "Opsi \"Object lebih cepat selalu\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Map tidak iterable\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Sama\" bukan jawaban terbaik untuk soal ini."
+      "b": "Option \"Object is always faster\" is not the best answer for this question.",
+      "c": "Option \"Map is not iterable\" is not the best answer for this question.",
+      "d": "Option \"Same\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "js-v2-29",
     "points": 10,
@@ -1160,15 +1160,15 @@
     "topic": "js-v2-29"
   },
   {
-    "question": "`Array.sort` default membandingkan?",
+    "question": "`Array.sort` default compares?",
     "choices": [
       {
         "id": "a",
-        "text": "Number numerik"
+        "text": "Numbers numerically"
       },
       {
         "id": "b",
-        "text": "String unicode"
+        "text": "Unicode strings"
       },
       {
         "id": "c",
@@ -1180,16 +1180,16 @@
       }
     ],
     "correct_id": "b",
-    "explanation": "Sort default string — beri compareFn untuk angka.",
+    "explanation": "Default sort is string — pass compareFn for numbers.",
     "wrong_explanations": {
-      "a": "Opsi \"Number numerik\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Random\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Length\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Numbers numerically\" is not the best answer for this question.",
+      "c": "Option \"Random\" is not the best answer for this question.",
+      "d": "Option \"Length\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "js-v2-30",
     "points": 10,
@@ -1200,7 +1200,7 @@
     "topic": "js-v2-30"
   },
   {
-    "question": "IIFE `(function(){})()` dipakai untuk?",
+    "question": "IIFE `(function(){})()` is used for?",
     "choices": [
       {
         "id": "a",
@@ -1216,20 +1216,20 @@
       },
       {
         "id": "d",
-        "text": "Scope terisolasi / hindari pollute global"
+        "text": "Isolated scope / avoid polluting global"
       }
     ],
     "correct_id": "d",
-    "explanation": "Pattern lama sebelum modules.",
+    "explanation": "Legacy pattern before modules.",
     "wrong_explanations": {
-      "a": "Opsi \"Import\" bukan jawaban terbaik untuk soal ini.",
-      "b": "Opsi \"Class\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Hook\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Import\" is not the best answer for this question.",
+      "b": "Option \"Class\" is not the best answer for this question.",
+      "c": "Option \"Hook\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "js-v2-31",
     "points": 10,
@@ -1240,7 +1240,7 @@
     "topic": "js-v2-31"
   },
   {
-    "question": "`Symbol` di JS untuk?",
+    "question": "`Symbol` in JS is for?",
     "choices": [
       {
         "id": "a",
@@ -1252,7 +1252,7 @@
       },
       {
         "id": "c",
-        "text": "Unique property key"
+        "text": "Unique property keys"
       },
       {
         "id": "d",
@@ -1260,16 +1260,16 @@
       }
     ],
     "correct_id": "c",
-    "explanation": "Symbol.uniq untuk key yang tidak bentrok.",
+    "explanation": "Symbol.uniq for keys that don't collide.",
     "wrong_explanations": {
-      "a": "Opsi \"Math\" bukan jawaban terbaik untuk soal ini.",
-      "b": "Opsi \"CSS\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Async\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Math\" is not the best answer for this question.",
+      "b": "Option \"CSS\" is not the best answer for this question.",
+      "d": "Option \"Async\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "js-v2-32",
     "points": 10,
@@ -1280,36 +1280,36 @@
     "topic": "js-v2-32"
   },
   {
-    "question": "`WeakMap` key harus?",
+    "question": "`WeakMap` keys must be?",
     "choices": [
       {
         "id": "a",
-        "text": "Object (garbage collectible)"
+        "text": "Objects (garbage collectible)"
       },
       {
         "id": "b",
-        "text": "String"
+        "text": "Strings"
       },
       {
         "id": "c",
-        "text": "Number"
+        "text": "Numbers"
       },
       {
         "id": "d",
-        "text": "Symbol saja"
+        "text": "Symbols only"
       }
     ],
     "correct_id": "a",
-    "explanation": "WeakMap tidak mencegah GC key object.",
+    "explanation": "WeakMap does not prevent GC of key objects.",
     "wrong_explanations": {
-      "b": "Opsi \"String\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Number\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Symbol saja\" bukan jawaban terbaik untuk soal ini."
+      "b": "Option \"Strings\" is not the best answer for this question.",
+      "c": "Option \"Numbers\" is not the best answer for this question.",
+      "d": "Option \"Symbols only\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "js-v2-33",
     "points": 10,
@@ -1320,7 +1320,7 @@
     "topic": "js-v2-33"
   },
   {
-    "question": "`try/finally` tanpa catch?",
+    "question": "`try/finally` without catch?",
     "choices": [
       {
         "id": "a",
@@ -1328,28 +1328,28 @@
       },
       {
         "id": "b",
-        "text": "Legal — finally tetap jalan"
+        "text": "Legal — finally still runs"
       },
       {
         "id": "c",
-        "text": "Hanya async"
+        "text": "Async only"
       },
       {
         "id": "d",
-        "text": "Hanya TS"
+        "text": "TS only"
       }
     ],
     "correct_id": "b",
-    "explanation": "finally jalan meski return di try.",
+    "explanation": "finally runs even if return in try.",
     "wrong_explanations": {
-      "a": "Opsi \"Illegal\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Hanya async\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Hanya TS\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Illegal\" is not the best answer for this question.",
+      "c": "Option \"Async only\" is not the best answer for this question.",
+      "d": "Option \"TS only\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "js-v2-34",
     "points": 10,
@@ -1376,20 +1376,20 @@
       },
       {
         "id": "d",
-        "text": "Custom processing string parts"
+        "text": "Custom processing of string parts"
       }
     ],
     "correct_id": "d",
-    "explanation": "Tagged templates untuk i18n/styled patterns.",
+    "explanation": "Tagged templates for i18n/styled patterns.",
     "wrong_explanations": {
-      "a": "Opsi \"CSS only\" bukan jawaban terbaik untuk soal ini.",
-      "b": "Opsi \"SQL injection\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"JSON\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"CSS only\" is not the best answer for this question.",
+      "b": "Option \"SQL injection\" is not the best answer for this question.",
+      "c": "Option \"JSON\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "js-v2-35",
     "points": 10,
@@ -1400,19 +1400,19 @@
     "topic": "js-v2-35"
   },
   {
-    "question": "`Object.entries` mengembalikan?",
+    "question": "`Object.entries` returns?",
     "choices": [
       {
         "id": "a",
-        "text": "Keys saja"
+        "text": "Keys only"
       },
       {
         "id": "b",
-        "text": "Values saja"
+        "text": "Values only"
       },
       {
         "id": "c",
-        "text": "Array [key,value] pairs"
+        "text": "Array of [key,value] pairs"
       },
       {
         "id": "d",
@@ -1420,16 +1420,16 @@
       }
     ],
     "correct_id": "c",
-    "explanation": "entries untuk iterasi object enumerable.",
+    "explanation": "entries for iterating enumerable object properties.",
     "wrong_explanations": {
-      "a": "Opsi \"Keys saja\" bukan jawaban terbaik untuk soal ini.",
-      "b": "Opsi \"Values saja\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Map\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Keys only\" is not the best answer for this question.",
+      "b": "Option \"Values only\" is not the best answer for this question.",
+      "d": "Option \"Map\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "js-v2-36",
     "points": 10,
@@ -1444,32 +1444,32 @@
     "choices": [
       {
         "id": "a",
-        "text": "Grid dua dimensi, flex satu dimensi utama"
+        "text": "Grid is two-dimensional, flex is one main dimension"
       },
       {
         "id": "b",
-        "text": "Sama"
+        "text": "Same"
       },
       {
         "id": "c",
-        "text": "Flex untuk table"
+        "text": "Flex for tables"
       },
       {
         "id": "d",
-        "text": "Grid tidak responsive"
+        "text": "Grid is not responsive"
       }
     ],
     "correct_id": "a",
-    "explanation": "Pilih flex untuk baris/kolom tunggal; grid untuk layout 2D.",
+    "explanation": "Choose flex for single row/column; grid for 2D layout.",
     "wrong_explanations": {
-      "b": "Opsi \"Sama\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Flex untuk table\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Grid tidak responsive\" bukan jawaban terbaik untuk soal ini."
+      "b": "Option \"Same\" is not the best answer for this question.",
+      "c": "Option \"Flex for tables\" is not the best answer for this question.",
+      "d": "Option \"Grid is not responsive\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "css-v2-37",
     "points": 10,
@@ -1480,7 +1480,7 @@
     "topic": "css-v2-37"
   },
   {
-    "question": "`fr` unit di CSS Grid?",
+    "question": "`fr` unit in CSS Grid?",
     "choices": [
       {
         "id": "a",
@@ -1488,7 +1488,7 @@
       },
       {
         "id": "b",
-        "text": "Fraction sisa ruang track"
+        "text": "Fraction of remaining track space"
       },
       {
         "id": "c",
@@ -1500,16 +1500,16 @@
       }
     ],
     "correct_id": "b",
-    "explanation": "1fr = bagian proporsional ruang tersedia.",
+    "explanation": "1fr = proportional share of available space.",
     "wrong_explanations": {
-      "a": "Opsi \"Font relative\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Frame rate\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Rem\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Font relative\" is not the best answer for this question.",
+      "c": "Option \"Frame rate\" is not the best answer for this question.",
+      "d": "Option \"Rem\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "css-v2-38",
     "points": 10,
@@ -1520,11 +1520,11 @@
     "topic": "css-v2-38"
   },
   {
-    "question": "`position: sticky` perlu?",
+    "question": "`position: sticky` needs?",
     "choices": [
       {
         "id": "a",
-        "text": "z-index saja"
+        "text": "z-index only"
       },
       {
         "id": "b",
@@ -1532,7 +1532,7 @@
       },
       {
         "id": "c",
-        "text": "Offset + ancestor scroll + tidak overflow hidden parent"
+        "text": "Offset + scroll ancestor + no overflow:hidden parent"
       },
       {
         "id": "d",
@@ -1540,16 +1540,16 @@
       }
     ],
     "correct_id": "c",
-    "explanation": "Parent overflow:hidden bisa mematikan sticky.",
+    "explanation": "Parent overflow:hidden can disable sticky.",
     "wrong_explanations": {
-      "a": "Opsi \"z-index saja\" bukan jawaban terbaik untuk soal ini.",
-      "b": "Opsi \"fixed parent\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"display flex\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"z-index only\" is not the best answer for this question.",
+      "b": "Option \"fixed parent\" is not the best answer for this question.",
+      "d": "Option \"display flex\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "css-v2-39",
     "points": 10,
@@ -1560,7 +1560,7 @@
     "topic": "css-v2-39"
   },
   {
-    "question": "`clamp(min, pref, max)` untuk?",
+    "question": "`clamp(min, pref, max)` is for?",
     "choices": [
       {
         "id": "a",
@@ -1576,20 +1576,20 @@
       },
       {
         "id": "d",
-        "text": "Fluid typography/spacing terbatas"
+        "text": "Bounded fluid typography/spacing"
       }
     ],
     "correct_id": "d",
-    "explanation": "clamp responsif dengan batas min/max.",
+    "explanation": "clamp is responsive with min/max bounds.",
     "wrong_explanations": {
-      "a": "Opsi \"Animation\" bukan jawaban terbaik untuk soal ini.",
-      "b": "Opsi \"Grid\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Print\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Animation\" is not the best answer for this question.",
+      "b": "Option \"Grid\" is not the best answer for this question.",
+      "c": "Option \"Print\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "css-v2-40",
     "points": 10,
@@ -1604,32 +1604,32 @@
     "choices": [
       {
         "id": "a",
-        "text": "#id menang"
+        "text": "#id wins"
       },
       {
         "id": "b",
-        "text": "Inline menang kecuali !important id"
+        "text": "Inline wins unless !important id"
       },
       {
         "id": "c",
-        "text": "Sama"
+        "text": "Same"
       },
       {
         "id": "d",
-        "text": "class menang"
+        "text": "class wins"
       }
     ],
     "correct_id": "b",
     "explanation": "Inline 1,0,0,0 — id 0,1,0,0.",
     "wrong_explanations": {
-      "a": "Opsi \"#id menang\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Sama\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"class menang\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"#id wins\" is not the best answer for this question.",
+      "c": "Option \"Same\" is not the best answer for this question.",
+      "d": "Option \"class wins\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "css-v2-41",
     "points": 10,
@@ -1644,7 +1644,7 @@
     "choices": [
       {
         "id": "a",
-        "text": "Menjaga rasio lebar/tinggi"
+        "text": "Maintains width/height ratio"
       },
       {
         "id": "b",
@@ -1660,16 +1660,16 @@
       }
     ],
     "correct_id": "a",
-    "explanation": "Berguna video/card responsif.",
+    "explanation": "Useful for responsive video/cards.",
     "wrong_explanations": {
-      "b": "Opsi \"Font size\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Grid gap\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Flex order\" bukan jawaban terbaik untuk soal ini."
+      "b": "Option \"Font size\" is not the best answer for this question.",
+      "c": "Option \"Grid gap\" is not the best answer for this question.",
+      "d": "Option \"Flex order\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "css-v2-42",
     "points": 10,
@@ -1680,7 +1680,7 @@
     "topic": "css-v2-42"
   },
   {
-    "question": "`@layer` di CSS untuk?",
+    "question": "`@layer` in CSS is for?",
     "choices": [
       {
         "id": "a",
@@ -1692,7 +1692,7 @@
       },
       {
         "id": "c",
-        "text": "Mengatur urutan cascade layer"
+        "text": "Controlling cascade layer order"
       },
       {
         "id": "d",
@@ -1700,16 +1700,16 @@
       }
     ],
     "correct_id": "c",
-    "explanation": "Layer mengontrol precedence tanpa specificity war.",
+    "explanation": "Layers control precedence without specificity wars.",
     "wrong_explanations": {
-      "a": "Opsi \"Animation\" bukan jawaban terbaik untuk soal ini.",
-      "b": "Opsi \"Font\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Media query\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Animation\" is not the best answer for this question.",
+      "b": "Option \"Font\" is not the best answer for this question.",
+      "d": "Option \"Media query\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "css-v2-43",
     "points": 10,
@@ -1720,7 +1720,7 @@
     "topic": "css-v2-43"
   },
   {
-    "question": "`contain: layout` membantu?",
+    "question": "`contain: layout` helps?",
     "choices": [
       {
         "id": "a",
@@ -1736,20 +1736,20 @@
       },
       {
         "id": "d",
-        "text": "Isolasi layout subtree performa"
+        "text": "Layout isolation for subtree performance"
       }
     ],
     "correct_id": "d",
-    "explanation": "Contain membatasi reflow ke subtree.",
+    "explanation": "Contain limits reflow to the subtree.",
     "wrong_explanations": {
-      "a": "Opsi \"SEO\" bukan jawaban terbaik untuk soal ini.",
-      "b": "Opsi \"Font\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Color\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"SEO\" is not the best answer for this question.",
+      "b": "Option \"Font\" is not the best answer for this question.",
+      "c": "Option \"Color\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "css-v2-44",
     "points": 10,
@@ -1768,7 +1768,7 @@
       },
       {
         "id": "b",
-        "text": "Mengikuti writing mode LTR/RTL"
+        "text": "Follow writing mode LTR/RTL"
       },
       {
         "id": "c",
@@ -1780,16 +1780,16 @@
       }
     ],
     "correct_id": "b",
-    "explanation": "logical props untuk i18n layout.",
+    "explanation": "Logical props for i18n layout.",
     "wrong_explanations": {
-      "a": "Opsi \"Print only\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Grid only\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Deprecated\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Print only\" is not the best answer for this question.",
+      "c": "Option \"Grid only\" is not the best answer for this question.",
+      "d": "Option \"Deprecated\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "css-v2-45",
     "points": 10,
@@ -1804,7 +1804,7 @@
     "choices": [
       {
         "id": "a",
-        "text": "Media query a11y kurangi animasi"
+        "text": "A11y media query to reduce animation"
       },
       {
         "id": "b",
@@ -1820,16 +1820,16 @@
       }
     ],
     "correct_id": "a",
-    "explanation": "Hormati preferensi user motion sensitivity.",
+    "explanation": "Respect user motion sensitivity preferences.",
     "wrong_explanations": {
-      "b": "Opsi \"Dark mode\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Print\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Hover\" bukan jawaban terbaik untuk soal ini."
+      "b": "Option \"Dark mode\" is not the best answer for this question.",
+      "c": "Option \"Print\" is not the best answer for this question.",
+      "d": "Option \"Hover\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "css-v2-46",
     "points": 10,
@@ -1840,36 +1840,36 @@
     "topic": "css-v2-46"
   },
   {
-    "question": "Flex `gap` vs margin pada item?",
+    "question": "Flex `gap` vs margin on items?",
     "choices": [
       {
         "id": "a",
-        "text": "Margin lebih modern"
+        "text": "Margin is more modern"
       },
       {
         "id": "b",
-        "text": "Sama"
+        "text": "Same"
       },
       {
         "id": "c",
-        "text": "gap spacing antar item tanpa margin collapse"
+        "text": "gap spaces items without margin collapse"
       },
       {
         "id": "d",
-        "text": "gap hanya grid"
+        "text": "gap is grid only"
       }
     ],
     "correct_id": "c",
-    "explanation": "gap lebih bersih untuk flex/grid spacing.",
+    "explanation": "gap is cleaner for flex/grid spacing.",
     "wrong_explanations": {
-      "a": "Opsi \"Margin lebih modern\" bukan jawaban terbaik untuk soal ini.",
-      "b": "Opsi \"Sama\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"gap hanya grid\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Margin is more modern\" is not the best answer for this question.",
+      "b": "Option \"Same\" is not the best answer for this question.",
+      "d": "Option \"gap is grid only\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "css-v2-47",
     "points": 10,
@@ -1880,7 +1880,7 @@
     "topic": "css-v2-47"
   },
   {
-    "question": "`object-fit: cover` pada img?",
+    "question": "`object-fit: cover` on img?",
     "choices": [
       {
         "id": "a",
@@ -1888,7 +1888,7 @@
       },
       {
         "id": "b",
-        "text": "Crop isi box menjaga ratio"
+        "text": "Crop content to box while keeping ratio"
       },
       {
         "id": "c",
@@ -1900,16 +1900,16 @@
       }
     ],
     "correct_id": "b",
-    "explanation": "cover fill container crop center.",
+    "explanation": "cover fills container with center crop.",
     "wrong_explanations": {
-      "a": "Opsi \"Stretch distort\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Contain blur\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"SVG only\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Stretch distort\" is not the best answer for this question.",
+      "c": "Option \"Contain blur\" is not the best answer for this question.",
+      "d": "Option \"SVG only\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "css-v2-48",
     "points": 10,
@@ -1924,11 +1924,11 @@
     "choices": [
       {
         "id": "a",
-        "text": "block selalu"
+        "text": "Always block"
       },
       {
         "id": "b",
-        "text": "inline selalu"
+        "text": "Always inline"
       },
       {
         "id": "c",
@@ -1936,20 +1936,20 @@
       },
       {
         "id": "d",
-        "text": "inline — perlu content \u0026 sering di-set block"
+        "text": "inline — needs content \u0026 often set to block"
       }
     ],
     "correct_id": "d",
-    "explanation": "Perlu property content untuk tampil.",
+    "explanation": "Needs content property to appear.",
     "wrong_explanations": {
-      "a": "Opsi \"block selalu\" bukan jawaban terbaik untuk soal ini.",
-      "b": "Opsi \"inline selalu\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"none\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Always block\" is not the best answer for this question.",
+      "b": "Option \"Always inline\" is not the best answer for this question.",
+      "c": "Option \"none\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "css-v2-49",
     "points": 10,
@@ -1960,11 +1960,11 @@
     "topic": "css-v2-49"
   },
   {
-    "question": "`minmax(200px, 1fr)` di grid?",
+    "question": "`minmax(200px, 1fr)` in grid?",
     "choices": [
       {
         "id": "a",
-        "text": "Track min 200px max sisa"
+        "text": "Track min 200px max remaining"
       },
       {
         "id": "b",
@@ -1972,7 +1972,7 @@
       },
       {
         "id": "c",
-        "text": "Hanya max"
+        "text": "Max only"
       },
       {
         "id": "d",
@@ -1980,16 +1980,16 @@
       }
     ],
     "correct_id": "a",
-    "explanation": "minmax fleksibel track sizing.",
+    "explanation": "minmax for flexible track sizing.",
     "wrong_explanations": {
-      "b": "Opsi \"Fixed 200\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Hanya max\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Flex only\" bukan jawaban terbaik untuk soal ini."
+      "b": "Option \"Fixed 200\" is not the best answer for this question.",
+      "c": "Option \"Max only\" is not the best answer for this question.",
+      "d": "Option \"Flex only\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "css-v2-50",
     "points": 10,
@@ -2000,36 +2000,36 @@
     "topic": "css-v2-50"
   },
   {
-    "question": "`will-change` anti-pattern jika?",
+    "question": "`will-change` anti-pattern when?",
     "choices": [
       {
         "id": "a",
-        "text": "Hover kecil"
+        "text": "Small hover"
       },
       {
         "id": "b",
-        "text": "Transform animasi"
+        "text": "Transform animation"
       },
       {
         "id": "c",
-        "text": "Diterapkan permanen ke banyak elemen"
+        "text": "Applied permanently to many elements"
       },
       {
         "id": "d",
-        "text": "GPU layer sekali"
+        "text": "One-time GPU layer"
       }
     ],
     "correct_id": "c",
-    "explanation": "Overuse will-change boros memori.",
+    "explanation": "Overuse of will-change wastes memory.",
     "wrong_explanations": {
-      "a": "Opsi \"Hover kecil\" bukan jawaban terbaik untuk soal ini.",
-      "b": "Opsi \"Transform animasi\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"GPU layer sekali\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Small hover\" is not the best answer for this question.",
+      "b": "Option \"Transform animation\" is not the best answer for this question.",
+      "d": "Option \"One-time GPU layer\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "css-v2-51",
     "points": 10,
@@ -2040,7 +2040,7 @@
     "topic": "css-v2-51"
   },
   {
-    "question": "`color-scheme` pada root?",
+    "question": "`color-scheme` on root?",
     "choices": [
       {
         "id": "a",
@@ -2048,7 +2048,7 @@
       },
       {
         "id": "b",
-        "text": "Memberi hint browser dark/light UI chrome"
+        "text": "Hints browser dark/light UI chrome"
       },
       {
         "id": "c",
@@ -2060,16 +2060,16 @@
       }
     ],
     "correct_id": "b",
-    "explanation": "Mempengaruhi scrollbar/form native theming.",
+    "explanation": "Affects scrollbar/form native theming.",
     "wrong_explanations": {
-      "a": "Opsi \"Font color\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Grid\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Flex\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Font color\" is not the best answer for this question.",
+      "c": "Option \"Grid\" is not the best answer for this question.",
+      "d": "Option \"Flex\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "css-v2-52",
     "points": 10,
@@ -2096,20 +2096,20 @@
       },
       {
         "id": "d",
-        "text": "Child grid inherit track parent"
+        "text": "Child grid inherits parent tracks"
       }
     ],
     "correct_id": "d",
-    "explanation": "subgrid align nested grid ke parent tracks.",
+    "explanation": "subgrid aligns nested grid to parent tracks.",
     "wrong_explanations": {
-      "a": "Opsi \"Flex feature\" bukan jawaban terbaik untuk soal ini.",
-      "b": "Opsi \"Deprecated\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Table only\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Flex feature\" is not the best answer for this question.",
+      "b": "Option \"Deprecated\" is not the best answer for this question.",
+      "c": "Option \"Table only\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "css-v2-53",
     "points": 10,
@@ -2120,7 +2120,7 @@
     "topic": "css-v2-53"
   },
   {
-    "question": "`\u003cbutton\u003e` di dalam `\u003cform\u003e` default type?",
+    "question": "`\u003cbutton\u003e` inside `\u003cform\u003e` default type?",
     "choices": [
       {
         "id": "a",
@@ -2140,16 +2140,16 @@
       }
     ],
     "correct_id": "b",
-    "explanation": "Tanpa type eksplisit, button = submit.",
+    "explanation": "Without an explicit type, button = submit.",
     "wrong_explanations": {
-      "a": "Opsi \"button\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"reset\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"menu\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"button\" is not the best answer for this question.",
+      "c": "Option \"reset\" is not the best answer for this question.",
+      "d": "Option \"menu\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "html-v2-54",
     "points": 10,
@@ -2160,11 +2160,11 @@
     "topic": "html-v2-54"
   },
   {
-    "question": "`\u003clabel for\u003e` harus match?",
+    "question": "`\u003clabel for\u003e` must match?",
     "choices": [
       {
         "id": "a",
-        "text": "id input terkait"
+        "text": "Related input id"
       },
       {
         "id": "b",
@@ -2180,16 +2180,16 @@
       }
     ],
     "correct_id": "a",
-    "explanation": "for/id menghubungkan label ke control.",
+    "explanation": "for/id connects label to control.",
     "wrong_explanations": {
-      "b": "Opsi \"name\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"class\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"type\" bukan jawaban terbaik untuk soal ini."
+      "b": "Option \"name\" is not the best answer for this question.",
+      "c": "Option \"class\" is not the best answer for this question.",
+      "d": "Option \"type\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "html-v2-55",
     "points": 10,
@@ -2200,19 +2200,19 @@
     "topic": "html-v2-55"
   },
   {
-    "question": "`\u003cdialog\u003e` element native?",
+    "question": "Native `\u003cdialog\u003e` element?",
     "choices": [
       {
         "id": "a",
-        "text": "Tidak ada"
+        "text": "Does not exist"
       },
       {
         "id": "b",
-        "text": "Hanya Safari"
+        "text": "Safari only"
       },
       {
         "id": "c",
-        "text": "Modal dialog HTML dengan showModal()"
+        "text": "HTML modal dialog with showModal()"
       },
       {
         "id": "d",
@@ -2220,16 +2220,16 @@
       }
     ],
     "correct_id": "c",
-    "explanation": "dialog + ::backdrop untuk modal native.",
+    "explanation": "dialog + ::backdrop for native modal.",
     "wrong_explanations": {
-      "a": "Opsi \"Tidak ada\" bukan jawaban terbaik untuk soal ini.",
-      "b": "Opsi \"Hanya Safari\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"React only\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Does not exist\" is not the best answer for this question.",
+      "b": "Option \"Safari only\" is not the best answer for this question.",
+      "d": "Option \"React only\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "html-v2-56",
     "points": 10,
@@ -2240,7 +2240,7 @@
     "topic": "html-v2-56"
   },
   {
-    "question": "`loading=\"lazy\"` pada img?",
+    "question": "`loading=\"lazy\"` on img?",
     "choices": [
       {
         "id": "a",
@@ -2248,7 +2248,7 @@
       },
       {
         "id": "b",
-        "text": "Defer load sampai dekat viewport"
+        "text": "Defer load until near viewport"
       },
       {
         "id": "c",
@@ -2260,16 +2260,16 @@
       }
     ],
     "correct_id": "b",
-    "explanation": "Native lazy loading gambar.",
+    "explanation": "Native image lazy loading.",
     "wrong_explanations": {
-      "a": "Opsi \"SEO\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"CDN\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Blur\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"SEO\" is not the best answer for this question.",
+      "c": "Option \"CDN\" is not the best answer for this question.",
+      "d": "Option \"Blur\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "html-v2-57",
     "points": 10,
@@ -2280,36 +2280,36 @@
     "topic": "html-v2-57"
   },
   {
-    "question": "Landmark `\u003cmain\u003e` sebaiknya?",
+    "question": "Landmark `\u003cmain\u003e` should?",
     "choices": [
       {
         "id": "a",
-        "text": "Banyak per halaman"
+        "text": "Many per page"
       },
       {
         "id": "b",
-        "text": "Di footer"
+        "text": "In footer"
       },
       {
         "id": "c",
-        "text": "Di nav"
+        "text": "In nav"
       },
       {
         "id": "d",
-        "text": "Satu per halaman untuk konten utama"
+        "text": "One per page for main content"
       }
     ],
     "correct_id": "d",
-    "explanation": "Satu main landmark per dokumen.",
+    "explanation": "One main landmark per document.",
     "wrong_explanations": {
-      "a": "Opsi \"Banyak per halaman\" bukan jawaban terbaik untuk soal ini.",
-      "b": "Opsi \"Di footer\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Di nav\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Many per page\" is not the best answer for this question.",
+      "b": "Option \"In footer\" is not the best answer for this question.",
+      "c": "Option \"In nav\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "html-v2-58",
     "points": 10,
@@ -2320,11 +2320,11 @@
     "topic": "html-v2-58"
   },
   {
-    "question": "`aria-expanded` pada accordion?",
+    "question": "`aria-expanded` on accordion?",
     "choices": [
       {
         "id": "a",
-        "text": "State buka/tutup untuk AT"
+        "text": "Open/closed state for AT"
       },
       {
         "id": "b",
@@ -2340,16 +2340,16 @@
       }
     ],
     "correct_id": "a",
-    "explanation": "Screen reader tahu panel terbuka.",
+    "explanation": "Screen reader knows panel is open.",
     "wrong_explanations": {
-      "b": "Opsi \"Styling\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Focus\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Tab order\" bukan jawaban terbaik untuk soal ini."
+      "b": "Option \"Styling\" is not the best answer for this question.",
+      "c": "Option \"Focus\" is not the best answer for this question.",
+      "d": "Option \"Tab order\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "html-v2-59",
     "points": 10,
@@ -2364,32 +2364,32 @@
     "choices": [
       {
         "id": "a",
-        "text": "Selalu integer"
+        "text": "Always integer"
       },
       {
         "id": "b",
-        "text": "Tidak ada step"
+        "text": "No step"
       },
       {
         "id": "c",
-        "text": "Bisa spinner \u0026 locale quirks — validasi tambahan"
+        "text": "Spinner \u0026 locale quirks — extra validation needed"
       },
       {
         "id": "d",
-        "text": "Tidak di mobile"
+        "text": "Not on mobile"
       }
     ],
     "correct_id": "c",
-    "explanation": "number input bukan pengganti validasi bisnis.",
+    "explanation": "number input is not a substitute for business validation.",
     "wrong_explanations": {
-      "a": "Opsi \"Selalu integer\" bukan jawaban terbaik untuk soal ini.",
-      "b": "Opsi \"Tidak ada step\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Tidak di mobile\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Always integer\" is not the best answer for this question.",
+      "b": "Option \"No step\" is not the best answer for this question.",
+      "d": "Option \"Not on mobile\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "html-v2-60",
     "points": 10,
@@ -2400,7 +2400,7 @@
     "topic": "html-v2-60"
   },
   {
-    "question": "`\u003cdetails\u003e/\u003csummary\u003e` untuk?",
+    "question": "`\u003cdetails\u003e/\u003csummary\u003e` for?",
     "choices": [
       {
         "id": "a",
@@ -2408,7 +2408,7 @@
       },
       {
         "id": "b",
-        "text": "Disclosure widget tanpa JS"
+        "text": "Disclosure widget without JS"
       },
       {
         "id": "c",
@@ -2420,16 +2420,16 @@
       }
     ],
     "correct_id": "b",
-    "explanation": "Native expand/collapse konten.",
+    "explanation": "Native expand/collapse content.",
     "wrong_explanations": {
-      "a": "Opsi \"Modal\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Table\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Form\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Modal\" is not the best answer for this question.",
+      "c": "Option \"Table\" is not the best answer for this question.",
+      "d": "Option \"Form\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "html-v2-61",
     "points": 10,
@@ -2444,11 +2444,11 @@
     "choices": [
       {
         "id": "a",
-        "text": "Hapus dari tab order"
+        "text": "Remove from tab order"
       },
       {
         "id": "b",
-        "text": "Hanya mouse"
+        "text": "Mouse only"
       },
       {
         "id": "c",
@@ -2456,20 +2456,20 @@
       },
       {
         "id": "d",
-        "text": "Masuk natural tab order"
+        "text": "Enter natural tab order"
       }
     ],
     "correct_id": "d",
     "explanation": "tabindex -1 programmatic focus only.",
     "wrong_explanations": {
-      "a": "Opsi \"Hapus dari tab order\" bukan jawaban terbaik untuk soal ini.",
-      "b": "Opsi \"Hanya mouse\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Negative focus trap\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Remove from tab order\" is not the best answer for this question.",
+      "b": "Option \"Mouse only\" is not the best answer for this question.",
+      "c": "Option \"Negative focus trap\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "html-v2-62",
     "points": 10,
@@ -2484,7 +2484,7 @@
     "choices": [
       {
         "id": "a",
-        "text": "Live region urgent untuk error"
+        "text": "Urgent live region for errors"
       },
       {
         "id": "b",
@@ -2500,16 +2500,16 @@
       }
     ],
     "correct_id": "a",
-    "explanation": "Pesan error form sebaiknya role alert.",
+    "explanation": "Form error messages should use role alert.",
     "wrong_explanations": {
-      "b": "Opsi \"Button\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Link\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Heading\" bukan jawaban terbaik untuk soal ini."
+      "b": "Option \"Button\" is not the best answer for this question.",
+      "c": "Option \"Link\" is not the best answer for this question.",
+      "d": "Option \"Heading\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "html-v2-63",
     "points": 10,
@@ -2540,16 +2540,16 @@
       }
     ],
     "correct_id": "b",
-    "explanation": "Viewport meta untuk responsive mobile.",
+    "explanation": "Viewport meta for responsive mobile.",
     "wrong_explanations": {
-      "a": "Opsi \"SEO\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"HTTPS\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"PWA\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"SEO\" is not the best answer for this question.",
+      "c": "Option \"HTTPS\" is not the best answer for this question.",
+      "d": "Option \"PWA\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "html-v2-64",
     "points": 10,
@@ -2560,7 +2560,7 @@
     "topic": "html-v2-64"
   },
   {
-    "question": "`\u003cpicture\u003e` + `\u003csource\u003e` untuk?",
+    "question": "`\u003cpicture\u003e` + `\u003csource\u003e` for?",
     "choices": [
       {
         "id": "a",
@@ -2572,7 +2572,7 @@
       },
       {
         "id": "c",
-        "text": "Art direction / format gambar responsif"
+        "text": "Art direction / responsive image formats"
       },
       {
         "id": "d",
@@ -2580,16 +2580,16 @@
       }
     ],
     "correct_id": "c",
-    "explanation": "picture untuk responsive images art direction.",
+    "explanation": "picture for responsive images art direction.",
     "wrong_explanations": {
-      "a": "Opsi \"Video\" bukan jawaban terbaik untuk soal ini.",
-      "b": "Opsi \"Font\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"SVG\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Video\" is not the best answer for this question.",
+      "b": "Option \"Font\" is not the best answer for this question.",
+      "d": "Option \"SVG\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "html-v2-65",
     "points": 10,
@@ -2616,20 +2616,20 @@
       },
       {
         "id": "d",
-        "text": "Link ke main content untuk keyboard user"
+        "text": "Link to main content for keyboard users"
       }
     ],
     "correct_id": "d",
-    "explanation": "Skip nav ke konten utama.",
+    "explanation": "Skip nav to main content.",
     "wrong_explanations": {
-      "a": "Opsi \"SEO\" bukan jawaban terbaik untuk soal ini.",
-      "b": "Opsi \"CSS\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Analytics\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"SEO\" is not the best answer for this question.",
+      "b": "Option \"CSS\" is not the best answer for this question.",
+      "c": "Option \"Analytics\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "html-v2-66",
     "points": 10,
@@ -2640,11 +2640,11 @@
     "topic": "html-v2-66"
   },
   {
-    "question": "`autocomplete` attribute pada form?",
+    "question": "`autocomplete` attribute on form?",
     "choices": [
       {
         "id": "a",
-        "text": "Bantu browser isi ulang field benar"
+        "text": "Help browser refill fields correctly"
       },
       {
         "id": "b",
@@ -2660,16 +2660,16 @@
       }
     ],
     "correct_id": "a",
-    "explanation": "autocomplete=\"email\" dll untuk UX.",
+    "explanation": "autocomplete=\"email\" etc. for UX.",
     "wrong_explanations": {
-      "b": "Opsi \"Validation\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"CSRF\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Routing\" bukan jawaban terbaik untuk soal ini."
+      "b": "Option \"Validation\" is not the best answer for this question.",
+      "c": "Option \"CSRF\" is not the best answer for this question.",
+      "d": "Option \"Routing\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "html-v2-67",
     "points": 10,
@@ -2688,7 +2688,7 @@
       },
       {
         "id": "b",
-        "text": "Kelompok form dengan judul aksesibel"
+        "text": "Accessible form group with title"
       },
       {
         "id": "c",
@@ -2700,16 +2700,16 @@
       }
     ],
     "correct_id": "b",
-    "explanation": "fieldset mengelompokkan radio/checkbox.",
+    "explanation": "fieldset groups radio/checkbox.",
     "wrong_explanations": {
-      "a": "Opsi \"Table\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"Modal\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"Grid\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Table\" is not the best answer for this question.",
+      "c": "Option \"Modal\" is not the best answer for this question.",
+      "d": "Option \"Grid\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "html-v2-68",
     "points": 10,
@@ -2724,32 +2724,32 @@
     "choices": [
       {
         "id": "a",
-        "text": "Sama selalu"
+        "text": "Always same"
       },
       {
         "id": "b",
-        "text": "hidden tidak semantik"
+        "text": "hidden is not semantic"
       },
       {
         "id": "c",
-        "text": "hidden tidak boleh ditampilkan \u0026 tidak relevan AT"
+        "text": "hidden must not be shown \u0026 not relevant to AT"
       },
       {
         "id": "d",
-        "text": "hidden untuk SEO"
+        "text": "hidden for SEO"
       }
     ],
     "correct_id": "c",
-    "explanation": "hidden=until-found di HTML baru untuk find-in-page.",
+    "explanation": "hidden=until-found in newer HTML for find-in-page.",
     "wrong_explanations": {
-      "a": "Opsi \"Sama selalu\" bukan jawaban terbaik untuk soal ini.",
-      "b": "Opsi \"hidden tidak semantik\" bukan jawaban terbaik untuk soal ini.",
-      "d": "Opsi \"hidden untuk SEO\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Always same\" is not the best answer for this question.",
+      "b": "Option \"hidden is not semantic\" is not the best answer for this question.",
+      "d": "Option \"hidden for SEO\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "html-v2-69",
     "points": 10,
@@ -2764,11 +2764,11 @@
     "choices": [
       {
         "id": "a",
-        "text": "Render langsung"
+        "text": "Renders immediately"
       },
       {
         "id": "b",
-        "text": "SEO utama"
+        "text": "Main SEO"
       },
       {
         "id": "c",
@@ -2776,20 +2776,20 @@
       },
       {
         "id": "d",
-        "text": "Inert sampai di-clone ke DOM via JS"
+        "text": "Inert until cloned into DOM via JS"
       }
     ],
     "correct_id": "d",
-    "explanation": "template untuk fragment tidak aktif.",
+    "explanation": "template for inactive fragments.",
     "wrong_explanations": {
-      "a": "Opsi \"Render langsung\" bukan jawaban terbaik untuk soal ini.",
-      "b": "Opsi \"SEO utama\" bukan jawaban terbaik untuk soal ini.",
-      "c": "Opsi \"SSR only\" bukan jawaban terbaik untuk soal ini."
+      "a": "Option \"Renders immediately\" is not the best answer for this question.",
+      "b": "Option \"Main SEO\" is not the best answer for this question.",
+      "c": "Option \"SSR only\" is not the best answer for this question."
     },
     "best_practices": [
-      "Baca soal dan snippet dengan teliti",
-      "Eliminasi opsi yang jelas salah",
-      "Hubungkan konsep dengan kasus nyata di UI"
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
     ],
     "learning_objective": "html-v2-70",
     "points": 10,

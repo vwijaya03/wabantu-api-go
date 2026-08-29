@@ -18,18 +18,22 @@ func main() {
 	}
 	mcq := generateMCQs()
 	mcqBatch2 := generateMCQsBatch2()
-	build := append(generateBuilds(), generateBuildsBatch2()...)
-	debug := generateDebugs()
+	mcqHard := generateHardMCQs()
+	build := append(append(generateBuilds(), generateBuildsBatch2()...), generateHardBuilds()...)
+	debug := append(generateDebugs(), generateHardDebugs()...)
 	blueprints := generateBlueprints()
+	blueprintsHard := generateHardBlueprints()
 
 	writeJSON(filepath.Join(root, "tendem_mcq.json"), mcq)
 	writeJSON(filepath.Join(root, "tendem_mcq_batch2.json"), mcqBatch2)
+	writeJSON(filepath.Join(root, "tendem_mcq_hard.json"), mcqHard)
 	writeJSON(filepath.Join(root, "tendem_build.json"), build)
 	writeJSON(filepath.Join(root, "tendem_debug.json"), debug)
 	writeJSON(filepath.Join(root, "tendem_blueprints.json"), blueprints)
+	writeJSON(filepath.Join(root, "tendem_blueprints_hard.json"), blueprintsHard)
 
-	fmt.Printf("wrote %d + %d MCQs, %d builds, %d debugs, %d blueprints\n",
-		len(mcq), len(mcqBatch2), len(build), len(debug), len(blueprints))
+	fmt.Printf("wrote %d + %d + %d MCQs, %d builds, %d debugs, %d + %d blueprints\n",
+		len(mcq), len(mcqBatch2), len(mcqHard), len(build), len(debug), len(blueprints), len(blueprintsHard))
 }
 
 func fatal(err error) {
@@ -78,7 +82,7 @@ func stdChoices(a, b, c, d, correct string) ([]choice, map[string]string, string
 	wrong := map[string]string{}
 	for _, ch := range choices {
 		if ch.ID != correct {
-			wrong[ch.ID] = fmt.Sprintf("Opsi %q bukan jawaban terbaik untuk soal ini.", ch.Text)
+			wrong[ch.ID] = fmt.Sprintf("Option %q is not the best answer for this question.", ch.Text)
 		}
 	}
 	return choices, wrong, correct
@@ -93,7 +97,7 @@ func mcqItem(q, correct string, opts [4]string, expl string, tags []string, diff
 		CorrectID:         cid,
 		Explanation:       expl,
 		WrongExplanations: wrong,
-		BestPractices:     []string{"Baca soal dan snippet dengan teliti", "Eliminasi opsi yang jelas salah", "Hubungkan konsep dengan kasus nyata di UI"},
+		BestPractices:     []string{"Read the question and snippet carefully", "Eliminate clearly wrong options", "Connect concepts to real UI scenarios"},
 		LearningObjective: topic,
 		Points:            10,
 		Tags:              tags,
@@ -106,33 +110,33 @@ func generateMCQs() []mcq {
 	var out []mcq
 
 	reactEasy := []struct{ q, c string; o [4]string; e string }{
-		{"Apa fungsi utama React?", "b", [4]string{"Database ORM", "Membangun UI berbasis komponen", "Package manager", "CSS preprocessor"}, "React fokus pada view layer dengan komponen reusable."},
-		{"File ekstensi apa yang umum untuk komponen React?", "a", [4]string{".jsx / .tsx", ".vue", ".svelte", ".angular"}, "JSX/TSX adalah sintaks umum di ekosistem React."},
-		{"Prop `children` di React berisi apa?", "c", [4]string{"Hanya string", "Hanya array", "Konten nested di dalam komponen", "Hanya elemen img"}, "children adalah slot untuk konten yang di-render di dalam komponen."},
-		{"Cara benar render list di JSX?", "b", [4]string{"items.forEach", "items.map + key", "items.filter saja", "while loop di JSX"}, "map menghasilkan array elemen; key membantu reconciler."},
-		{"Default props behavior di function component modern?", "a", [4]string{"Default parameter / default value destructuring", "Hanya class component", "Tidak didukung", "Hanya dengan Redux"}, "Default values bisa di parameter destructuring props."},
+		{"What is React's main purpose?", "b", [4]string{"Database ORM", "Building component-based UI", "Package manager", "CSS preprocessor"}, "React focuses on the view layer with reusable components."},
+		{"Which file extension is common for React components?", "a", [4]string{".jsx / .tsx", ".vue", ".svelte", ".angular"}, "JSX/TSX is the common syntax in the React ecosystem."},
+		{"What does the `children` prop contain in React?", "c", [4]string{"Only strings", "Only arrays", "Nested content rendered inside the component", "Only img elements"}, "children is a slot for content rendered inside the component."},
+		{"Correct way to render a list in JSX?", "b", [4]string{"items.forEach", "items.map + key", "items.filter only", "while loop in JSX"}, "map returns an array of elements; key helps the reconciler."},
+		{"Default props behavior in modern function components?", "a", [4]string{"Default parameter / default value destructuring", "Class components only", "Not supported", "Redux only"}, "Default values can be set in destructured props parameters."},
 	}
 	for _, it := range reactEasy {
 		out = append(out, mcqItem(it.q, it.c, it.o, it.e, []string{"react"}, "easy", "react-basics", ""))
 	}
 
 	jsEasy := []struct{ q, c string; o [4]string; e string }{
-		{"Hasil `[] == ![]` di JavaScript?", "b", [4]string{"true", "false", "undefined", "throw"}, "Coercion membuat perbandingan loose equality membingungkan — pakai ===."},
-		{"`const` untuk object berarti?", "c", [4]string{"Object immutable", "Tidak bisa reassign binding, properti bisa berubah", "Hanya di block scope function", "Sama dengan Object.freeze"}, "const mencegah reassign variabel, bukan deep freeze."},
-		{"Spread operator `{...obj}` digunakan untuk?", "a", [4]string{"Shallow copy / merge object", "Deep clone otomatis", "Hanya array", "Menghapus key"}, "Spread membuat salinan dangkal properti enumerable."},
-		{"`===` dibanding `==`?", "d", [4]string{"Sama persis", "== lebih ketat", "=== melakukan coercion", "=== tanpa type coercion"}, "Strict equality tidak melakukan type coercion."},
-		{"Apa itu hoisting di JS?", "b", [4]string{"CSS technique", "Deklarasi diangkat ke atas scope (var/function)", "React feature", "Bundler optimization"}, "var dan function declaration dihoist; let/const TDZ."},
+		{"Result of `[] == ![]` in JavaScript?", "b", [4]string{"true", "false", "undefined", "throw"}, "Coercion makes loose equality confusing — use ===."},
+		{"`const` for an object means?", "c", [4]string{"Object is immutable", "Cannot reassign binding, properties can change", "Block scope in functions only", "Same as Object.freeze"}, "const prevents reassigning the variable, not deep freezing."},
+		{"Spread operator `{...obj}` is used for?", "a", [4]string{"Shallow copy / merge object", "Automatic deep clone", "Arrays only", "Deleting keys"}, "Spread creates a shallow copy of enumerable properties."},
+		{"`===` compared to `==`?", "d", [4]string{"Exactly the same", "== is stricter", "=== performs coercion", "=== without type coercion"}, "Strict equality does not perform type coercion."},
+		{"What is hoisting in JS?", "b", [4]string{"CSS technique", "Declarations lifted to top of scope (var/function)", "React feature", "Bundler optimization"}, "var and function declarations are hoisted; let/const have TDZ."},
 	}
 	for _, it := range jsEasy {
 		out = append(out, mcqItem(it.q, it.c, it.o, it.e, []string{"javascript"}, "easy", "js-basics", ""))
 	}
 
 	cssEasy := []struct{ q, c string; o [4]string; e string }{
-		{"`display: flex` mengaktifkan?", "a", [4]string{"Flexbox layout", "Grid layout", "Block formatting saja", "Table layout"}, "Flexbox untuk layout satu dimensi."},
-		{"`box-sizing: border-box`?", "b", [4]string{"Padding di luar width", "Width termasuk padding & border", "Hanya untuk margin", "Menghapus border"}, "border-box membuat ukuran lebih predictable."},
-		{"Unit relatif terhadap font-size elemen?", "c", [4]string{"px", "vh", "em", "cm"}, "em relatif terhadap font-size elemen (atau parent untuk font)."},
-		{"Pseudo-class untuk hover?", "a", [4]string{":hover", "::hover", ":hover()", "@hover"}, ":hover adalah pseudo-class interaksi."},
-		{"`position: absolute` relatif terhadap?", "d", [4]string{"Selalu viewport", "Selalu body", "Parent pertama", "Nearest positioned ancestor"}, "Absolute positioning relatif ke ancestor yang positioned."},
+		{"`display: flex` enables?", "a", [4]string{"Flexbox layout", "Grid layout", "Block formatting only", "Table layout"}, "Flexbox is for one-dimensional layout."},
+		{"`box-sizing: border-box`?", "b", [4]string{"Padding outside width", "Width includes padding & border", "Margins only", "Removes border"}, "border-box makes sizing more predictable."},
+		{"Unit relative to element font-size?", "c", [4]string{"px", "vh", "em", "cm"}, "em is relative to the element's font-size (or parent for font)."},
+		{"Pseudo-class for hover?", "a", [4]string{":hover", "::hover", ":hover()", "@hover"}, ":hover is an interaction pseudo-class."},
+		{"`position: absolute` is relative to?", "d", [4]string{"Always viewport", "Always body", "First parent", "Nearest positioned ancestor"}, "Absolute positioning is relative to a positioned ancestor."},
 	}
 	for _, it := range cssEasy {
 		out = append(out, mcqItem(it.q, it.c, it.o, it.e, []string{"css"}, "easy", "css-basics", ""))
@@ -141,50 +145,50 @@ func generateMCQs() []mcq {
 	// Medium batch — mix react/js/css with code snippets
 	medium := []mcq{
 		mcqItem(
-			"Apa output console.log setelah klik tombol sekali?",
+			"What does console.log output after clicking the button once?",
 			"b",
 			[4]string{"0", "1", "2", "undefined"},
-			"Functional update `setCount(c => c+1)` aman; di sini onClick increment sekali per klik.",
+			"Functional update `setCount(c => c+1)` is safe; here onClick increments once per click.",
 			[]string{"react", "hooks"},
 			"medium",
 			"react-state",
 			"function Counter() {\n  const [count, setCount] = useState(0);\n  return <button onClick={() => setCount(c => c + 1)}>{count}</button>;\n}",
 		),
 		mcqItem(
-			"Masalah utama pada useEffect berikut?",
+			"Main problem with this useEffect?",
 			"c",
-			[4]string{"Tidak ada return cleanup", "Dependency array salah — infinite loop risk", "useState tidak valid", "JSX tidak valid"},
-			"Effect tanpa dependency array jalan tiap render; jika setState di dalamnya bisa loop.",
+			[4]string{"No cleanup return", "Wrong dependency array — infinite loop risk", "useState is invalid", "JSX is invalid"},
+			"Effect without a dependency array runs every render; setState inside can loop.",
 			[]string{"react", "hooks"},
 			"medium",
 			"react-useeffect",
 			"useEffect(() => {\n  setLoading(true);\n  fetchData();\n});",
 		),
 		mcqItem(
-			"Promise chain: urutan log yang benar?",
+			"Promise chain: correct log order?",
 			"a",
 			[4]string{"start → microtask → end", "end → start → microtask", "microtask → end → start", "random"},
-			"Microtask (.then) jalan sebelum macrotask berikutnya setelah sync code.",
+			"Microtask (.then) runs before the next macrotask after sync code.",
 			[]string{"javascript"},
 			"medium",
 			"js-async",
 			"console.log('start');\nPromise.resolve().then(() => console.log('microtask'));\nconsole.log('end');",
 		),
 		mcqItem(
-			"Flex child `flex: 1` umumnya berarti?",
+			"Flex child `flex: 1` generally means?",
 			"b",
-			[4]string{"flex-grow: 0", "flex-grow: 1, shrink: 1, basis: 0%", "Hanya width 100%", "display block"},
-			"Shorthand flex:1 setara grow 1 dan basis 0 — child mengisi ruang tersisa.",
+			[4]string{"flex-grow: 0", "flex-grow: 1, shrink: 1, basis: 0%", "width 100% only", "display block"},
+			"Shorthand flex:1 equals grow 1 and basis 0 — child fills remaining space.",
 			[]string{"css"},
 			"medium",
 			"css-flexbox",
 			".row { display: flex; }\n.item { flex: 1; }",
 		),
 		mcqItem(
-			"Atribut a11y yang menghubungkan label ke input?",
+			"a11y attribute linking label to input?",
 			"a",
-			[4]string{"htmlFor + id", "class + id", "role=label", "tabIndex saja"},
-			"htmlFor pada label harus match id input agar screen reader bekerja.",
+			[4]string{"htmlFor + id", "class + id", "role=label", "tabIndex only"},
+			"htmlFor on label must match input id for screen readers.",
 			[]string{"html", "react"},
 			"medium",
 			"html-a11y",
@@ -199,32 +203,32 @@ func generateMCQs() []mcq {
 		questions        []struct{ q, c string; o [4]string; e string }
 	}{
 		{"react", "react-memo", "medium", []struct{ q, c string; o [4]string; e string }{
-			{"Kapan `React.memo` membantu?", "b", [4]string{"Selalu", "Child re-render sering dengan props sama", "Hanya class component", "Untuk fetch data"}, "memo skip render jika props shallow equal."},
-			{"`useMemo` digunakan untuk?", "c", [4]string{"Side effect", "Menyimpan nilai hasil komputasi mahal", "DOM ref", "Routing"}, "useMemo cache hasil fungsi, bukan side effect."},
-			{"Context API cocok untuk?", "a", [4]string{"Data global yang jarang berubah (theme, locale)", "Semua state aplikasi", "Ganti Redux selalu", "Fetch API"}, "Context untuk prop drilling, bukan semua state."},
-			{"Error boundary menangkap?", "d", [4]string{"Event handler errors", "Async errors otomatis", "Semua error", "Render errors di subtree"}, "Error boundary tidak tangkap event handler / async tanpa wrapper."},
-			{"Fragment `<></>` berguna untuk?", "b", [4]string{"Styling", "Return multiple nodes tanpa DOM wrapper", "Key pada list", "Portal"}, "Fragment menghindari div tambahan."},
+			{"When does `React.memo` help?", "b", [4]string{"Always", "Child re-renders often with same props", "Class components only", "For fetching data"}, "memo skips render if props are shallow equal."},
+			{"`useMemo` is used for?", "c", [4]string{"Side effects", "Caching expensive computation results", "DOM refs", "Routing"}, "useMemo caches function results, not side effects."},
+			{"Context API is good for?", "a", [4]string{"Global data that rarely changes (theme, locale)", "All app state", "Always replaces Redux", "Fetch API"}, "Context is for prop drilling, not all state."},
+			{"Error boundary catches?", "d", [4]string{"Event handler errors", "Async errors automatically", "All errors", "Render errors in subtree"}, "Error boundaries don't catch event handler / async without wrapper."},
+			{"Fragment `<></>` is useful for?", "b", [4]string{"Styling", "Return multiple nodes without DOM wrapper", "Keys on lists", "Portals"}, "Fragment avoids extra div wrappers."},
 		}},
 		{"javascript", "js-closure", "medium", []struct{ q, c string; o [4]string; e string }{
-			{"Closure adalah?", "a", [4]string{"Fungsi akses variabel lexical scope", "CSS module", "React hook", "HTTP cache"}, "Closure = fungsi + referensi ke scope luar."},
-			{"`async/await` setara dengan?", "c", [4]string{"Callback hell saja", "setTimeout", "Promise syntax sugar", "Web Worker"}, "async function mengembalikan Promise."},
-			{"Destructuring `const {a} = obj`?", "b", [4]string{"Mutasi obj", "Ekstrak properti a", "Deep clone", "JSON parse"}, "Destructuring assignment untuk objek/array."},
-			{"`map` vs `forEach`?", "d", [4]string{"Sama", "forEach return array baru", "map untuk side effect", "map return array baru, forEach tidak"}, "map transformasi; forEach side effect."},
-			{"Optional chaining `obj?.x`?", "a", [4]string{"Short-circuit jika null/undefined", "Throw error", "Deep clone", "Type cast"}, "?. menghentikan evaluasi jika nullish."},
+			{"Closure is?", "a", [4]string{"Function accessing lexical scope variables", "CSS module", "React hook", "HTTP cache"}, "Closure = function + reference to outer scope."},
+			{"`async/await` is equivalent to?", "c", [4]string{"Callback hell only", "setTimeout", "Promise syntax sugar", "Web Worker"}, "async function returns a Promise."},
+			{"Destructuring `const {a} = obj`?", "b", [4]string{"Mutates object", "Extracts property a", "Deep clone", "JSON parse"}, "Destructuring assignment for objects/arrays."},
+			{"`map` vs `forEach`?", "d", [4]string{"Same", "forEach returns new array", "map for side effects", "map returns new array, forEach does not"}, "map transforms; forEach for side effects."},
+			{"Optional chaining `obj?.x`?", "a", [4]string{"Short-circuit if null/undefined", "Throw error", "Deep clone", "Type cast"}, "?. stops evaluation if nullish."},
 		}},
 		{"css", "css-responsive", "medium", []struct{ q, c string; o [4]string; e string }{
-			{"Media query `@media (min-width: 768px)`?", "b", [4]string{"Mobile only", "Apply styles dari 768px ke atas", "Print styles", "Dark mode"}, "min-width = breakpoint ke atas."},
-			{"CSS Grid `grid-template-columns: 1fr 1fr`?", "c", [4]string{"Satu kolom", "Tiga kolom", "Dua kolom sama lebar", "Flexbox"}, "1fr 1fr = dua track fractional."},
-			{"`z-index` bekerja pada?", "a", [4]string{"Positioned elements / stacking context", "Semua elemen static", "Hanya flex", "Hanya grid"}, "z-index butuh stacking context (positioned, opacity, dll)."},
-			{"`rem` relatif terhadap?", "d", [4]string{"Parent font", "Viewport width", "Root element font", "Line height"}, "rem = root em size."},
-			{"`gap` di flex/grid?", "b", [4]string{"Margin collapse", "Jarak antar track/items", "Padding dalam cell", "Border radius"}, "gap mengatur spacing antar items/tracks."},
+			{"Media query `@media (min-width: 768px)`?", "b", [4]string{"Mobile only", "Apply styles from 768px and up", "Print styles", "Dark mode"}, "min-width = breakpoint and up."},
+			{"CSS Grid `grid-template-columns: 1fr 1fr`?", "c", [4]string{"One column", "Three columns", "Two equal-width columns", "Flexbox"}, "1fr 1fr = two fractional tracks."},
+			{"`z-index` works on?", "a", [4]string{"Positioned elements / stacking context", "All static elements", "Flex only", "Grid only"}, "z-index needs stacking context (positioned, opacity, etc.)."},
+			{"`rem` is relative to?", "d", [4]string{"Parent font", "Viewport width", "Root element font", "Line height"}, "rem = root em size."},
+			{"`gap` in flex/grid?", "b", [4]string{"Margin collapse", "Space between tracks/items", "Padding inside cell", "Border radius"}, "gap controls spacing between items/tracks."},
 		}},
 		{"html", "html-forms", "easy", []struct{ q, c string; o [4]string; e string }{
-			{"Input type untuk email?", "a", [4]string{"type=\"email\"", "type=\"text\" saja", "type=\"mail\"", "role=email"}, "type email memberi validasi dasar & keyboard mobile."},
-			{"Button submit di dalam form?", "c", [4]string{"type=\"button\" default", "Tidak submit", "type=\"submit\" submit form", "Hanya Enter"}, "Default button di form bisa submit — set type eksplisit."},
-			{"`alt` pada img untuk?", "b", [4]string{"SEO saja", "Deskripsi untuk screen reader / fallback", "Lazy load", "CDN"}, "alt wajib untuk a11y kecuali decorative."},
-			{"Landmark `<nav>`?", "d", [4]string{"Footer", "Navigation links section", "Article body", "Sidebar ads"}, "nav untuk blok navigasi."},
-			{"`required` pada input?", "a", [4]string{"HTML5 constraint validation", "Server-only validation", "CSS pseudo", "React prop khusus"}, "required adalah built-in constraint validation."},
+			{"Input type for email?", "a", [4]string{"type=\"email\"", "type=\"text\" only", "type=\"mail\"", "role=email"}, "type email provides basic validation & mobile keyboard."},
+			{"Submit button inside form?", "c", [4]string{"type=\"button\" default", "Does not submit", "type=\"submit\" submits form", "Enter only"}, "Default button in form can submit — set type explicitly."},
+			{"`alt` on img is for?", "b", [4]string{"SEO only", "Description for screen reader / fallback", "Lazy load", "CDN"}, "alt is required for a11y unless decorative."},
+			{"Landmark `<nav>`?", "d", [4]string{"Footer", "Navigation links section", "Article body", "Sidebar ads"}, "nav is for navigation blocks."},
+			{"`required` on input?", "a", [4]string{"HTML5 constraint validation", "Server-only validation", "CSS pseudo", "React-specific prop"}, "required is built-in constraint validation."},
 		}},
 	}
 
@@ -237,46 +241,46 @@ func generateMCQs() []mcq {
 	// Hard questions
 	hard := []struct{ q, c string; o [4]string; e, code string; tags []string; topic string }{
 		{
-			"Bug paling mungkin pada kode ini?",
+			"Most likely bug in this code?",
 			"b",
-			[4]string{"Key tidak perlu", "Stale closure — count selalu 0", "useState ilegal", "JSX error"},
-			"onClick menangkap count dari render saat handler dibuat jika tidak functional update.",
+			[4]string{"Key not needed", "Stale closure — count always 0", "useState illegal", "JSX error"},
+			"onClick captures count from render when handler was created without functional update.",
 			"function Counter() {\n  const [count, setCount] = useState(0);\n  const log = () => console.log(count);\n  useEffect(() => {\n    const id = setInterval(log, 1000);\n    return () => clearInterval(id);\n  }, []);\n}",
 			[]string{"react", "hooks"},
 			"react-stale-closure",
 		},
 		{
-			"Output urutan log?",
+			"Log output order?",
 			"c",
 			[4]string{"A B C", "B A C", "A C B", "C B A"},
-			"await menunggu Promise; sync log A, microtask/settled B, lalu C setelah await.",
+			"await waits for Promise; sync log A, microtask/settled B, then C after await.",
 			"async function f() {\n  console.log('A');\n  await Promise.resolve();\n  console.log('C');\n}\nf();\nconsole.log('B');",
 			[]string{"javascript"},
 			"js-async-order",
 		},
 		{
-			"Masalah performa pada list besar?",
+			"Performance issue with large lists?",
 			"a",
-			[4]string{"Re-render seluruh list saat satu item berubah tanpa memo/virtualisasi", "Tidak pakai class", "Tidak pakai CSS", "Terlalu banyak div"},
-			"Untuk list besar pertimbangkan virtualisasi, memo item, stable keys.",
+			[4]string{"Re-render entire list when one item changes without memo/virtualization", "Not using class", "Not using CSS", "Too many divs"},
+			"For large lists consider virtualization, memo items, stable keys.",
 			"{items.map(i => <Row key={i.id} data={i} onSelect={setSelected} />)}",
 			[]string{"react"},
 			"react-performance",
 		},
 		{
-			"Specificity menang?",
+			"Which specificity wins?",
 			"d",
 			[4]string{".btn", "button", "#save.btn", "inline style"},
-			"Inline style mengalahkan selector biasa kecuali !important.",
+			"Inline style beats normal selectors unless !important.",
 			"button.primary { color: blue; }\n#save { color: red; }",
 			[]string{"css"},
 			"css-specificity",
 		},
 		{
-			"Masalah a11y pada markup?",
+			"a11y issue in this markup?",
 			"b",
-			[4]string{"Tidak ada masalah", "Icon button tanpa accessible name", "Terlalu banyak div", "Pakai section"},
-			"Button icon-only butuh aria-label atau teks visually hidden.",
+			[4]string{"No issue", "Icon button without accessible name", "Too many divs", "Using section"},
+			"Icon-only button needs aria-label or visually hidden text.",
 			"<button><img src=\"close.svg\" /></button>",
 			[]string{"html"},
 			"html-a11y-hard",
@@ -294,164 +298,164 @@ func generateMCQs() []mcq {
 func extraMCQs() []mcq {
 	raw := []mcq{
 		fullMCQ(
-			"Kapan sebaiknya memakai `useReducer` dibanding beberapa `useState`?",
+			"When should you use `useReducer` instead of multiple `useState`?",
 			"b",
-			[4]string{"Selalu untuk performa", "State berikutnya bergantung pada state sebelumnya atau logic bercabang", "Hanya di class component", "Saat butuh Context"},
-			"useReducer cocok untuk state kompleks dengan transisi terdefinisi.",
-			map[string]string{"a": "useReducer bukan default untuk performa.", "c": "Function component modern mendukung keduanya.", "d": "Context untuk distribusi data, bukan pengganti reducer."},
+			[4]string{"Always for performance", "Next state depends on previous state or logic branches", "Class components only", "When you need Context"},
+			"useReducer fits complex state with defined transitions.",
+			map[string]string{"a": "useReducer is not the default for performance.", "c": "Modern function components support both.", "d": "Context distributes data, not a reducer replacement."},
 			[]string{"react", "hooks"}, "medium", "react-usereducer", "",
 		),
 		fullMCQ(
-			"Apa tujuan `useRef` yang paling umum di React?",
+			"What is the most common purpose of `useRef` in React?",
 			"c",
-			[4]string{"Mengganti useState", "Menyimpan CSS class", "Menyimpan nilai mutable / referensi DOM tanpa memicu re-render", "Fetch data"},
-			"useRef mempertahankan nilai antar render tanpa re-render.",
-			map[string]string{"a": "useRef tidak menggantikan state UI.", "b": "Bukan untuk styling.", "d": "Fetch data pakai useEffect atau library data."},
+			[4]string{"Replace useState", "Store CSS classes", "Store mutable values / DOM refs without triggering re-render", "Fetch data"},
+			"useRef keeps values across renders without re-rendering.",
+			map[string]string{"a": "useRef does not replace UI state.", "b": "Not for styling.", "d": "Fetch data with useEffect or a data library."},
 			[]string{"react", "hooks"}, "medium", "react-useref", "",
 		),
 		fullMCQ(
-			"Apa yang salah jika menulis `if (loading) return <Spinner />` sebelum hooks lain?",
+			"What is wrong with `if (loading) return <Spinner />` before other hooks?",
 			"a",
-			[4]string{"Melanggar Rules of Hooks — hooks harus dipanggil urutan sama tiap render", "Tidak ada masalah", "Hanya error di production", "Wajib pakai class component"},
-			"Hooks tidak boleh setelah early return kondisional.",
-			map[string]string{"b": "Ini pelanggaran rules of hooks.", "c": "Error juga di development.", "d": "Function component bisa pakai hooks dengan aturan ketat."},
+			[4]string{"Violates Rules of Hooks — hooks must run in the same order every render", "No problem", "Production-only error", "Must use class component"},
+			"Hooks cannot come after a conditional early return.",
+			map[string]string{"b": "This violates the rules of hooks.", "c": "Error also in development.", "d": "Function components can use hooks with strict rules."},
 			[]string{"react", "hooks"}, "hard", "react-rules-of-hooks", "",
 		),
 		fullMCQ(
-			"Manakah yang benar tentang `useCallback`?",
+			"Which is correct about `useCallback`?",
 			"d",
-			[4]string{"Membuat komponen lebih cepat selalu", "Mengganti useMemo", "Menyimpan hasil komputasi", "Meng-cache definisi fungsi antar render jika dependency sama"},
-			"useCallback mengembalikan fungsi yang sama referensinya saat deps tidak berubah.",
-			map[string]string{"a": "Tidak selalu mempercepat — ada cost sendiri.", "b": "useMemo untuk nilai, useCallback untuk fungsi.", "c": "Itu deskripsi useMemo."},
+			[4]string{"Always makes components faster", "Replaces useMemo", "Caches computation results", "Caches function definition across renders when deps are unchanged"},
+			"useCallback returns the same function reference when deps don't change.",
+			map[string]string{"a": "Not always faster — has its own cost.", "b": "useMemo for values, useCallback for functions.", "c": "That describes useMemo."},
 			[]string{"react", "hooks"}, "medium", "react-usecallback", "",
 		),
 		fullMCQ(
-			"Event delegation di DOM berarti?",
+			"Event delegation in the DOM means?",
 			"b",
-			[4]string{"Setiap child punya listener sendiri", "Listener di parent menangani event dari child via bubbling", "Hanya untuk React", "Mengganti addEventListener"},
-			"Delegation memanfaatkan fase bubbling untuk satu handler di ancestor.",
-			map[string]string{"a": "Itu kebalikan delegation.", "c": "Konsep DOM native, bisa dipakai di React juga.", "d": "Tetap memakai addEventListener/onClick."},
+			[4]string{"Every child has its own listener", "Listener on parent handles child events via bubbling", "React only", "Replaces addEventListener"},
+			"Delegation uses the bubbling phase for one handler on an ancestor.",
+			map[string]string{"a": "That is the opposite of delegation.", "c": "Native DOM concept, usable in React too.", "d": "Still uses addEventListener/onClick."},
 			[]string{"javascript", "html"}, "medium", "js-event-delegation", "",
 		),
 		fullMCQ(
-			"Apa beda `let` dan `var` dalam loop `for`?",
+			"Difference between `let` and `var` in a `for` loop?",
 			"c",
-			[4]string{"Sama persis", "var block-scoped", "let block-scoped, var function-scoped", "let dihoist seperti var"},
-			"let per iterasi/block; var satu binding untuk seluruh function.",
-			map[string]string{"a": "Perilaku closure di loop berbeda.", "b": "var function-scoped, bukan block.", "d": "let ada di TDZ, tidak dihoist seperti var."},
+			[4]string{"Exactly the same", "var is block-scoped", "let is block-scoped, var is function-scoped", "let is hoisted like var"},
+			"let per iteration/block; var one binding for the whole function.",
+			map[string]string{"a": "Closure behavior in loops differs.", "b": "var is function-scoped, not block.", "d": "let has TDZ, not hoisted like var."},
 			[]string{"javascript"}, "medium", "js-let-var", "",
 		),
 		fullMCQ(
-			"Apa hasil `JSON.stringify({a: undefined, b: 1})`?",
+			"Result of `JSON.stringify({a: undefined, b: 1})`?",
 			"a",
 			[4]string{"`{\"b\":1}`", "`{\"a\":null,\"b\":1}`", "throw", "`{}`"},
-			"Properti undefined dihilangkan saat stringify object.",
-			map[string]string{"b": "undefined bukan null di JSON.", "c": "Tidak throw untuk undefined property.", "d": "Property b tetap ada."},
+			"undefined properties are omitted when stringifying an object.",
+			map[string]string{"b": "undefined is not null in JSON.", "c": "Does not throw for undefined property.", "d": "Property b is still present."},
 			[]string{"javascript"}, "easy", "js-json", "",
 		),
 		fullMCQ(
-			"Manakah selector dengan specificity tertinggi?",
+			"Which selector has the highest specificity?",
 			"c",
 			[4]string{"div.card", "button.primary", "#submit.btn", "[type=submit]"},
-			"ID selector (#submit) mengalahkan class dan element.",
-			map[string]string{"a": "Satu element + satu class.", "b": "Element + class tanpa ID.", "d": "Attribute selector lebih rendah dari ID."},
+			"ID selector (#submit) beats class and element.",
+			map[string]string{"a": "One element + one class.", "b": "Element + class without ID.", "d": "Attribute selector is lower than ID."},
 			[]string{"css"}, "medium", "css-specificity-2", "",
 		),
 		fullMCQ(
-			"`align-items: center` di flex container mengatur?",
+			"`align-items: center` on a flex container controls?",
 			"b",
-			[4]string{"Distribusi pada main axis", "Perataan pada cross axis", "Urutan flex item", "Wrap baris"},
+			[4]string{"Distribution on main axis", "Alignment on cross axis", "Flex item order", "Line wrapping"},
 			"align-items = cross axis; justify-content = main axis.",
-			map[string]string{"a": "Itu justify-content.", "c": "Urutan pakai flex-direction/order.", "d": "Wrap pakai flex-wrap."},
+			map[string]string{"a": "That is justify-content.", "c": "Order uses flex-direction/order.", "d": "Wrap uses flex-wrap."},
 			[]string{"css"}, "easy", "css-flex-align", "",
 		),
 		fullMCQ(
-			"Properti CSS apa yang membuat elemen sticky saat scroll?",
+			"Which CSS property makes an element sticky on scroll?",
 			"d",
-			[4]string{"position: fixed saja", "overflow: scroll", "z-index tinggi", "position: sticky + offset (top/bottom)"},
-			"sticky butuh positioned sticky dan threshold top/bottom dalam container scroll.",
-			map[string]string{"a": "fixed lepas dari flow; sticky relatif sampai threshold.", "b": "overflow tidak membuat sticky sendiri.", "c": "z-index tidak mengaktifkan sticky."},
+			[4]string{"position: fixed only", "overflow: scroll", "high z-index", "position: sticky + offset (top/bottom)"},
+			"sticky needs positioned sticky and top/bottom threshold within scroll container.",
+			map[string]string{"a": "fixed leaves flow; sticky is relative until threshold.", "b": "overflow does not enable sticky alone.", "c": "z-index does not activate sticky."},
 			[]string{"css"}, "medium", "css-sticky", "",
 		),
 		fullMCQ(
-			"Elemen HTML mana yang paling tepat untuk konten utama halaman?",
+			"Which HTML element is best for main page content?",
 			"a",
-			[4]string{"<main>", "<div id=\"main\">", "<section> saja", "<article> untuk seluruh halaman"},
-			"<main> adalah landmark untuk konten utama — satu per halaman.",
-			map[string]string{"b": "div tanpa landmark kurang aksesibel.", "c": "section untuk bagian tematik, bukan seluruh main content.", "d": "article untuk konten mandiri (post), bukan seluruh app."},
+			[4]string{"<main>", "<div id=\"main\">", "<section> only", "<article> for entire page"},
+			"<main> is the landmark for primary content — one per page.",
+			map[string]string{"b": "div without landmark is less accessible.", "c": "section for thematic sections, not entire main content.", "d": "article for standalone content (posts), not entire app."},
 			[]string{"html"}, "easy", "html-main", "",
 		),
 		fullMCQ(
-			"Atribut `aria-live` digunakan untuk?",
+			"Attribute `aria-live` is used for?",
 			"b",
-			[4]string{"Styling fokus", "Memberi tahu screen reader konten dinamis yang berubah", "Validasi form", "Lazy load gambar"},
-			"aria-live mengumumkan perubahan konten ke assistive tech.",
-			map[string]string{"a": "Fokus pakai :focus-visible/tabIndex.", "c": "Validasi pakai constraint API atau JS.", "d": "Lazy load pakai loading=lazy."},
+			[4]string{"Focus styling", "Announcing dynamic content changes to screen readers", "Form validation", "Lazy loading images"},
+			"aria-live announces content changes to assistive tech.",
+			map[string]string{"a": "Focus uses :focus-visible/tabIndex.", "c": "Validation uses constraint API or JS.", "d": "Lazy load uses loading=lazy."},
 			[]string{"html"}, "hard", "html-aria-live", "",
 		),
 		fullMCQ(
-			"Dalam React, mengapa `setCount(count + 1)` dua kali berturut tidak selalu +2?",
+			"In React, why doesn't `setCount(count + 1)` twice in a row always add +2?",
 			"c",
-			[4]string{"React bug", "Karena strict mode saja", "State update di-batch — baca nilai count yang sama", "Karena useState async ke server"},
-			"Batching memakai snapshot count yang sama; pakai functional update untuk increment ganda.",
-			map[string]string{"a": "Ini perilaku terdokumentasi.", "b": "Bukan hanya strict mode.", "d": "State lokal, bukan server roundtrip."},
+			[4]string{"React bug", "Strict mode only", "State updates batch — reads same count value", "useState is async to server"},
+			"Batching uses the same count snapshot; use functional update for double increment.",
+			map[string]string{"a": "This is documented behavior.", "b": "Not only strict mode.", "d": "Local state, not server roundtrip."},
 			[]string{"react"}, "hard", "react-batching",
 			"setCount(count + 1);\nsetCount(count + 1);",
 		),
 		fullMCQ(
-			"Apa fungsi `key` pada komponen di luar list?",
+			"What does `key` on a component outside a list do?",
 			"d",
-			[4]string{"Wajib di semua komponen", "SEO", "Styling", "Memaksa remount saat key berubah (reset state internal)"},
-			"Mengubah key membuat React mount ulang subtree — berguna reset state.",
-			map[string]string{"a": "Key hanya wajib di list siblings.", "b": "Bukan untuk SEO.", "c": "Bukan className pengganti."},
+			[4]string{"Required on all components", "SEO", "Styling", "Force remount when key changes (reset internal state)"},
+			"Changing key makes React remount the subtree — useful to reset state.",
+			map[string]string{"a": "Key is only required on list siblings.", "b": "Not for SEO.", "c": "Not a className substitute."},
 			[]string{"react"}, "medium", "react-key-remount", "",
 		),
 		fullMCQ(
-			"`fetch().then(r => r.json())` — kapan body response bisa dibaca?",
+			"`fetch().then(r => r.json())` — when can the response body be read?",
 			"a",
-			[4]string{"Sekali — stream body habis setelah dibaca", "Berulang tanpa batas", "Hanya di Node", "Hanya jika status 200"},
-			"Response body adalah stream sekali pakai.",
-			map[string]string{"b": "Perlu clone() untuk baca ulang.", "c": "Browser dan Node sama.", "d": "Body bisa dibaca meski 4xx/5xx."},
+			[4]string{"Once — stream consumed after read", "Unlimited times", "Node only", "Only if status 200"},
+			"Response body is a one-time stream.",
+			map[string]string{"b": "Need clone() to read again.", "c": "Browser and Node alike.", "d": "Body can be read even on 4xx/5xx."},
 			[]string{"javascript"}, "medium", "js-fetch", "",
 		),
 		fullMCQ(
-			"Apa output `[1, 2, 3].map(parseInt)` di JavaScript?",
+			"Output of `[1, 2, 3].map(parseInt)` in JavaScript?",
 			"c",
 			[4]string{"[1, 2, 3]", "[1, NaN, NaN]", "[1, 2, 2]", "[NaN, NaN, NaN]"},
-			"parseInt menerima (string, radix); map mengirim (value, index) sebagai argumen.",
-			map[string]string{"a": "parseInt('2', 1) bukan 2.", "b": "Index 2 dengan radix 2 menghasilkan 2.", "d": "Elemen pertama tetap 1."},
+			"parseInt takes (string, radix); map passes (value, index) as arguments.",
+			map[string]string{"a": "parseInt('2', 1) is not 2.", "b": "Index 2 with radix 2 yields 2.", "d": "First element is still 1."},
 			[]string{"javascript"}, "hard", "js-parseint-map", "",
 		),
 		fullMCQ(
-			"CSS `min-height: 100vh` pada mobile kadang terlalu tinggi karena?",
+			"CSS `min-height: 100vh` on mobile is sometimes too tall because?",
 			"b",
-			[4]string{"vh tidak didukung", "Address bar browser mengubah viewport — pertimbangkan dvh/svh", "Karena flexbox", "Karena rem"},
-			"Classic vh tidak selalu match visible viewport di mobile browser.",
-			map[string]string{"a": "vh didukung luas.", "c": "Tidak spesifik flexbox.", "d": "rem terkait font root."},
+			[4]string{"vh not supported", "Browser address bar changes viewport — consider dvh/svh", "Because of flexbox", "Because of rem"},
+			"Classic vh does not always match visible viewport on mobile browsers.",
+			map[string]string{"a": "vh is widely supported.", "c": "Not flexbox-specific.", "d": "rem relates to root font."},
 			[]string{"css"}, "medium", "css-viewport-units", "",
 		),
 		fullMCQ(
-			"Grid `grid-template-areas` berguna untuk?",
+			"Grid `grid-template-areas` is useful for?",
 			"a",
-			[4]string{"Menamai area layout dan menempatkan item ke area", "Animasi", "Font sizing", "Z-index"},
-			"Named areas membuat layout dashboard mudah dibaca.",
-			map[string]string{"b": "Animasi pakai @keyframes.", "c": "Font pakai font-size.", "d": "Z-index terpisah."},
+			[4]string{"Naming layout areas and placing items into areas", "Animation", "Font sizing", "Z-index"},
+			"Named areas make dashboard layouts easier to read.",
+			map[string]string{"b": "Animation uses @keyframes.", "c": "Font uses font-size.", "d": "Z-index is separate."},
 			[]string{"css"}, "medium", "css-grid-areas", "",
 		),
 		fullMCQ(
-			"Form `novalidate` berarti?",
+			"Form `novalidate` means?",
 			"c",
-			[4]string{"Form tidak bisa disubmit", "Hanya validasi server", "Nonaktifkan validasi HTML5 bawaan browser", "Hapus required"},
-			"novalidate mematikan built-in constraint validation — validasi JS tetap bisa.",
-			map[string]string{"a": "Submit tetap bisa.", "b": "Bukan otomatis server-only.", "d": "required tetap ada di markup."},
+			[4]string{"Form cannot be submitted", "Server validation only", "Disable built-in HTML5 browser validation", "Remove required"},
+			"novalidate disables built-in constraint validation — JS validation still works.",
+			map[string]string{"a": "Submit still works.", "b": "Not automatically server-only.", "d": "required remains in markup."},
 			[]string{"html"}, "medium", "html-novalidate", "",
 		),
 		fullMCQ(
-			"Manakah pola validasi form React yang scalable?",
+			"Which is a scalable React form validation pattern?",
 			"d",
-			[4]string{"Satu useState object besar tanpa struktur", "Simpan semua di window", "Hanya alert()", "Schema validation (zod/yup) + library form atau reducer terstruktur"},
-			"Form besar butuh schema, error per field, dan pemisahan concern.",
-			map[string]string{"a": "Sulit di-maintain dan test.", "b": "Anti-pattern global state.", "c": "alert tidak aksesibel/UX buruk."},
+			[4]string{"One large useState object without structure", "Store everything on window", "alert() only", "Schema validation (zod/yup) + form library or structured reducer"},
+			"Large forms need schema, per-field errors, and separation of concerns.",
+			map[string]string{"a": "Hard to maintain and test.", "b": "Global state anti-pattern.", "c": "alert is not accessible/poor UX."},
 			[]string{"react"}, "medium", "react-form-patterns", "",
 		),
 	}
@@ -472,7 +476,7 @@ func fullMCQ(q, correct string, opts [4]string, expl string, wrong map[string]st
 		CorrectID:         correct,
 		Explanation:       expl,
 		WrongExplanations: wrong,
-		BestPractices:     []string{"Pahami konsep dasar sebelum menghafal jawaban", "Relasikan dengan pengalaman coding harian", "Baca penjelasan setelah submit untuk pembelajaran"},
+		BestPractices:     []string{"Understand core concepts before memorizing answers", "Relate questions to daily coding experience", "Read the explanation after submitting to learn"},
 		LearningObjective: topic,
 		Points:            10,
 		Tags:              tags,
@@ -497,7 +501,7 @@ type buildTask struct {
 	Points              int             `json:"points"`
 }
 
-var buildRubric = json.RawMessage(`{"criteria":[{"id":"tests_pass","label":"Kriteria fungsional terpenuhi","points":40,"auto":true},{"id":"controlled","label":"Controlled inputs","points":0,"auto":false},{"id":"validation","label":"Validasi sesuai instruksi","points":0,"auto":false}]}`)
+var buildRubric = json.RawMessage(`{"criteria":[{"id":"tests_pass","label":"Functional criteria met","points":40,"auto":true},{"id":"controlled","label":"Controlled inputs","points":0,"auto":false},{"id":"validation","label":"Validation per instructions","points":0,"auto":false}]}`)
 
 type assertionCase struct {
 	Check     string `json:"check"`
@@ -518,18 +522,18 @@ func mustAssertions(cases ...assertionCase) json.RawMessage {
 }
 
 func buildSpecMarkdown(title, field, validate string) string {
-	return fmt.Sprintf(`## Tujuan
-Latihan form React: controlled input, validasi, dan submit lewat callback.
+	return fmt.Sprintf(`## Goal
+React form exercise: controlled input, validation, and submit via callback.
 
-## Buat komponen %s
-- Gunakan **controlled input** untuk field %s (value + onChange)
-- **Validasi:** %s
-- Ada tombol **Submit**
-- Jika invalid, tampilkan **pesan error** (elemen dengan role="alert")
-- Jika valid, panggil prop **onSubmit** dengan object yang berisi %s
+## Build component %s
+- Use a **controlled input** for field %s (value + onChange)
+- **Validation:** %s
+- Include a **Submit** button
+- If invalid, show an **error message** (element with role="alert")
+- If valid, call the **onSubmit** prop with an object containing %s
 
-## Cara cek
-Klik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.`,
+## How to verify
+Click **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.`,
 		fmt.Sprintf("`%s`", title), fmt.Sprintf("`%s`", field), validate, fmt.Sprintf("`%s`", field))
 }
 
@@ -557,19 +561,25 @@ func buildAssertions(field, validate, testID string) json.RawMessage {
 			assertionCase{Check: "validates_required", Field: field},
 			assertionCase{Check: "validates_max_length", Field: field, Max: 80},
 		)
-	case strings.Contains(validate, "mengandung https"):
+	case strings.Contains(validate, "must contain https"), strings.Contains(validate, "mengandung https"):
 		checks = append(checks, assertionCase{Check: "validates_includes", Field: field, Substring: "https"})
-	case strings.Contains(validate, "mengandung @"):
+	case strings.Contains(validate, "must contain @"), strings.Contains(validate, "mengandung @"):
 		checks = append(checks, assertionCase{Check: "validates_includes", Field: field, Substring: "@"})
-	case strings.Contains(validate, "minimal 6"):
+	case strings.Contains(validate, "min 20"):
+		checks = append(checks, assertionCase{Check: "validates_min_length", Field: field, Min: 20})
+	case strings.Contains(validate, "min 10"):
+		checks = append(checks, assertionCase{Check: "validates_min_length", Field: field, Min: 10})
+	case strings.Contains(validate, "min 8"):
+		checks = append(checks, assertionCase{Check: "validates_min_length", Field: field, Min: 8})
+	case strings.Contains(validate, "min 6"), strings.Contains(validate, "minimal 6"):
 		checks = append(checks, assertionCase{Check: "validates_min_length", Field: field, Min: 6})
-	case strings.Contains(validate, "minimal 5"):
+	case strings.Contains(validate, "min 5"), strings.Contains(validate, "minimal 5"):
 		checks = append(checks, assertionCase{Check: "validates_min_length", Field: field, Min: 5})
-	case strings.Contains(validate, "minimal 4"):
+	case strings.Contains(validate, "min 4"), strings.Contains(validate, "minimal 4"):
 		checks = append(checks, assertionCase{Check: "validates_min_length", Field: field, Min: 4})
-	case strings.Contains(validate, "minimal 2"):
+	case strings.Contains(validate, "min 2"), strings.Contains(validate, "minimal 2"):
 		checks = append(checks, assertionCase{Check: "validates_min_length", Field: field, Min: 2})
-	case strings.Contains(validate, "minimal 3"):
+	case strings.Contains(validate, "min 3"), strings.Contains(validate, "minimal 3"):
 		checks = append(checks, assertionCase{Check: "validates_min_length", Field: field, Min: 3})
 	default:
 		checks = append(checks, assertionCase{Check: "validates_required", Field: field})
@@ -581,57 +591,72 @@ func buildValidationBlock(validate string) string {
 	switch {
 	case strings.Contains(validate, "max 200"):
 		return `    if (value.length > 200) {
-      setError("Maksimal 200 karakter");
+      setError("Maximum 200 characters");
       return;
     }`
 	case strings.Contains(validate, "max 120"):
 		return `    if (value.length > 120) {
-      setError("Maksimal 120 karakter");
+      setError("Maximum 120 characters");
       return;
     }`
 	case strings.Contains(validate, "max 80"):
 		return `    if (value.length > 80) {
-      setError("Maksimal 80 karakter");
+      setError("Maximum 80 characters");
       return;
     }`
-	case strings.Contains(validate, "mengandung https"):
+	case strings.Contains(validate, "must contain https"), strings.Contains(validate, "mengandung https"):
 		return `    if (!value.includes("https")) {
-      setError("URL harus mengandung https");
+      setError("URL must contain https");
       return;
     }`
-	case strings.Contains(validate, "mengandung @"):
+	case strings.Contains(validate, "must contain @"), strings.Contains(validate, "mengandung @"):
 		return `    if (!value.includes("@")) {
-      setError("Email harus mengandung @");
+      setError("Email must contain @");
       return;
     }`
-	case strings.Contains(validate, "minimal 6"):
+	case strings.Contains(validate, "min 20"):
+		return `    if (value.trim().length < 20) {
+      setError("Minimum 20 characters");
+      return;
+    }`
+	case strings.Contains(validate, "min 10"):
+		return `    if (value.replace(/\D/g, "").length < 10) {
+      setError("Minimum 10 digits");
+      return;
+    }`
+	case strings.Contains(validate, "min 8"):
+		return `    if (value.length < 8) {
+      setError("Minimum 8 characters");
+      return;
+    }`
+	case strings.Contains(validate, "min 6"), strings.Contains(validate, "minimal 6"):
 		return `    if (value.length < 6) {
-      setError("Minimal 6 karakter");
+      setError("Minimum 6 characters");
       return;
     }`
-	case strings.Contains(validate, "minimal 5"):
+	case strings.Contains(validate, "min 5"), strings.Contains(validate, "minimal 5"):
 		return `    if (value.trim().length < 5) {
-      setError("Minimal 5 karakter");
+      setError("Minimum 5 characters");
       return;
     }`
-	case strings.Contains(validate, "minimal 4"):
+	case strings.Contains(validate, "min 4"), strings.Contains(validate, "minimal 4"):
 		return `    if (value.trim().length < 4) {
-      setError("Minimal 4 karakter");
+      setError("Minimum 4 characters");
       return;
     }`
-	case strings.Contains(validate, "minimal 2"):
+	case strings.Contains(validate, "min 2"), strings.Contains(validate, "minimal 2"):
 		return `    if (value.trim().length < 2) {
-      setError("Minimal 2 karakter");
+      setError("Minimum 2 characters");
       return;
     }`
-	case strings.Contains(validate, "minimal 3"):
+	case strings.Contains(validate, "min 3"), strings.Contains(validate, "minimal 3"):
 		return `    if (value.trim().length < 3) {
-      setError("Minimal 3 karakter");
+      setError("Minimum 3 characters");
       return;
     }`
 	default:
 		return `    if (!value.trim()) {
-      setError("Field wajib diisi");
+      setError("Field is required");
       return;
     }`
 	}
@@ -642,36 +667,36 @@ func generateBuilds() []buildTask {
 		title, name, field, diff string
 		validate                 string
 	}{
-		{"WaitlistForm", "email", "email", "medium", "email harus mengandung @"},
-		{"NewsletterSignup", "email", "email", "easy", "email wajib diisi"},
-		{"ContactForm", "name", "name", "medium", "name minimal 2 karakter"},
-		{"LoginForm", "password", "password", "medium", "password minimal 6 karakter"},
-		{"SearchBar", "query", "query", "easy", "tampilkan query di bawah input"},
-		{"FeedbackForm", "message", "message", "medium", "message tidak boleh kosong"},
-		{"RegisterForm", "email", "email", "hard", "email valid + password match"},
-		{"SubscribeForm", "email", "email", "easy", "checkbox consent wajib dicentang"},
-		{"ProfileForm", "displayName", "displayName", "medium", "displayName wajib"},
+		{"WaitlistForm", "email", "email", "medium", "email must contain @"},
+		{"NewsletterSignup", "email", "email", "easy", "email required"},
+		{"ContactForm", "name", "name", "medium", "name min 2 characters"},
+		{"LoginForm", "password", "password", "medium", "password min 6 characters"},
+		{"SearchBar", "query", "query", "easy", "show query below input"},
+		{"FeedbackForm", "message", "message", "medium", "message must not be empty"},
+		{"RegisterForm", "email", "email", "hard", "valid email + password match"},
+		{"SubscribeForm", "email", "email", "easy", "consent checkbox must be checked"},
+		{"ProfileForm", "displayName", "displayName", "medium", "displayName required"},
 		{"BookingForm", "date", "date", "medium", "date input type=date"},
-		{"CouponForm", "code", "code", "easy", "kode minimal 3 karakter"},
-		{"AddressForm", "city", "city", "medium", "city wajib diisi"},
-		{"PhoneVerifyForm", "phone", "phone", "hard", "phone hanya angka"},
+		{"CouponForm", "code", "code", "easy", "code min 3 characters"},
+		{"AddressForm", "city", "city", "medium", "city required"},
+		{"PhoneVerifyForm", "phone", "phone", "hard", "phone digits only"},
 		{"RatingForm", "rating", "rating", "easy", "select rating 1-5"},
-		{"CommentForm", "comment", "comment", "medium", "max 200 karakter"},
-		{"InviteForm", "inviteEmail", "inviteEmail", "medium", "email teman"},
-		{"ResetPasswordForm", "newPassword", "newPassword", "hard", "konfirmasi password sama"},
-		{"JobApplyForm", "linkedin", "linkedin", "medium", "URL linkedin opsional valid"},
-		{"EventRSVPForm", "guests", "guests", "easy", "jumlah tamu number >=1"},
-		{"SupportTicketForm", "subject", "subject", "medium", "subject wajib"},
-		{"CheckoutEmailForm", "checkoutEmail", "checkoutEmail", "medium", "email sebelum lanjut"},
-		{"BetaAccessForm", "reason", "reason", "hard", "alasan min 20 karakter"},
-		{"MailingListForm", "firstName", "firstName", "easy", "firstName wajib"},
+		{"CommentForm", "comment", "comment", "medium", "max 200 characters"},
+		{"InviteForm", "inviteEmail", "inviteEmail", "medium", "friend email"},
+		{"ResetPasswordForm", "newPassword", "newPassword", "hard", "confirm password must match"},
+		{"JobApplyForm", "linkedin", "linkedin", "medium", "optional valid LinkedIn URL"},
+		{"EventRSVPForm", "guests", "guests", "easy", "guest count number >= 1"},
+		{"SupportTicketForm", "subject", "subject", "medium", "subject required"},
+		{"CheckoutEmailForm", "checkoutEmail", "checkoutEmail", "medium", "email before continuing"},
+		{"BetaAccessForm", "reason", "reason", "hard", "reason min 20 characters"},
+		{"MailingListForm", "firstName", "firstName", "easy", "firstName required"},
 		{"SurveyForm", "satisfaction", "satisfaction", "medium", "radio satisfaction"},
-		{"DemoRequestForm", "company", "company", "medium", "company wajib"},
-		{"PartnerForm", "website", "website", "hard", "website harus http"},
-		{"AlertSignupForm", "topic", "topic", "easy", "pilih topic dari select"},
+		{"DemoRequestForm", "company", "company", "medium", "company required"},
+		{"PartnerForm", "website", "website", "hard", "website must contain https"},
+		{"AlertSignupForm", "topic", "topic", "easy", "select topic from dropdown"},
 		{"GiftCardForm", "amount", "amount", "medium", "amount number > 0"},
-		{"ReferralForm", "referralCode", "referralCode", "medium", "kode referral"},
-		{"OnboardingForm", "role", "role", "easy", "pilih role developer/designer"},
+		{"ReferralForm", "referralCode", "referralCode", "medium", "referral code"},
+		{"OnboardingForm", "role", "role", "easy", "select role developer/designer"},
 	}
 
 	var out []buildTask
@@ -690,7 +715,7 @@ export function %s({ onSubmit }) {
   return (
     <form data-testid="%s">
       <input name="%s" placeholder="%s" />
-      <button type="submit">Kirim</button>
+      <button type="submit">Submit</button>
     </form>
   );
 }
@@ -718,17 +743,17 @@ export function %s({ onSubmit }) {
         onChange={(e) => setValue(e.target.value)}
       />
       {error && <p role="alert">{error}</p>}
-      <button type="submit">Kirim</button>
+      <button type="submit">Submit</button>
     </form>
   );
 }
 `, cmp, validation, s.field, testID, s.field, s.field, s.field, s.field),
-			SolutionExplanation: "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+			SolutionExplanation: "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
 			RubricJSON:          buildRubric,
 			TestCases:           buildAssertions(s.field, s.validate, testID),
-			BestPractices:       []string{"Controlled components", "Validasi sebelum submit", "Label htmlFor untuk a11y", "preventDefault pada form submit"},
-			CommonMistakes:        []string{"Lupa preventDefault", "Uncontrolled input", "Tidak tampilkan error"},
-			LearningObjective:   fmt.Sprintf("Form React — %s", s.title),
+			BestPractices:       []string{"Controlled components", "Validate before submit", "Label htmlFor for a11y", "preventDefault on form submit"},
+			CommonMistakes:        []string{"Forgetting preventDefault", "Uncontrolled input", "Not showing errors"},
+			LearningObjective:   fmt.Sprintf("React form — %s", s.title),
 			Difficulty:          s.diff,
 			Points:              40,
 		})
@@ -777,9 +802,9 @@ func coreDebugBugs() []struct {
 	}{
 		{
 			"Hero Infinite Render",
-			"Halaman hang saat Hero mount.",
-			"setState dipanggil langsung di body render.",
-			"Hapus setState dari render; gunakan event handler atau useEffect dengan deps benar.",
+			"Page hangs when Hero mounts.",
+			"setState is called directly in the render body.",
+			"Remove setState from render; use an event handler or useEffect with correct deps.",
 			"medium",
 			`export function Hero({ title }) {
   const [n, setN] = useState(0);
@@ -799,9 +824,9 @@ func coreDebugBugs() []struct {
 		},
 		{
 			"Hero Stale Props",
-			"Subtitle tidak update saat prop berubah.",
-			"State diinisialisasi dari props sekali saja tanpa sync.",
-			"Render langsung dari props atau sync dengan useEffect saat prop berubah.",
+			"Subtitle does not update when the prop changes.",
+			"State is initialized from props only once without syncing.",
+			"Render directly from props or sync with useEffect when the prop changes.",
 			"medium",
 			`export function Hero({ subtitle }) {
   const [text, setText] = useState(subtitle);
@@ -813,9 +838,9 @@ func coreDebugBugs() []struct {
 		},
 		{
 			"Hero Missing Key",
-			"List CTA salah urutan setelah filter.",
-			"Index sebagai key menyebabkan reconciler salah reuse DOM.",
-			"Gunakan id stabil dari data sebagai key.",
+			"CTA list order is wrong after filter.",
+			"Using index as key causes the reconciler to incorrectly reuse DOM.",
+			"Use a stable id from the data as the key.",
 			"easy",
 			`export function Hero({ items }) {
   return (
@@ -852,8 +877,8 @@ func generateDebugs() []debugTask {
 			RootCause:      b.cause,
 			FixExplanation: b.fix,
 			TestCases:      debugAssertionsExtended(kind),
-			BestPractices:     []string{"Jangan setState saat render", "Key stabil pada list", "React DevTools Profiler"},
-			CommonMistakes:      []string{"Menambah if tanpa paham render cycle", "Menghapus state yang dibutuhkan UI"},
+			BestPractices:     []string{"Never setState during render", "Stable keys on lists", "React DevTools Profiler"},
+			CommonMistakes:      []string{"Adding if statements without understanding the render cycle", "Removing state the UI still needs"},
 			LearningObjective: fmt.Sprintf("Debug React Hero — sample %02d", i+1),
 			Difficulty:        b.diff,
 			Points:            35,
@@ -864,28 +889,28 @@ func generateDebugs() []debugTask {
 
 func debugSpecMarkdown(title, symptom, hint string) string {
 	base := strings.Split(title, " #")[0]
-	return fmt.Sprintf(`## Gejala
+	return fmt.Sprintf(`## Symptom
 %s
 
-## Tugas kamu
-Perbaiki komponen **%s** di editor sampai preview berjalan benar.
+## Your task
+Fix the **%s** component in the editor until the preview works correctly.
 
-## Petunjuk
+## Hint
 %s
 
-## Cara cek
-Klik **Jalankan test** — kode tidak harus sama persis dengan solusi referensi.`,
+## How to verify
+Click **Run tests** — your code does not need to match the reference solution exactly.`,
 		symptom, base, hint)
 }
 
 func debugHint(kind int) string {
 	switch kind {
 	case 0:
-		return "Perhatikan apakah ada setState yang dipanggil saat render, bukan di event handler."
+		return "Check whether setState is called during render rather than in an event handler."
 	case 1:
-		return "Perhatikan apakah state dari props ikut berubah saat parent mengirim prop baru."
+		return "Check whether state derived from props updates when the parent sends a new prop."
 	default:
-		return "Perhatikan cara me-render list `items` — React butuh key yang stabil."
+		return "Check how you render the `items` list — React needs stable keys."
 	}
 }
 

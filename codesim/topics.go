@@ -123,10 +123,10 @@ func TendemExamFormat() ExamFormat {
 		TotalQuestions:  7,
 		Sections: []ExamFormatSection{
 			{Label: "Multiple Choice Questions", Count: 5, Notes: "Q1–Q5"},
-			{Label: "React Component (form)", Count: 1, Notes: "WaitlistForm atau varian serupa"},
-			{Label: "React Debug", Count: 1, Notes: "Hero atau varian serupa"},
+			{Label: "React Component (form)", Count: 1, Notes: "WaitlistForm or similar variant"},
+			{Label: "React Debug", Count: 1, Notes: "Hero or similar variant"},
 		},
-		MixNotes: "Build & debug diacak dari bank soal. MCQ campuran easy / medium / hard.",
+		MixNotes: "Build and debug tasks are randomized from the question bank. MCQs mix easy / medium / hard.",
 	}
 }
 
@@ -255,7 +255,7 @@ func defaultTopicPresets(tagCounts map[string]int) []TopicPreset {
 	if len(out) == 0 {
 		out = []TopicPreset{{
 			ID:          "all",
-			Label:       "Semua topik",
+			Label:       "All topics",
 			Description: "Soal dari seluruh bank",
 			Tags:        nil,
 		}}
@@ -335,7 +335,7 @@ func validateLearnerSelection(ctx context.Context, topics []string, difficulty s
 	}
 	count := len(filterMCQs(bank.MCQs, topics, difficulty))
 	if count < need {
-		return fmt.Errorf("bank soal tidak cukup untuk topik ini (tersedia %d, butuh %d MCQ). Pilih topik lain atau kurangi filter", count, need)
+		return fmt.Errorf("not enough questions in the bank for this selection (available %d, need %d MCQs). Try other topics or fewer filters", count, need)
 	}
 	return nil
 }

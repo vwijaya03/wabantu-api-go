@@ -94,7 +94,7 @@ func claimClientToken(ctx context.Context, sessionID, accountID, clientToken str
 	if clientToken == "" {
 		return nil
 	}
-	if _, err := loadSession(ctx, sessionID, accountID); err != nil {
+	if _, err := loadSessionForUser(ctx, sessionID, accountID, clientToken); err != nil {
 		return err
 	}
 	_, err := db.Exec(ctx, `
@@ -108,11 +108,18 @@ func claimClientToken(ctx context.Context, sessionID, accountID, clientToken str
 	return err
 }
 
-func loadSessionForUser(ctx context.Context, sessionID, accountID string) (*examSessionRow, error) {
-	return loadSession(ctx, sessionID, accountID)
+func loadSessionForUser(ctx context.Context, sessionID, accountID, clientToken string) (*examSessionRow, error) {
+	row, err := fetchSessionRow(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	if err := authorizeSessionAccess(row, accountID, clientToken); err != nil {
+		return nil, err
+	}
+	return row, nil
 }
 
-func loadSession(ctx context.Context, sessionID, callerAccountID string) (*examSessionRow, error) {
+func fetchSessionRow(ctx context.Context, sessionID string) (*examSessionRow, error) {
 	var row examSessionRow
 	var qJSON, aJSON, scoreJSON []byte
 	var accountID, blueprintID, clientToken sql.NullString
@@ -140,11 +147,6 @@ func loadSession(ctx context.Context, sessionID, callerAccountID string) (*examS
 	}
 	if blueprintID.Valid {
 		row.BlueprintID = blueprintID.String
-	}
-	if row.AccountID != "" {
-		if callerAccountID == "" || callerAccountID != row.AccountID {
-			return nil, appErrs.NotFound("session tidak ditemukan")
-		}
 	}
 	_ = json.Unmarshal(qJSON, &row.Questions)
 	_ = json.Unmarshal(aJSON, &row.Answers)

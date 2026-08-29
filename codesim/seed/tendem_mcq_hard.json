@@ -1,0 +1,2017 @@
+[
+  {
+    "question": "A `useEffect` fetches data but updates state after unmount. Best fix?",
+    "code_snippet": "useEffect(() =\u003e {\n  fetch(\"/api\").then(r =\u003e r.json()).then(setData);\n}, []);",
+    "choices": [
+      {
+        "id": "a",
+        "text": "Ignore the warning"
+      },
+      {
+        "id": "b",
+        "text": "Use useLayoutEffect instead"
+      },
+      {
+        "id": "c",
+        "text": "Abort fetch + guard/cleanup in useEffect"
+      },
+      {
+        "id": "d",
+        "text": "Move fetch to render"
+      }
+    ],
+    "correct_id": "c",
+    "explanation": "AbortController in effect cleanup prevents setState on unmounted components.",
+    "wrong_explanations": {
+      "a": "Option \"Ignore the warning\" is not the best answer for this question.",
+      "b": "Option \"Use useLayoutEffect instead\" is not the best answer for this question.",
+      "d": "Option \"Move fetch to render\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-001",
+    "points": 10,
+    "tags": [
+      "react",
+      "hooks"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-001"
+  },
+  {
+    "question": "Why can `useEffect(() =\u003e { setCount(count + 1); }, [count])` cause problems when incrementing once per mount?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "Illegal syntax"
+      },
+      {
+        "id": "b",
+        "text": "Effect re-runs when count changes — easy to create loops"
+      },
+      {
+        "id": "c",
+        "text": "useEffect cannot set state"
+      },
+      {
+        "id": "d",
+        "text": "Strict Mode only issue"
+      }
+    ],
+    "correct_id": "b",
+    "explanation": "Effect runs after count changes, potentially looping if logic is wrong; functional updates are safer.",
+    "wrong_explanations": {
+      "a": "Option \"Illegal syntax\" is not the best answer for this question.",
+      "c": "Option \"useEffect cannot set state\" is not the best answer for this question.",
+      "d": "Option \"Strict Mode only issue\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-002",
+    "points": 10,
+    "tags": [
+      "react",
+      "hooks"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-002"
+  },
+  {
+    "question": "Hydration mismatch in Next.js often comes from?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "CSS modules"
+      },
+      {
+        "id": "b",
+        "text": "Using TypeScript"
+      },
+      {
+        "id": "c",
+        "text": "importing images"
+      },
+      {
+        "id": "d",
+        "text": "Non-deterministic render output (Date, random, locale)"
+      }
+    ],
+    "correct_id": "d",
+    "explanation": "Server HTML must match first client render — Date.now/random in render breaks hydration.",
+    "wrong_explanations": {
+      "a": "Option \"CSS modules\" is not the best answer for this question.",
+      "b": "Option \"Using TypeScript\" is not the best answer for this question.",
+      "c": "Option \"importing images\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-003",
+    "points": 10,
+    "tags": [
+      "react"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-003"
+  },
+  {
+    "question": "`useMemo(() =\u003e compute(a), [a])` — when is it NOT worth it?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "compute is trivially cheap"
+      },
+      {
+        "id": "b",
+        "text": "compute runs every render without memo"
+      },
+      {
+        "id": "c",
+        "text": "Child is memoized"
+      },
+      {
+        "id": "d",
+        "text": "a changes often"
+      }
+    ],
+    "correct_id": "a",
+    "explanation": "Cheap computations cost more to memoize than to recompute.",
+    "wrong_explanations": {
+      "b": "Option \"compute runs every render without memo\" is not the best answer for this question.",
+      "c": "Option \"Child is memoized\" is not the best answer for this question.",
+      "d": "Option \"a changes often\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-004",
+    "points": 10,
+    "tags": [
+      "react",
+      "performance"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-004"
+  },
+  {
+    "question": "Error boundaries do NOT catch errors in?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "Child render"
+      },
+      {
+        "id": "b",
+        "text": "Lifecycle methods"
+      },
+      {
+        "id": "c",
+        "text": "Constructors of children"
+      },
+      {
+        "id": "d",
+        "text": "Event handlers and async callbacks"
+      }
+    ],
+    "correct_id": "d",
+    "explanation": "Event handlers and async code need try/catch; boundaries catch render/lifecycle errors.",
+    "wrong_explanations": {
+      "a": "Option \"Child render\" is not the best answer for this question.",
+      "b": "Option \"Lifecycle methods\" is not the best answer for this question.",
+      "c": "Option \"Constructors of children\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-005",
+    "points": 10,
+    "tags": [
+      "react"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-005"
+  },
+  {
+    "question": "Why use `createPortal` for a modal?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "Faster renders"
+      },
+      {
+        "id": "b",
+        "text": "Render outside parent DOM hierarchy"
+      },
+      {
+        "id": "c",
+        "text": "Required for SSR"
+      },
+      {
+        "id": "d",
+        "text": "Replaces state"
+      }
+    ],
+    "correct_id": "b",
+    "explanation": "Portals escape parent overflow/z-index while keeping React event bubbling.",
+    "wrong_explanations": {
+      "a": "Option \"Faster renders\" is not the best answer for this question.",
+      "c": "Option \"Required for SSR\" is not the best answer for this question.",
+      "d": "Option \"Replaces state\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-006",
+    "points": 10,
+    "tags": [
+      "react"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-006"
+  },
+  {
+    "question": "Uncontrolled file input switched to controlled later causes?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "Better performance"
+      },
+      {
+        "id": "b",
+        "text": "Automatic upload"
+      },
+      {
+        "id": "c",
+        "text": "Cannot set file input value from state"
+      },
+      {
+        "id": "d",
+        "text": "Hydration always works"
+      }
+    ],
+    "correct_id": "c",
+    "explanation": "File inputs are often uncontrolled; value cannot be set for security reasons.",
+    "wrong_explanations": {
+      "a": "Option \"Better performance\" is not the best answer for this question.",
+      "b": "Option \"Automatic upload\" is not the best answer for this question.",
+      "d": "Option \"Hydration always works\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-007",
+    "points": 10,
+    "tags": [
+      "react",
+      "html"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-007"
+  },
+  {
+    "question": "`startTransition` in React 18 marks updates as?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "Non-urgent / interruptible"
+      },
+      {
+        "id": "b",
+        "text": "Synchronous blocking"
+      },
+      {
+        "id": "c",
+        "text": "Server-only"
+      },
+      {
+        "id": "d",
+        "text": "CSS animations"
+      }
+    ],
+    "correct_id": "a",
+    "explanation": "Transitions are interruptible lower-priority updates (e.g. filtering a list).",
+    "wrong_explanations": {
+      "b": "Option \"Synchronous blocking\" is not the best answer for this question.",
+      "c": "Option \"Server-only\" is not the best answer for this question.",
+      "d": "Option \"CSS animations\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-008",
+    "points": 10,
+    "tags": [
+      "react"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-008"
+  },
+  {
+    "question": "List item state resets when filtering — likely cause?",
+    "code_snippet": "items.map((item, i) =\u003e \u003cRow key={i} item={item} /\u003e)",
+    "choices": [
+      {
+        "id": "a",
+        "text": "Too many divs"
+      },
+      {
+        "id": "b",
+        "text": "Unstable list keys (index)"
+      },
+      {
+        "id": "c",
+        "text": "Missing useMemo"
+      },
+      {
+        "id": "d",
+        "text": "CSS flex"
+      }
+    ],
+    "correct_id": "b",
+    "explanation": "Index keys cause React to reuse wrong component instances after reorder/filter.",
+    "wrong_explanations": {
+      "a": "Option \"Too many divs\" is not the best answer for this question.",
+      "c": "Option \"Missing useMemo\" is not the best answer for this question.",
+      "d": "Option \"CSS flex\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-009",
+    "points": 10,
+    "tags": [
+      "react"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-009"
+  },
+  {
+    "question": "Context value `value={{ user, theme }}` recreated each render causes?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "Nothing"
+      },
+      {
+        "id": "b",
+        "text": "SEO issue"
+      },
+      {
+        "id": "c",
+        "text": "Hydration only"
+      },
+      {
+        "id": "d",
+        "text": "Unnecessary consumer re-renders"
+      }
+    ],
+    "correct_id": "d",
+    "explanation": "New object reference triggers all consumers to re-render.",
+    "wrong_explanations": {
+      "a": "Option \"Nothing\" is not the best answer for this question.",
+      "b": "Option \"SEO issue\" is not the best answer for this question.",
+      "c": "Option \"Hydration only\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-010",
+    "points": 10,
+    "tags": [
+      "react",
+      "performance"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-010"
+  },
+  {
+    "question": "Log order: `console.log('A'); Promise.resolve().then(() =\u003e console.log('B')); console.log('C');`",
+    "choices": [
+      {
+        "id": "a",
+        "text": "A B C"
+      },
+      {
+        "id": "b",
+        "text": "A C B"
+      },
+      {
+        "id": "c",
+        "text": "B A C"
+      },
+      {
+        "id": "d",
+        "text": "C B A"
+      }
+    ],
+    "correct_id": "b",
+    "explanation": "Sync A, sync C, then microtask B.",
+    "wrong_explanations": {
+      "a": "Option \"A B C\" is not the best answer for this question.",
+      "c": "Option \"B A C\" is not the best answer for this question.",
+      "d": "Option \"C B A\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-011",
+    "points": 10,
+    "tags": [
+      "javascript"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-011"
+  },
+  {
+    "question": "`async function f(){ await null; console.log(1); } f(); console.log(2);` order?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "1 2"
+      },
+      {
+        "id": "b",
+        "text": "2 1 only"
+      },
+      {
+        "id": "c",
+        "text": "2 then 1"
+      },
+      {
+        "id": "d",
+        "text": "random"
+      }
+    ],
+    "correct_id": "c",
+    "explanation": "f starts, hits await, yields; sync 2 runs; then microtask 1.",
+    "wrong_explanations": {
+      "a": "Option \"1 2\" is not the best answer for this question.",
+      "b": "Option \"2 1 only\" is not the best answer for this question.",
+      "d": "Option \"random\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-012",
+    "points": 10,
+    "tags": [
+      "javascript"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-012"
+  },
+  {
+    "question": "Classic closure bug: `for (var i=0;i\u003c3;i++) setTimeout(() =\u003e console.log(i), 0)` prints?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "0 1 2"
+      },
+      {
+        "id": "b",
+        "text": "3 3 3 only once"
+      },
+      {
+        "id": "c",
+        "text": "undefined"
+      },
+      {
+        "id": "d",
+        "text": "3 3 3"
+      }
+    ],
+    "correct_id": "d",
+    "explanation": "var is function-scoped — all timeouts see i=3.",
+    "wrong_explanations": {
+      "a": "Option \"0 1 2\" is not the best answer for this question.",
+      "b": "Option \"3 3 3 only once\" is not the best answer for this question.",
+      "c": "Option \"undefined\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-013",
+    "points": 10,
+    "tags": [
+      "javascript"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-013"
+  },
+  {
+    "question": "`Object.is(NaN, NaN)` vs `NaN === NaN`?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "Object.is true, === false"
+      },
+      {
+        "id": "b",
+        "text": "Both true"
+      },
+      {
+        "id": "c",
+        "text": "Both false"
+      },
+      {
+        "id": "d",
+        "text": "=== true"
+      }
+    ],
+    "correct_id": "a",
+    "explanation": "Object.is treats NaN as equal to NaN; === does not.",
+    "wrong_explanations": {
+      "b": "Option \"Both true\" is not the best answer for this question.",
+      "c": "Option \"Both false\" is not the best answer for this question.",
+      "d": "Option \"=== true\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-014",
+    "points": 10,
+    "tags": [
+      "javascript"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-014"
+  },
+  {
+    "question": "Debouncing search input primarily helps with?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "SEO"
+      },
+      {
+        "id": "b",
+        "text": "CSS layout"
+      },
+      {
+        "id": "c",
+        "text": "Reducing API calls while typing"
+      },
+      {
+        "id": "d",
+        "text": "Memory leaks"
+      }
+    ],
+    "correct_id": "c",
+    "explanation": "Waits for pause in typing before firing expensive handler.",
+    "wrong_explanations": {
+      "a": "Option \"SEO\" is not the best answer for this question.",
+      "b": "Option \"CSS layout\" is not the best answer for this question.",
+      "d": "Option \"Memory leaks\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-015",
+    "points": 10,
+    "tags": [
+      "javascript"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-015"
+  },
+  {
+    "question": "`fetch` with `credentials: 'include'` requires?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "No CORS"
+      },
+      {
+        "id": "b",
+        "text": "CORS Access-Control-Allow-Credentials"
+      },
+      {
+        "id": "c",
+        "text": "GET only"
+      },
+      {
+        "id": "d",
+        "text": "JSON body"
+      }
+    ],
+    "correct_id": "b",
+    "explanation": "Server must respond with proper CORS credentials headers.",
+    "wrong_explanations": {
+      "a": "Option \"No CORS\" is not the best answer for this question.",
+      "c": "Option \"GET only\" is not the best answer for this question.",
+      "d": "Option \"JSON body\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-016",
+    "points": 10,
+    "tags": [
+      "javascript"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-016"
+  },
+  {
+    "question": "Shallow compare in `React.memo` fails when?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "Primitives change"
+      },
+      {
+        "id": "b",
+        "text": "Strings interned"
+      },
+      {
+        "id": "c",
+        "text": "Numbers equal"
+      },
+      {
+        "id": "d",
+        "text": "Props are new object references each render"
+      }
+    ],
+    "correct_id": "d",
+    "explanation": "New object/array props each render break shallow equality.",
+    "wrong_explanations": {
+      "a": "Option \"Primitives change\" is not the best answer for this question.",
+      "b": "Option \"Strings interned\" is not the best answer for this question.",
+      "c": "Option \"Numbers equal\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-017",
+    "points": 10,
+    "tags": [
+      "javascript"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-017"
+  },
+  {
+    "question": "`structuredClone` cannot clone?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "Functions / some built-ins"
+      },
+      {
+        "id": "b",
+        "text": "Arrays"
+      },
+      {
+        "id": "c",
+        "text": "Plain objects"
+      },
+      {
+        "id": "d",
+        "text": "Dates"
+      }
+    ],
+    "correct_id": "a",
+    "explanation": "Functions, symbols, and some DOM nodes are not cloneable.",
+    "wrong_explanations": {
+      "b": "Option \"Arrays\" is not the best answer for this question.",
+      "c": "Option \"Plain objects\" is not the best answer for this question.",
+      "d": "Option \"Dates\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-018",
+    "points": 10,
+    "tags": [
+      "javascript"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-018"
+  },
+  {
+    "question": "Module scope vs block scope — `let` in `if` block?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "Global"
+      },
+      {
+        "id": "b",
+        "text": "Function only"
+      },
+      {
+        "id": "c",
+        "text": "Block-scoped to if"
+      },
+      {
+        "id": "d",
+        "text": "Hoisted like var"
+      }
+    ],
+    "correct_id": "c",
+    "explanation": "let is block-scoped to the if block.",
+    "wrong_explanations": {
+      "a": "Option \"Global\" is not the best answer for this question.",
+      "b": "Option \"Function only\" is not the best answer for this question.",
+      "d": "Option \"Hoisted like var\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-019",
+    "points": 10,
+    "tags": [
+      "javascript"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-019"
+  },
+  {
+    "question": "Why prefer `===` over `==` in application code?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "Faster only"
+      },
+      {
+        "id": "b",
+        "text": "Avoids type coercion"
+      },
+      {
+        "id": "c",
+        "text": "Required by TypeScript"
+      },
+      {
+        "id": "d",
+        "text": "== is deprecated"
+      }
+    ],
+    "correct_id": "b",
+    "explanation": "Avoids coercion surprises (`'' == 0`, `null == undefined`).",
+    "wrong_explanations": {
+      "a": "Option \"Faster only\" is not the best answer for this question.",
+      "c": "Option \"Required by TypeScript\" is not the best answer for this question.",
+      "d": "Option \"== is deprecated\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-020",
+    "points": 10,
+    "tags": [
+      "javascript"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-020"
+  },
+  {
+    "question": "Flex child with long text overflows container. Common fix?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "display: block"
+      },
+      {
+        "id": "b",
+        "text": "min-width: 0 on flex item"
+      },
+      {
+        "id": "c",
+        "text": "float: left"
+      },
+      {
+        "id": "d",
+        "text": "position: fixed"
+      }
+    ],
+    "correct_id": "b",
+    "explanation": "min-width: 0 on flex child allows shrinking below content intrinsic width. Flex items default min-width: auto preventing shrink.",
+    "wrong_explanations": {
+      "a": "Option \"display: block\" is not the best answer for this question.",
+      "c": "Option \"float: left\" is not the best answer for this question.",
+      "d": "Option \"position: fixed\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-021",
+    "points": 10,
+    "tags": [
+      "css"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-021"
+  },
+  {
+    "question": "`position: sticky` not working — common cause?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "Missing z-index only"
+      },
+      {
+        "id": "b",
+        "text": "Needs display grid only"
+      },
+      {
+        "id": "c",
+        "text": "Overflow hidden on ancestor"
+      },
+      {
+        "id": "d",
+        "text": "Requires JavaScript"
+      }
+    ],
+    "correct_id": "c",
+    "explanation": "Ancestor with overflow hidden/auto can break sticky. Sticky needs scroll container without clipping overflow.",
+    "wrong_explanations": {
+      "a": "Option \"Missing z-index only\" is not the best answer for this question.",
+      "b": "Option \"Needs display grid only\" is not the best answer for this question.",
+      "d": "Option \"Requires JavaScript\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-022",
+    "points": 10,
+    "tags": [
+      "css"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-022"
+  },
+  {
+    "question": "Stacking context is created by?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "color: red"
+      },
+      {
+        "id": "b",
+        "text": "margin only"
+      },
+      {
+        "id": "c",
+        "text": "font-size"
+      },
+      {
+        "id": "d",
+        "text": "opacity, transform, positioned z-index"
+      }
+    ],
+    "correct_id": "d",
+    "explanation": "positioned + z-index, opacity \u003c 1, transform, filter, etc. New stacking context isolates z-index comparisons.",
+    "wrong_explanations": {
+      "a": "Option \"color: red\" is not the best answer for this question.",
+      "b": "Option \"margin only\" is not the best answer for this question.",
+      "c": "Option \"font-size\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-023",
+    "points": 10,
+    "tags": [
+      "css"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-023"
+  },
+  {
+    "question": "`100vh` on mobile browsers can cause?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "Content hidden behind browser chrome"
+      },
+      {
+        "id": "b",
+        "text": "No issue ever"
+      },
+      {
+        "id": "c",
+        "text": "Grid break only"
+      },
+      {
+        "id": "d",
+        "text": "Hydration errors"
+      }
+    ],
+    "correct_id": "a",
+    "explanation": "Mobile URL bar changes visible viewport — dvh/svh are safer. Classic vh larger than visible area on mobile.",
+    "wrong_explanations": {
+      "b": "Option \"No issue ever\" is not the best answer for this question.",
+      "c": "Option \"Grid break only\" is not the best answer for this question.",
+      "d": "Option \"Hydration errors\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-024",
+    "points": 10,
+    "tags": [
+      "css"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-024"
+  },
+  {
+    "question": "CSS Grid `minmax(0, 1fr)` vs `1fr` for text truncation?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "Same always"
+      },
+      {
+        "id": "b",
+        "text": "minmax(0,1fr) allows shrinking for ellipsis"
+      },
+      {
+        "id": "c",
+        "text": "1fr is always smaller"
+      },
+      {
+        "id": "d",
+        "text": "Only for flex"
+      }
+    ],
+    "correct_id": "b",
+    "explanation": "minmax(0,1fr) allows track to shrink below content min size. Default min size is auto (content-based).",
+    "wrong_explanations": {
+      "a": "Option \"Same always\" is not the best answer for this question.",
+      "c": "Option \"1fr is always smaller\" is not the best answer for this question.",
+      "d": "Option \"Only for flex\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-025",
+    "points": 10,
+    "tags": [
+      "css"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-025"
+  },
+  {
+    "question": "`:focus-visible` differs from `:focus` because?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "Deprecated"
+      },
+      {
+        "id": "b",
+        "text": "Only Safari"
+      },
+      {
+        "id": "c",
+        "text": "Keyboard-like focus without mouse click ring"
+      },
+      {
+        "id": "d",
+        "text": "Same"
+      }
+    ],
+    "correct_id": "c",
+    "explanation": "focus-visible targets keyboard focus, not every mouse click. Better UX for keyboard vs pointer users.",
+    "wrong_explanations": {
+      "a": "Option \"Deprecated\" is not the best answer for this question.",
+      "b": "Option \"Only Safari\" is not the best answer for this question.",
+      "d": "Option \"Same\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-026",
+    "points": 10,
+    "tags": [
+      "css"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-026"
+  },
+  {
+    "question": "Container queries (`@container`) enable?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "Server components"
+      },
+      {
+        "id": "b",
+        "text": "Print only"
+      },
+      {
+        "id": "c",
+        "text": "SVG only"
+      },
+      {
+        "id": "d",
+        "text": "Component-level responsive layout"
+      }
+    ],
+    "correct_id": "d",
+    "explanation": "Style based on parent container size, not viewport. Useful for cards in variable-width sidebars.",
+    "wrong_explanations": {
+      "a": "Option \"Server components\" is not the best answer for this question.",
+      "b": "Option \"Print only\" is not the best answer for this question.",
+      "c": "Option \"SVG only\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-027",
+    "points": 10,
+    "tags": [
+      "css"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-027"
+  },
+  {
+    "question": "Specificity: which wins? `.nav .btn.active` vs `#header .btn`",
+    "choices": [
+      {
+        "id": "a",
+        "text": "First wins"
+      },
+      {
+        "id": "b",
+        "text": "#header .btn (ID beats classes)"
+      },
+      {
+        "id": "c",
+        "text": "Second always loses"
+      },
+      {
+        "id": "d",
+        "text": "Equal — last rule wins only if equal"
+      }
+    ],
+    "correct_id": "b",
+    "explanation": "#header .btn has ID — higher specificity than two classes. ID selector outweighs multiple classes.",
+    "wrong_explanations": {
+      "a": "Option \"First wins\" is not the best answer for this question.",
+      "c": "Option \"Second always loses\" is not the best answer for this question.",
+      "d": "Option \"Equal — last rule wins only if equal\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-028",
+    "points": 10,
+    "tags": [
+      "css"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-028"
+  },
+  {
+    "question": "`object-fit: cover` on hero image ensures?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "Fill area, crop excess"
+      },
+      {
+        "id": "b",
+        "text": "Distort to fit"
+      },
+      {
+        "id": "c",
+        "text": "Blur background"
+      },
+      {
+        "id": "d",
+        "text": "Lazy load"
+      }
+    ],
+    "correct_id": "a",
+    "explanation": "Image fills box, cropping to preserve aspect ratio. Common for landing hero sections (Tendem-style pages).",
+    "wrong_explanations": {
+      "b": "Option \"Distort to fit\" is not the best answer for this question.",
+      "c": "Option \"Blur background\" is not the best answer for this question.",
+      "d": "Option \"Lazy load\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-029",
+    "points": 10,
+    "tags": [
+      "css"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-029"
+  },
+  {
+    "question": "Logical property `margin-inline` helps with?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "Animation"
+      },
+      {
+        "id": "b",
+        "text": "Fonts"
+      },
+      {
+        "id": "c",
+        "text": "RTL/LTR spacing"
+      },
+      {
+        "id": "d",
+        "text": "Grid only"
+      }
+    ],
+    "correct_id": "c",
+    "explanation": "RTL/LTR layouts without separate left/right rules. i18n-friendly layout maintenance.",
+    "wrong_explanations": {
+      "a": "Option \"Animation\" is not the best answer for this question.",
+      "b": "Option \"Fonts\" is not the best answer for this question.",
+      "d": "Option \"Grid only\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-030",
+    "points": 10,
+    "tags": [
+      "css"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-030"
+  },
+  {
+    "question": "Icon-only close button needs?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "title only"
+      },
+      {
+        "id": "b",
+        "text": "aria-label or visible text"
+      },
+      {
+        "id": "c",
+        "text": "role=button only"
+      },
+      {
+        "id": "d",
+        "text": "tabindex=-1"
+      }
+    ],
+    "correct_id": "b",
+    "explanation": "Accessible name via aria-label or visually hidden text. Screen readers need name for icon buttons.",
+    "wrong_explanations": {
+      "a": "Option \"title only\" is not the best answer for this question.",
+      "c": "Option \"role=button only\" is not the best answer for this question.",
+      "d": "Option \"tabindex=-1\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-031",
+    "points": 10,
+    "tags": [
+      "html"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-031"
+  },
+  {
+    "question": "Multiple `\u003cmain\u003e` landmarks on one page?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "Best practice"
+      },
+      {
+        "id": "b",
+        "text": "Required for SEO"
+      },
+      {
+        "id": "c",
+        "text": "OK if hidden"
+      },
+      {
+        "id": "d",
+        "text": "Invalid — one main per page"
+      }
+    ],
+    "correct_id": "d",
+    "explanation": "Only one main per document for accessibility. Landmark confusion for assistive tech.",
+    "wrong_explanations": {
+      "a": "Option \"Best practice\" is not the best answer for this question.",
+      "b": "Option \"Required for SEO\" is not the best answer for this question.",
+      "c": "Option \"OK if hidden\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-032",
+    "points": 10,
+    "tags": [
+      "html"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-032"
+  },
+  {
+    "question": "`aria-live=\"polite\"` is for?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "Non-interrupting dynamic updates"
+      },
+      {
+        "id": "b",
+        "text": "Modal focus trap"
+      },
+      {
+        "id": "c",
+        "text": "Form submit"
+      },
+      {
+        "id": "d",
+        "text": "Images"
+      }
+    ],
+    "correct_id": "a",
+    "explanation": "Announces dynamic updates without interrupting. Toast/status regions use live regions.",
+    "wrong_explanations": {
+      "b": "Option \"Modal focus trap\" is not the best answer for this question.",
+      "c": "Option \"Form submit\" is not the best answer for this question.",
+      "d": "Option \"Images\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-033",
+    "points": 10,
+    "tags": [
+      "html"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-033"
+  },
+  {
+    "question": "Associating `\u003clabel\u003e` with `\u003cinput\u003e` best practice?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "Wrap only, never for"
+      },
+      {
+        "id": "b",
+        "text": "class name match"
+      },
+      {
+        "id": "c",
+        "text": "htmlFor + matching id"
+      },
+      {
+        "id": "d",
+        "text": "placeholder replaces label"
+      }
+    ],
+    "correct_id": "c",
+    "explanation": "htmlFor/id link increases hit area and screen reader support. Do not rely on placeholder as label.",
+    "wrong_explanations": {
+      "a": "Option \"Wrap only, never for\" is not the best answer for this question.",
+      "b": "Option \"class name match\" is not the best answer for this question.",
+      "d": "Option \"placeholder replaces label\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-034",
+    "points": 10,
+    "tags": [
+      "html"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-034"
+  },
+  {
+    "question": "`loading=\"lazy\"` on above-the-fold hero image?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "Always recommended"
+      },
+      {
+        "id": "b",
+        "text": "Can hurt LCP for hero"
+      },
+      {
+        "id": "c",
+        "text": "Blocks SEO"
+      },
+      {
+        "id": "d",
+        "text": "Required"
+      }
+    ],
+    "correct_id": "b",
+    "explanation": "Can delay LCP — eager load critical hero images. Mindrift landing pages care about LCP.",
+    "wrong_explanations": {
+      "a": "Option \"Always recommended\" is not the best answer for this question.",
+      "c": "Option \"Blocks SEO\" is not the best answer for this question.",
+      "d": "Option \"Required\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-035",
+    "points": 10,
+    "tags": [
+      "html"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-035"
+  },
+  {
+    "question": "`\u003cbutton type=\"button\"\u003e` inside form prevents?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "Accidental form submit"
+      },
+      {
+        "id": "b",
+        "text": "CSS issues"
+      },
+      {
+        "id": "c",
+        "text": "Hydration"
+      },
+      {
+        "id": "d",
+        "text": "Caching"
+      }
+    ],
+    "correct_id": "a",
+    "explanation": "Default button type in form is submit. Explicit type for non-submit actions.",
+    "wrong_explanations": {
+      "b": "Option \"CSS issues\" is not the best answer for this question.",
+      "c": "Option \"Hydration\" is not the best answer for this question.",
+      "d": "Option \"Caching\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-036",
+    "points": 10,
+    "tags": [
+      "html"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-036"
+  },
+  {
+    "question": "Skip navigation link targets?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "Footer only"
+      },
+      {
+        "id": "b",
+        "text": "Analytics"
+      },
+      {
+        "id": "c",
+        "text": "CSS file"
+      },
+      {
+        "id": "d",
+        "text": "Main content landmark"
+      }
+    ],
+    "correct_id": "d",
+    "explanation": "Keyboard users jump to main content. WCAG bypass block recommendation.",
+    "wrong_explanations": {
+      "a": "Option \"Footer only\" is not the best answer for this question.",
+      "b": "Option \"Analytics\" is not the best answer for this question.",
+      "c": "Option \"CSS file\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-037",
+    "points": 10,
+    "tags": [
+      "html"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-037"
+  },
+  {
+    "question": "`autocomplete=\"email\"` on waitlist form helps?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "Server validation"
+      },
+      {
+        "id": "b",
+        "text": "CSRF"
+      },
+      {
+        "id": "c",
+        "text": "Browser autofill"
+      },
+      {
+        "id": "d",
+        "text": "Routing"
+      }
+    ],
+    "correct_id": "c",
+    "explanation": "Browser autofill improves conversion and UX. Tendem waitlist forms benefit from autofill.",
+    "wrong_explanations": {
+      "a": "Option \"Server validation\" is not the best answer for this question.",
+      "b": "Option \"CSRF\" is not the best answer for this question.",
+      "d": "Option \"Routing\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-038",
+    "points": 10,
+    "tags": [
+      "html"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-038"
+  },
+  {
+    "question": "`\u003cdialog\u003e` + `showModal()` provides?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "React portal only"
+      },
+      {
+        "id": "b",
+        "text": "Native modal + backdrop"
+      },
+      {
+        "id": "c",
+        "text": "SEO boost"
+      },
+      {
+        "id": "d",
+        "text": "Grid layout"
+      }
+    ],
+    "correct_id": "b",
+    "explanation": "Native modal with ::backdrop and focus management basics. Modern alternative to div overlays.",
+    "wrong_explanations": {
+      "a": "Option \"React portal only\" is not the best answer for this question.",
+      "c": "Option \"SEO boost\" is not the best answer for this question.",
+      "d": "Option \"Grid layout\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-039",
+    "points": 10,
+    "tags": [
+      "html"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-039"
+  },
+  {
+    "question": "Heading levels should?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "Not skip levels logically"
+      },
+      {
+        "id": "b",
+        "text": "Always use h1 only"
+      },
+      {
+        "id": "c",
+        "text": "Match font size only"
+      },
+      {
+        "id": "d",
+        "text": "Be avoided"
+      }
+    ],
+    "correct_id": "a",
+    "explanation": "Logical h1-h6 hierarchy without skipping levels arbitrarily. Document outline for screen readers.",
+    "wrong_explanations": {
+      "b": "Option \"Always use h1 only\" is not the best answer for this question.",
+      "c": "Option \"Match font size only\" is not the best answer for this question.",
+      "d": "Option \"Be avoided\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-040",
+    "points": 10,
+    "tags": [
+      "html"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-040"
+  },
+  {
+    "question": "AI-generated landing page uses `\u003cdiv onClick\u003e` for navigation. Main a11y issue?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "Color contrast only"
+      },
+      {
+        "id": "b",
+        "text": "Not keyboard accessible / wrong semantics"
+      },
+      {
+        "id": "c",
+        "text": "Missing Tailwind"
+      },
+      {
+        "id": "d",
+        "text": "Too many images"
+      }
+    ],
+    "correct_id": "b",
+    "explanation": "Div is not keyboard-focusable or semantically a link — use `\u003ca href\u003e` or button with keyboard support.",
+    "wrong_explanations": {
+      "a": "Option \"Color contrast only\" is not the best answer for this question.",
+      "c": "Option \"Missing Tailwind\" is not the best answer for this question.",
+      "d": "Option \"Too many images\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-041",
+    "points": 10,
+    "tags": [
+      "html",
+      "react"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-041"
+  },
+  {
+    "question": "Reviewing AI React code: inline `style={{ marginTop: 20 }}` everywhere. Maintainability issue?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "Faster runtime"
+      },
+      {
+        "id": "b",
+        "text": "SEO"
+      },
+      {
+        "id": "c",
+        "text": "Hard to maintain consistent design system"
+      },
+      {
+        "id": "d",
+        "text": "Illegal in React"
+      }
+    ],
+    "correct_id": "c",
+    "explanation": "Hard to theme/responsive — prefer design tokens, CSS classes, or Tailwind utilities.",
+    "wrong_explanations": {
+      "a": "Option \"Faster runtime\" is not the best answer for this question.",
+      "b": "Option \"SEO\" is not the best answer for this question.",
+      "d": "Option \"Illegal in React\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-042",
+    "points": 10,
+    "tags": [
+      "css",
+      "react"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-042"
+  },
+  {
+    "question": "Waitlist form submits empty email — missing?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "Validation and error feedback"
+      },
+      {
+        "id": "b",
+        "text": "More images"
+      },
+      {
+        "id": "c",
+        "text": "useEffect"
+      },
+      {
+        "id": "d",
+        "text": "Portal"
+      }
+    ],
+    "correct_id": "a",
+    "explanation": "Client validation + required attribute + accessible error message.",
+    "wrong_explanations": {
+      "b": "Option \"More images\" is not the best answer for this question.",
+      "c": "Option \"useEffect\" is not the best answer for this question.",
+      "d": "Option \"Portal\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-043",
+    "points": 10,
+    "tags": [
+      "react",
+      "html"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-043"
+  },
+  {
+    "question": "Hero CTA button works on desktop but not mobile. Likely CSS cause?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "Wrong font"
+      },
+      {
+        "id": "b",
+        "text": "Missing meta viewport only"
+      },
+      {
+        "id": "c",
+        "text": "useState bug always"
+      },
+      {
+        "id": "d",
+        "text": "Overlay blocking pointer events / z-index"
+      }
+    ],
+    "correct_id": "d",
+    "explanation": "Overlapping invisible element or pointer-events blocking tap target.",
+    "wrong_explanations": {
+      "a": "Option \"Wrong font\" is not the best answer for this question.",
+      "b": "Option \"Missing meta viewport only\" is not the best answer for this question.",
+      "c": "Option \"useState bug always\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-044",
+    "points": 10,
+    "tags": [
+      "css",
+      "html"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-044"
+  },
+  {
+    "question": "Responsive promo page: fixed width 1200px container. Problem?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "SEO"
+      },
+      {
+        "id": "b",
+        "text": "Horizontal overflow on small screens"
+      },
+      {
+        "id": "c",
+        "text": "React error"
+      },
+      {
+        "id": "d",
+        "text": "None"
+      }
+    ],
+    "correct_id": "b",
+    "explanation": "Horizontal scroll on mobile — use max-width and fluid layout.",
+    "wrong_explanations": {
+      "a": "Option \"SEO\" is not the best answer for this question.",
+      "c": "Option \"React error\" is not the best answer for this question.",
+      "d": "Option \"None\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-045",
+    "points": 10,
+    "tags": [
+      "css"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-045"
+  },
+  {
+    "question": "AI output uses `useEffect` to sync every prop to state. Better pattern?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "More useEffects"
+      },
+      {
+        "id": "b",
+        "text": "Global variable"
+      },
+      {
+        "id": "c",
+        "text": "Derive from props or reset with key"
+      },
+      {
+        "id": "d",
+        "text": "class component"
+      }
+    ],
+    "correct_id": "c",
+    "explanation": "Derive during render or use key to reset — avoid redundant state.",
+    "wrong_explanations": {
+      "a": "Option \"More useEffects\" is not the best answer for this question.",
+      "b": "Option \"Global variable\" is not the best answer for this question.",
+      "d": "Option \"class component\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-046",
+    "points": 10,
+    "tags": [
+      "react"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-046"
+  },
+  {
+    "question": "Image hero without width/height attributes causes?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "CLS / layout shift"
+      },
+      {
+        "id": "b",
+        "text": "Hydration only"
+      },
+      {
+        "id": "c",
+        "text": "CORS"
+      },
+      {
+        "id": "d",
+        "text": "Memory leak"
+      }
+    ],
+    "correct_id": "a",
+    "explanation": "Cumulative Layout Shift (CLS) when image loads.",
+    "wrong_explanations": {
+      "b": "Option \"Hydration only\" is not the best answer for this question.",
+      "c": "Option \"CORS\" is not the best answer for this question.",
+      "d": "Option \"Memory leak\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-047",
+    "points": 10,
+    "tags": [
+      "html",
+      "css"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-047"
+  },
+  {
+    "question": "Form `onSubmit` without `preventDefault`?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "JSON parse error"
+      },
+      {
+        "id": "b",
+        "text": "React warning only"
+      },
+      {
+        "id": "c",
+        "text": "CORS"
+      },
+      {
+        "id": "d",
+        "text": "Browser full page reload"
+      }
+    ],
+    "correct_id": "d",
+    "explanation": "Full page reload in traditional form post behavior.",
+    "wrong_explanations": {
+      "a": "Option \"JSON parse error\" is not the best answer for this question.",
+      "b": "Option \"React warning only\" is not the best answer for this question.",
+      "c": "Option \"CORS\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-048",
+    "points": 10,
+    "tags": [
+      "react",
+      "javascript"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-048"
+  },
+  {
+    "question": "Evaluating two AI implementations: one uses index keys, one uses id keys. Pick?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "Index — simpler"
+      },
+      {
+        "id": "b",
+        "text": "Id keys — correct reconciliation"
+      },
+      {
+        "id": "c",
+        "text": "Random keys"
+      },
+      {
+        "id": "d",
+        "text": "No keys"
+      }
+    ],
+    "correct_id": "b",
+    "explanation": "Stable id keys preserve state and DOM correctly when list changes.",
+    "wrong_explanations": {
+      "a": "Option \"Index — simpler\" is not the best answer for this question.",
+      "c": "Option \"Random keys\" is not the best answer for this question.",
+      "d": "Option \"No keys\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-049",
+    "points": 10,
+    "tags": [
+      "react"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-049"
+  },
+  {
+    "question": "Mindrift task: refine AI markup. First check for production landing page?",
+    "choices": [
+      {
+        "id": "a",
+        "text": "Bundle size only"
+      },
+      {
+        "id": "b",
+        "text": "Dark mode"
+      },
+      {
+        "id": "c",
+        "text": "Semantics, responsive, a11y, valid HTML"
+      },
+      {
+        "id": "d",
+        "text": "Number of useState calls"
+      }
+    ],
+    "correct_id": "c",
+    "explanation": "Semantic structure, responsive layout, accessible forms, and valid HTML.",
+    "wrong_explanations": {
+      "a": "Option \"Bundle size only\" is not the best answer for this question.",
+      "b": "Option \"Dark mode\" is not the best answer for this question.",
+      "d": "Option \"Number of useState calls\" is not the best answer for this question."
+    },
+    "best_practices": [
+      "Read the question and snippet carefully",
+      "Eliminate clearly wrong options",
+      "Connect concepts to real UI scenarios"
+    ],
+    "learning_objective": "mindrift-hard-050",
+    "points": 10,
+    "tags": [
+      "html",
+      "css",
+      "react"
+    ],
+    "difficulty": "hard",
+    "topic": "mindrift-hard-050"
+  }
+]
