@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"slices"
+	"strings"
 
 	"encore.app/wabantu/codesim/validate"
 )
@@ -22,7 +23,7 @@ func loadBank(ctx context.Context) (*bankData, error) {
 	}
 	b := &bankData{}
 	rows, err := db.Query(ctx, `
-		SELECT id::text, tags, difficulty, question, choices, correct_id, explanation,
+		SELECT id::text, tags, difficulty, question, COALESCE(code_snippet, ''), choices, correct_id, explanation,
 		       wrong_explanations, best_practices, learning_objective, points, topic
 		FROM codesim_mcq_item`)
 	if err != nil {
@@ -32,7 +33,7 @@ func loadBank(ctx context.Context) (*bankData, error) {
 	for rows.Next() {
 		var m MCQItem
 		var choices, wrong, bp json.RawMessage
-		if err := rows.Scan(&m.ID, &m.Tags, &m.Difficulty, &m.Question, &choices, &m.CorrectID,
+		if err := rows.Scan(&m.ID, &m.Tags, &m.Difficulty, &m.Question, &m.CodeSnippet, &choices, &m.CorrectID,
 			&m.Explanation, &wrong, &bp, &m.LearningObjective, &m.Points, &m.Topic); err != nil {
 			return nil, err
 		}
@@ -120,6 +121,9 @@ func GenerateExamPaper(ctx context.Context, cfg BlueprintConfig, seed int64, exc
 					choices[i] = validate.MCQChoice{ID: c.ID, Text: c.Text}
 				}
 				qi := validate.MCQInputFromParts(m.Question, choices)
+				if strings.TrimSpace(m.CodeSnippet) != "" {
+					qi.CodeSnippet = strings.TrimSpace(m.CodeSnippet)
+				}
 				validate.NormalizeMCQInput(&qi)
 				out = append(out, ExamQuestion{
 					Index:             idx,

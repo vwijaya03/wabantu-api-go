@@ -16,24 +16,18 @@ func main() {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		fatal(err)
 	}
-	mcq := generateMCQs()
-	mcqBatch2 := generateMCQsBatch2()
-	mcqHard := generateHardMCQs()
+	mcqBank := generateHardMCQs()
 	build := append(append(generateBuilds(), generateBuildsBatch2()...), generateHardBuilds()...)
 	debug := append(generateDebugs(), generateHardDebugs()...)
-	blueprints := generateBlueprints()
 	blueprintsHard := generateHardBlueprints()
 
-	writeJSON(filepath.Join(root, "tendem_mcq.json"), mcq)
-	writeJSON(filepath.Join(root, "tendem_mcq_batch2.json"), mcqBatch2)
-	writeJSON(filepath.Join(root, "tendem_mcq_hard.json"), mcqHard)
+	writeJSON(filepath.Join(root, "tendem_mcq_bank.json"), mcqBank)
 	writeJSON(filepath.Join(root, "tendem_build.json"), build)
 	writeJSON(filepath.Join(root, "tendem_debug.json"), debug)
-	writeJSON(filepath.Join(root, "tendem_blueprints.json"), blueprints)
 	writeJSON(filepath.Join(root, "tendem_blueprints_hard.json"), blueprintsHard)
 
-	fmt.Printf("wrote %d + %d + %d MCQs, %d builds, %d debugs, %d + %d blueprints\n",
-		len(mcq), len(mcqBatch2), len(mcqHard), len(build), len(debug), len(blueprints), len(blueprintsHard))
+	fmt.Printf("wrote %d hard MCQs, %d builds, %d debugs, %d hard blueprints\n",
+		len(mcqBank), len(build), len(debug), len(blueprintsHard))
 }
 
 func fatal(err error) {
@@ -250,10 +244,10 @@ func generateMCQs() []mcq {
 			"react-stale-closure",
 		},
 		{
-			"Log output order?",
-			"c",
+			"What is the console.log output order for this code?",
+			"a",
 			[4]string{"A B C", "B A C", "A C B", "C B A"},
-			"await waits for Promise; sync log A, microtask/settled B, then C after await.",
+			"Sync code runs first (A, then B after f() hits await); microtask resumes f and logs C last → A B C.",
 			"async function f() {\n  console.log('A');\n  await Promise.resolve();\n  console.log('C');\n}\nf();\nconsole.log('B');",
 			[]string{"javascript"},
 			"js-async-order",
@@ -419,12 +413,13 @@ func extraMCQs() []mcq {
 			[]string{"javascript"}, "medium", "js-fetch", "",
 		),
 		fullMCQ(
-			"Output of `[1, 2, 3].map(parseInt)` in JavaScript?",
-			"c",
+			"What is the output of this code in the browser console?",
+			"b",
 			[4]string{"[1, 2, 3]", "[1, NaN, NaN]", "[1, 2, 2]", "[NaN, NaN, NaN]"},
-			"parseInt takes (string, radix); map passes (value, index) as arguments.",
-			map[string]string{"a": "parseInt('2', 1) is not 2.", "b": "Index 2 with radix 2 yields 2.", "d": "First element is still 1."},
-			[]string{"javascript"}, "hard", "js-parseint-map", "",
+			"map passes (element, index) to parseInt — parseInt('1',0)→1, parseInt('2',1)→NaN, parseInt('3',2)→NaN.",
+			map[string]string{"a": "Only the first call succeeds with default radix.", "c": "parseInt('3', 2) is NaN, not 2.", "d": "First element is still 1."},
+			[]string{"javascript"}, "hard", "js-parseint-map",
+			"[1, 2, 3].map(parseInt)",
 		),
 		fullMCQ(
 			"CSS `min-height: 100vh` on mobile is sometimes too tall because?",
@@ -958,9 +953,9 @@ type blueprintSeed struct {
 func tendemConfigJSON(focus string) json.RawMessage {
 	cfg := fmt.Sprintf(`{
   "sections": [
-    {"type": "mcq", "count": 5, "timeLimitMinutes": 40, "tags": ["react", "javascript", "css", "html"]},
-    {"type": "react_build", "count": 1, "timeLimitMinutes": 35, "componentFamily": "form"},
-    {"type": "react_debug", "count": 1, "timeLimitMinutes": 23, "componentFamily": "hero"}
+    {"type": "mcq", "count": 5, "timeLimitMinutes": 40, "tags": ["react", "javascript", "css", "html"], "difficulty": "hard"},
+    {"type": "react_build", "count": 1, "timeLimitMinutes": 35, "componentFamily": "form", "difficulty": "hard"},
+    {"type": "react_debug", "count": 1, "timeLimitMinutes": 23, "componentFamily": "hero", "difficulty": "hard"}
   ],
   "totalTimeLimitMinutes": 98,
   "proctoring": {"maxBlurEvents": 3, "warnOnPaste": true, "blockPasteInEditor": true}

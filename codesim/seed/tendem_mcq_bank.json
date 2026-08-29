@@ -32,14 +32,14 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-001",
+    "learning_objective": "tendem-hard-mcq-001",
     "points": 10,
     "tags": [
       "react",
       "hooks"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-001"
+    "topic": "tendem-hard-mcq-001"
   },
   {
     "question": "Why can `useEffect(() =\u003e { setCount(count + 1); }, [count])` cause problems when incrementing once per mount?",
@@ -73,14 +73,14 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-002",
+    "learning_objective": "tendem-hard-mcq-002",
     "points": 10,
     "tags": [
       "react",
       "hooks"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-002"
+    "topic": "tendem-hard-mcq-002"
   },
   {
     "question": "Hydration mismatch in Next.js often comes from?",
@@ -114,13 +114,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-003",
+    "learning_objective": "tendem-hard-mcq-003",
     "points": 10,
     "tags": [
       "react"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-003"
+    "topic": "tendem-hard-mcq-003"
   },
   {
     "question": "`useMemo(() =\u003e compute(a), [a])` — when is it NOT worth it?",
@@ -154,14 +154,14 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-004",
+    "learning_objective": "tendem-hard-mcq-004",
     "points": 10,
     "tags": [
       "react",
       "performance"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-004"
+    "topic": "tendem-hard-mcq-004"
   },
   {
     "question": "Error boundaries do NOT catch errors in?",
@@ -195,13 +195,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-005",
+    "learning_objective": "tendem-hard-mcq-005",
     "points": 10,
     "tags": [
       "react"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-005"
+    "topic": "tendem-hard-mcq-005"
   },
   {
     "question": "Why use `createPortal` for a modal?",
@@ -235,13 +235,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-006",
+    "learning_objective": "tendem-hard-mcq-006",
     "points": 10,
     "tags": [
       "react"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-006"
+    "topic": "tendem-hard-mcq-006"
   },
   {
     "question": "Uncontrolled file input switched to controlled later causes?",
@@ -275,14 +275,14 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-007",
+    "learning_objective": "tendem-hard-mcq-007",
     "points": 10,
     "tags": [
       "react",
       "html"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-007"
+    "topic": "tendem-hard-mcq-007"
   },
   {
     "question": "`startTransition` in React 18 marks updates as?",
@@ -316,13 +316,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-008",
+    "learning_objective": "tendem-hard-mcq-008",
     "points": 10,
     "tags": [
       "react"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-008"
+    "topic": "tendem-hard-mcq-008"
   },
   {
     "question": "List item state resets when filtering — likely cause?",
@@ -357,13 +357,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-009",
+    "learning_objective": "tendem-hard-mcq-009",
     "points": 10,
     "tags": [
       "react"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-009"
+    "topic": "tendem-hard-mcq-009"
   },
   {
     "question": "Context value `value={{ user, theme }}` recreated each render causes?",
@@ -397,17 +397,18 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-010",
+    "learning_objective": "tendem-hard-mcq-010",
     "points": 10,
     "tags": [
       "react",
       "performance"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-010"
+    "topic": "tendem-hard-mcq-010"
   },
   {
-    "question": "Log order: `console.log('A'); Promise.resolve().then(() =\u003e console.log('B')); console.log('C');`",
+    "question": "What is the console.log output order for this code?",
+    "code_snippet": "async function f() {\n  console.log('A');\n  await Promise.resolve();\n  console.log('C');\n}\nf();\nconsole.log('B');",
     "choices": [
       {
         "id": "a",
@@ -415,22 +416,22 @@
       },
       {
         "id": "b",
-        "text": "A C B"
+        "text": "B A C"
       },
       {
         "id": "c",
-        "text": "B A C"
+        "text": "A C B"
       },
       {
         "id": "d",
         "text": "C B A"
       }
     ],
-    "correct_id": "b",
-    "explanation": "Sync A, sync C, then microtask B.",
+    "correct_id": "a",
+    "explanation": "Sync: A, then B after f() hits await, then C when the async continuation runs → A B C.",
     "wrong_explanations": {
-      "a": "Option \"A B C\" is not the best answer for this question.",
-      "c": "Option \"B A C\" is not the best answer for this question.",
+      "b": "Option \"B A C\" is not the best answer for this question.",
+      "c": "Option \"A C B\" is not the best answer for this question.",
       "d": "Option \"C B A\" is not the best answer for this question."
     },
     "best_practices": [
@@ -438,53 +439,54 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-011",
+    "learning_objective": "tendem-hard-mcq-011",
     "points": 10,
     "tags": [
       "javascript"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-011"
+    "topic": "tendem-hard-mcq-011"
   },
   {
-    "question": "`async function f(){ await null; console.log(1); } f(); console.log(2);` order?",
+    "question": "What is the output of this code in the browser console?",
+    "code_snippet": "[1, 2, 3].map(parseInt)",
     "choices": [
       {
         "id": "a",
-        "text": "1 2"
+        "text": "[1, 2, 3]"
       },
       {
         "id": "b",
-        "text": "2 1 only"
+        "text": "[1, NaN, NaN]"
       },
       {
         "id": "c",
-        "text": "2 then 1"
+        "text": "[1, 2, 2]"
       },
       {
         "id": "d",
-        "text": "random"
+        "text": "[NaN, NaN, NaN]"
       }
     ],
-    "correct_id": "c",
-    "explanation": "f starts, hits await, yields; sync 2 runs; then microtask 1.",
+    "correct_id": "b",
+    "explanation": "map passes (element, index) to parseInt — parseInt('1',0)→1, parseInt('2',1)→NaN, parseInt('3',2)→NaN.",
     "wrong_explanations": {
-      "a": "Option \"1 2\" is not the best answer for this question.",
-      "b": "Option \"2 1 only\" is not the best answer for this question.",
-      "d": "Option \"random\" is not the best answer for this question."
+      "a": "Option \"[1, 2, 3]\" is not the best answer for this question.",
+      "c": "Option \"[1, 2, 2]\" is not the best answer for this question.",
+      "d": "Option \"[NaN, NaN, NaN]\" is not the best answer for this question."
     },
     "best_practices": [
       "Read the question and snippet carefully",
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-012",
+    "learning_objective": "tendem-hard-mcq-012",
     "points": 10,
     "tags": [
       "javascript"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-012"
+    "topic": "tendem-hard-mcq-012"
   },
   {
     "question": "Classic closure bug: `for (var i=0;i\u003c3;i++) setTimeout(() =\u003e console.log(i), 0)` prints?",
@@ -518,13 +520,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-013",
+    "learning_objective": "tendem-hard-mcq-013",
     "points": 10,
     "tags": [
       "javascript"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-013"
+    "topic": "tendem-hard-mcq-013"
   },
   {
     "question": "`Object.is(NaN, NaN)` vs `NaN === NaN`?",
@@ -558,13 +560,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-014",
+    "learning_objective": "tendem-hard-mcq-014",
     "points": 10,
     "tags": [
       "javascript"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-014"
+    "topic": "tendem-hard-mcq-014"
   },
   {
     "question": "Debouncing search input primarily helps with?",
@@ -598,13 +600,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-015",
+    "learning_objective": "tendem-hard-mcq-015",
     "points": 10,
     "tags": [
       "javascript"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-015"
+    "topic": "tendem-hard-mcq-015"
   },
   {
     "question": "`fetch` with `credentials: 'include'` requires?",
@@ -638,13 +640,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-016",
+    "learning_objective": "tendem-hard-mcq-016",
     "points": 10,
     "tags": [
       "javascript"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-016"
+    "topic": "tendem-hard-mcq-016"
   },
   {
     "question": "Shallow compare in `React.memo` fails when?",
@@ -678,13 +680,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-017",
+    "learning_objective": "tendem-hard-mcq-017",
     "points": 10,
     "tags": [
       "javascript"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-017"
+    "topic": "tendem-hard-mcq-017"
   },
   {
     "question": "`structuredClone` cannot clone?",
@@ -718,13 +720,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-018",
+    "learning_objective": "tendem-hard-mcq-018",
     "points": 10,
     "tags": [
       "javascript"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-018"
+    "topic": "tendem-hard-mcq-018"
   },
   {
     "question": "Module scope vs block scope — `let` in `if` block?",
@@ -758,13 +760,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-019",
+    "learning_objective": "tendem-hard-mcq-019",
     "points": 10,
     "tags": [
       "javascript"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-019"
+    "topic": "tendem-hard-mcq-019"
   },
   {
     "question": "Why prefer `===` over `==` in application code?",
@@ -798,13 +800,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-020",
+    "learning_objective": "tendem-hard-mcq-020",
     "points": 10,
     "tags": [
       "javascript"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-020"
+    "topic": "tendem-hard-mcq-020"
   },
   {
     "question": "Flex child with long text overflows container. Common fix?",
@@ -838,13 +840,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-021",
+    "learning_objective": "tendem-hard-mcq-021",
     "points": 10,
     "tags": [
       "css"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-021"
+    "topic": "tendem-hard-mcq-021"
   },
   {
     "question": "`position: sticky` not working — common cause?",
@@ -878,13 +880,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-022",
+    "learning_objective": "tendem-hard-mcq-022",
     "points": 10,
     "tags": [
       "css"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-022"
+    "topic": "tendem-hard-mcq-022"
   },
   {
     "question": "Stacking context is created by?",
@@ -918,13 +920,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-023",
+    "learning_objective": "tendem-hard-mcq-023",
     "points": 10,
     "tags": [
       "css"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-023"
+    "topic": "tendem-hard-mcq-023"
   },
   {
     "question": "`100vh` on mobile browsers can cause?",
@@ -958,13 +960,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-024",
+    "learning_objective": "tendem-hard-mcq-024",
     "points": 10,
     "tags": [
       "css"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-024"
+    "topic": "tendem-hard-mcq-024"
   },
   {
     "question": "CSS Grid `minmax(0, 1fr)` vs `1fr` for text truncation?",
@@ -998,13 +1000,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-025",
+    "learning_objective": "tendem-hard-mcq-025",
     "points": 10,
     "tags": [
       "css"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-025"
+    "topic": "tendem-hard-mcq-025"
   },
   {
     "question": "`:focus-visible` differs from `:focus` because?",
@@ -1038,13 +1040,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-026",
+    "learning_objective": "tendem-hard-mcq-026",
     "points": 10,
     "tags": [
       "css"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-026"
+    "topic": "tendem-hard-mcq-026"
   },
   {
     "question": "Container queries (`@container`) enable?",
@@ -1078,13 +1080,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-027",
+    "learning_objective": "tendem-hard-mcq-027",
     "points": 10,
     "tags": [
       "css"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-027"
+    "topic": "tendem-hard-mcq-027"
   },
   {
     "question": "Specificity: which wins? `.nav .btn.active` vs `#header .btn`",
@@ -1118,13 +1120,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-028",
+    "learning_objective": "tendem-hard-mcq-028",
     "points": 10,
     "tags": [
       "css"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-028"
+    "topic": "tendem-hard-mcq-028"
   },
   {
     "question": "`object-fit: cover` on hero section banner image ensures?",
@@ -1158,13 +1160,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-029",
+    "learning_objective": "tendem-hard-mcq-029",
     "points": 10,
     "tags": [
       "css"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-029"
+    "topic": "tendem-hard-mcq-029"
   },
   {
     "question": "Logical property `margin-inline` helps with?",
@@ -1198,13 +1200,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-030",
+    "learning_objective": "tendem-hard-mcq-030",
     "points": 10,
     "tags": [
       "css"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-030"
+    "topic": "tendem-hard-mcq-030"
   },
   {
     "question": "Icon-only close button needs?",
@@ -1238,13 +1240,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-031",
+    "learning_objective": "tendem-hard-mcq-031",
     "points": 10,
     "tags": [
       "html"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-031"
+    "topic": "tendem-hard-mcq-031"
   },
   {
     "question": "Multiple `\u003cmain\u003e` landmarks on one page?",
@@ -1278,13 +1280,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-032",
+    "learning_objective": "tendem-hard-mcq-032",
     "points": 10,
     "tags": [
       "html"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-032"
+    "topic": "tendem-hard-mcq-032"
   },
   {
     "question": "`aria-live=\"polite\"` is for?",
@@ -1318,13 +1320,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-033",
+    "learning_objective": "tendem-hard-mcq-033",
     "points": 10,
     "tags": [
       "html"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-033"
+    "topic": "tendem-hard-mcq-033"
   },
   {
     "question": "Associating `\u003clabel\u003e` with `\u003cinput\u003e` best practice?",
@@ -1358,13 +1360,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-034",
+    "learning_objective": "tendem-hard-mcq-034",
     "points": 10,
     "tags": [
       "html"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-034"
+    "topic": "tendem-hard-mcq-034"
   },
   {
     "question": "`loading=\"lazy\"` on the hero section's main banner image (above the fold)?",
@@ -1398,13 +1400,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-035",
+    "learning_objective": "tendem-hard-mcq-035",
     "points": 10,
     "tags": [
       "html"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-035"
+    "topic": "tendem-hard-mcq-035"
   },
   {
     "question": "`\u003cbutton type=\"button\"\u003e` inside form prevents?",
@@ -1438,13 +1440,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-036",
+    "learning_objective": "tendem-hard-mcq-036",
     "points": 10,
     "tags": [
       "html"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-036"
+    "topic": "tendem-hard-mcq-036"
   },
   {
     "question": "Skip navigation link targets?",
@@ -1478,13 +1480,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-037",
+    "learning_objective": "tendem-hard-mcq-037",
     "points": 10,
     "tags": [
       "html"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-037"
+    "topic": "tendem-hard-mcq-037"
   },
   {
     "question": "`autocomplete=\"email\"` on waitlist form helps?",
@@ -1518,13 +1520,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-038",
+    "learning_objective": "tendem-hard-mcq-038",
     "points": 10,
     "tags": [
       "html"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-038"
+    "topic": "tendem-hard-mcq-038"
   },
   {
     "question": "`\u003cdialog\u003e` + `showModal()` provides?",
@@ -1558,13 +1560,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-039",
+    "learning_objective": "tendem-hard-mcq-039",
     "points": 10,
     "tags": [
       "html"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-039"
+    "topic": "tendem-hard-mcq-039"
   },
   {
     "question": "Heading levels should?",
@@ -1598,13 +1600,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-040",
+    "learning_objective": "tendem-hard-mcq-040",
     "points": 10,
     "tags": [
       "html"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-040"
+    "topic": "tendem-hard-mcq-040"
   },
   {
     "question": "AI-generated landing page uses `\u003cdiv onClick\u003e` for navigation. Main a11y issue?",
@@ -1638,14 +1640,14 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-041",
+    "learning_objective": "tendem-hard-mcq-041",
     "points": 10,
     "tags": [
       "html",
       "react"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-041"
+    "topic": "tendem-hard-mcq-041"
   },
   {
     "question": "Reviewing AI React code: inline `style={{ marginTop: 20 }}` everywhere. Maintainability issue?",
@@ -1679,14 +1681,14 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-042",
+    "learning_objective": "tendem-hard-mcq-042",
     "points": 10,
     "tags": [
       "css",
       "react"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-042"
+    "topic": "tendem-hard-mcq-042"
   },
   {
     "question": "Waitlist form submits empty email — missing?",
@@ -1720,14 +1722,14 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-043",
+    "learning_objective": "tendem-hard-mcq-043",
     "points": 10,
     "tags": [
       "react",
       "html"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-043"
+    "topic": "tendem-hard-mcq-043"
   },
   {
     "question": "Landing page hero section: CTA button works on desktop but not mobile. Likely CSS cause?",
@@ -1761,14 +1763,14 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-044",
+    "learning_objective": "tendem-hard-mcq-044",
     "points": 10,
     "tags": [
       "css",
       "html"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-044"
+    "topic": "tendem-hard-mcq-044"
   },
   {
     "question": "Responsive promo page: fixed width 1200px container. Problem?",
@@ -1802,13 +1804,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-045",
+    "learning_objective": "tendem-hard-mcq-045",
     "points": 10,
     "tags": [
       "css"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-045"
+    "topic": "tendem-hard-mcq-045"
   },
   {
     "question": "AI output uses `useEffect` to sync every prop to state. Better pattern?",
@@ -1842,13 +1844,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-046",
+    "learning_objective": "tendem-hard-mcq-046",
     "points": 10,
     "tags": [
       "react"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-046"
+    "topic": "tendem-hard-mcq-046"
   },
   {
     "question": "Image in the hero section (top banner) without width/height attributes causes?",
@@ -1882,14 +1884,14 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-047",
+    "learning_objective": "tendem-hard-mcq-047",
     "points": 10,
     "tags": [
       "html",
       "css"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-047"
+    "topic": "tendem-hard-mcq-047"
   },
   {
     "question": "Form `onSubmit` without `preventDefault`?",
@@ -1923,14 +1925,14 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-048",
+    "learning_objective": "tendem-hard-mcq-048",
     "points": 10,
     "tags": [
       "react",
       "javascript"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-048"
+    "topic": "tendem-hard-mcq-048"
   },
   {
     "question": "Evaluating two AI implementations: one uses index keys, one uses id keys. Pick?",
@@ -1964,13 +1966,13 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-049",
+    "learning_objective": "tendem-hard-mcq-049",
     "points": 10,
     "tags": [
       "react"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-049"
+    "topic": "tendem-hard-mcq-049"
   },
   {
     "question": "Mindrift task: refine AI markup. First check for production landing page?",
@@ -2004,7 +2006,7 @@
       "Eliminate clearly wrong options",
       "Connect concepts to real UI scenarios"
     ],
-    "learning_objective": "mindrift-hard-050",
+    "learning_objective": "tendem-hard-mcq-050",
     "points": 10,
     "tags": [
       "html",
@@ -2012,6 +2014,6 @@
       "react"
     ],
     "difficulty": "hard",
-    "topic": "mindrift-hard-050"
+    "topic": "tendem-hard-mcq-050"
   }
 ]

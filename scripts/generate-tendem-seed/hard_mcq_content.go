@@ -8,7 +8,7 @@ func generateHardMCQs() []mcq {
 	n := 0
 	add := func(q, correct string, opts [4]string, expl string, tags []string, topic string, code string) {
 		n++
-		out = append(out, mcqItem(q, correct, opts, expl, tags, "hard", fmt.Sprintf("mindrift-hard-%03d", n), code))
+		out = append(out, mcqItem(q, correct, opts, expl, tags, "hard", fmt.Sprintf("tendem-hard-mcq-%03d", n), code))
 	}
 
 	react := []struct {
@@ -110,18 +110,24 @@ func generateHardMCQs() []mcq {
 		code    string
 	}{
 		{
-			"Log order: `console.log('A'); Promise.resolve().then(() => console.log('B')); console.log('C');`",
-			"b",
-			"Sync A, sync C, then microtask B.",
-			[4]string{"A B C", "A C B", "B A C", "C B A"},
-			"",
+			"What is the console.log output order for this code?",
+			"a",
+			"Sync: A, then B after f() hits await, then C when the async continuation runs → A B C.",
+			[4]string{"A B C", "B A C", "A C B", "C B A"},
+			`async function f() {
+  console.log('A');
+  await Promise.resolve();
+  console.log('C');
+}
+f();
+console.log('B');`,
 		},
 		{
-			"`async function f(){ await null; console.log(1); } f(); console.log(2);` order?",
-			"c",
-			"f starts, hits await, yields; sync 2 runs; then microtask 1.",
-			[4]string{"1 2", "2 1 only", "2 then 1", "random"},
-			"",
+			"What is the output of this code in the browser console?",
+			"b",
+			"map passes (element, index) to parseInt — parseInt('1',0)→1, parseInt('2',1)→NaN, parseInt('3',2)→NaN.",
+			[4]string{"[1, 2, 3]", "[1, NaN, NaN]", "[1, 2, 2]", "[NaN, NaN, NaN]"},
+			`[1, 2, 3].map(parseInt)`,
 		},
 		{
 			"Classic closure bug: `for (var i=0;i<3;i++) setTimeout(() => console.log(i), 0)` prints?",
@@ -400,8 +406,11 @@ func generateHardMCQs() []mcq {
 		},
 	}
 	for _, it := range practical {
-		add(it.q, it.c, it.o, it.e, it.tags, "mindrift-practical", "")
+		add(it.q, it.c, it.o, it.e, it.tags, "tendem-hard-practical", "")
 	}
 
+	if len(out) != 50 {
+		panic(fmt.Sprintf("hard MCQ bank must contain exactly 50 items, got %d", len(out)))
+	}
 	return out
 }

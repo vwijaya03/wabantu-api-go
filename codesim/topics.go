@@ -126,7 +126,7 @@ func TendemExamFormat() ExamFormat {
 			{Label: "React Component (form)", Count: 1, Notes: "WaitlistForm or similar variant"},
 			{Label: "React Debug", Count: 1, Notes: "Hero or similar variant"},
 		},
-		MixNotes: "Hard Mindrift/Tendem samples are mixed automatically (30 topic rotations). All sections use the hard question bank.",
+		MixNotes: "50 hard MCQs (English) with code snippets where needed. Build/debug tasks use the hard Tendem bank. Hard sample rotations are mixed automatically.",
 	}
 }
 
