@@ -150,9 +150,9 @@ func CreateSession(ctx context.Context, p *CreateSessionParams) (*CreateSessionR
 		} else {
 			slug := p.BlueprintSlug
 			if slug == "" {
-				slug = "frontend-standard-v1"
+				slug = defaultExamBlueprintSlug
 			}
-			bp, err = loadBlueprintBySlug(ctx, slug)
+			bp, err = loadExamBlueprint(ctx, slug)
 		}
 		if err != nil {
 			return nil, err

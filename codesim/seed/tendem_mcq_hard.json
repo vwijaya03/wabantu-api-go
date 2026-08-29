@@ -1127,7 +1127,7 @@
     "topic": "mindrift-hard-028"
   },
   {
-    "question": "`object-fit: cover` on hero image ensures?",
+    "question": "`object-fit: cover` on hero section banner image ensures?",
     "choices": [
       {
         "id": "a",
@@ -1147,7 +1147,7 @@
       }
     ],
     "correct_id": "a",
-    "explanation": "Image fills box, cropping to preserve aspect ratio. Common for landing hero sections (Tendem-style pages).",
+    "explanation": "Hero section = top landing-page banner with headline/CTA. object-fit: cover fills the box and crops excess.",
     "wrong_explanations": {
       "b": "Option \"Distort to fit\" is not the best answer for this question.",
       "c": "Option \"Blur background\" is not the best answer for this question.",
@@ -1367,7 +1367,7 @@
     "topic": "mindrift-hard-034"
   },
   {
-    "question": "`loading=\"lazy\"` on above-the-fold hero image?",
+    "question": "`loading=\"lazy\"` on the hero section's main banner image (above the fold)?",
     "choices": [
       {
         "id": "a",
@@ -1375,7 +1375,7 @@
       },
       {
         "id": "b",
-        "text": "Can hurt LCP for hero"
+        "text": "Can hurt LCP for hero banner"
       },
       {
         "id": "c",
@@ -1387,7 +1387,7 @@
       }
     ],
     "correct_id": "b",
-    "explanation": "Can delay LCP — eager load critical hero images. Mindrift landing pages care about LCP.",
+    "explanation": "Hero section = large top banner on a landing page. Lazy-loading it can delay LCP — eager-load critical hero images.",
     "wrong_explanations": {
       "a": "Option \"Always recommended\" is not the best answer for this question.",
       "c": "Option \"Blocks SEO\" is not the best answer for this question.",
@@ -1730,7 +1730,7 @@
     "topic": "mindrift-hard-043"
   },
   {
-    "question": "Hero CTA button works on desktop but not mobile. Likely CSS cause?",
+    "question": "Landing page hero section: CTA button works on desktop but not mobile. Likely CSS cause?",
     "choices": [
       {
         "id": "a",
@@ -1750,7 +1750,7 @@
       }
     ],
     "correct_id": "d",
-    "explanation": "Overlapping invisible element or pointer-events blocking tap target.",
+    "explanation": "Hero section = top banner with headline + CTA. Overlapping invisible element or pointer-events can block mobile taps.",
     "wrong_explanations": {
       "a": "Option \"Wrong font\" is not the best answer for this question.",
       "b": "Option \"Missing meta viewport only\" is not the best answer for this question.",
@@ -1851,7 +1851,7 @@
     "topic": "mindrift-hard-046"
   },
   {
-    "question": "Image hero without width/height attributes causes?",
+    "question": "Image in the hero section (top banner) without width/height attributes causes?",
     "choices": [
       {
         "id": "a",
@@ -1871,7 +1871,7 @@
       }
     ],
     "correct_id": "a",
-    "explanation": "Cumulative Layout Shift (CLS) when image loads.",
+    "explanation": "Hero section = top landing-page banner. Missing dimensions cause CLS when the image loads.",
     "wrong_explanations": {
       "b": "Option \"Hydration only\" is not the best answer for this question.",
       "c": "Option \"CORS\" is not the best answer for this question.",

@@ -237,9 +237,9 @@ func generateHardMCQs() []mcq {
 			[4]string{"First wins", "#header .btn (ID beats classes)", "Second always loses", "Equal — last rule wins only if equal"},
 		},
 		{
-			"`object-fit: cover` on hero image ensures?",
+			"`object-fit: cover` on hero section banner image ensures?",
 			"a",
-			"Image fills box, cropping to preserve aspect ratio. Common for landing hero sections (Tendem-style pages).",
+			"Hero section = top landing-page banner with headline/CTA. object-fit: cover fills the box and crops excess.",
 			[4]string{"Fill area, crop excess", "Distort to fit", "Blur background", "Lazy load"},
 		},
 		{
@@ -282,10 +282,10 @@ func generateHardMCQs() []mcq {
 			[4]string{"Wrap only, never for", "class name match", "htmlFor + matching id", "placeholder replaces label"},
 		},
 		{
-			"`loading=\"lazy\"` on above-the-fold hero image?",
+			"`loading=\"lazy\"` on the hero section's main banner image (above the fold)?",
 			"b",
-			"Can delay LCP — eager load critical hero images. Mindrift landing pages care about LCP.",
-			[4]string{"Always recommended", "Can hurt LCP for hero", "Blocks SEO", "Required"},
+			"Hero section = large top banner on a landing page. Lazy-loading it can delay LCP — eager-load critical hero images.",
+			[4]string{"Always recommended", "Can hurt LCP for hero banner", "Blocks SEO", "Required"},
 		},
 		{
 			"`<button type=\"button\">` inside form prevents?",
@@ -350,9 +350,9 @@ func generateHardMCQs() []mcq {
 			[]string{"react", "html"},
 		},
 		{
-			"Hero CTA button works on desktop but not mobile. Likely CSS cause?",
+			"Landing page hero section: CTA button works on desktop but not mobile. Likely CSS cause?",
 			"d",
-			"Overlapping invisible element or pointer-events blocking tap target.",
+			"Hero section = top banner with headline + CTA. Overlapping invisible element or pointer-events can block mobile taps.",
 			[4]string{"Wrong font", "Missing meta viewport only", "useState bug always", "Overlay blocking pointer events / z-index"},
 			[]string{"css", "html"},
 		},
@@ -371,9 +371,9 @@ func generateHardMCQs() []mcq {
 			[]string{"react"},
 		},
 		{
-			"Image hero without width/height attributes causes?",
+			"Image in the hero section (top banner) without width/height attributes causes?",
 			"a",
-			"Cumulative Layout Shift (CLS) when image loads.",
+			"Hero section = top landing-page banner. Missing dimensions cause CLS when the image loads.",
 			[4]string{"CLS / layout shift", "Hydration only", "CORS", "Memory leak"},
 			[]string{"html", "css"},
 		},

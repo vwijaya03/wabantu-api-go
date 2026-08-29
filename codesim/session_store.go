@@ -56,6 +56,28 @@ func loadBlueprintBySlug(ctx context.Context, slug string) (*Blueprint, error) {
 	return &b, nil
 }
 
+const (
+	defaultExamBlueprintSlug = "frontend-standard-v1"
+	hardBlueprintCount       = 30
+)
+
+// loadExamBlueprint resolves the default slug to a random tendem-hard-* blueprint.
+func loadExamBlueprint(ctx context.Context, slug string) (*Blueprint, error) {
+	resolved := resolveExamBlueprintSlug(slug)
+	bp, err := loadBlueprintBySlug(ctx, resolved)
+	if err != nil && resolved != slug {
+		return loadBlueprintBySlug(ctx, defaultExamBlueprintSlug)
+	}
+	return bp, err
+}
+
+func resolveExamBlueprintSlug(slug string) string {
+	if slug != "" && slug != defaultExamBlueprintSlug {
+		return slug
+	}
+	return fmt.Sprintf("tendem-hard-%02d", rand.Intn(hardBlueprintCount)+1)
+}
+
 func newRandomSeed() int64 {
 	return rand.New(rand.NewSource(time.Now().UnixNano())).Int63()
 }

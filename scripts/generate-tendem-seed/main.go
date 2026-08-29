@@ -889,18 +889,22 @@ func generateDebugs() []debugTask {
 
 func debugSpecMarkdown(title, symptom, hint string) string {
 	base := strings.Split(title, " #")[0]
+	heroNote := ""
+	if strings.Contains(base, "Hero") {
+		heroNote = "\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n"
+	}
 	return fmt.Sprintf(`## Symptom
 %s
 
 ## Your task
 Fix the **%s** component in the editor until the preview works correctly.
-
+%s
 ## Hint
 %s
 
 ## How to verify
 Click **Run tests** — your code does not need to match the reference solution exactly.`,
-		symptom, base, hint)
+		symptom, base, heroNote, hint)
 }
 
 func debugHint(kind int) string {

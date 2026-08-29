@@ -4,7 +4,7 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const [n, setN] = useState(0);\n  setN(n + 1);\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003cp\u003e{n}\u003c/p\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const [n, setN] = useState(0);\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003ch1\u003e{title}\u003c/h1\u003e\n      \u003cp\u003e{n}\u003c/p\u003e\n      \u003cbutton type=\"button\" onClick={() =\u003e setN((x) =\u003e x + 1)}\u003e+\u003c/button\u003e\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nPage hangs when Hero mounts.\n\n## Your task\nFix the **Hero Infinite Render** component in the editor until the preview works correctly.\n\n## Hint\nCheck whether setState is called during render instead of in an event handler.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nPage hangs when Hero mounts.\n\n## Your task\nFix the **Hero Infinite Render** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck whether setState is called during render instead of in an event handler.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "setState is called directly in the render body.",
     "fix_explanation": "Remove setState from render; use an event handler or useEffect with correct deps.",
     "test_cases": [
@@ -34,7 +34,7 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ subtitle }) {\n  const [text, setText] = useState(subtitle);\n  return \u003csection data-testid=\"hero\"\u003e\u003cp\u003e{text}\u003c/p\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ subtitle }) {\n  return \u003csection data-testid=\"hero\"\u003e\u003cp\u003e{subtitle}\u003c/p\u003e\u003c/section\u003e;\n}",
-    "bug_description": "## Symptom\nSubtitle does not update when the prop changes.\n\n## Your task\nFix the **Hero Stale Props** component in the editor until the preview works correctly.\n\n## Hint\nCheck whether state from props updates when the parent sends a new prop.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nSubtitle does not update when the prop changes.\n\n## Your task\nFix the **Hero Stale Props** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck whether state from props updates when the parent sends a new prop.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "State is initialized from props only once without syncing.",
     "fix_explanation": "Render directly from props or sync with useEffect when the prop changes.",
     "test_cases": [
@@ -65,7 +65,7 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ items }) {\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      {items.map((it, i) =\u003e \u003cspan key={i}\u003e{it.label}\u003c/span\u003e)}\n    \u003c/section\u003e\n  );\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ items }) {\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      {items.map((it) =\u003e \u003cspan key={it.id}\u003e{it.label}\u003c/span\u003e)}\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nCTA list order is wrong after filter.\n\n## Your task\nFix the **Hero Missing Key** component in the editor until the preview works correctly.\n\n## Hint\nCheck how you render the `items` list — React needs stable keys.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nCTA list order is wrong after filter.\n\n## Your task\nFix the **Hero Missing Key** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck how you render the `items` list — React needs stable keys.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "Using index as key causes the reconciler to incorrectly reuse DOM.",
     "fix_explanation": "Use a stable id from the data as the key.",
     "test_cases": [
@@ -94,16 +94,19 @@
     "family": "hero",
     "broken_code": "import { useState, useEffect } from \"react\";\n\nexport function Hero({ title }) {\n  const [count, setCount] = useState(0);\n  useEffect(() =\u003e {\n    setCount((c) =\u003e c + 1);\n  });\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003cp\u003e{count}\u003c/p\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState, useEffect } from \"react\";\n\nexport function Hero({ title }) {\n  const [count, setCount] = useState(0);\n  useEffect(() =\u003e {\n    setCount(1);\n  }, []);\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003cp\u003e{count}\u003c/p\u003e\u003c/section\u003e;\n}",
-    "bug_description": "## Symptom\nBrowser freezes after Hero mounts.\n\n## Your task\nFix the **Hero Effect Loop** component in the editor until the preview works correctly.\n\n## Hint\nCheck the useEffect dependency array — empty vs missing behaves differently.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nBrowser freezes after Hero mounts.\n\n## Your task\nFix the **Hero Effect Loop** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck the useEffect dependency array — empty vs missing behaves differently.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "useEffect without a dependency array triggers setState on every render.",
     "fix_explanation": "Add the correct dependency array or move logic to an event handler.",
     "test_cases": [
       {
-        "check": "no_setstate_in_render"
-      },
-      {
         "check": "has_testid",
         "id": "hero"
+      },
+      {
+        "check": "use_effect_has_dependency_array"
+      },
+      {
+        "check": "no_broken_onclick_setstate"
       }
     ],
     "best_practices": [
@@ -124,16 +127,16 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const [n, setN] = useState(0);\n  const bump = () =\u003e setN((x) =\u003e x + 1);\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003ch1\u003e{title}\u003c/h1\u003e\n      \u003cbutton type=\"button\" onClick={bump()}\u003e+\u003c/button\u003e\n      \u003cp\u003e{n}\u003c/p\u003e\n    \u003c/section\u003e\n  );\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const [n, setN] = useState(0);\n  const bump = () =\u003e setN((x) =\u003e x + 1);\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003ch1\u003e{title}\u003c/h1\u003e\n      \u003cbutton type=\"button\" onClick={bump}\u003e+\u003c/button\u003e\n      \u003cp\u003e{n}\u003c/p\u003e\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nClicking the button immediately increments the counter without interaction.\n\n## Your task\nFix the **Hero Click Handler** component in the editor until the preview works correctly.\n\n## Hint\nCheck how you pass handlers to onClick — do not invoke the function during render.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nClicking the button immediately increments the counter without interaction.\n\n## Your task\nFix the **Hero Click Handler** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck how you pass handlers to onClick — do not invoke the function during render.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "onClick invokes the handler during render instead of passing a function reference.",
     "fix_explanation": "Pass a function reference: onClick={() =\u003e handler()} not onClick={handler()}.",
     "test_cases": [
       {
-        "check": "no_setstate_in_render"
-      },
-      {
         "check": "has_testid",
         "id": "hero"
+      },
+      {
+        "check": "onclick_handler_reference"
       }
     ],
     "best_practices": [
@@ -154,13 +157,16 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ title, showDetails }) {\n  if (showDetails) {\n    const [detail, setDetail] = useState(\"\");\n    return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003cinput value={detail} onChange={(e) =\u003e setDetail(e.target.value)} /\u003e\u003c/section\u003e;\n  }\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ title, showDetails }) {\n  const [detail, setDetail] = useState(\"\");\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003ch1\u003e{title}\u003c/h1\u003e\n      {showDetails \u0026\u0026 \u003cinput value={detail} onChange={(e) =\u003e setDetail(e.target.value)} /\u003e}\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nRules of Hooks error when showDetails is false.\n\n## Your task\nFix the **Hero Conditional Hook** component in the editor until the preview works correctly.\n\n## Hint\nHooks must be called at the top level, not inside if/loop.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nRules of Hooks error when showDetails is false.\n\n## Your task\nFix the **Hero Conditional Hook** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nHooks must be called at the top level, not inside if/loop.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "useState is called inside a conditional branch.",
     "fix_explanation": "Move all hooks to the top level of the component.",
     "test_cases": [
       {
         "check": "has_testid",
         "id": "hero"
+      },
+      {
+        "check": "no_hooks_in_conditional"
       }
     ],
     "best_practices": [
@@ -181,17 +187,20 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const label = title.toUpperCase();\n  \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{label}\u003c/h1\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const label = title.toUpperCase();\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{label}\u003c/h1\u003e\u003c/section\u003e;\n}",
-    "bug_description": "## Symptom\nUI is empty even though title prop is set.\n\n## Your task\nFix the **Hero Missing Return** component in the editor until the preview works correctly.\n\n## Hint\nMake sure JSX is returned from the function component.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nUI is empty even though title prop is set.\n\n## Your task\nFix the **Hero Missing Return** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nMake sure JSX is returned from the function component.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "Arrow function implicit return is lost because of a block body without return.",
     "fix_explanation": "Add an explicit return or use parentheses around JSX.",
     "test_cases": [
       {
-        "check": "renders_prop",
-        "prop": "title"
-      },
-      {
         "check": "has_testid",
         "id": "hero"
+      },
+      {
+        "check": "has_explicit_return"
+      },
+      {
+        "check": "renders_prop",
+        "prop": "title"
       }
     ],
     "best_practices": [
@@ -212,7 +221,7 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ value, onChange }) {\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003cinput defaultValue={value} onChange={onChange} /\u003e\n    \u003c/section\u003e\n  );\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ value, onChange }) {\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003cinput value={value} onChange={onChange} /\u003e\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nInput does not update when parent sends a new value.\n\n## Your task\nFix the **Hero Uncontrolled Input** component in the editor until the preview works correctly.\n\n## Hint\nCheck whether the input is controlled (`value`) or uncontrolled (`defaultValue`).\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nInput does not update when parent sends a new value.\n\n## Your task\nFix the **Hero Uncontrolled Input** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck whether the input is controlled (`value`) or uncontrolled (`defaultValue`).\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "defaultValue does not sync with subsequent value prop updates.",
     "fix_explanation": "Use a controlled input: value + onChange from props/state.",
     "test_cases": [
@@ -239,7 +248,7 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const [n, setN] = useState(0);\n  setN(n + 1);\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003cp\u003e{n}\u003c/p\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const [n, setN] = useState(0);\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003ch1\u003e{title}\u003c/h1\u003e\n      \u003cp\u003e{n}\u003c/p\u003e\n      \u003cbutton type=\"button\" onClick={() =\u003e setN((x) =\u003e x + 1)}\u003e+\u003c/button\u003e\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nPage hangs when Hero mounts.\n\n## Your task\nFix the **Hero Infinite Render** component in the editor until the preview works correctly.\n\n## Hint\nCheck whether setState is called during render instead of in an event handler.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nPage hangs when Hero mounts.\n\n## Your task\nFix the **Hero Infinite Render** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck whether setState is called during render instead of in an event handler.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "setState is called directly in the render body.",
     "fix_explanation": "Remove setState from render; use an event handler or useEffect with correct deps.",
     "test_cases": [
@@ -269,7 +278,7 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ subtitle }) {\n  const [text, setText] = useState(subtitle);\n  return \u003csection data-testid=\"hero\"\u003e\u003cp\u003e{text}\u003c/p\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ subtitle }) {\n  return \u003csection data-testid=\"hero\"\u003e\u003cp\u003e{subtitle}\u003c/p\u003e\u003c/section\u003e;\n}",
-    "bug_description": "## Symptom\nSubtitle does not update when the prop changes.\n\n## Your task\nFix the **Hero Stale Props** component in the editor until the preview works correctly.\n\n## Hint\nCheck whether state from props updates when the parent sends a new prop.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nSubtitle does not update when the prop changes.\n\n## Your task\nFix the **Hero Stale Props** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck whether state from props updates when the parent sends a new prop.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "State is initialized from props only once without syncing.",
     "fix_explanation": "Render directly from props or sync with useEffect when the prop changes.",
     "test_cases": [
@@ -300,7 +309,7 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ items }) {\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      {items.map((it, i) =\u003e \u003cspan key={i}\u003e{it.label}\u003c/span\u003e)}\n    \u003c/section\u003e\n  );\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ items }) {\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      {items.map((it) =\u003e \u003cspan key={it.id}\u003e{it.label}\u003c/span\u003e)}\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nCTA list order is wrong after filter.\n\n## Your task\nFix the **Hero Missing Key** component in the editor until the preview works correctly.\n\n## Hint\nCheck how you render the `items` list — React needs stable keys.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nCTA list order is wrong after filter.\n\n## Your task\nFix the **Hero Missing Key** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck how you render the `items` list — React needs stable keys.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "Using index as key causes the reconciler to incorrectly reuse DOM.",
     "fix_explanation": "Use a stable id from the data as the key.",
     "test_cases": [
@@ -329,16 +338,19 @@
     "family": "hero",
     "broken_code": "import { useState, useEffect } from \"react\";\n\nexport function Hero({ title }) {\n  const [count, setCount] = useState(0);\n  useEffect(() =\u003e {\n    setCount((c) =\u003e c + 1);\n  });\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003cp\u003e{count}\u003c/p\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState, useEffect } from \"react\";\n\nexport function Hero({ title }) {\n  const [count, setCount] = useState(0);\n  useEffect(() =\u003e {\n    setCount(1);\n  }, []);\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003cp\u003e{count}\u003c/p\u003e\u003c/section\u003e;\n}",
-    "bug_description": "## Symptom\nBrowser freezes after Hero mounts.\n\n## Your task\nFix the **Hero Effect Loop** component in the editor until the preview works correctly.\n\n## Hint\nCheck the useEffect dependency array — empty vs missing behaves differently.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nBrowser freezes after Hero mounts.\n\n## Your task\nFix the **Hero Effect Loop** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck the useEffect dependency array — empty vs missing behaves differently.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "useEffect without a dependency array triggers setState on every render.",
     "fix_explanation": "Add the correct dependency array or move logic to an event handler.",
     "test_cases": [
       {
-        "check": "no_setstate_in_render"
-      },
-      {
         "check": "has_testid",
         "id": "hero"
+      },
+      {
+        "check": "use_effect_has_dependency_array"
+      },
+      {
+        "check": "no_broken_onclick_setstate"
       }
     ],
     "best_practices": [
@@ -359,16 +371,16 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const [n, setN] = useState(0);\n  const bump = () =\u003e setN((x) =\u003e x + 1);\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003ch1\u003e{title}\u003c/h1\u003e\n      \u003cbutton type=\"button\" onClick={bump()}\u003e+\u003c/button\u003e\n      \u003cp\u003e{n}\u003c/p\u003e\n    \u003c/section\u003e\n  );\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const [n, setN] = useState(0);\n  const bump = () =\u003e setN((x) =\u003e x + 1);\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003ch1\u003e{title}\u003c/h1\u003e\n      \u003cbutton type=\"button\" onClick={bump}\u003e+\u003c/button\u003e\n      \u003cp\u003e{n}\u003c/p\u003e\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nClicking the button immediately increments the counter without interaction.\n\n## Your task\nFix the **Hero Click Handler** component in the editor until the preview works correctly.\n\n## Hint\nCheck how you pass handlers to onClick — do not invoke the function during render.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nClicking the button immediately increments the counter without interaction.\n\n## Your task\nFix the **Hero Click Handler** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck how you pass handlers to onClick — do not invoke the function during render.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "onClick invokes the handler during render instead of passing a function reference.",
     "fix_explanation": "Pass a function reference: onClick={() =\u003e handler()} not onClick={handler()}.",
     "test_cases": [
       {
-        "check": "no_setstate_in_render"
-      },
-      {
         "check": "has_testid",
         "id": "hero"
+      },
+      {
+        "check": "onclick_handler_reference"
       }
     ],
     "best_practices": [
@@ -389,13 +401,16 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ title, showDetails }) {\n  if (showDetails) {\n    const [detail, setDetail] = useState(\"\");\n    return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003cinput value={detail} onChange={(e) =\u003e setDetail(e.target.value)} /\u003e\u003c/section\u003e;\n  }\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ title, showDetails }) {\n  const [detail, setDetail] = useState(\"\");\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003ch1\u003e{title}\u003c/h1\u003e\n      {showDetails \u0026\u0026 \u003cinput value={detail} onChange={(e) =\u003e setDetail(e.target.value)} /\u003e}\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nRules of Hooks error when showDetails is false.\n\n## Your task\nFix the **Hero Conditional Hook** component in the editor until the preview works correctly.\n\n## Hint\nHooks must be called at the top level, not inside if/loop.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nRules of Hooks error when showDetails is false.\n\n## Your task\nFix the **Hero Conditional Hook** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nHooks must be called at the top level, not inside if/loop.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "useState is called inside a conditional branch.",
     "fix_explanation": "Move all hooks to the top level of the component.",
     "test_cases": [
       {
         "check": "has_testid",
         "id": "hero"
+      },
+      {
+        "check": "no_hooks_in_conditional"
       }
     ],
     "best_practices": [
@@ -416,17 +431,20 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const label = title.toUpperCase();\n  \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{label}\u003c/h1\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const label = title.toUpperCase();\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{label}\u003c/h1\u003e\u003c/section\u003e;\n}",
-    "bug_description": "## Symptom\nUI is empty even though title prop is set.\n\n## Your task\nFix the **Hero Missing Return** component in the editor until the preview works correctly.\n\n## Hint\nMake sure JSX is returned from the function component.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nUI is empty even though title prop is set.\n\n## Your task\nFix the **Hero Missing Return** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nMake sure JSX is returned from the function component.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "Arrow function implicit return is lost because of a block body without return.",
     "fix_explanation": "Add an explicit return or use parentheses around JSX.",
     "test_cases": [
       {
-        "check": "renders_prop",
-        "prop": "title"
-      },
-      {
         "check": "has_testid",
         "id": "hero"
+      },
+      {
+        "check": "has_explicit_return"
+      },
+      {
+        "check": "renders_prop",
+        "prop": "title"
       }
     ],
     "best_practices": [
@@ -447,7 +465,7 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ value, onChange }) {\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003cinput defaultValue={value} onChange={onChange} /\u003e\n    \u003c/section\u003e\n  );\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ value, onChange }) {\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003cinput value={value} onChange={onChange} /\u003e\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nInput does not update when parent sends a new value.\n\n## Your task\nFix the **Hero Uncontrolled Input** component in the editor until the preview works correctly.\n\n## Hint\nCheck whether the input is controlled (`value`) or uncontrolled (`defaultValue`).\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nInput does not update when parent sends a new value.\n\n## Your task\nFix the **Hero Uncontrolled Input** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck whether the input is controlled (`value`) or uncontrolled (`defaultValue`).\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "defaultValue does not sync with subsequent value prop updates.",
     "fix_explanation": "Use a controlled input: value + onChange from props/state.",
     "test_cases": [
@@ -474,7 +492,7 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const [n, setN] = useState(0);\n  setN(n + 1);\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003cp\u003e{n}\u003c/p\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const [n, setN] = useState(0);\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003ch1\u003e{title}\u003c/h1\u003e\n      \u003cp\u003e{n}\u003c/p\u003e\n      \u003cbutton type=\"button\" onClick={() =\u003e setN((x) =\u003e x + 1)}\u003e+\u003c/button\u003e\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nPage hangs when Hero mounts.\n\n## Your task\nFix the **Hero Infinite Render** component in the editor until the preview works correctly.\n\n## Hint\nCheck whether setState is called during render instead of in an event handler.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nPage hangs when Hero mounts.\n\n## Your task\nFix the **Hero Infinite Render** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck whether setState is called during render instead of in an event handler.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "setState is called directly in the render body.",
     "fix_explanation": "Remove setState from render; use an event handler or useEffect with correct deps.",
     "test_cases": [
@@ -504,7 +522,7 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ subtitle }) {\n  const [text, setText] = useState(subtitle);\n  return \u003csection data-testid=\"hero\"\u003e\u003cp\u003e{text}\u003c/p\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ subtitle }) {\n  return \u003csection data-testid=\"hero\"\u003e\u003cp\u003e{subtitle}\u003c/p\u003e\u003c/section\u003e;\n}",
-    "bug_description": "## Symptom\nSubtitle does not update when the prop changes.\n\n## Your task\nFix the **Hero Stale Props** component in the editor until the preview works correctly.\n\n## Hint\nCheck whether state from props updates when the parent sends a new prop.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nSubtitle does not update when the prop changes.\n\n## Your task\nFix the **Hero Stale Props** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck whether state from props updates when the parent sends a new prop.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "State is initialized from props only once without syncing.",
     "fix_explanation": "Render directly from props or sync with useEffect when the prop changes.",
     "test_cases": [
@@ -535,7 +553,7 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ items }) {\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      {items.map((it, i) =\u003e \u003cspan key={i}\u003e{it.label}\u003c/span\u003e)}\n    \u003c/section\u003e\n  );\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ items }) {\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      {items.map((it) =\u003e \u003cspan key={it.id}\u003e{it.label}\u003c/span\u003e)}\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nCTA list order is wrong after filter.\n\n## Your task\nFix the **Hero Missing Key** component in the editor until the preview works correctly.\n\n## Hint\nCheck how you render the `items` list — React needs stable keys.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nCTA list order is wrong after filter.\n\n## Your task\nFix the **Hero Missing Key** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck how you render the `items` list — React needs stable keys.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "Using index as key causes the reconciler to incorrectly reuse DOM.",
     "fix_explanation": "Use a stable id from the data as the key.",
     "test_cases": [
@@ -564,16 +582,19 @@
     "family": "hero",
     "broken_code": "import { useState, useEffect } from \"react\";\n\nexport function Hero({ title }) {\n  const [count, setCount] = useState(0);\n  useEffect(() =\u003e {\n    setCount((c) =\u003e c + 1);\n  });\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003cp\u003e{count}\u003c/p\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState, useEffect } from \"react\";\n\nexport function Hero({ title }) {\n  const [count, setCount] = useState(0);\n  useEffect(() =\u003e {\n    setCount(1);\n  }, []);\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003cp\u003e{count}\u003c/p\u003e\u003c/section\u003e;\n}",
-    "bug_description": "## Symptom\nBrowser freezes after Hero mounts.\n\n## Your task\nFix the **Hero Effect Loop** component in the editor until the preview works correctly.\n\n## Hint\nCheck the useEffect dependency array — empty vs missing behaves differently.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nBrowser freezes after Hero mounts.\n\n## Your task\nFix the **Hero Effect Loop** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck the useEffect dependency array — empty vs missing behaves differently.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "useEffect without a dependency array triggers setState on every render.",
     "fix_explanation": "Add the correct dependency array or move logic to an event handler.",
     "test_cases": [
       {
-        "check": "no_setstate_in_render"
-      },
-      {
         "check": "has_testid",
         "id": "hero"
+      },
+      {
+        "check": "use_effect_has_dependency_array"
+      },
+      {
+        "check": "no_broken_onclick_setstate"
       }
     ],
     "best_practices": [
@@ -594,16 +615,16 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const [n, setN] = useState(0);\n  const bump = () =\u003e setN((x) =\u003e x + 1);\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003ch1\u003e{title}\u003c/h1\u003e\n      \u003cbutton type=\"button\" onClick={bump()}\u003e+\u003c/button\u003e\n      \u003cp\u003e{n}\u003c/p\u003e\n    \u003c/section\u003e\n  );\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const [n, setN] = useState(0);\n  const bump = () =\u003e setN((x) =\u003e x + 1);\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003ch1\u003e{title}\u003c/h1\u003e\n      \u003cbutton type=\"button\" onClick={bump}\u003e+\u003c/button\u003e\n      \u003cp\u003e{n}\u003c/p\u003e\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nClicking the button immediately increments the counter without interaction.\n\n## Your task\nFix the **Hero Click Handler** component in the editor until the preview works correctly.\n\n## Hint\nCheck how you pass handlers to onClick — do not invoke the function during render.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nClicking the button immediately increments the counter without interaction.\n\n## Your task\nFix the **Hero Click Handler** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck how you pass handlers to onClick — do not invoke the function during render.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "onClick invokes the handler during render instead of passing a function reference.",
     "fix_explanation": "Pass a function reference: onClick={() =\u003e handler()} not onClick={handler()}.",
     "test_cases": [
       {
-        "check": "no_setstate_in_render"
-      },
-      {
         "check": "has_testid",
         "id": "hero"
+      },
+      {
+        "check": "onclick_handler_reference"
       }
     ],
     "best_practices": [
@@ -624,13 +645,16 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ title, showDetails }) {\n  if (showDetails) {\n    const [detail, setDetail] = useState(\"\");\n    return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003cinput value={detail} onChange={(e) =\u003e setDetail(e.target.value)} /\u003e\u003c/section\u003e;\n  }\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ title, showDetails }) {\n  const [detail, setDetail] = useState(\"\");\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003ch1\u003e{title}\u003c/h1\u003e\n      {showDetails \u0026\u0026 \u003cinput value={detail} onChange={(e) =\u003e setDetail(e.target.value)} /\u003e}\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nRules of Hooks error when showDetails is false.\n\n## Your task\nFix the **Hero Conditional Hook** component in the editor until the preview works correctly.\n\n## Hint\nHooks must be called at the top level, not inside if/loop.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nRules of Hooks error when showDetails is false.\n\n## Your task\nFix the **Hero Conditional Hook** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nHooks must be called at the top level, not inside if/loop.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "useState is called inside a conditional branch.",
     "fix_explanation": "Move all hooks to the top level of the component.",
     "test_cases": [
       {
         "check": "has_testid",
         "id": "hero"
+      },
+      {
+        "check": "no_hooks_in_conditional"
       }
     ],
     "best_practices": [
@@ -651,17 +675,20 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const label = title.toUpperCase();\n  \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{label}\u003c/h1\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const label = title.toUpperCase();\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{label}\u003c/h1\u003e\u003c/section\u003e;\n}",
-    "bug_description": "## Symptom\nUI is empty even though title prop is set.\n\n## Your task\nFix the **Hero Missing Return** component in the editor until the preview works correctly.\n\n## Hint\nMake sure JSX is returned from the function component.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nUI is empty even though title prop is set.\n\n## Your task\nFix the **Hero Missing Return** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nMake sure JSX is returned from the function component.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "Arrow function implicit return is lost because of a block body without return.",
     "fix_explanation": "Add an explicit return or use parentheses around JSX.",
     "test_cases": [
       {
-        "check": "renders_prop",
-        "prop": "title"
-      },
-      {
         "check": "has_testid",
         "id": "hero"
+      },
+      {
+        "check": "has_explicit_return"
+      },
+      {
+        "check": "renders_prop",
+        "prop": "title"
       }
     ],
     "best_practices": [
@@ -682,7 +709,7 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ value, onChange }) {\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003cinput defaultValue={value} onChange={onChange} /\u003e\n    \u003c/section\u003e\n  );\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ value, onChange }) {\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003cinput value={value} onChange={onChange} /\u003e\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nInput does not update when parent sends a new value.\n\n## Your task\nFix the **Hero Uncontrolled Input** component in the editor until the preview works correctly.\n\n## Hint\nCheck whether the input is controlled (`value`) or uncontrolled (`defaultValue`).\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nInput does not update when parent sends a new value.\n\n## Your task\nFix the **Hero Uncontrolled Input** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck whether the input is controlled (`value`) or uncontrolled (`defaultValue`).\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "defaultValue does not sync with subsequent value prop updates.",
     "fix_explanation": "Use a controlled input: value + onChange from props/state.",
     "test_cases": [
@@ -709,7 +736,7 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const [n, setN] = useState(0);\n  setN(n + 1);\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003cp\u003e{n}\u003c/p\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const [n, setN] = useState(0);\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003ch1\u003e{title}\u003c/h1\u003e\n      \u003cp\u003e{n}\u003c/p\u003e\n      \u003cbutton type=\"button\" onClick={() =\u003e setN((x) =\u003e x + 1)}\u003e+\u003c/button\u003e\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nPage hangs when Hero mounts.\n\n## Your task\nFix the **Hero Infinite Render** component in the editor until the preview works correctly.\n\n## Hint\nCheck whether setState is called during render instead of in an event handler.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nPage hangs when Hero mounts.\n\n## Your task\nFix the **Hero Infinite Render** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck whether setState is called during render instead of in an event handler.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "setState is called directly in the render body.",
     "fix_explanation": "Remove setState from render; use an event handler or useEffect with correct deps.",
     "test_cases": [
@@ -739,7 +766,7 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ subtitle }) {\n  const [text, setText] = useState(subtitle);\n  return \u003csection data-testid=\"hero\"\u003e\u003cp\u003e{text}\u003c/p\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ subtitle }) {\n  return \u003csection data-testid=\"hero\"\u003e\u003cp\u003e{subtitle}\u003c/p\u003e\u003c/section\u003e;\n}",
-    "bug_description": "## Symptom\nSubtitle does not update when the prop changes.\n\n## Your task\nFix the **Hero Stale Props** component in the editor until the preview works correctly.\n\n## Hint\nCheck whether state from props updates when the parent sends a new prop.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nSubtitle does not update when the prop changes.\n\n## Your task\nFix the **Hero Stale Props** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck whether state from props updates when the parent sends a new prop.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "State is initialized from props only once without syncing.",
     "fix_explanation": "Render directly from props or sync with useEffect when the prop changes.",
     "test_cases": [
@@ -770,7 +797,7 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ items }) {\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      {items.map((it, i) =\u003e \u003cspan key={i}\u003e{it.label}\u003c/span\u003e)}\n    \u003c/section\u003e\n  );\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ items }) {\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      {items.map((it) =\u003e \u003cspan key={it.id}\u003e{it.label}\u003c/span\u003e)}\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nCTA list order is wrong after filter.\n\n## Your task\nFix the **Hero Missing Key** component in the editor until the preview works correctly.\n\n## Hint\nCheck how you render the `items` list — React needs stable keys.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nCTA list order is wrong after filter.\n\n## Your task\nFix the **Hero Missing Key** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck how you render the `items` list — React needs stable keys.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "Using index as key causes the reconciler to incorrectly reuse DOM.",
     "fix_explanation": "Use a stable id from the data as the key.",
     "test_cases": [
@@ -799,16 +826,19 @@
     "family": "hero",
     "broken_code": "import { useState, useEffect } from \"react\";\n\nexport function Hero({ title }) {\n  const [count, setCount] = useState(0);\n  useEffect(() =\u003e {\n    setCount((c) =\u003e c + 1);\n  });\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003cp\u003e{count}\u003c/p\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState, useEffect } from \"react\";\n\nexport function Hero({ title }) {\n  const [count, setCount] = useState(0);\n  useEffect(() =\u003e {\n    setCount(1);\n  }, []);\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003cp\u003e{count}\u003c/p\u003e\u003c/section\u003e;\n}",
-    "bug_description": "## Symptom\nBrowser freezes after Hero mounts.\n\n## Your task\nFix the **Hero Effect Loop** component in the editor until the preview works correctly.\n\n## Hint\nCheck the useEffect dependency array — empty vs missing behaves differently.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nBrowser freezes after Hero mounts.\n\n## Your task\nFix the **Hero Effect Loop** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck the useEffect dependency array — empty vs missing behaves differently.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "useEffect without a dependency array triggers setState on every render.",
     "fix_explanation": "Add the correct dependency array or move logic to an event handler.",
     "test_cases": [
       {
-        "check": "no_setstate_in_render"
-      },
-      {
         "check": "has_testid",
         "id": "hero"
+      },
+      {
+        "check": "use_effect_has_dependency_array"
+      },
+      {
+        "check": "no_broken_onclick_setstate"
       }
     ],
     "best_practices": [
@@ -829,16 +859,16 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const [n, setN] = useState(0);\n  const bump = () =\u003e setN((x) =\u003e x + 1);\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003ch1\u003e{title}\u003c/h1\u003e\n      \u003cbutton type=\"button\" onClick={bump()}\u003e+\u003c/button\u003e\n      \u003cp\u003e{n}\u003c/p\u003e\n    \u003c/section\u003e\n  );\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const [n, setN] = useState(0);\n  const bump = () =\u003e setN((x) =\u003e x + 1);\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003ch1\u003e{title}\u003c/h1\u003e\n      \u003cbutton type=\"button\" onClick={bump}\u003e+\u003c/button\u003e\n      \u003cp\u003e{n}\u003c/p\u003e\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nClicking the button immediately increments the counter without interaction.\n\n## Your task\nFix the **Hero Click Handler** component in the editor until the preview works correctly.\n\n## Hint\nCheck how you pass handlers to onClick — do not invoke the function during render.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nClicking the button immediately increments the counter without interaction.\n\n## Your task\nFix the **Hero Click Handler** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck how you pass handlers to onClick — do not invoke the function during render.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "onClick invokes the handler during render instead of passing a function reference.",
     "fix_explanation": "Pass a function reference: onClick={() =\u003e handler()} not onClick={handler()}.",
     "test_cases": [
       {
-        "check": "no_setstate_in_render"
-      },
-      {
         "check": "has_testid",
         "id": "hero"
+      },
+      {
+        "check": "onclick_handler_reference"
       }
     ],
     "best_practices": [
@@ -859,13 +889,16 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ title, showDetails }) {\n  if (showDetails) {\n    const [detail, setDetail] = useState(\"\");\n    return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003cinput value={detail} onChange={(e) =\u003e setDetail(e.target.value)} /\u003e\u003c/section\u003e;\n  }\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ title, showDetails }) {\n  const [detail, setDetail] = useState(\"\");\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003ch1\u003e{title}\u003c/h1\u003e\n      {showDetails \u0026\u0026 \u003cinput value={detail} onChange={(e) =\u003e setDetail(e.target.value)} /\u003e}\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nRules of Hooks error when showDetails is false.\n\n## Your task\nFix the **Hero Conditional Hook** component in the editor until the preview works correctly.\n\n## Hint\nHooks must be called at the top level, not inside if/loop.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nRules of Hooks error when showDetails is false.\n\n## Your task\nFix the **Hero Conditional Hook** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nHooks must be called at the top level, not inside if/loop.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "useState is called inside a conditional branch.",
     "fix_explanation": "Move all hooks to the top level of the component.",
     "test_cases": [
       {
         "check": "has_testid",
         "id": "hero"
+      },
+      {
+        "check": "no_hooks_in_conditional"
       }
     ],
     "best_practices": [
@@ -886,17 +919,20 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const label = title.toUpperCase();\n  \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{label}\u003c/h1\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const label = title.toUpperCase();\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{label}\u003c/h1\u003e\u003c/section\u003e;\n}",
-    "bug_description": "## Symptom\nUI is empty even though title prop is set.\n\n## Your task\nFix the **Hero Missing Return** component in the editor until the preview works correctly.\n\n## Hint\nMake sure JSX is returned from the function component.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nUI is empty even though title prop is set.\n\n## Your task\nFix the **Hero Missing Return** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nMake sure JSX is returned from the function component.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "Arrow function implicit return is lost because of a block body without return.",
     "fix_explanation": "Add an explicit return or use parentheses around JSX.",
     "test_cases": [
       {
-        "check": "renders_prop",
-        "prop": "title"
-      },
-      {
         "check": "has_testid",
         "id": "hero"
+      },
+      {
+        "check": "has_explicit_return"
+      },
+      {
+        "check": "renders_prop",
+        "prop": "title"
       }
     ],
     "best_practices": [
@@ -917,7 +953,7 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ value, onChange }) {\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003cinput defaultValue={value} onChange={onChange} /\u003e\n    \u003c/section\u003e\n  );\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ value, onChange }) {\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003cinput value={value} onChange={onChange} /\u003e\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nInput does not update when parent sends a new value.\n\n## Your task\nFix the **Hero Uncontrolled Input** component in the editor until the preview works correctly.\n\n## Hint\nCheck whether the input is controlled (`value`) or uncontrolled (`defaultValue`).\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nInput does not update when parent sends a new value.\n\n## Your task\nFix the **Hero Uncontrolled Input** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck whether the input is controlled (`value`) or uncontrolled (`defaultValue`).\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "defaultValue does not sync with subsequent value prop updates.",
     "fix_explanation": "Use a controlled input: value + onChange from props/state.",
     "test_cases": [
@@ -944,7 +980,7 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const [n, setN] = useState(0);\n  setN(n + 1);\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003cp\u003e{n}\u003c/p\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const [n, setN] = useState(0);\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003ch1\u003e{title}\u003c/h1\u003e\n      \u003cp\u003e{n}\u003c/p\u003e\n      \u003cbutton type=\"button\" onClick={() =\u003e setN((x) =\u003e x + 1)}\u003e+\u003c/button\u003e\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nPage hangs when Hero mounts.\n\n## Your task\nFix the **Hero Infinite Render** component in the editor until the preview works correctly.\n\n## Hint\nCheck whether setState is called during render instead of in an event handler.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nPage hangs when Hero mounts.\n\n## Your task\nFix the **Hero Infinite Render** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck whether setState is called during render instead of in an event handler.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "setState is called directly in the render body.",
     "fix_explanation": "Remove setState from render; use an event handler or useEffect with correct deps.",
     "test_cases": [
@@ -974,7 +1010,7 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ subtitle }) {\n  const [text, setText] = useState(subtitle);\n  return \u003csection data-testid=\"hero\"\u003e\u003cp\u003e{text}\u003c/p\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ subtitle }) {\n  return \u003csection data-testid=\"hero\"\u003e\u003cp\u003e{subtitle}\u003c/p\u003e\u003c/section\u003e;\n}",
-    "bug_description": "## Symptom\nSubtitle does not update when the prop changes.\n\n## Your task\nFix the **Hero Stale Props** component in the editor until the preview works correctly.\n\n## Hint\nCheck whether state from props updates when the parent sends a new prop.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nSubtitle does not update when the prop changes.\n\n## Your task\nFix the **Hero Stale Props** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck whether state from props updates when the parent sends a new prop.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "State is initialized from props only once without syncing.",
     "fix_explanation": "Render directly from props or sync with useEffect when the prop changes.",
     "test_cases": [
@@ -1005,7 +1041,7 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ items }) {\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      {items.map((it, i) =\u003e \u003cspan key={i}\u003e{it.label}\u003c/span\u003e)}\n    \u003c/section\u003e\n  );\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ items }) {\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      {items.map((it) =\u003e \u003cspan key={it.id}\u003e{it.label}\u003c/span\u003e)}\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nCTA list order is wrong after filter.\n\n## Your task\nFix the **Hero Missing Key** component in the editor until the preview works correctly.\n\n## Hint\nCheck how you render the `items` list — React needs stable keys.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nCTA list order is wrong after filter.\n\n## Your task\nFix the **Hero Missing Key** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck how you render the `items` list — React needs stable keys.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "Using index as key causes the reconciler to incorrectly reuse DOM.",
     "fix_explanation": "Use a stable id from the data as the key.",
     "test_cases": [
@@ -1034,16 +1070,19 @@
     "family": "hero",
     "broken_code": "import { useState, useEffect } from \"react\";\n\nexport function Hero({ title }) {\n  const [count, setCount] = useState(0);\n  useEffect(() =\u003e {\n    setCount((c) =\u003e c + 1);\n  });\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003cp\u003e{count}\u003c/p\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState, useEffect } from \"react\";\n\nexport function Hero({ title }) {\n  const [count, setCount] = useState(0);\n  useEffect(() =\u003e {\n    setCount(1);\n  }, []);\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003cp\u003e{count}\u003c/p\u003e\u003c/section\u003e;\n}",
-    "bug_description": "## Symptom\nBrowser freezes after Hero mounts.\n\n## Your task\nFix the **Hero Effect Loop** component in the editor until the preview works correctly.\n\n## Hint\nCheck the useEffect dependency array — empty vs missing behaves differently.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nBrowser freezes after Hero mounts.\n\n## Your task\nFix the **Hero Effect Loop** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck the useEffect dependency array — empty vs missing behaves differently.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "useEffect without a dependency array triggers setState on every render.",
     "fix_explanation": "Add the correct dependency array or move logic to an event handler.",
     "test_cases": [
       {
-        "check": "no_setstate_in_render"
-      },
-      {
         "check": "has_testid",
         "id": "hero"
+      },
+      {
+        "check": "use_effect_has_dependency_array"
+      },
+      {
+        "check": "no_broken_onclick_setstate"
       }
     ],
     "best_practices": [
@@ -1064,16 +1103,16 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const [n, setN] = useState(0);\n  const bump = () =\u003e setN((x) =\u003e x + 1);\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003ch1\u003e{title}\u003c/h1\u003e\n      \u003cbutton type=\"button\" onClick={bump()}\u003e+\u003c/button\u003e\n      \u003cp\u003e{n}\u003c/p\u003e\n    \u003c/section\u003e\n  );\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const [n, setN] = useState(0);\n  const bump = () =\u003e setN((x) =\u003e x + 1);\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003ch1\u003e{title}\u003c/h1\u003e\n      \u003cbutton type=\"button\" onClick={bump}\u003e+\u003c/button\u003e\n      \u003cp\u003e{n}\u003c/p\u003e\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nClicking the button immediately increments the counter without interaction.\n\n## Your task\nFix the **Hero Click Handler** component in the editor until the preview works correctly.\n\n## Hint\nCheck how you pass handlers to onClick — do not invoke the function during render.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nClicking the button immediately increments the counter without interaction.\n\n## Your task\nFix the **Hero Click Handler** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck how you pass handlers to onClick — do not invoke the function during render.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "onClick invokes the handler during render instead of passing a function reference.",
     "fix_explanation": "Pass a function reference: onClick={() =\u003e handler()} not onClick={handler()}.",
     "test_cases": [
       {
-        "check": "no_setstate_in_render"
-      },
-      {
         "check": "has_testid",
         "id": "hero"
+      },
+      {
+        "check": "onclick_handler_reference"
       }
     ],
     "best_practices": [
@@ -1094,13 +1133,16 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ title, showDetails }) {\n  if (showDetails) {\n    const [detail, setDetail] = useState(\"\");\n    return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003cinput value={detail} onChange={(e) =\u003e setDetail(e.target.value)} /\u003e\u003c/section\u003e;\n  }\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ title, showDetails }) {\n  const [detail, setDetail] = useState(\"\");\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003ch1\u003e{title}\u003c/h1\u003e\n      {showDetails \u0026\u0026 \u003cinput value={detail} onChange={(e) =\u003e setDetail(e.target.value)} /\u003e}\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nRules of Hooks error when showDetails is false.\n\n## Your task\nFix the **Hero Conditional Hook** component in the editor until the preview works correctly.\n\n## Hint\nHooks must be called at the top level, not inside if/loop.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nRules of Hooks error when showDetails is false.\n\n## Your task\nFix the **Hero Conditional Hook** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nHooks must be called at the top level, not inside if/loop.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "useState is called inside a conditional branch.",
     "fix_explanation": "Move all hooks to the top level of the component.",
     "test_cases": [
       {
         "check": "has_testid",
         "id": "hero"
+      },
+      {
+        "check": "no_hooks_in_conditional"
       }
     ],
     "best_practices": [
@@ -1121,17 +1163,20 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const label = title.toUpperCase();\n  \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{label}\u003c/h1\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const label = title.toUpperCase();\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{label}\u003c/h1\u003e\u003c/section\u003e;\n}",
-    "bug_description": "## Symptom\nUI is empty even though title prop is set.\n\n## Your task\nFix the **Hero Missing Return** component in the editor until the preview works correctly.\n\n## Hint\nMake sure JSX is returned from the function component.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nUI is empty even though title prop is set.\n\n## Your task\nFix the **Hero Missing Return** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nMake sure JSX is returned from the function component.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "Arrow function implicit return is lost because of a block body without return.",
     "fix_explanation": "Add an explicit return or use parentheses around JSX.",
     "test_cases": [
       {
-        "check": "renders_prop",
-        "prop": "title"
-      },
-      {
         "check": "has_testid",
         "id": "hero"
+      },
+      {
+        "check": "has_explicit_return"
+      },
+      {
+        "check": "renders_prop",
+        "prop": "title"
       }
     ],
     "best_practices": [
@@ -1152,7 +1197,7 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ value, onChange }) {\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003cinput defaultValue={value} onChange={onChange} /\u003e\n    \u003c/section\u003e\n  );\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ value, onChange }) {\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003cinput value={value} onChange={onChange} /\u003e\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nInput does not update when parent sends a new value.\n\n## Your task\nFix the **Hero Uncontrolled Input** component in the editor until the preview works correctly.\n\n## Hint\nCheck whether the input is controlled (`value`) or uncontrolled (`defaultValue`).\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nInput does not update when parent sends a new value.\n\n## Your task\nFix the **Hero Uncontrolled Input** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck whether the input is controlled (`value`) or uncontrolled (`defaultValue`).\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "defaultValue does not sync with subsequent value prop updates.",
     "fix_explanation": "Use a controlled input: value + onChange from props/state.",
     "test_cases": [
@@ -1179,7 +1224,7 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const [n, setN] = useState(0);\n  setN(n + 1);\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003cp\u003e{n}\u003c/p\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const [n, setN] = useState(0);\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003ch1\u003e{title}\u003c/h1\u003e\n      \u003cp\u003e{n}\u003c/p\u003e\n      \u003cbutton type=\"button\" onClick={() =\u003e setN((x) =\u003e x + 1)}\u003e+\u003c/button\u003e\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nPage hangs when Hero mounts.\n\n## Your task\nFix the **Hero Infinite Render** component in the editor until the preview works correctly.\n\n## Hint\nCheck whether setState is called during render instead of in an event handler.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nPage hangs when Hero mounts.\n\n## Your task\nFix the **Hero Infinite Render** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck whether setState is called during render instead of in an event handler.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "setState is called directly in the render body.",
     "fix_explanation": "Remove setState from render; use an event handler or useEffect with correct deps.",
     "test_cases": [
@@ -1209,7 +1254,7 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ subtitle }) {\n  const [text, setText] = useState(subtitle);\n  return \u003csection data-testid=\"hero\"\u003e\u003cp\u003e{text}\u003c/p\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ subtitle }) {\n  return \u003csection data-testid=\"hero\"\u003e\u003cp\u003e{subtitle}\u003c/p\u003e\u003c/section\u003e;\n}",
-    "bug_description": "## Symptom\nSubtitle does not update when the prop changes.\n\n## Your task\nFix the **Hero Stale Props** component in the editor until the preview works correctly.\n\n## Hint\nCheck whether state from props updates when the parent sends a new prop.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nSubtitle does not update when the prop changes.\n\n## Your task\nFix the **Hero Stale Props** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck whether state from props updates when the parent sends a new prop.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "State is initialized from props only once without syncing.",
     "fix_explanation": "Render directly from props or sync with useEffect when the prop changes.",
     "test_cases": [
@@ -1240,7 +1285,7 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ items }) {\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      {items.map((it, i) =\u003e \u003cspan key={i}\u003e{it.label}\u003c/span\u003e)}\n    \u003c/section\u003e\n  );\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ items }) {\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      {items.map((it) =\u003e \u003cspan key={it.id}\u003e{it.label}\u003c/span\u003e)}\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nCTA list order is wrong after filter.\n\n## Your task\nFix the **Hero Missing Key** component in the editor until the preview works correctly.\n\n## Hint\nCheck how you render the `items` list — React needs stable keys.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nCTA list order is wrong after filter.\n\n## Your task\nFix the **Hero Missing Key** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck how you render the `items` list — React needs stable keys.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "Using index as key causes the reconciler to incorrectly reuse DOM.",
     "fix_explanation": "Use a stable id from the data as the key.",
     "test_cases": [
@@ -1269,16 +1314,19 @@
     "family": "hero",
     "broken_code": "import { useState, useEffect } from \"react\";\n\nexport function Hero({ title }) {\n  const [count, setCount] = useState(0);\n  useEffect(() =\u003e {\n    setCount((c) =\u003e c + 1);\n  });\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003cp\u003e{count}\u003c/p\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState, useEffect } from \"react\";\n\nexport function Hero({ title }) {\n  const [count, setCount] = useState(0);\n  useEffect(() =\u003e {\n    setCount(1);\n  }, []);\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003cp\u003e{count}\u003c/p\u003e\u003c/section\u003e;\n}",
-    "bug_description": "## Symptom\nBrowser freezes after Hero mounts.\n\n## Your task\nFix the **Hero Effect Loop** component in the editor until the preview works correctly.\n\n## Hint\nCheck the useEffect dependency array — empty vs missing behaves differently.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nBrowser freezes after Hero mounts.\n\n## Your task\nFix the **Hero Effect Loop** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck the useEffect dependency array — empty vs missing behaves differently.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "useEffect without a dependency array triggers setState on every render.",
     "fix_explanation": "Add the correct dependency array or move logic to an event handler.",
     "test_cases": [
       {
-        "check": "no_setstate_in_render"
-      },
-      {
         "check": "has_testid",
         "id": "hero"
+      },
+      {
+        "check": "use_effect_has_dependency_array"
+      },
+      {
+        "check": "no_broken_onclick_setstate"
       }
     ],
     "best_practices": [
@@ -1299,16 +1347,16 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const [n, setN] = useState(0);\n  const bump = () =\u003e setN((x) =\u003e x + 1);\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003ch1\u003e{title}\u003c/h1\u003e\n      \u003cbutton type=\"button\" onClick={bump()}\u003e+\u003c/button\u003e\n      \u003cp\u003e{n}\u003c/p\u003e\n    \u003c/section\u003e\n  );\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const [n, setN] = useState(0);\n  const bump = () =\u003e setN((x) =\u003e x + 1);\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003ch1\u003e{title}\u003c/h1\u003e\n      \u003cbutton type=\"button\" onClick={bump}\u003e+\u003c/button\u003e\n      \u003cp\u003e{n}\u003c/p\u003e\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nClicking the button immediately increments the counter without interaction.\n\n## Your task\nFix the **Hero Click Handler** component in the editor until the preview works correctly.\n\n## Hint\nCheck how you pass handlers to onClick — do not invoke the function during render.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nClicking the button immediately increments the counter without interaction.\n\n## Your task\nFix the **Hero Click Handler** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck how you pass handlers to onClick — do not invoke the function during render.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "onClick invokes the handler during render instead of passing a function reference.",
     "fix_explanation": "Pass a function reference: onClick={() =\u003e handler()} not onClick={handler()}.",
     "test_cases": [
       {
-        "check": "no_setstate_in_render"
-      },
-      {
         "check": "has_testid",
         "id": "hero"
+      },
+      {
+        "check": "onclick_handler_reference"
       }
     ],
     "best_practices": [
@@ -1329,16 +1377,19 @@
     "family": "hero",
     "broken_code": "import { useState, useEffect } from \"react\";\n\nexport function Hero({ title }) {\n  const [count, setCount] = useState(0);\n  useEffect(() =\u003e {\n    setCount((c) =\u003e c + 1);\n  });\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003cp\u003e{count}\u003c/p\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState, useEffect } from \"react\";\n\nexport function Hero({ title }) {\n  const [count, setCount] = useState(0);\n  useEffect(() =\u003e {\n    setCount(1);\n  }, []);\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003cp\u003e{count}\u003c/p\u003e\u003c/section\u003e;\n}",
-    "bug_description": "## Symptom\nBrowser freezes after Hero mounts.\n\n## Your task\nFix the **Hero Effect Loop (Hard)** component in the editor until the preview works correctly.\n\n## Hint\nCheck the useEffect dependency array — empty vs missing behaves differently.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nBrowser freezes after Hero mounts.\n\n## Your task\nFix the **Hero Effect Loop (Hard)** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck the useEffect dependency array — empty vs missing behaves differently.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "useEffect without a dependency array triggers setState on every render.",
     "fix_explanation": "Add the correct dependency array or move logic to an event handler.",
     "test_cases": [
       {
-        "check": "no_setstate_in_render"
-      },
-      {
         "check": "has_testid",
         "id": "hero"
+      },
+      {
+        "check": "use_effect_has_dependency_array"
+      },
+      {
+        "check": "no_broken_onclick_setstate"
       }
     ],
     "best_practices": [
@@ -1359,13 +1410,16 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ title, showDetails }) {\n  if (showDetails) {\n    const [detail, setDetail] = useState(\"\");\n    return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003cinput value={detail} onChange={(e) =\u003e setDetail(e.target.value)} /\u003e\u003c/section\u003e;\n  }\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ title, showDetails }) {\n  const [detail, setDetail] = useState(\"\");\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003ch1\u003e{title}\u003c/h1\u003e\n      {showDetails \u0026\u0026 \u003cinput value={detail} onChange={(e) =\u003e setDetail(e.target.value)} /\u003e}\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nRules of Hooks error when showDetails is false.\n\n## Your task\nFix the **Hero Conditional Hook (Hard)** component in the editor until the preview works correctly.\n\n## Hint\nHooks must be called at the top level, not inside if/loop.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nRules of Hooks error when showDetails is false.\n\n## Your task\nFix the **Hero Conditional Hook (Hard)** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nHooks must be called at the top level, not inside if/loop.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "useState is called inside a conditional branch.",
     "fix_explanation": "Move all hooks to the top level of the component.",
     "test_cases": [
       {
         "check": "has_testid",
         "id": "hero"
+      },
+      {
+        "check": "no_hooks_in_conditional"
       }
     ],
     "best_practices": [
@@ -1386,7 +1440,7 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const [n, setN] = useState(0);\n  setN(n + 1);\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003cp\u003e{n}\u003c/p\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const [n, setN] = useState(0);\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003ch1\u003e{title}\u003c/h1\u003e\n      \u003cp\u003e{n}\u003c/p\u003e\n      \u003cbutton type=\"button\" onClick={() =\u003e setN((x) =\u003e x + 1)}\u003e+\u003c/button\u003e\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nPage hangs when Hero mounts.\n\n## Your task\nFix the **Hero Infinite Render (Hard)** component in the editor until the preview works correctly.\n\n## Hint\nCheck whether setState is called during render instead of in an event handler.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nPage hangs when Hero mounts.\n\n## Your task\nFix the **Hero Infinite Render (Hard)** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck whether setState is called during render instead of in an event handler.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "setState is called directly in the render body.",
     "fix_explanation": "Remove setState from render; use an event handler or useEffect with correct deps.",
     "test_cases": [
@@ -1416,7 +1470,7 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ subtitle }) {\n  const [text, setText] = useState(subtitle);\n  return \u003csection data-testid=\"hero\"\u003e\u003cp\u003e{text}\u003c/p\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ subtitle }) {\n  return \u003csection data-testid=\"hero\"\u003e\u003cp\u003e{subtitle}\u003c/p\u003e\u003c/section\u003e;\n}",
-    "bug_description": "## Symptom\nSubtitle does not update when the prop changes.\n\n## Your task\nFix the **Hero Stale Props (Hard)** component in the editor until the preview works correctly.\n\n## Hint\nCheck whether state from props updates when the parent sends a new prop.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nSubtitle does not update when the prop changes.\n\n## Your task\nFix the **Hero Stale Props (Hard)** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck whether state from props updates when the parent sends a new prop.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "State is initialized from props only once without syncing.",
     "fix_explanation": "Render directly from props or sync with useEffect when the prop changes.",
     "test_cases": [
@@ -1447,7 +1501,7 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ items }) {\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      {items.map((it, i) =\u003e \u003cspan key={i}\u003e{it.label}\u003c/span\u003e)}\n    \u003c/section\u003e\n  );\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ items }) {\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      {items.map((it) =\u003e \u003cspan key={it.id}\u003e{it.label}\u003c/span\u003e)}\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nCTA list order is wrong after filter.\n\n## Your task\nFix the **Hero Missing Key (Hard)** component in the editor until the preview works correctly.\n\n## Hint\nCheck how you render the `items` list — React needs stable keys.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nCTA list order is wrong after filter.\n\n## Your task\nFix the **Hero Missing Key (Hard)** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck how you render the `items` list — React needs stable keys.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "Using index as key causes the reconciler to incorrectly reuse DOM.",
     "fix_explanation": "Use a stable id from the data as the key.",
     "test_cases": [
@@ -1476,16 +1530,19 @@
     "family": "hero",
     "broken_code": "import { useState, useEffect } from \"react\";\n\nexport function Hero({ title }) {\n  const [count, setCount] = useState(0);\n  useEffect(() =\u003e {\n    setCount((c) =\u003e c + 1);\n  });\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003cp\u003e{count}\u003c/p\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState, useEffect } from \"react\";\n\nexport function Hero({ title }) {\n  const [count, setCount] = useState(0);\n  useEffect(() =\u003e {\n    setCount(1);\n  }, []);\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003cp\u003e{count}\u003c/p\u003e\u003c/section\u003e;\n}",
-    "bug_description": "## Symptom\nBrowser freezes after Hero mounts.\n\n## Your task\nFix the **Hero Effect Loop (Hard)** component in the editor until the preview works correctly.\n\n## Hint\nCheck the useEffect dependency array — empty vs missing behaves differently.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nBrowser freezes after Hero mounts.\n\n## Your task\nFix the **Hero Effect Loop (Hard)** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck the useEffect dependency array — empty vs missing behaves differently.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "useEffect without a dependency array triggers setState on every render.",
     "fix_explanation": "Add the correct dependency array or move logic to an event handler.",
     "test_cases": [
       {
-        "check": "no_setstate_in_render"
-      },
-      {
         "check": "has_testid",
         "id": "hero"
+      },
+      {
+        "check": "use_effect_has_dependency_array"
+      },
+      {
+        "check": "no_broken_onclick_setstate"
       }
     ],
     "best_practices": [
@@ -1506,13 +1563,16 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ title, showDetails }) {\n  if (showDetails) {\n    const [detail, setDetail] = useState(\"\");\n    return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003cinput value={detail} onChange={(e) =\u003e setDetail(e.target.value)} /\u003e\u003c/section\u003e;\n  }\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ title, showDetails }) {\n  const [detail, setDetail] = useState(\"\");\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003ch1\u003e{title}\u003c/h1\u003e\n      {showDetails \u0026\u0026 \u003cinput value={detail} onChange={(e) =\u003e setDetail(e.target.value)} /\u003e}\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nRules of Hooks error when showDetails is false.\n\n## Your task\nFix the **Hero Conditional Hook (Hard)** component in the editor until the preview works correctly.\n\n## Hint\nHooks must be called at the top level, not inside if/loop.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nRules of Hooks error when showDetails is false.\n\n## Your task\nFix the **Hero Conditional Hook (Hard)** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nHooks must be called at the top level, not inside if/loop.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "useState is called inside a conditional branch.",
     "fix_explanation": "Move all hooks to the top level of the component.",
     "test_cases": [
       {
         "check": "has_testid",
         "id": "hero"
+      },
+      {
+        "check": "no_hooks_in_conditional"
       }
     ],
     "best_practices": [
@@ -1533,7 +1593,7 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const [n, setN] = useState(0);\n  setN(n + 1);\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003cp\u003e{n}\u003c/p\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const [n, setN] = useState(0);\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003ch1\u003e{title}\u003c/h1\u003e\n      \u003cp\u003e{n}\u003c/p\u003e\n      \u003cbutton type=\"button\" onClick={() =\u003e setN((x) =\u003e x + 1)}\u003e+\u003c/button\u003e\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nPage hangs when Hero mounts.\n\n## Your task\nFix the **Hero Infinite Render (Hard)** component in the editor until the preview works correctly.\n\n## Hint\nCheck whether setState is called during render instead of in an event handler.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nPage hangs when Hero mounts.\n\n## Your task\nFix the **Hero Infinite Render (Hard)** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck whether setState is called during render instead of in an event handler.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "setState is called directly in the render body.",
     "fix_explanation": "Remove setState from render; use an event handler or useEffect with correct deps.",
     "test_cases": [
@@ -1563,7 +1623,7 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ subtitle }) {\n  const [text, setText] = useState(subtitle);\n  return \u003csection data-testid=\"hero\"\u003e\u003cp\u003e{text}\u003c/p\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ subtitle }) {\n  return \u003csection data-testid=\"hero\"\u003e\u003cp\u003e{subtitle}\u003c/p\u003e\u003c/section\u003e;\n}",
-    "bug_description": "## Symptom\nSubtitle does not update when the prop changes.\n\n## Your task\nFix the **Hero Stale Props (Hard)** component in the editor until the preview works correctly.\n\n## Hint\nCheck whether state from props updates when the parent sends a new prop.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nSubtitle does not update when the prop changes.\n\n## Your task\nFix the **Hero Stale Props (Hard)** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck whether state from props updates when the parent sends a new prop.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "State is initialized from props only once without syncing.",
     "fix_explanation": "Render directly from props or sync with useEffect when the prop changes.",
     "test_cases": [
@@ -1594,7 +1654,7 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ items }) {\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      {items.map((it, i) =\u003e \u003cspan key={i}\u003e{it.label}\u003c/span\u003e)}\n    \u003c/section\u003e\n  );\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ items }) {\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      {items.map((it) =\u003e \u003cspan key={it.id}\u003e{it.label}\u003c/span\u003e)}\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nCTA list order is wrong after filter.\n\n## Your task\nFix the **Hero Missing Key (Hard)** component in the editor until the preview works correctly.\n\n## Hint\nCheck how you render the `items` list — React needs stable keys.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nCTA list order is wrong after filter.\n\n## Your task\nFix the **Hero Missing Key (Hard)** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck how you render the `items` list — React needs stable keys.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "Using index as key causes the reconciler to incorrectly reuse DOM.",
     "fix_explanation": "Use a stable id from the data as the key.",
     "test_cases": [
@@ -1623,16 +1683,19 @@
     "family": "hero",
     "broken_code": "import { useState, useEffect } from \"react\";\n\nexport function Hero({ title }) {\n  const [count, setCount] = useState(0);\n  useEffect(() =\u003e {\n    setCount((c) =\u003e c + 1);\n  });\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003cp\u003e{count}\u003c/p\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState, useEffect } from \"react\";\n\nexport function Hero({ title }) {\n  const [count, setCount] = useState(0);\n  useEffect(() =\u003e {\n    setCount(1);\n  }, []);\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003cp\u003e{count}\u003c/p\u003e\u003c/section\u003e;\n}",
-    "bug_description": "## Symptom\nBrowser freezes after Hero mounts.\n\n## Your task\nFix the **Hero Effect Loop (Hard)** component in the editor until the preview works correctly.\n\n## Hint\nCheck the useEffect dependency array — empty vs missing behaves differently.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nBrowser freezes after Hero mounts.\n\n## Your task\nFix the **Hero Effect Loop (Hard)** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck the useEffect dependency array — empty vs missing behaves differently.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "useEffect without a dependency array triggers setState on every render.",
     "fix_explanation": "Add the correct dependency array or move logic to an event handler.",
     "test_cases": [
       {
-        "check": "no_setstate_in_render"
-      },
-      {
         "check": "has_testid",
         "id": "hero"
+      },
+      {
+        "check": "use_effect_has_dependency_array"
+      },
+      {
+        "check": "no_broken_onclick_setstate"
       }
     ],
     "best_practices": [
@@ -1653,13 +1716,16 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ title, showDetails }) {\n  if (showDetails) {\n    const [detail, setDetail] = useState(\"\");\n    return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003cinput value={detail} onChange={(e) =\u003e setDetail(e.target.value)} /\u003e\u003c/section\u003e;\n  }\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ title, showDetails }) {\n  const [detail, setDetail] = useState(\"\");\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003ch1\u003e{title}\u003c/h1\u003e\n      {showDetails \u0026\u0026 \u003cinput value={detail} onChange={(e) =\u003e setDetail(e.target.value)} /\u003e}\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nRules of Hooks error when showDetails is false.\n\n## Your task\nFix the **Hero Conditional Hook (Hard)** component in the editor until the preview works correctly.\n\n## Hint\nHooks must be called at the top level, not inside if/loop.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nRules of Hooks error when showDetails is false.\n\n## Your task\nFix the **Hero Conditional Hook (Hard)** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nHooks must be called at the top level, not inside if/loop.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "useState is called inside a conditional branch.",
     "fix_explanation": "Move all hooks to the top level of the component.",
     "test_cases": [
       {
         "check": "has_testid",
         "id": "hero"
+      },
+      {
+        "check": "no_hooks_in_conditional"
       }
     ],
     "best_practices": [
@@ -1680,7 +1746,7 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const [n, setN] = useState(0);\n  setN(n + 1);\n  return \u003csection data-testid=\"hero\"\u003e\u003ch1\u003e{title}\u003c/h1\u003e\u003cp\u003e{n}\u003c/p\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ title }) {\n  const [n, setN] = useState(0);\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      \u003ch1\u003e{title}\u003c/h1\u003e\n      \u003cp\u003e{n}\u003c/p\u003e\n      \u003cbutton type=\"button\" onClick={() =\u003e setN((x) =\u003e x + 1)}\u003e+\u003c/button\u003e\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nPage hangs when Hero mounts.\n\n## Your task\nFix the **Hero Infinite Render (Hard)** component in the editor until the preview works correctly.\n\n## Hint\nCheck whether setState is called during render instead of in an event handler.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nPage hangs when Hero mounts.\n\n## Your task\nFix the **Hero Infinite Render (Hard)** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck whether setState is called during render instead of in an event handler.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "setState is called directly in the render body.",
     "fix_explanation": "Remove setState from render; use an event handler or useEffect with correct deps.",
     "test_cases": [
@@ -1710,7 +1776,7 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ subtitle }) {\n  const [text, setText] = useState(subtitle);\n  return \u003csection data-testid=\"hero\"\u003e\u003cp\u003e{text}\u003c/p\u003e\u003c/section\u003e;\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ subtitle }) {\n  return \u003csection data-testid=\"hero\"\u003e\u003cp\u003e{subtitle}\u003c/p\u003e\u003c/section\u003e;\n}",
-    "bug_description": "## Symptom\nSubtitle does not update when the prop changes.\n\n## Your task\nFix the **Hero Stale Props (Hard)** component in the editor until the preview works correctly.\n\n## Hint\nCheck whether state from props updates when the parent sends a new prop.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nSubtitle does not update when the prop changes.\n\n## Your task\nFix the **Hero Stale Props (Hard)** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck whether state from props updates when the parent sends a new prop.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "State is initialized from props only once without syncing.",
     "fix_explanation": "Render directly from props or sync with useEffect when the prop changes.",
     "test_cases": [
@@ -1741,7 +1807,7 @@
     "family": "hero",
     "broken_code": "import { useState } from \"react\";\n\nexport function Hero({ items }) {\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      {items.map((it, i) =\u003e \u003cspan key={i}\u003e{it.label}\u003c/span\u003e)}\n    \u003c/section\u003e\n  );\n}",
     "solution_code": "import { useState } from \"react\";\n\nexport function Hero({ items }) {\n  return (\n    \u003csection data-testid=\"hero\"\u003e\n      {items.map((it) =\u003e \u003cspan key={it.id}\u003e{it.label}\u003c/span\u003e)}\n    \u003c/section\u003e\n  );\n}",
-    "bug_description": "## Symptom\nCTA list order is wrong after filter.\n\n## Your task\nFix the **Hero Missing Key (Hard)** component in the editor until the preview works correctly.\n\n## Hint\nCheck how you render the `items` list — React needs stable keys.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
+    "bug_description": "## Symptom\nCTA list order is wrong after filter.\n\n## Your task\nFix the **Hero Missing Key (Hard)** component in the editor until the preview works correctly.\n\n\n**Note:** `Hero` is a React **landing-page hero section** — the large top banner with headline/image/CTA (not a game character).\n\n## Hint\nCheck how you render the `items` list — React needs stable keys.\n\n## How to verify\nClick **Run tests** — your code does not need to match the reference solution exactly.",
     "root_cause": "Using index as key causes the reconciler to incorrectly reuse DOM.",
     "fix_explanation": "Use a stable id from the data as the key.",
     "test_cases": [

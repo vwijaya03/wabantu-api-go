@@ -162,22 +162,25 @@ func debugAssertionsExtended(kind int) json.RawMessage {
 		)
 	case 3:
 		return mustAssertions(
-			assertionCase{Check: "no_setstate_in_render"},
 			assertionCase{Check: "has_testid", ID: "hero"},
+			assertionCase{Check: "use_effect_has_dependency_array"},
+			assertionCase{Check: "no_broken_onclick_setstate"},
 		)
 	case 4:
 		return mustAssertions(
-			assertionCase{Check: "no_setstate_in_render"},
 			assertionCase{Check: "has_testid", ID: "hero"},
+			assertionCase{Check: "onclick_handler_reference"},
 		)
 	case 5:
 		return mustAssertions(
 			assertionCase{Check: "has_testid", ID: "hero"},
+			assertionCase{Check: "no_hooks_in_conditional"},
 		)
 	case 6:
 		return mustAssertions(
-			assertionCase{Check: "renders_prop", Prop: "title"},
 			assertionCase{Check: "has_testid", ID: "hero"},
+			assertionCase{Check: "has_explicit_return"},
+			assertionCase{Check: "renders_prop", Prop: "title"},
 		)
 	default:
 		return mustAssertions(
