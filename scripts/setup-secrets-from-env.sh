@@ -82,4 +82,30 @@ set_secret RajaOngkirAPIKey "$RAJAONGKIR_API_KEY"
 set_secret RajaOngkirAccountType "${RAJAONGKIR_ACCOUNT_TYPE:-starter}"
 set_secret SentryDSN "$SENTRY_DSN"
 
+# Non-secret env vars for api-go (codesim reads via .env.local on encore run)
+sync_api_go_env_local() {
+  local dest="${ROOT}/.env.local"
+  local codesim ai_key
+  codesim="$(env_get CODESIM_LIVE_AI_GEN || true)"
+  ai_key="$(env_get ANTHROPIC_API_KEY || true)"
+
+  {
+    echo "# Auto-synced from api/.env by setup-secrets-from-env.sh"
+    echo "# Do not commit. Re-run script after changing api/.env"
+    echo ""
+    if [[ -n "${codesim// }" ]]; then
+      echo "CODESIM_LIVE_AI_GEN=${codesim}"
+    else
+      echo "# CODESIM_LIVE_AI_GEN=1"
+    fi
+    if [[ -n "${ai_key// }" ]]; then
+      echo "ANTHROPIC_API_KEY=${ai_key}"
+    fi
+  } >"$dest"
+  echo "ok ${dest} (CODESIM_LIVE_AI_GEN + ANTHROPIC_API_KEY fallback)"
+}
+
+sync_api_go_env_local
+
 echo "Done. Run: encore secret list"
+echo "Restart encore run so codesim picks up .env.local"

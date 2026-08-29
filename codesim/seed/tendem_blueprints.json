@@ -1,0 +1,1112 @@
+[
+  {
+    "slug": "tendem-fe-01",
+    "title": "Tendem Frontend Developer — Sample 01 (React Hooks)",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript",
+            "css",
+            "html"
+          ]
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-fe-02",
+    "title": "Tendem Frontend Developer — Sample 02 (JavaScript Core)",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript",
+            "css",
+            "html"
+          ]
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-fe-03",
+    "title": "Tendem Frontend Developer — Sample 03 (CSS Layout)",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript",
+            "css",
+            "html"
+          ]
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-fe-04",
+    "title": "Tendem Frontend Developer — Sample 04 (HTML Semantic)",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript",
+            "css",
+            "html"
+          ]
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-fe-05",
+    "title": "Tendem Frontend Developer — Sample 05 (Forms \u0026 Validation)",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript",
+            "css",
+            "html"
+          ]
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-fe-06",
+    "title": "Tendem Frontend Developer — Sample 06 (Performance)",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript",
+            "css",
+            "html"
+          ]
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-fe-07",
+    "title": "Tendem Frontend Developer — Sample 07 (State Management)",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript",
+            "css",
+            "html"
+          ]
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-fe-08",
+    "title": "Tendem Frontend Developer — Sample 08 (Async JS)",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript",
+            "css",
+            "html"
+          ]
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-fe-09",
+    "title": "Tendem Frontend Developer — Sample 09 (Flexbox)",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript",
+            "css",
+            "html"
+          ]
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-fe-10",
+    "title": "Tendem Frontend Developer — Sample 10 (Grid)",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript",
+            "css",
+            "html"
+          ]
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-fe-11",
+    "title": "Tendem Frontend Developer — Sample 11 (Accessibility)",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript",
+            "css",
+            "html"
+          ]
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-fe-12",
+    "title": "Tendem Frontend Developer — Sample 12 (Component Patterns)",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript",
+            "css",
+            "html"
+          ]
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-fe-13",
+    "title": "Tendem Frontend Developer — Sample 13 (Event Handling)",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript",
+            "css",
+            "html"
+          ]
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-fe-14",
+    "title": "Tendem Frontend Developer — Sample 14 (Lists \u0026 Keys)",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript",
+            "css",
+            "html"
+          ]
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-fe-15",
+    "title": "Tendem Frontend Developer — Sample 15 (useEffect)",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript",
+            "css",
+            "html"
+          ]
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-fe-16",
+    "title": "Tendem Frontend Developer — Sample 16 (Controlled Inputs)",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript",
+            "css",
+            "html"
+          ]
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-fe-17",
+    "title": "Tendem Frontend Developer — Sample 17 (Responsive UI)",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript",
+            "css",
+            "html"
+          ]
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-fe-18",
+    "title": "Tendem Frontend Developer — Sample 18 (Type Coercion)",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript",
+            "css",
+            "html"
+          ]
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-fe-19",
+    "title": "Tendem Frontend Developer — Sample 19 (DOM APIs)",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript",
+            "css",
+            "html"
+          ]
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-fe-20",
+    "title": "Tendem Frontend Developer — Sample 20 (React Memo)",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript",
+            "css",
+            "html"
+          ]
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-fe-21",
+    "title": "Tendem Frontend Developer — Sample 21 (Error Handling)",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript",
+            "css",
+            "html"
+          ]
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-fe-22",
+    "title": "Tendem Frontend Developer — Sample 22 (Routing Basics)",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript",
+            "css",
+            "html"
+          ]
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-fe-23",
+    "title": "Tendem Frontend Developer — Sample 23 (Testing Mindset)",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript",
+            "css",
+            "html"
+          ]
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-fe-24",
+    "title": "Tendem Frontend Developer — Sample 24 (CSS Specificity)",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript",
+            "css",
+            "html"
+          ]
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-fe-25",
+    "title": "Tendem Frontend Developer — Sample 25 (Semantic Forms)",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript",
+            "css",
+            "html"
+          ]
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-fe-26",
+    "title": "Tendem Frontend Developer — Sample 26 (Closures)",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript",
+            "css",
+            "html"
+          ]
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-fe-27",
+    "title": "Tendem Frontend Developer — Sample 27 (Promises)",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript",
+            "css",
+            "html"
+          ]
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-fe-28",
+    "title": "Tendem Frontend Developer — Sample 28 (React Context)",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript",
+            "css",
+            "html"
+          ]
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-fe-29",
+    "title": "Tendem Frontend Developer — Sample 29 (Debug Loops)",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript",
+            "css",
+            "html"
+          ]
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-fe-30",
+    "title": "Tendem Frontend Developer — Sample 30 (Interview Mix)",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript",
+            "css",
+            "html"
+          ]
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  }
+]

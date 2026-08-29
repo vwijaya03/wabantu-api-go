@@ -2,6 +2,7 @@ encore.gen.go
 encore.gen.cue
 /.encore
 /encore.gen
+.env.local
 
 # CI-only Node tooling (see tools/ai-triage-runner/)
 tools/**/node_modules/

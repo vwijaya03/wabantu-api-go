@@ -1,0 +1,3087 @@
+[
+  {
+    "title": "WaitlistForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `WaitlistForm`\n- Gunakan **controlled input** untuk field `email` (value + onChange)\n- **Validasi:** email harus mengandung @\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `email`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function WaitlistForm({ onSubmit }) {\n  // TODO: controlled email + validation\n  return (\n    \u003cform data-testid=\"waitlist-form\"\u003e\n      \u003cinput name=\"email\" placeholder=\"email\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function WaitlistForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.includes(\"@\")) {\n      setError(\"Email harus mengandung @\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ email: value });\n  }\n\n  return (\n    \u003cform data-testid=\"waitlist-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"email\"\u003eemail\u003c/label\u003e\n      \u003cinput\n        id=\"email\"\n        name=\"email\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "waitlist-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "email"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "email"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_includes",
+        "field": "email",
+        "substring": "@"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — WaitlistForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "NewsletterSignup",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `NewsletterSignup`\n- Gunakan **controlled input** untuk field `email` (value + onChange)\n- **Validasi:** email wajib diisi\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `email`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function NewsletterSignup({ onSubmit }) {\n  // TODO: controlled email + validation\n  return (\n    \u003cform data-testid=\"newsletter-signup\"\u003e\n      \u003cinput name=\"email\" placeholder=\"email\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function NewsletterSignup({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field wajib diisi\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ email: value });\n  }\n\n  return (\n    \u003cform data-testid=\"newsletter-signup\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"email\"\u003eemail\u003c/label\u003e\n      \u003cinput\n        id=\"email\"\n        name=\"email\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "newsletter-signup"
+      },
+      {
+        "check": "controlled_input",
+        "field": "email"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "email"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "email"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — NewsletterSignup",
+    "difficulty": "easy",
+    "points": 40
+  },
+  {
+    "title": "ContactForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `ContactForm`\n- Gunakan **controlled input** untuk field `name` (value + onChange)\n- **Validasi:** name minimal 2 karakter\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `name`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function ContactForm({ onSubmit }) {\n  // TODO: controlled name + validation\n  return (\n    \u003cform data-testid=\"contact-form\"\u003e\n      \u003cinput name=\"name\" placeholder=\"name\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function ContactForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (value.trim().length \u003c 2) {\n      setError(\"Minimal 2 karakter\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ name: value });\n  }\n\n  return (\n    \u003cform data-testid=\"contact-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"name\"\u003ename\u003c/label\u003e\n      \u003cinput\n        id=\"name\"\n        name=\"name\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "contact-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "name"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "name"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_min_length",
+        "field": "name",
+        "min": 2
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — ContactForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "LoginForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `LoginForm`\n- Gunakan **controlled input** untuk field `password` (value + onChange)\n- **Validasi:** password minimal 6 karakter\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `password`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function LoginForm({ onSubmit }) {\n  // TODO: controlled password + validation\n  return (\n    \u003cform data-testid=\"login-form\"\u003e\n      \u003cinput name=\"password\" placeholder=\"password\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function LoginForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (value.length \u003c 6) {\n      setError(\"Minimal 6 karakter\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ password: value });\n  }\n\n  return (\n    \u003cform data-testid=\"login-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"password\"\u003epassword\u003c/label\u003e\n      \u003cinput\n        id=\"password\"\n        name=\"password\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "login-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "password"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "password"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_min_length",
+        "field": "password",
+        "min": 6
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — LoginForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "SearchBar",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `SearchBar`\n- Gunakan **controlled input** untuk field `query` (value + onChange)\n- **Validasi:** tampilkan query di bawah input\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `query`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function SearchBar({ onSubmit }) {\n  // TODO: controlled query + validation\n  return (\n    \u003cform data-testid=\"search-bar\"\u003e\n      \u003cinput name=\"query\" placeholder=\"query\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function SearchBar({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field wajib diisi\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ query: value });\n  }\n\n  return (\n    \u003cform data-testid=\"search-bar\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"query\"\u003equery\u003c/label\u003e\n      \u003cinput\n        id=\"query\"\n        name=\"query\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "search-bar"
+      },
+      {
+        "check": "controlled_input",
+        "field": "query"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "query"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "query"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — SearchBar",
+    "difficulty": "easy",
+    "points": 40
+  },
+  {
+    "title": "FeedbackForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `FeedbackForm`\n- Gunakan **controlled input** untuk field `message` (value + onChange)\n- **Validasi:** message tidak boleh kosong\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `message`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function FeedbackForm({ onSubmit }) {\n  // TODO: controlled message + validation\n  return (\n    \u003cform data-testid=\"feedback-form\"\u003e\n      \u003cinput name=\"message\" placeholder=\"message\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function FeedbackForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field wajib diisi\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ message: value });\n  }\n\n  return (\n    \u003cform data-testid=\"feedback-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"message\"\u003emessage\u003c/label\u003e\n      \u003cinput\n        id=\"message\"\n        name=\"message\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "feedback-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "message"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "message"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "message"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — FeedbackForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "RegisterForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `RegisterForm`\n- Gunakan **controlled input** untuk field `email` (value + onChange)\n- **Validasi:** email valid + password match\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `email`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function RegisterForm({ onSubmit }) {\n  // TODO: controlled email + validation\n  return (\n    \u003cform data-testid=\"register-form\"\u003e\n      \u003cinput name=\"email\" placeholder=\"email\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function RegisterForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field wajib diisi\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ email: value });\n  }\n\n  return (\n    \u003cform data-testid=\"register-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"email\"\u003eemail\u003c/label\u003e\n      \u003cinput\n        id=\"email\"\n        name=\"email\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "register-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "email"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "email"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "email"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — RegisterForm",
+    "difficulty": "hard",
+    "points": 40
+  },
+  {
+    "title": "SubscribeForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `SubscribeForm`\n- Gunakan **controlled input** untuk field `email` (value + onChange)\n- **Validasi:** checkbox consent wajib dicentang\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `email`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function SubscribeForm({ onSubmit }) {\n  // TODO: controlled email + validation\n  return (\n    \u003cform data-testid=\"subscribe-form\"\u003e\n      \u003cinput name=\"email\" placeholder=\"email\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function SubscribeForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field wajib diisi\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ email: value });\n  }\n\n  return (\n    \u003cform data-testid=\"subscribe-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"email\"\u003eemail\u003c/label\u003e\n      \u003cinput\n        id=\"email\"\n        name=\"email\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "subscribe-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "email"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "email"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "email"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — SubscribeForm",
+    "difficulty": "easy",
+    "points": 40
+  },
+  {
+    "title": "ProfileForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `ProfileForm`\n- Gunakan **controlled input** untuk field `displayName` (value + onChange)\n- **Validasi:** displayName wajib\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `displayName`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function ProfileForm({ onSubmit }) {\n  // TODO: controlled displayName + validation\n  return (\n    \u003cform data-testid=\"profile-form\"\u003e\n      \u003cinput name=\"displayName\" placeholder=\"displayName\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function ProfileForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field wajib diisi\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ displayName: value });\n  }\n\n  return (\n    \u003cform data-testid=\"profile-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"displayName\"\u003edisplayName\u003c/label\u003e\n      \u003cinput\n        id=\"displayName\"\n        name=\"displayName\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "profile-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "displayName"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "displayName"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "displayName"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — ProfileForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "BookingForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `BookingForm`\n- Gunakan **controlled input** untuk field `date` (value + onChange)\n- **Validasi:** date input type=date\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `date`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function BookingForm({ onSubmit }) {\n  // TODO: controlled date + validation\n  return (\n    \u003cform data-testid=\"booking-form\"\u003e\n      \u003cinput name=\"date\" placeholder=\"date\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function BookingForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field wajib diisi\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ date: value });\n  }\n\n  return (\n    \u003cform data-testid=\"booking-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"date\"\u003edate\u003c/label\u003e\n      \u003cinput\n        id=\"date\"\n        name=\"date\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "booking-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "date"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "date"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "date"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — BookingForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "CouponForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `CouponForm`\n- Gunakan **controlled input** untuk field `code` (value + onChange)\n- **Validasi:** kode minimal 3 karakter\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `code`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function CouponForm({ onSubmit }) {\n  // TODO: controlled code + validation\n  return (\n    \u003cform data-testid=\"coupon-form\"\u003e\n      \u003cinput name=\"code\" placeholder=\"code\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function CouponForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (value.trim().length \u003c 3) {\n      setError(\"Minimal 3 karakter\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ code: value });\n  }\n\n  return (\n    \u003cform data-testid=\"coupon-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"code\"\u003ecode\u003c/label\u003e\n      \u003cinput\n        id=\"code\"\n        name=\"code\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "coupon-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "code"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "code"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_min_length",
+        "field": "code",
+        "min": 3
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — CouponForm",
+    "difficulty": "easy",
+    "points": 40
+  },
+  {
+    "title": "AddressForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `AddressForm`\n- Gunakan **controlled input** untuk field `city` (value + onChange)\n- **Validasi:** city wajib diisi\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `city`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function AddressForm({ onSubmit }) {\n  // TODO: controlled city + validation\n  return (\n    \u003cform data-testid=\"address-form\"\u003e\n      \u003cinput name=\"city\" placeholder=\"city\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function AddressForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field wajib diisi\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ city: value });\n  }\n\n  return (\n    \u003cform data-testid=\"address-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"city\"\u003ecity\u003c/label\u003e\n      \u003cinput\n        id=\"city\"\n        name=\"city\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "address-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "city"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "city"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "city"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — AddressForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "PhoneVerifyForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `PhoneVerifyForm`\n- Gunakan **controlled input** untuk field `phone` (value + onChange)\n- **Validasi:** phone hanya angka\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `phone`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function PhoneVerifyForm({ onSubmit }) {\n  // TODO: controlled phone + validation\n  return (\n    \u003cform data-testid=\"phone-verify-form\"\u003e\n      \u003cinput name=\"phone\" placeholder=\"phone\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function PhoneVerifyForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field wajib diisi\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ phone: value });\n  }\n\n  return (\n    \u003cform data-testid=\"phone-verify-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"phone\"\u003ephone\u003c/label\u003e\n      \u003cinput\n        id=\"phone\"\n        name=\"phone\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "phone-verify-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "phone"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "phone"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "phone"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — PhoneVerifyForm",
+    "difficulty": "hard",
+    "points": 40
+  },
+  {
+    "title": "RatingForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `RatingForm`\n- Gunakan **controlled input** untuk field `rating` (value + onChange)\n- **Validasi:** select rating 1-5\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `rating`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function RatingForm({ onSubmit }) {\n  // TODO: controlled rating + validation\n  return (\n    \u003cform data-testid=\"rating-form\"\u003e\n      \u003cinput name=\"rating\" placeholder=\"rating\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function RatingForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field wajib diisi\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ rating: value });\n  }\n\n  return (\n    \u003cform data-testid=\"rating-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"rating\"\u003erating\u003c/label\u003e\n      \u003cinput\n        id=\"rating\"\n        name=\"rating\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "rating-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "rating"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "rating"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "rating"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — RatingForm",
+    "difficulty": "easy",
+    "points": 40
+  },
+  {
+    "title": "CommentForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `CommentForm`\n- Gunakan **controlled input** untuk field `comment` (value + onChange)\n- **Validasi:** max 200 karakter\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `comment`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function CommentForm({ onSubmit }) {\n  // TODO: controlled comment + validation\n  return (\n    \u003cform data-testid=\"comment-form\"\u003e\n      \u003cinput name=\"comment\" placeholder=\"comment\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function CommentForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (value.length \u003e 200) {\n      setError(\"Maksimal 200 karakter\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ comment: value });\n  }\n\n  return (\n    \u003cform data-testid=\"comment-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"comment\"\u003ecomment\u003c/label\u003e\n      \u003cinput\n        id=\"comment\"\n        name=\"comment\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "comment-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "comment"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "comment"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "comment"
+      },
+      {
+        "check": "validates_max_length",
+        "field": "comment",
+        "max": 200
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — CommentForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "InviteForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `InviteForm`\n- Gunakan **controlled input** untuk field `inviteEmail` (value + onChange)\n- **Validasi:** email teman\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `inviteEmail`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function InviteForm({ onSubmit }) {\n  // TODO: controlled inviteEmail + validation\n  return (\n    \u003cform data-testid=\"invite-form\"\u003e\n      \u003cinput name=\"inviteEmail\" placeholder=\"inviteEmail\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function InviteForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field wajib diisi\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ inviteEmail: value });\n  }\n\n  return (\n    \u003cform data-testid=\"invite-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"inviteEmail\"\u003einviteEmail\u003c/label\u003e\n      \u003cinput\n        id=\"inviteEmail\"\n        name=\"inviteEmail\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "invite-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "inviteEmail"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "inviteEmail"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "inviteEmail"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — InviteForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "ResetPasswordForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `ResetPasswordForm`\n- Gunakan **controlled input** untuk field `newPassword` (value + onChange)\n- **Validasi:** konfirmasi password sama\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `newPassword`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function ResetPasswordForm({ onSubmit }) {\n  // TODO: controlled newPassword + validation\n  return (\n    \u003cform data-testid=\"reset-password-form\"\u003e\n      \u003cinput name=\"newPassword\" placeholder=\"newPassword\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function ResetPasswordForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field wajib diisi\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ newPassword: value });\n  }\n\n  return (\n    \u003cform data-testid=\"reset-password-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"newPassword\"\u003enewPassword\u003c/label\u003e\n      \u003cinput\n        id=\"newPassword\"\n        name=\"newPassword\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "reset-password-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "newPassword"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "newPassword"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "newPassword"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — ResetPasswordForm",
+    "difficulty": "hard",
+    "points": 40
+  },
+  {
+    "title": "JobApplyForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `JobApplyForm`\n- Gunakan **controlled input** untuk field `linkedin` (value + onChange)\n- **Validasi:** URL linkedin opsional valid\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `linkedin`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function JobApplyForm({ onSubmit }) {\n  // TODO: controlled linkedin + validation\n  return (\n    \u003cform data-testid=\"job-apply-form\"\u003e\n      \u003cinput name=\"linkedin\" placeholder=\"linkedin\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function JobApplyForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field wajib diisi\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ linkedin: value });\n  }\n\n  return (\n    \u003cform data-testid=\"job-apply-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"linkedin\"\u003elinkedin\u003c/label\u003e\n      \u003cinput\n        id=\"linkedin\"\n        name=\"linkedin\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "job-apply-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "linkedin"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "linkedin"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "linkedin"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — JobApplyForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "EventRSVPForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `EventRSVPForm`\n- Gunakan **controlled input** untuk field `guests` (value + onChange)\n- **Validasi:** jumlah tamu number \u003e=1\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `guests`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function EventRSVPForm({ onSubmit }) {\n  // TODO: controlled guests + validation\n  return (\n    \u003cform data-testid=\"event-r-s-v-p-form\"\u003e\n      \u003cinput name=\"guests\" placeholder=\"guests\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function EventRSVPForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field wajib diisi\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ guests: value });\n  }\n\n  return (\n    \u003cform data-testid=\"event-r-s-v-p-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"guests\"\u003eguests\u003c/label\u003e\n      \u003cinput\n        id=\"guests\"\n        name=\"guests\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "event-r-s-v-p-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "guests"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "guests"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "guests"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — EventRSVPForm",
+    "difficulty": "easy",
+    "points": 40
+  },
+  {
+    "title": "SupportTicketForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `SupportTicketForm`\n- Gunakan **controlled input** untuk field `subject` (value + onChange)\n- **Validasi:** subject wajib\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `subject`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function SupportTicketForm({ onSubmit }) {\n  // TODO: controlled subject + validation\n  return (\n    \u003cform data-testid=\"support-ticket-form\"\u003e\n      \u003cinput name=\"subject\" placeholder=\"subject\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function SupportTicketForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field wajib diisi\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ subject: value });\n  }\n\n  return (\n    \u003cform data-testid=\"support-ticket-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"subject\"\u003esubject\u003c/label\u003e\n      \u003cinput\n        id=\"subject\"\n        name=\"subject\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "support-ticket-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "subject"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "subject"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "subject"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — SupportTicketForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "CheckoutEmailForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `CheckoutEmailForm`\n- Gunakan **controlled input** untuk field `checkoutEmail` (value + onChange)\n- **Validasi:** email sebelum lanjut\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `checkoutEmail`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function CheckoutEmailForm({ onSubmit }) {\n  // TODO: controlled checkoutEmail + validation\n  return (\n    \u003cform data-testid=\"checkout-email-form\"\u003e\n      \u003cinput name=\"checkoutEmail\" placeholder=\"checkoutEmail\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function CheckoutEmailForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field wajib diisi\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ checkoutEmail: value });\n  }\n\n  return (\n    \u003cform data-testid=\"checkout-email-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"checkoutEmail\"\u003echeckoutEmail\u003c/label\u003e\n      \u003cinput\n        id=\"checkoutEmail\"\n        name=\"checkoutEmail\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "checkout-email-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "checkoutEmail"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "checkoutEmail"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "checkoutEmail"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — CheckoutEmailForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "BetaAccessForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `BetaAccessForm`\n- Gunakan **controlled input** untuk field `reason` (value + onChange)\n- **Validasi:** alasan min 20 karakter\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `reason`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function BetaAccessForm({ onSubmit }) {\n  // TODO: controlled reason + validation\n  return (\n    \u003cform data-testid=\"beta-access-form\"\u003e\n      \u003cinput name=\"reason\" placeholder=\"reason\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function BetaAccessForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field wajib diisi\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ reason: value });\n  }\n\n  return (\n    \u003cform data-testid=\"beta-access-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"reason\"\u003ereason\u003c/label\u003e\n      \u003cinput\n        id=\"reason\"\n        name=\"reason\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "beta-access-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "reason"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "reason"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "reason"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — BetaAccessForm",
+    "difficulty": "hard",
+    "points": 40
+  },
+  {
+    "title": "MailingListForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `MailingListForm`\n- Gunakan **controlled input** untuk field `firstName` (value + onChange)\n- **Validasi:** firstName wajib\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `firstName`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function MailingListForm({ onSubmit }) {\n  // TODO: controlled firstName + validation\n  return (\n    \u003cform data-testid=\"mailing-list-form\"\u003e\n      \u003cinput name=\"firstName\" placeholder=\"firstName\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function MailingListForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field wajib diisi\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ firstName: value });\n  }\n\n  return (\n    \u003cform data-testid=\"mailing-list-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"firstName\"\u003efirstName\u003c/label\u003e\n      \u003cinput\n        id=\"firstName\"\n        name=\"firstName\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "mailing-list-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "firstName"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "firstName"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "firstName"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — MailingListForm",
+    "difficulty": "easy",
+    "points": 40
+  },
+  {
+    "title": "SurveyForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `SurveyForm`\n- Gunakan **controlled input** untuk field `satisfaction` (value + onChange)\n- **Validasi:** radio satisfaction\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `satisfaction`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function SurveyForm({ onSubmit }) {\n  // TODO: controlled satisfaction + validation\n  return (\n    \u003cform data-testid=\"survey-form\"\u003e\n      \u003cinput name=\"satisfaction\" placeholder=\"satisfaction\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function SurveyForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field wajib diisi\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ satisfaction: value });\n  }\n\n  return (\n    \u003cform data-testid=\"survey-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"satisfaction\"\u003esatisfaction\u003c/label\u003e\n      \u003cinput\n        id=\"satisfaction\"\n        name=\"satisfaction\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "survey-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "satisfaction"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "satisfaction"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "satisfaction"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — SurveyForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "DemoRequestForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `DemoRequestForm`\n- Gunakan **controlled input** untuk field `company` (value + onChange)\n- **Validasi:** company wajib\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `company`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function DemoRequestForm({ onSubmit }) {\n  // TODO: controlled company + validation\n  return (\n    \u003cform data-testid=\"demo-request-form\"\u003e\n      \u003cinput name=\"company\" placeholder=\"company\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function DemoRequestForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field wajib diisi\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ company: value });\n  }\n\n  return (\n    \u003cform data-testid=\"demo-request-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"company\"\u003ecompany\u003c/label\u003e\n      \u003cinput\n        id=\"company\"\n        name=\"company\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "demo-request-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "company"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "company"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "company"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — DemoRequestForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "PartnerForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `PartnerForm`\n- Gunakan **controlled input** untuk field `website` (value + onChange)\n- **Validasi:** website harus http\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `website`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function PartnerForm({ onSubmit }) {\n  // TODO: controlled website + validation\n  return (\n    \u003cform data-testid=\"partner-form\"\u003e\n      \u003cinput name=\"website\" placeholder=\"website\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function PartnerForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field wajib diisi\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ website: value });\n  }\n\n  return (\n    \u003cform data-testid=\"partner-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"website\"\u003ewebsite\u003c/label\u003e\n      \u003cinput\n        id=\"website\"\n        name=\"website\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "partner-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "website"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "website"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "website"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — PartnerForm",
+    "difficulty": "hard",
+    "points": 40
+  },
+  {
+    "title": "AlertSignupForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `AlertSignupForm`\n- Gunakan **controlled input** untuk field `topic` (value + onChange)\n- **Validasi:** pilih topic dari select\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `topic`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function AlertSignupForm({ onSubmit }) {\n  // TODO: controlled topic + validation\n  return (\n    \u003cform data-testid=\"alert-signup-form\"\u003e\n      \u003cinput name=\"topic\" placeholder=\"topic\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function AlertSignupForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field wajib diisi\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ topic: value });\n  }\n\n  return (\n    \u003cform data-testid=\"alert-signup-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"topic\"\u003etopic\u003c/label\u003e\n      \u003cinput\n        id=\"topic\"\n        name=\"topic\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "alert-signup-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "topic"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "topic"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "topic"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — AlertSignupForm",
+    "difficulty": "easy",
+    "points": 40
+  },
+  {
+    "title": "GiftCardForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `GiftCardForm`\n- Gunakan **controlled input** untuk field `amount` (value + onChange)\n- **Validasi:** amount number \u003e 0\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `amount`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function GiftCardForm({ onSubmit }) {\n  // TODO: controlled amount + validation\n  return (\n    \u003cform data-testid=\"gift-card-form\"\u003e\n      \u003cinput name=\"amount\" placeholder=\"amount\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function GiftCardForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field wajib diisi\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ amount: value });\n  }\n\n  return (\n    \u003cform data-testid=\"gift-card-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"amount\"\u003eamount\u003c/label\u003e\n      \u003cinput\n        id=\"amount\"\n        name=\"amount\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "gift-card-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "amount"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "amount"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "amount"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — GiftCardForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "ReferralForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `ReferralForm`\n- Gunakan **controlled input** untuk field `referralCode` (value + onChange)\n- **Validasi:** kode referral\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `referralCode`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function ReferralForm({ onSubmit }) {\n  // TODO: controlled referralCode + validation\n  return (\n    \u003cform data-testid=\"referral-form\"\u003e\n      \u003cinput name=\"referralCode\" placeholder=\"referralCode\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function ReferralForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field wajib diisi\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ referralCode: value });\n  }\n\n  return (\n    \u003cform data-testid=\"referral-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"referralCode\"\u003ereferralCode\u003c/label\u003e\n      \u003cinput\n        id=\"referralCode\"\n        name=\"referralCode\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "referral-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "referralCode"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "referralCode"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "referralCode"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — ReferralForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "OnboardingForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `OnboardingForm`\n- Gunakan **controlled input** untuk field `role` (value + onChange)\n- **Validasi:** pilih role developer/designer\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `role`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function OnboardingForm({ onSubmit }) {\n  // TODO: controlled role + validation\n  return (\n    \u003cform data-testid=\"onboarding-form\"\u003e\n      \u003cinput name=\"role\" placeholder=\"role\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function OnboardingForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field wajib diisi\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ role: value });\n  }\n\n  return (\n    \u003cform data-testid=\"onboarding-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"role\"\u003erole\u003c/label\u003e\n      \u003cinput\n        id=\"role\"\n        name=\"role\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "onboarding-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "role"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "role"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "role"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — OnboardingForm",
+    "difficulty": "easy",
+    "points": 40
+  },
+  {
+    "title": "UsernameForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `UsernameForm`\n- Gunakan **controlled input** untuk field `username` (value + onChange)\n- **Validasi:** username minimal 3 karakter\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `username`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function UsernameForm({ onSubmit }) {\n  // TODO: controlled username + validation\n  return (\n    \u003cform data-testid=\"username-form\"\u003e\n      \u003cinput name=\"username\" placeholder=\"username\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function UsernameForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (value.trim().length \u003c 3) {\n      setError(\"Minimal 3 karakter\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ username: value });\n  }\n\n  return (\n    \u003cform data-testid=\"username-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"username\"\u003eusername\u003c/label\u003e\n      \u003cinput\n        id=\"username\"\n        name=\"username\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "username-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "username"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "username"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_min_length",
+        "field": "username",
+        "min": 3
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — UsernameForm",
+    "difficulty": "easy",
+    "points": 40
+  },
+  {
+    "title": "OTPForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `OTPForm`\n- Gunakan **controlled input** untuk field `otpCode` (value + onChange)\n- **Validasi:** kode OTP minimal 6 digit\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `otpCode`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function OTPForm({ onSubmit }) {\n  // TODO: controlled otpCode + validation\n  return (\n    \u003cform data-testid=\"o-t-p-form\"\u003e\n      \u003cinput name=\"otpCode\" placeholder=\"otpCode\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function OTPForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (value.length \u003c 6) {\n      setError(\"Minimal 6 karakter\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ otpCode: value });\n  }\n\n  return (\n    \u003cform data-testid=\"o-t-p-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"otpCode\"\u003eotpCode\u003c/label\u003e\n      \u003cinput\n        id=\"otpCode\"\n        name=\"otpCode\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "o-t-p-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "otpCode"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "otpCode"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_min_length",
+        "field": "otpCode",
+        "min": 6
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — OTPForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "PinForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `PinForm`\n- Gunakan **controlled input** untuk field `pin` (value + onChange)\n- **Validasi:** PIN minimal 4 digit\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `pin`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function PinForm({ onSubmit }) {\n  // TODO: controlled pin + validation\n  return (\n    \u003cform data-testid=\"pin-form\"\u003e\n      \u003cinput name=\"pin\" placeholder=\"pin\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function PinForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (value.trim().length \u003c 4) {\n      setError(\"Minimal 4 karakter\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ pin: value });\n  }\n\n  return (\n    \u003cform data-testid=\"pin-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"pin\"\u003epin\u003c/label\u003e\n      \u003cinput\n        id=\"pin\"\n        name=\"pin\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "pin-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "pin"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "pin"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_min_length",
+        "field": "pin",
+        "min": 4
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — PinForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "BioForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `BioForm`\n- Gunakan **controlled input** untuk field `bio` (value + onChange)\n- **Validasi:** bio max 120 karakter\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `bio`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function BioForm({ onSubmit }) {\n  // TODO: controlled bio + validation\n  return (\n    \u003cform data-testid=\"bio-form\"\u003e\n      \u003cinput name=\"bio\" placeholder=\"bio\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function BioForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (value.length \u003e 120) {\n      setError(\"Maksimal 120 karakter\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ bio: value });\n  }\n\n  return (\n    \u003cform data-testid=\"bio-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"bio\"\u003ebio\u003c/label\u003e\n      \u003cinput\n        id=\"bio\"\n        name=\"bio\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "bio-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "bio"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "bio"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "bio"
+      },
+      {
+        "check": "validates_max_length",
+        "field": "bio",
+        "max": 120
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — BioForm",
+    "difficulty": "easy",
+    "points": 40
+  },
+  {
+    "title": "WebsiteForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `WebsiteForm`\n- Gunakan **controlled input** untuk field `siteUrl` (value + onChange)\n- **Validasi:** URL wajib mengandung https\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `siteUrl`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function WebsiteForm({ onSubmit }) {\n  // TODO: controlled siteUrl + validation\n  return (\n    \u003cform data-testid=\"website-form\"\u003e\n      \u003cinput name=\"siteUrl\" placeholder=\"siteUrl\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function WebsiteForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.includes(\"https\")) {\n      setError(\"URL harus mengandung https\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ siteUrl: value });\n  }\n\n  return (\n    \u003cform data-testid=\"website-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"siteUrl\"\u003esiteUrl\u003c/label\u003e\n      \u003cinput\n        id=\"siteUrl\"\n        name=\"siteUrl\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "website-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "siteUrl"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "siteUrl"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_includes",
+        "field": "siteUrl",
+        "substring": "https"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — WebsiteForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "AgeForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `AgeForm`\n- Gunakan **controlled input** untuk field `age` (value + onChange)\n- **Validasi:** usia wajib diisi\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `age`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function AgeForm({ onSubmit }) {\n  // TODO: controlled age + validation\n  return (\n    \u003cform data-testid=\"age-form\"\u003e\n      \u003cinput name=\"age\" placeholder=\"age\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function AgeForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field wajib diisi\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ age: value });\n  }\n\n  return (\n    \u003cform data-testid=\"age-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"age\"\u003eage\u003c/label\u003e\n      \u003cinput\n        id=\"age\"\n        name=\"age\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "age-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "age"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "age"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "age"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — AgeForm",
+    "difficulty": "easy",
+    "points": 40
+  },
+  {
+    "title": "ZipCodeForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `ZipCodeForm`\n- Gunakan **controlled input** untuk field `zipCode` (value + onChange)\n- **Validasi:** kode pos minimal 5 digit\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `zipCode`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function ZipCodeForm({ onSubmit }) {\n  // TODO: controlled zipCode + validation\n  return (\n    \u003cform data-testid=\"zip-code-form\"\u003e\n      \u003cinput name=\"zipCode\" placeholder=\"zipCode\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function ZipCodeForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (value.trim().length \u003c 5) {\n      setError(\"Minimal 5 karakter\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ zipCode: value });\n  }\n\n  return (\n    \u003cform data-testid=\"zip-code-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"zipCode\"\u003ezipCode\u003c/label\u003e\n      \u003cinput\n        id=\"zipCode\"\n        name=\"zipCode\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "zip-code-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "zipCode"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "zipCode"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_min_length",
+        "field": "zipCode",
+        "min": 5
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — ZipCodeForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "TeamNameForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `TeamNameForm`\n- Gunakan **controlled input** untuk field `teamName` (value + onChange)\n- **Validasi:** nama tim wajib diisi\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `teamName`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function TeamNameForm({ onSubmit }) {\n  // TODO: controlled teamName + validation\n  return (\n    \u003cform data-testid=\"team-name-form\"\u003e\n      \u003cinput name=\"teamName\" placeholder=\"teamName\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function TeamNameForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field wajib diisi\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ teamName: value });\n  }\n\n  return (\n    \u003cform data-testid=\"team-name-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"teamName\"\u003eteamName\u003c/label\u003e\n      \u003cinput\n        id=\"teamName\"\n        name=\"teamName\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "team-name-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "teamName"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "teamName"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "teamName"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — TeamNameForm",
+    "difficulty": "easy",
+    "points": 40
+  },
+  {
+    "title": "TaglineForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `TaglineForm`\n- Gunakan **controlled input** untuk field `tagline` (value + onChange)\n- **Validasi:** tagline max 80 karakter\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `tagline`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function TaglineForm({ onSubmit }) {\n  // TODO: controlled tagline + validation\n  return (\n    \u003cform data-testid=\"tagline-form\"\u003e\n      \u003cinput name=\"tagline\" placeholder=\"tagline\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function TaglineForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (value.length \u003e 80) {\n      setError(\"Maksimal 80 karakter\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ tagline: value });\n  }\n\n  return (\n    \u003cform data-testid=\"tagline-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"tagline\"\u003etagline\u003c/label\u003e\n      \u003cinput\n        id=\"tagline\"\n        name=\"tagline\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "tagline-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "tagline"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "tagline"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "tagline"
+      },
+      {
+        "check": "validates_max_length",
+        "field": "tagline",
+        "max": 80
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — TaglineForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "BudgetForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `BudgetForm`\n- Gunakan **controlled input** untuk field `budget` (value + onChange)\n- **Validasi:** budget wajib diisi\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `budget`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function BudgetForm({ onSubmit }) {\n  // TODO: controlled budget + validation\n  return (\n    \u003cform data-testid=\"budget-form\"\u003e\n      \u003cinput name=\"budget\" placeholder=\"budget\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function BudgetForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field wajib diisi\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ budget: value });\n  }\n\n  return (\n    \u003cform data-testid=\"budget-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"budget\"\u003ebudget\u003c/label\u003e\n      \u003cinput\n        id=\"budget\"\n        name=\"budget\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "budget-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "budget"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "budget"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "budget"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — BudgetForm",
+    "difficulty": "hard",
+    "points": 40
+  },
+  {
+    "title": "DeadlineForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `DeadlineForm`\n- Gunakan **controlled input** untuk field `dueDate` (value + onChange)\n- **Validasi:** tanggal wajib diisi\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `dueDate`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function DeadlineForm({ onSubmit }) {\n  // TODO: controlled dueDate + validation\n  return (\n    \u003cform data-testid=\"deadline-form\"\u003e\n      \u003cinput name=\"dueDate\" placeholder=\"dueDate\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function DeadlineForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field wajib diisi\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ dueDate: value });\n  }\n\n  return (\n    \u003cform data-testid=\"deadline-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"dueDate\"\u003edueDate\u003c/label\u003e\n      \u003cinput\n        id=\"dueDate\"\n        name=\"dueDate\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "deadline-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "dueDate"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "dueDate"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "dueDate"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — DeadlineForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "PriorityForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `PriorityForm`\n- Gunakan **controlled input** untuk field `priority` (value + onChange)\n- **Validasi:** priority wajib diisi\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `priority`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function PriorityForm({ onSubmit }) {\n  // TODO: controlled priority + validation\n  return (\n    \u003cform data-testid=\"priority-form\"\u003e\n      \u003cinput name=\"priority\" placeholder=\"priority\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function PriorityForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field wajib diisi\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ priority: value });\n  }\n\n  return (\n    \u003cform data-testid=\"priority-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"priority\"\u003epriority\u003c/label\u003e\n      \u003cinput\n        id=\"priority\"\n        name=\"priority\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "priority-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "priority"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "priority"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "priority"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — PriorityForm",
+    "difficulty": "easy",
+    "points": 40
+  },
+  {
+    "title": "ChannelForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `ChannelForm`\n- Gunakan **controlled input** untuk field `channel` (value + onChange)\n- **Validasi:** channel wajib diisi\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `channel`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function ChannelForm({ onSubmit }) {\n  // TODO: controlled channel + validation\n  return (\n    \u003cform data-testid=\"channel-form\"\u003e\n      \u003cinput name=\"channel\" placeholder=\"channel\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function ChannelForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field wajib diisi\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ channel: value });\n  }\n\n  return (\n    \u003cform data-testid=\"channel-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"channel\"\u003echannel\u003c/label\u003e\n      \u003cinput\n        id=\"channel\"\n        name=\"channel\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "channel-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "channel"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "channel"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "channel"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — ChannelForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "LocaleForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `LocaleForm`\n- Gunakan **controlled input** untuk field `locale` (value + onChange)\n- **Validasi:** locale wajib diisi\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `locale`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function LocaleForm({ onSubmit }) {\n  // TODO: controlled locale + validation\n  return (\n    \u003cform data-testid=\"locale-form\"\u003e\n      \u003cinput name=\"locale\" placeholder=\"locale\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function LocaleForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field wajib diisi\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ locale: value });\n  }\n\n  return (\n    \u003cform data-testid=\"locale-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"locale\"\u003elocale\u003c/label\u003e\n      \u003cinput\n        id=\"locale\"\n        name=\"locale\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "locale-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "locale"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "locale"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "locale"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — LocaleForm",
+    "difficulty": "easy",
+    "points": 40
+  },
+  {
+    "title": "NicknameForm",
+    "family": "form",
+    "spec_markdown": "## Tujuan\nLatihan form React: controlled input, validasi, dan submit lewat callback.\n\n## Buat komponen `NicknameForm`\n- Gunakan **controlled input** untuk field `nickname` (value + onChange)\n- **Validasi:** nickname minimal 3 karakter\n- Ada tombol **Submit**\n- Jika invalid, tampilkan **pesan error** (elemen dengan role=\"alert\")\n- Jika valid, panggil prop **onSubmit** dengan object yang berisi `nickname`\n\n## Cara cek\nKlik **Jalankan test** — solusi tidak harus sama persis dengan referensi, asal memenuhi kriteria di atas.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function NicknameForm({ onSubmit }) {\n  // TODO: controlled nickname + validation\n  return (\n    \u003cform data-testid=\"nickname-form\"\u003e\n      \u003cinput name=\"nickname\" placeholder=\"nickname\" /\u003e\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function NicknameForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (value.trim().length \u003c 3) {\n      setError(\"Minimal 3 karakter\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ nickname: value });\n  }\n\n  return (\n    \u003cform data-testid=\"nickname-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"nickname\"\u003enickname\u003c/label\u003e\n      \u003cinput\n        id=\"nickname\"\n        name=\"nickname\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eKirim\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validasi sesuai instruksi, error dengan role=alert, onSubmit dipanggil saat valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Kriteria fungsional terpenuhi",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validasi sesuai instruksi",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "nickname-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "nickname"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "nickname"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_min_length",
+        "field": "nickname",
+        "min": 3
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validasi sebelum submit",
+      "Label htmlFor untuk a11y",
+      "preventDefault pada form submit"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault",
+      "Uncontrolled input",
+      "Tidak tampilkan error"
+    ],
+    "learning_objective": "Form React — NicknameForm",
+    "difficulty": "medium",
+    "points": 40
+  }
+]

@@ -1,0 +1,61 @@
+[
+  {
+    "title": "WaitlistForm",
+    "family": "form",
+    "spec_markdown": "Buat komponen `WaitlistForm` dengan:\n- Input email (controlled)\n- Tombol Submit\n- Validasi: email harus mengandung @\n- Tampilkan pesan error jika invalid\n- onSubmit menerima email valid via prop `onJoin`",
+    "starter_code": "import { useState } from \"react\";\n\nexport function WaitlistForm({ onJoin }) {\n  // TODO: implement controlled email + validation\n  return (\n    <form data-testid=\"waitlist-form\">\n      <input type=\"email\" placeholder=\"email@contoh.com\" />\n      <button type=\"submit\">Gabung</button>\n    </form>\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function WaitlistForm({ onJoin }) {\n  const [email, setEmail] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!email.includes(\"@\")) {\n      setError(\"Email tidak valid\");\n      return;\n    }\n    setError(\"\");\n    onJoin?.(email);\n  }\n\n  return (\n    <form data-testid=\"waitlist-form\" onSubmit={handleSubmit}>\n      <label htmlFor=\"email\">Email</label>\n      <input\n        id=\"email\"\n        type=\"email\"\n        value={email}\n        onChange={(e) => setEmail(e.target.value)}\n      />\n      {error && <p role=\"alert\">{error}</p>}\n      <button type=\"submit\">Gabung</button>\n    </form>\n  );\n}\n",
+    "solution_explanation": "1) State email dan error dengan useState. 2) onSubmit panggil preventDefault. 3) Validasi sederhana email mengandung @. 4) Hubungkan label ke input dengan htmlFor/id untuk a11y.",
+    "rubric_json": {
+      "criteria": [
+        {"id": "tests_pass", "label": "Semua test lulus", "points": 25, "auto": true},
+        {"id": "controlled_input", "label": "Input controlled", "points": 5, "auto": false},
+        {"id": "validation", "label": "Validasi email", "points": 5, "auto": false},
+        {"id": "accessibility", "label": "Label htmlFor", "points": 5, "auto": false}
+      ]
+    },
+    "test_cases": [{"name": "renders form", "assert": "form exists"}],
+    "best_practices": [
+      "Controlled components untuk form input",
+      "Validasi di client sebelum submit",
+      "Associate label dengan input untuk a11y",
+      "Jangan mutate state langsung — gunakan setter"
+    ],
+    "common_mistakes": [
+      "Lupa preventDefault → halaman reload",
+      "Uncontrolled input tanpa value binding",
+      "Submit tanpa validasi email"
+    ],
+    "learning_objective": "Membangun form React dengan validasi dan a11y dasar",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "ProductCard",
+    "family": "card",
+    "spec_markdown": "Buat `ProductCard` yang menerima props `name`, `price`, `onAdd`.\n- Tampilkan nama dan harga\n- Tombol \"Tambah\" memanggil onAdd saat diklik",
+    "starter_code": "export function ProductCard({ name, price, onAdd }) {\n  // TODO\n  return <div data-testid=\"product-card\" />;\n}\n",
+    "solution_code": "export function ProductCard({ name, price, onAdd }) {\n  return (\n    <div data-testid=\"product-card\">\n      <h3>{name}</h3>\n      <p>Rp {price}</p>\n      <button type=\"button\" onClick={() => onAdd?.()}>\n        Tambah\n      </button>\n    </div>\n  );\n}\n",
+    "solution_explanation": "Render props name/price dan wire onClick ke onAdd callback.",
+    "rubric_json": {
+      "criteria": [
+        {"id": "tests_pass", "label": "Test lulus", "points": 25, "auto": true},
+        {"id": "display", "label": "Tampilkan name dan price", "points": 10, "auto": false},
+        {"id": "callback", "label": "onAdd dipanggil", "points": 5, "auto": false}
+      ]
+    },
+    "test_cases": [{"name": "renders card", "assert": "card exists"}],
+    "best_practices": [
+      "Komponen presentational terima data via props",
+      "Gunakan optional chaining untuk callback",
+      "button type=\"button\" di dalam form/card"
+    ],
+    "common_mistakes": [
+      "Lupa render price",
+      "onAdd tidak dipanggil dari button"
+    ],
+    "learning_objective": "Komponen presentational dengan props dan callback",
+    "difficulty": "easy",
+    "points": 40
+  }
+]
