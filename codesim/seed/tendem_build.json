@@ -1,0 +1,3783 @@
+[
+  {
+    "title": "WaitlistForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `WaitlistForm`\n- Use a **controlled input** for field `email` (value + onChange)\n- **Validation:** email must contain @\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `email`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function WaitlistForm({ onSubmit }) {\n  // TODO: controlled email + validation\n  return (\n    \u003cform data-testid=\"waitlist-form\"\u003e\n      \u003cinput name=\"email\" placeholder=\"email\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function WaitlistForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.includes(\"@\")) {\n      setError(\"Email must contain @\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ email: value });\n  }\n\n  return (\n    \u003cform data-testid=\"waitlist-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"email\"\u003eemail\u003c/label\u003e\n      \u003cinput\n        id=\"email\"\n        name=\"email\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "waitlist-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "email"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "email"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_includes",
+        "field": "email",
+        "substring": "@"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgetting preventDefault",
+      "Uncontrolled input",
+      "Not showing errors"
+    ],
+    "learning_objective": "React form — WaitlistForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "NewsletterSignup",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `NewsletterSignup`\n- Use a **controlled input** for field `email` (value + onChange)\n- **Validation:** email required\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `email`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function NewsletterSignup({ onSubmit }) {\n  // TODO: controlled email + validation\n  return (\n    \u003cform data-testid=\"newsletter-signup\"\u003e\n      \u003cinput name=\"email\" placeholder=\"email\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function NewsletterSignup({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field is required\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ email: value });\n  }\n\n  return (\n    \u003cform data-testid=\"newsletter-signup\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"email\"\u003eemail\u003c/label\u003e\n      \u003cinput\n        id=\"email\"\n        name=\"email\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "newsletter-signup"
+      },
+      {
+        "check": "controlled_input",
+        "field": "email"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "email"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "email"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgetting preventDefault",
+      "Uncontrolled input",
+      "Not showing errors"
+    ],
+    "learning_objective": "React form — NewsletterSignup",
+    "difficulty": "easy",
+    "points": 40
+  },
+  {
+    "title": "ContactForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `ContactForm`\n- Use a **controlled input** for field `name` (value + onChange)\n- **Validation:** name min 2 characters\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `name`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function ContactForm({ onSubmit }) {\n  // TODO: controlled name + validation\n  return (\n    \u003cform data-testid=\"contact-form\"\u003e\n      \u003cinput name=\"name\" placeholder=\"name\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function ContactForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (value.trim().length \u003c 2) {\n      setError(\"Minimum 2 characters\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ name: value });\n  }\n\n  return (\n    \u003cform data-testid=\"contact-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"name\"\u003ename\u003c/label\u003e\n      \u003cinput\n        id=\"name\"\n        name=\"name\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "contact-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "name"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "name"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_min_length",
+        "field": "name",
+        "min": 2
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgetting preventDefault",
+      "Uncontrolled input",
+      "Not showing errors"
+    ],
+    "learning_objective": "React form — ContactForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "LoginForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `LoginForm`\n- Use a **controlled input** for field `password` (value + onChange)\n- **Validation:** password min 6 characters\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `password`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function LoginForm({ onSubmit }) {\n  // TODO: controlled password + validation\n  return (\n    \u003cform data-testid=\"login-form\"\u003e\n      \u003cinput name=\"password\" placeholder=\"password\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function LoginForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (value.length \u003c 6) {\n      setError(\"Minimum 6 characters\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ password: value });\n  }\n\n  return (\n    \u003cform data-testid=\"login-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"password\"\u003epassword\u003c/label\u003e\n      \u003cinput\n        id=\"password\"\n        name=\"password\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "login-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "password"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "password"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_min_length",
+        "field": "password",
+        "min": 6
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgetting preventDefault",
+      "Uncontrolled input",
+      "Not showing errors"
+    ],
+    "learning_objective": "React form — LoginForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "SearchBar",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `SearchBar`\n- Use a **controlled input** for field `query` (value + onChange)\n- **Validation:** show query below input\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `query`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function SearchBar({ onSubmit }) {\n  // TODO: controlled query + validation\n  return (\n    \u003cform data-testid=\"search-bar\"\u003e\n      \u003cinput name=\"query\" placeholder=\"query\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function SearchBar({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field is required\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ query: value });\n  }\n\n  return (\n    \u003cform data-testid=\"search-bar\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"query\"\u003equery\u003c/label\u003e\n      \u003cinput\n        id=\"query\"\n        name=\"query\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "search-bar"
+      },
+      {
+        "check": "controlled_input",
+        "field": "query"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "query"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "query"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgetting preventDefault",
+      "Uncontrolled input",
+      "Not showing errors"
+    ],
+    "learning_objective": "React form — SearchBar",
+    "difficulty": "easy",
+    "points": 40
+  },
+  {
+    "title": "FeedbackForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `FeedbackForm`\n- Use a **controlled input** for field `message` (value + onChange)\n- **Validation:** message must not be empty\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `message`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function FeedbackForm({ onSubmit }) {\n  // TODO: controlled message + validation\n  return (\n    \u003cform data-testid=\"feedback-form\"\u003e\n      \u003cinput name=\"message\" placeholder=\"message\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function FeedbackForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field is required\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ message: value });\n  }\n\n  return (\n    \u003cform data-testid=\"feedback-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"message\"\u003emessage\u003c/label\u003e\n      \u003cinput\n        id=\"message\"\n        name=\"message\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "feedback-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "message"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "message"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "message"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgetting preventDefault",
+      "Uncontrolled input",
+      "Not showing errors"
+    ],
+    "learning_objective": "React form — FeedbackForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "RegisterForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `RegisterForm`\n- Use a **controlled input** for field `email` (value + onChange)\n- **Validation:** valid email + password match\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `email`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function RegisterForm({ onSubmit }) {\n  // TODO: controlled email + validation\n  return (\n    \u003cform data-testid=\"register-form\"\u003e\n      \u003cinput name=\"email\" placeholder=\"email\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function RegisterForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field is required\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ email: value });\n  }\n\n  return (\n    \u003cform data-testid=\"register-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"email\"\u003eemail\u003c/label\u003e\n      \u003cinput\n        id=\"email\"\n        name=\"email\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "register-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "email"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "email"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "email"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgetting preventDefault",
+      "Uncontrolled input",
+      "Not showing errors"
+    ],
+    "learning_objective": "React form — RegisterForm",
+    "difficulty": "hard",
+    "points": 40
+  },
+  {
+    "title": "SubscribeForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `SubscribeForm`\n- Use a **controlled input** for field `email` (value + onChange)\n- **Validation:** consent checkbox must be checked\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `email`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function SubscribeForm({ onSubmit }) {\n  // TODO: controlled email + validation\n  return (\n    \u003cform data-testid=\"subscribe-form\"\u003e\n      \u003cinput name=\"email\" placeholder=\"email\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function SubscribeForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field is required\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ email: value });\n  }\n\n  return (\n    \u003cform data-testid=\"subscribe-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"email\"\u003eemail\u003c/label\u003e\n      \u003cinput\n        id=\"email\"\n        name=\"email\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "subscribe-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "email"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "email"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "email"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgetting preventDefault",
+      "Uncontrolled input",
+      "Not showing errors"
+    ],
+    "learning_objective": "React form — SubscribeForm",
+    "difficulty": "easy",
+    "points": 40
+  },
+  {
+    "title": "ProfileForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `ProfileForm`\n- Use a **controlled input** for field `displayName` (value + onChange)\n- **Validation:** displayName required\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `displayName`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function ProfileForm({ onSubmit }) {\n  // TODO: controlled displayName + validation\n  return (\n    \u003cform data-testid=\"profile-form\"\u003e\n      \u003cinput name=\"displayName\" placeholder=\"displayName\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function ProfileForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field is required\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ displayName: value });\n  }\n\n  return (\n    \u003cform data-testid=\"profile-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"displayName\"\u003edisplayName\u003c/label\u003e\n      \u003cinput\n        id=\"displayName\"\n        name=\"displayName\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "profile-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "displayName"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "displayName"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "displayName"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgetting preventDefault",
+      "Uncontrolled input",
+      "Not showing errors"
+    ],
+    "learning_objective": "React form — ProfileForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "BookingForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `BookingForm`\n- Use a **controlled input** for field `date` (value + onChange)\n- **Validation:** date input type=date\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `date`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function BookingForm({ onSubmit }) {\n  // TODO: controlled date + validation\n  return (\n    \u003cform data-testid=\"booking-form\"\u003e\n      \u003cinput name=\"date\" placeholder=\"date\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function BookingForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field is required\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ date: value });\n  }\n\n  return (\n    \u003cform data-testid=\"booking-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"date\"\u003edate\u003c/label\u003e\n      \u003cinput\n        id=\"date\"\n        name=\"date\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "booking-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "date"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "date"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "date"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgetting preventDefault",
+      "Uncontrolled input",
+      "Not showing errors"
+    ],
+    "learning_objective": "React form — BookingForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "CouponForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `CouponForm`\n- Use a **controlled input** for field `code` (value + onChange)\n- **Validation:** code min 3 characters\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `code`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function CouponForm({ onSubmit }) {\n  // TODO: controlled code + validation\n  return (\n    \u003cform data-testid=\"coupon-form\"\u003e\n      \u003cinput name=\"code\" placeholder=\"code\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function CouponForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (value.trim().length \u003c 3) {\n      setError(\"Minimum 3 characters\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ code: value });\n  }\n\n  return (\n    \u003cform data-testid=\"coupon-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"code\"\u003ecode\u003c/label\u003e\n      \u003cinput\n        id=\"code\"\n        name=\"code\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "coupon-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "code"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "code"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_min_length",
+        "field": "code",
+        "min": 3
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgetting preventDefault",
+      "Uncontrolled input",
+      "Not showing errors"
+    ],
+    "learning_objective": "React form — CouponForm",
+    "difficulty": "easy",
+    "points": 40
+  },
+  {
+    "title": "AddressForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `AddressForm`\n- Use a **controlled input** for field `city` (value + onChange)\n- **Validation:** city required\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `city`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function AddressForm({ onSubmit }) {\n  // TODO: controlled city + validation\n  return (\n    \u003cform data-testid=\"address-form\"\u003e\n      \u003cinput name=\"city\" placeholder=\"city\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function AddressForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field is required\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ city: value });\n  }\n\n  return (\n    \u003cform data-testid=\"address-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"city\"\u003ecity\u003c/label\u003e\n      \u003cinput\n        id=\"city\"\n        name=\"city\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "address-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "city"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "city"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "city"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgetting preventDefault",
+      "Uncontrolled input",
+      "Not showing errors"
+    ],
+    "learning_objective": "React form — AddressForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "PhoneVerifyForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `PhoneVerifyForm`\n- Use a **controlled input** for field `phone` (value + onChange)\n- **Validation:** phone digits only\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `phone`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function PhoneVerifyForm({ onSubmit }) {\n  // TODO: controlled phone + validation\n  return (\n    \u003cform data-testid=\"phone-verify-form\"\u003e\n      \u003cinput name=\"phone\" placeholder=\"phone\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function PhoneVerifyForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field is required\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ phone: value });\n  }\n\n  return (\n    \u003cform data-testid=\"phone-verify-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"phone\"\u003ephone\u003c/label\u003e\n      \u003cinput\n        id=\"phone\"\n        name=\"phone\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "phone-verify-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "phone"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "phone"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "phone"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgetting preventDefault",
+      "Uncontrolled input",
+      "Not showing errors"
+    ],
+    "learning_objective": "React form — PhoneVerifyForm",
+    "difficulty": "hard",
+    "points": 40
+  },
+  {
+    "title": "RatingForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `RatingForm`\n- Use a **controlled input** for field `rating` (value + onChange)\n- **Validation:** select rating 1-5\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `rating`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function RatingForm({ onSubmit }) {\n  // TODO: controlled rating + validation\n  return (\n    \u003cform data-testid=\"rating-form\"\u003e\n      \u003cinput name=\"rating\" placeholder=\"rating\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function RatingForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field is required\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ rating: value });\n  }\n\n  return (\n    \u003cform data-testid=\"rating-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"rating\"\u003erating\u003c/label\u003e\n      \u003cinput\n        id=\"rating\"\n        name=\"rating\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "rating-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "rating"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "rating"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "rating"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgetting preventDefault",
+      "Uncontrolled input",
+      "Not showing errors"
+    ],
+    "learning_objective": "React form — RatingForm",
+    "difficulty": "easy",
+    "points": 40
+  },
+  {
+    "title": "CommentForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `CommentForm`\n- Use a **controlled input** for field `comment` (value + onChange)\n- **Validation:** max 200 characters\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `comment`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function CommentForm({ onSubmit }) {\n  // TODO: controlled comment + validation\n  return (\n    \u003cform data-testid=\"comment-form\"\u003e\n      \u003cinput name=\"comment\" placeholder=\"comment\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function CommentForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (value.length \u003e 200) {\n      setError(\"Maximum 200 characters\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ comment: value });\n  }\n\n  return (\n    \u003cform data-testid=\"comment-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"comment\"\u003ecomment\u003c/label\u003e\n      \u003cinput\n        id=\"comment\"\n        name=\"comment\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "comment-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "comment"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "comment"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "comment"
+      },
+      {
+        "check": "validates_max_length",
+        "field": "comment",
+        "max": 200
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgetting preventDefault",
+      "Uncontrolled input",
+      "Not showing errors"
+    ],
+    "learning_objective": "React form — CommentForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "InviteForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `InviteForm`\n- Use a **controlled input** for field `inviteEmail` (value + onChange)\n- **Validation:** friend email\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `inviteEmail`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function InviteForm({ onSubmit }) {\n  // TODO: controlled inviteEmail + validation\n  return (\n    \u003cform data-testid=\"invite-form\"\u003e\n      \u003cinput name=\"inviteEmail\" placeholder=\"inviteEmail\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function InviteForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field is required\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ inviteEmail: value });\n  }\n\n  return (\n    \u003cform data-testid=\"invite-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"inviteEmail\"\u003einviteEmail\u003c/label\u003e\n      \u003cinput\n        id=\"inviteEmail\"\n        name=\"inviteEmail\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "invite-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "inviteEmail"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "inviteEmail"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "inviteEmail"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgetting preventDefault",
+      "Uncontrolled input",
+      "Not showing errors"
+    ],
+    "learning_objective": "React form — InviteForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "ResetPasswordForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `ResetPasswordForm`\n- Use a **controlled input** for field `newPassword` (value + onChange)\n- **Validation:** confirm password must match\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `newPassword`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function ResetPasswordForm({ onSubmit }) {\n  // TODO: controlled newPassword + validation\n  return (\n    \u003cform data-testid=\"reset-password-form\"\u003e\n      \u003cinput name=\"newPassword\" placeholder=\"newPassword\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function ResetPasswordForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field is required\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ newPassword: value });\n  }\n\n  return (\n    \u003cform data-testid=\"reset-password-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"newPassword\"\u003enewPassword\u003c/label\u003e\n      \u003cinput\n        id=\"newPassword\"\n        name=\"newPassword\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "reset-password-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "newPassword"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "newPassword"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "newPassword"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgetting preventDefault",
+      "Uncontrolled input",
+      "Not showing errors"
+    ],
+    "learning_objective": "React form — ResetPasswordForm",
+    "difficulty": "hard",
+    "points": 40
+  },
+  {
+    "title": "JobApplyForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `JobApplyForm`\n- Use a **controlled input** for field `linkedin` (value + onChange)\n- **Validation:** optional valid LinkedIn URL\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `linkedin`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function JobApplyForm({ onSubmit }) {\n  // TODO: controlled linkedin + validation\n  return (\n    \u003cform data-testid=\"job-apply-form\"\u003e\n      \u003cinput name=\"linkedin\" placeholder=\"linkedin\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function JobApplyForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field is required\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ linkedin: value });\n  }\n\n  return (\n    \u003cform data-testid=\"job-apply-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"linkedin\"\u003elinkedin\u003c/label\u003e\n      \u003cinput\n        id=\"linkedin\"\n        name=\"linkedin\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "job-apply-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "linkedin"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "linkedin"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "linkedin"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgetting preventDefault",
+      "Uncontrolled input",
+      "Not showing errors"
+    ],
+    "learning_objective": "React form — JobApplyForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "EventRSVPForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `EventRSVPForm`\n- Use a **controlled input** for field `guests` (value + onChange)\n- **Validation:** guest count number \u003e= 1\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `guests`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function EventRSVPForm({ onSubmit }) {\n  // TODO: controlled guests + validation\n  return (\n    \u003cform data-testid=\"event-r-s-v-p-form\"\u003e\n      \u003cinput name=\"guests\" placeholder=\"guests\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function EventRSVPForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field is required\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ guests: value });\n  }\n\n  return (\n    \u003cform data-testid=\"event-r-s-v-p-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"guests\"\u003eguests\u003c/label\u003e\n      \u003cinput\n        id=\"guests\"\n        name=\"guests\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "event-r-s-v-p-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "guests"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "guests"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "guests"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgetting preventDefault",
+      "Uncontrolled input",
+      "Not showing errors"
+    ],
+    "learning_objective": "React form — EventRSVPForm",
+    "difficulty": "easy",
+    "points": 40
+  },
+  {
+    "title": "SupportTicketForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `SupportTicketForm`\n- Use a **controlled input** for field `subject` (value + onChange)\n- **Validation:** subject required\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `subject`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function SupportTicketForm({ onSubmit }) {\n  // TODO: controlled subject + validation\n  return (\n    \u003cform data-testid=\"support-ticket-form\"\u003e\n      \u003cinput name=\"subject\" placeholder=\"subject\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function SupportTicketForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field is required\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ subject: value });\n  }\n\n  return (\n    \u003cform data-testid=\"support-ticket-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"subject\"\u003esubject\u003c/label\u003e\n      \u003cinput\n        id=\"subject\"\n        name=\"subject\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "support-ticket-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "subject"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "subject"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "subject"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgetting preventDefault",
+      "Uncontrolled input",
+      "Not showing errors"
+    ],
+    "learning_objective": "React form — SupportTicketForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "CheckoutEmailForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `CheckoutEmailForm`\n- Use a **controlled input** for field `checkoutEmail` (value + onChange)\n- **Validation:** email before continuing\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `checkoutEmail`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function CheckoutEmailForm({ onSubmit }) {\n  // TODO: controlled checkoutEmail + validation\n  return (\n    \u003cform data-testid=\"checkout-email-form\"\u003e\n      \u003cinput name=\"checkoutEmail\" placeholder=\"checkoutEmail\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function CheckoutEmailForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field is required\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ checkoutEmail: value });\n  }\n\n  return (\n    \u003cform data-testid=\"checkout-email-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"checkoutEmail\"\u003echeckoutEmail\u003c/label\u003e\n      \u003cinput\n        id=\"checkoutEmail\"\n        name=\"checkoutEmail\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "checkout-email-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "checkoutEmail"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "checkoutEmail"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "checkoutEmail"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgetting preventDefault",
+      "Uncontrolled input",
+      "Not showing errors"
+    ],
+    "learning_objective": "React form — CheckoutEmailForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "BetaAccessForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `BetaAccessForm`\n- Use a **controlled input** for field `reason` (value + onChange)\n- **Validation:** reason min 20 characters\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `reason`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function BetaAccessForm({ onSubmit }) {\n  // TODO: controlled reason + validation\n  return (\n    \u003cform data-testid=\"beta-access-form\"\u003e\n      \u003cinput name=\"reason\" placeholder=\"reason\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function BetaAccessForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (value.trim().length \u003c 20) {\n      setError(\"Minimum 20 characters\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ reason: value });\n  }\n\n  return (\n    \u003cform data-testid=\"beta-access-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"reason\"\u003ereason\u003c/label\u003e\n      \u003cinput\n        id=\"reason\"\n        name=\"reason\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "beta-access-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "reason"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "reason"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_min_length",
+        "field": "reason",
+        "min": 20
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgetting preventDefault",
+      "Uncontrolled input",
+      "Not showing errors"
+    ],
+    "learning_objective": "React form — BetaAccessForm",
+    "difficulty": "hard",
+    "points": 40
+  },
+  {
+    "title": "MailingListForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `MailingListForm`\n- Use a **controlled input** for field `firstName` (value + onChange)\n- **Validation:** firstName required\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `firstName`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function MailingListForm({ onSubmit }) {\n  // TODO: controlled firstName + validation\n  return (\n    \u003cform data-testid=\"mailing-list-form\"\u003e\n      \u003cinput name=\"firstName\" placeholder=\"firstName\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function MailingListForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field is required\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ firstName: value });\n  }\n\n  return (\n    \u003cform data-testid=\"mailing-list-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"firstName\"\u003efirstName\u003c/label\u003e\n      \u003cinput\n        id=\"firstName\"\n        name=\"firstName\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "mailing-list-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "firstName"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "firstName"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "firstName"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgetting preventDefault",
+      "Uncontrolled input",
+      "Not showing errors"
+    ],
+    "learning_objective": "React form — MailingListForm",
+    "difficulty": "easy",
+    "points": 40
+  },
+  {
+    "title": "SurveyForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `SurveyForm`\n- Use a **controlled input** for field `satisfaction` (value + onChange)\n- **Validation:** radio satisfaction\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `satisfaction`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function SurveyForm({ onSubmit }) {\n  // TODO: controlled satisfaction + validation\n  return (\n    \u003cform data-testid=\"survey-form\"\u003e\n      \u003cinput name=\"satisfaction\" placeholder=\"satisfaction\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function SurveyForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field is required\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ satisfaction: value });\n  }\n\n  return (\n    \u003cform data-testid=\"survey-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"satisfaction\"\u003esatisfaction\u003c/label\u003e\n      \u003cinput\n        id=\"satisfaction\"\n        name=\"satisfaction\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "survey-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "satisfaction"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "satisfaction"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "satisfaction"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgetting preventDefault",
+      "Uncontrolled input",
+      "Not showing errors"
+    ],
+    "learning_objective": "React form — SurveyForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "DemoRequestForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `DemoRequestForm`\n- Use a **controlled input** for field `company` (value + onChange)\n- **Validation:** company required\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `company`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function DemoRequestForm({ onSubmit }) {\n  // TODO: controlled company + validation\n  return (\n    \u003cform data-testid=\"demo-request-form\"\u003e\n      \u003cinput name=\"company\" placeholder=\"company\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function DemoRequestForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field is required\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ company: value });\n  }\n\n  return (\n    \u003cform data-testid=\"demo-request-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"company\"\u003ecompany\u003c/label\u003e\n      \u003cinput\n        id=\"company\"\n        name=\"company\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "demo-request-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "company"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "company"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "company"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgetting preventDefault",
+      "Uncontrolled input",
+      "Not showing errors"
+    ],
+    "learning_objective": "React form — DemoRequestForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "PartnerForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `PartnerForm`\n- Use a **controlled input** for field `website` (value + onChange)\n- **Validation:** website must contain https\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `website`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function PartnerForm({ onSubmit }) {\n  // TODO: controlled website + validation\n  return (\n    \u003cform data-testid=\"partner-form\"\u003e\n      \u003cinput name=\"website\" placeholder=\"website\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function PartnerForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.includes(\"https\")) {\n      setError(\"URL must contain https\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ website: value });\n  }\n\n  return (\n    \u003cform data-testid=\"partner-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"website\"\u003ewebsite\u003c/label\u003e\n      \u003cinput\n        id=\"website\"\n        name=\"website\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "partner-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "website"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "website"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_includes",
+        "field": "website",
+        "substring": "https"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgetting preventDefault",
+      "Uncontrolled input",
+      "Not showing errors"
+    ],
+    "learning_objective": "React form — PartnerForm",
+    "difficulty": "hard",
+    "points": 40
+  },
+  {
+    "title": "AlertSignupForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `AlertSignupForm`\n- Use a **controlled input** for field `topic` (value + onChange)\n- **Validation:** select topic from dropdown\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `topic`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function AlertSignupForm({ onSubmit }) {\n  // TODO: controlled topic + validation\n  return (\n    \u003cform data-testid=\"alert-signup-form\"\u003e\n      \u003cinput name=\"topic\" placeholder=\"topic\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function AlertSignupForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field is required\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ topic: value });\n  }\n\n  return (\n    \u003cform data-testid=\"alert-signup-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"topic\"\u003etopic\u003c/label\u003e\n      \u003cinput\n        id=\"topic\"\n        name=\"topic\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "alert-signup-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "topic"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "topic"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "topic"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgetting preventDefault",
+      "Uncontrolled input",
+      "Not showing errors"
+    ],
+    "learning_objective": "React form — AlertSignupForm",
+    "difficulty": "easy",
+    "points": 40
+  },
+  {
+    "title": "GiftCardForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `GiftCardForm`\n- Use a **controlled input** for field `amount` (value + onChange)\n- **Validation:** amount number \u003e 0\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `amount`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function GiftCardForm({ onSubmit }) {\n  // TODO: controlled amount + validation\n  return (\n    \u003cform data-testid=\"gift-card-form\"\u003e\n      \u003cinput name=\"amount\" placeholder=\"amount\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function GiftCardForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field is required\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ amount: value });\n  }\n\n  return (\n    \u003cform data-testid=\"gift-card-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"amount\"\u003eamount\u003c/label\u003e\n      \u003cinput\n        id=\"amount\"\n        name=\"amount\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "gift-card-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "amount"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "amount"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "amount"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgetting preventDefault",
+      "Uncontrolled input",
+      "Not showing errors"
+    ],
+    "learning_objective": "React form — GiftCardForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "ReferralForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `ReferralForm`\n- Use a **controlled input** for field `referralCode` (value + onChange)\n- **Validation:** referral code\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `referralCode`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function ReferralForm({ onSubmit }) {\n  // TODO: controlled referralCode + validation\n  return (\n    \u003cform data-testid=\"referral-form\"\u003e\n      \u003cinput name=\"referralCode\" placeholder=\"referralCode\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function ReferralForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field is required\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ referralCode: value });\n  }\n\n  return (\n    \u003cform data-testid=\"referral-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"referralCode\"\u003ereferralCode\u003c/label\u003e\n      \u003cinput\n        id=\"referralCode\"\n        name=\"referralCode\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "referral-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "referralCode"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "referralCode"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "referralCode"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgetting preventDefault",
+      "Uncontrolled input",
+      "Not showing errors"
+    ],
+    "learning_objective": "React form — ReferralForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "OnboardingForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `OnboardingForm`\n- Use a **controlled input** for field `role` (value + onChange)\n- **Validation:** select role developer/designer\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `role`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function OnboardingForm({ onSubmit }) {\n  // TODO: controlled role + validation\n  return (\n    \u003cform data-testid=\"onboarding-form\"\u003e\n      \u003cinput name=\"role\" placeholder=\"role\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function OnboardingForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field is required\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ role: value });\n  }\n\n  return (\n    \u003cform data-testid=\"onboarding-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"role\"\u003erole\u003c/label\u003e\n      \u003cinput\n        id=\"role\"\n        name=\"role\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "onboarding-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "role"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "role"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "role"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgetting preventDefault",
+      "Uncontrolled input",
+      "Not showing errors"
+    ],
+    "learning_objective": "React form — OnboardingForm",
+    "difficulty": "easy",
+    "points": 40
+  },
+  {
+    "title": "UsernameForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `UsernameForm`\n- Use a **controlled input** for field `username` (value + onChange)\n- **Validation:** username min 3 characters\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `username`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function UsernameForm({ onSubmit }) {\n  // TODO: controlled username + validation\n  return (\n    \u003cform data-testid=\"username-form\"\u003e\n      \u003cinput name=\"username\" placeholder=\"username\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function UsernameForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (value.trim().length \u003c 3) {\n      setError(\"Minimum 3 characters\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ username: value });\n  }\n\n  return (\n    \u003cform data-testid=\"username-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"username\"\u003eusername\u003c/label\u003e\n      \u003cinput\n        id=\"username\"\n        name=\"username\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "username-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "username"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "username"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_min_length",
+        "field": "username",
+        "min": 3
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgot preventDefault",
+      "Uncontrolled input",
+      "Error not displayed"
+    ],
+    "learning_objective": "React Form — UsernameForm",
+    "difficulty": "easy",
+    "points": 40
+  },
+  {
+    "title": "OTPForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `OTPForm`\n- Use a **controlled input** for field `otpCode` (value + onChange)\n- **Validation:** OTP code min 6 digits\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `otpCode`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function OTPForm({ onSubmit }) {\n  // TODO: controlled otpCode + validation\n  return (\n    \u003cform data-testid=\"o-t-p-form\"\u003e\n      \u003cinput name=\"otpCode\" placeholder=\"otpCode\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function OTPForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (value.length \u003c 6) {\n      setError(\"Minimum 6 characters\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ otpCode: value });\n  }\n\n  return (\n    \u003cform data-testid=\"o-t-p-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"otpCode\"\u003eotpCode\u003c/label\u003e\n      \u003cinput\n        id=\"otpCode\"\n        name=\"otpCode\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "o-t-p-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "otpCode"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "otpCode"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_min_length",
+        "field": "otpCode",
+        "min": 6
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgot preventDefault",
+      "Uncontrolled input",
+      "Error not displayed"
+    ],
+    "learning_objective": "React Form — OTPForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "PinForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `PinForm`\n- Use a **controlled input** for field `pin` (value + onChange)\n- **Validation:** PIN min 4 digits\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `pin`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function PinForm({ onSubmit }) {\n  // TODO: controlled pin + validation\n  return (\n    \u003cform data-testid=\"pin-form\"\u003e\n      \u003cinput name=\"pin\" placeholder=\"pin\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function PinForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (value.trim().length \u003c 4) {\n      setError(\"Minimum 4 characters\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ pin: value });\n  }\n\n  return (\n    \u003cform data-testid=\"pin-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"pin\"\u003epin\u003c/label\u003e\n      \u003cinput\n        id=\"pin\"\n        name=\"pin\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "pin-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "pin"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "pin"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_min_length",
+        "field": "pin",
+        "min": 4
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgot preventDefault",
+      "Uncontrolled input",
+      "Error not displayed"
+    ],
+    "learning_objective": "React Form — PinForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "BioForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `BioForm`\n- Use a **controlled input** for field `bio` (value + onChange)\n- **Validation:** bio max 120 characters\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `bio`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function BioForm({ onSubmit }) {\n  // TODO: controlled bio + validation\n  return (\n    \u003cform data-testid=\"bio-form\"\u003e\n      \u003cinput name=\"bio\" placeholder=\"bio\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function BioForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (value.length \u003e 120) {\n      setError(\"Maximum 120 characters\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ bio: value });\n  }\n\n  return (\n    \u003cform data-testid=\"bio-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"bio\"\u003ebio\u003c/label\u003e\n      \u003cinput\n        id=\"bio\"\n        name=\"bio\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "bio-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "bio"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "bio"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "bio"
+      },
+      {
+        "check": "validates_max_length",
+        "field": "bio",
+        "max": 120
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgot preventDefault",
+      "Uncontrolled input",
+      "Error not displayed"
+    ],
+    "learning_objective": "React Form — BioForm",
+    "difficulty": "easy",
+    "points": 40
+  },
+  {
+    "title": "WebsiteForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `WebsiteForm`\n- Use a **controlled input** for field `siteUrl` (value + onChange)\n- **Validation:** URL must contain https\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `siteUrl`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function WebsiteForm({ onSubmit }) {\n  // TODO: controlled siteUrl + validation\n  return (\n    \u003cform data-testid=\"website-form\"\u003e\n      \u003cinput name=\"siteUrl\" placeholder=\"siteUrl\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function WebsiteForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.includes(\"https\")) {\n      setError(\"URL must contain https\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ siteUrl: value });\n  }\n\n  return (\n    \u003cform data-testid=\"website-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"siteUrl\"\u003esiteUrl\u003c/label\u003e\n      \u003cinput\n        id=\"siteUrl\"\n        name=\"siteUrl\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "website-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "siteUrl"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "siteUrl"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_includes",
+        "field": "siteUrl",
+        "substring": "https"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgot preventDefault",
+      "Uncontrolled input",
+      "Error not displayed"
+    ],
+    "learning_objective": "React Form — WebsiteForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "AgeForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `AgeForm`\n- Use a **controlled input** for field `age` (value + onChange)\n- **Validation:** age required\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `age`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function AgeForm({ onSubmit }) {\n  // TODO: controlled age + validation\n  return (\n    \u003cform data-testid=\"age-form\"\u003e\n      \u003cinput name=\"age\" placeholder=\"age\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function AgeForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field is required\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ age: value });\n  }\n\n  return (\n    \u003cform data-testid=\"age-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"age\"\u003eage\u003c/label\u003e\n      \u003cinput\n        id=\"age\"\n        name=\"age\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "age-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "age"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "age"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "age"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgot preventDefault",
+      "Uncontrolled input",
+      "Error not displayed"
+    ],
+    "learning_objective": "React Form — AgeForm",
+    "difficulty": "easy",
+    "points": 40
+  },
+  {
+    "title": "ZipCodeForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `ZipCodeForm`\n- Use a **controlled input** for field `zipCode` (value + onChange)\n- **Validation:** zip code min 5 digits\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `zipCode`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function ZipCodeForm({ onSubmit }) {\n  // TODO: controlled zipCode + validation\n  return (\n    \u003cform data-testid=\"zip-code-form\"\u003e\n      \u003cinput name=\"zipCode\" placeholder=\"zipCode\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function ZipCodeForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (value.trim().length \u003c 5) {\n      setError(\"Minimum 5 characters\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ zipCode: value });\n  }\n\n  return (\n    \u003cform data-testid=\"zip-code-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"zipCode\"\u003ezipCode\u003c/label\u003e\n      \u003cinput\n        id=\"zipCode\"\n        name=\"zipCode\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "zip-code-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "zipCode"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "zipCode"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_min_length",
+        "field": "zipCode",
+        "min": 5
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgot preventDefault",
+      "Uncontrolled input",
+      "Error not displayed"
+    ],
+    "learning_objective": "React Form — ZipCodeForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "TeamNameForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `TeamNameForm`\n- Use a **controlled input** for field `teamName` (value + onChange)\n- **Validation:** team name required\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `teamName`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function TeamNameForm({ onSubmit }) {\n  // TODO: controlled teamName + validation\n  return (\n    \u003cform data-testid=\"team-name-form\"\u003e\n      \u003cinput name=\"teamName\" placeholder=\"teamName\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function TeamNameForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field is required\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ teamName: value });\n  }\n\n  return (\n    \u003cform data-testid=\"team-name-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"teamName\"\u003eteamName\u003c/label\u003e\n      \u003cinput\n        id=\"teamName\"\n        name=\"teamName\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "team-name-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "teamName"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "teamName"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "teamName"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgot preventDefault",
+      "Uncontrolled input",
+      "Error not displayed"
+    ],
+    "learning_objective": "React Form — TeamNameForm",
+    "difficulty": "easy",
+    "points": 40
+  },
+  {
+    "title": "TaglineForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `TaglineForm`\n- Use a **controlled input** for field `tagline` (value + onChange)\n- **Validation:** tagline max 80 characters\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `tagline`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function TaglineForm({ onSubmit }) {\n  // TODO: controlled tagline + validation\n  return (\n    \u003cform data-testid=\"tagline-form\"\u003e\n      \u003cinput name=\"tagline\" placeholder=\"tagline\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function TaglineForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (value.length \u003e 80) {\n      setError(\"Maximum 80 characters\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ tagline: value });\n  }\n\n  return (\n    \u003cform data-testid=\"tagline-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"tagline\"\u003etagline\u003c/label\u003e\n      \u003cinput\n        id=\"tagline\"\n        name=\"tagline\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "tagline-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "tagline"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "tagline"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "tagline"
+      },
+      {
+        "check": "validates_max_length",
+        "field": "tagline",
+        "max": 80
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgot preventDefault",
+      "Uncontrolled input",
+      "Error not displayed"
+    ],
+    "learning_objective": "React Form — TaglineForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "BudgetForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `BudgetForm`\n- Use a **controlled input** for field `budget` (value + onChange)\n- **Validation:** budget required\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `budget`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function BudgetForm({ onSubmit }) {\n  // TODO: controlled budget + validation\n  return (\n    \u003cform data-testid=\"budget-form\"\u003e\n      \u003cinput name=\"budget\" placeholder=\"budget\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function BudgetForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field is required\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ budget: value });\n  }\n\n  return (\n    \u003cform data-testid=\"budget-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"budget\"\u003ebudget\u003c/label\u003e\n      \u003cinput\n        id=\"budget\"\n        name=\"budget\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "budget-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "budget"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "budget"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "budget"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgot preventDefault",
+      "Uncontrolled input",
+      "Error not displayed"
+    ],
+    "learning_objective": "React Form — BudgetForm",
+    "difficulty": "hard",
+    "points": 40
+  },
+  {
+    "title": "DeadlineForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `DeadlineForm`\n- Use a **controlled input** for field `dueDate` (value + onChange)\n- **Validation:** date required\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `dueDate`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function DeadlineForm({ onSubmit }) {\n  // TODO: controlled dueDate + validation\n  return (\n    \u003cform data-testid=\"deadline-form\"\u003e\n      \u003cinput name=\"dueDate\" placeholder=\"dueDate\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function DeadlineForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field is required\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ dueDate: value });\n  }\n\n  return (\n    \u003cform data-testid=\"deadline-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"dueDate\"\u003edueDate\u003c/label\u003e\n      \u003cinput\n        id=\"dueDate\"\n        name=\"dueDate\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "deadline-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "dueDate"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "dueDate"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "dueDate"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgot preventDefault",
+      "Uncontrolled input",
+      "Error not displayed"
+    ],
+    "learning_objective": "React Form — DeadlineForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "PriorityForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `PriorityForm`\n- Use a **controlled input** for field `priority` (value + onChange)\n- **Validation:** priority required\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `priority`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function PriorityForm({ onSubmit }) {\n  // TODO: controlled priority + validation\n  return (\n    \u003cform data-testid=\"priority-form\"\u003e\n      \u003cinput name=\"priority\" placeholder=\"priority\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function PriorityForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field is required\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ priority: value });\n  }\n\n  return (\n    \u003cform data-testid=\"priority-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"priority\"\u003epriority\u003c/label\u003e\n      \u003cinput\n        id=\"priority\"\n        name=\"priority\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "priority-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "priority"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "priority"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "priority"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgot preventDefault",
+      "Uncontrolled input",
+      "Error not displayed"
+    ],
+    "learning_objective": "React Form — PriorityForm",
+    "difficulty": "easy",
+    "points": 40
+  },
+  {
+    "title": "ChannelForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `ChannelForm`\n- Use a **controlled input** for field `channel` (value + onChange)\n- **Validation:** channel required\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `channel`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function ChannelForm({ onSubmit }) {\n  // TODO: controlled channel + validation\n  return (\n    \u003cform data-testid=\"channel-form\"\u003e\n      \u003cinput name=\"channel\" placeholder=\"channel\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function ChannelForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field is required\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ channel: value });\n  }\n\n  return (\n    \u003cform data-testid=\"channel-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"channel\"\u003echannel\u003c/label\u003e\n      \u003cinput\n        id=\"channel\"\n        name=\"channel\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "channel-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "channel"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "channel"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "channel"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgot preventDefault",
+      "Uncontrolled input",
+      "Error not displayed"
+    ],
+    "learning_objective": "React Form — ChannelForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "LocaleForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `LocaleForm`\n- Use a **controlled input** for field `locale` (value + onChange)\n- **Validation:** locale required\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `locale`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function LocaleForm({ onSubmit }) {\n  // TODO: controlled locale + validation\n  return (\n    \u003cform data-testid=\"locale-form\"\u003e\n      \u003cinput name=\"locale\" placeholder=\"locale\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function LocaleForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.trim()) {\n      setError(\"Field is required\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ locale: value });\n  }\n\n  return (\n    \u003cform data-testid=\"locale-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"locale\"\u003elocale\u003c/label\u003e\n      \u003cinput\n        id=\"locale\"\n        name=\"locale\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "locale-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "locale"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "locale"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "locale"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgot preventDefault",
+      "Uncontrolled input",
+      "Error not displayed"
+    ],
+    "learning_objective": "React Form — LocaleForm",
+    "difficulty": "easy",
+    "points": 40
+  },
+  {
+    "title": "NicknameForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `NicknameForm`\n- Use a **controlled input** for field `nickname` (value + onChange)\n- **Validation:** nickname min 3 characters\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `nickname`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function NicknameForm({ onSubmit }) {\n  // TODO: controlled nickname + validation\n  return (\n    \u003cform data-testid=\"nickname-form\"\u003e\n      \u003cinput name=\"nickname\" placeholder=\"nickname\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function NicknameForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (value.trim().length \u003c 3) {\n      setError(\"Minimum 3 characters\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ nickname: value });\n  }\n\n  return (\n    \u003cform data-testid=\"nickname-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"nickname\"\u003enickname\u003c/label\u003e\n      \u003cinput\n        id=\"nickname\"\n        name=\"nickname\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit called when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "nickname-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "nickname"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "nickname"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_min_length",
+        "field": "nickname",
+        "min": 3
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgot preventDefault",
+      "Uncontrolled input",
+      "Error not displayed"
+    ],
+    "learning_objective": "React Form — NicknameForm",
+    "difficulty": "medium",
+    "points": 40
+  },
+  {
+    "title": "PromoCodeForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `PromoCodeForm`\n- Use a **controlled input** for field `promoCode` (value + onChange)\n- **Validation:** promo code min 6 characters\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `promoCode`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function PromoCodeForm({ onSubmit }) {\n  // TODO: controlled promoCode + validation\n  return (\n    \u003cform data-testid=\"promo-code-form\"\u003e\n      \u003cinput name=\"promoCode\" placeholder=\"promoCode\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function PromoCodeForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (value.length \u003c 6) {\n      setError(\"Minimum 6 characters\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ promoCode: value });\n  }\n\n  return (\n    \u003cform data-testid=\"promo-code-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"promoCode\"\u003epromoCode\u003c/label\u003e\n      \u003cinput\n        id=\"promoCode\"\n        name=\"promoCode\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "promo-code-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "promoCode"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "promoCode"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_min_length",
+        "field": "promoCode",
+        "min": 6
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgot preventDefault",
+      "Uncontrolled input",
+      "No error message"
+    ],
+    "learning_objective": "React form — PromoCodeForm (hard)",
+    "difficulty": "hard",
+    "points": 40
+  },
+  {
+    "title": "WaitlistConsentForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `WaitlistConsentForm`\n- Use a **controlled input** for field `email` (value + onChange)\n- **Validation:** email must contain @\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `email`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function WaitlistConsentForm({ onSubmit }) {\n  // TODO: controlled email + validation\n  return (\n    \u003cform data-testid=\"waitlist-consent-form\"\u003e\n      \u003cinput name=\"email\" placeholder=\"email\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function WaitlistConsentForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.includes(\"@\")) {\n      setError(\"Email must contain @\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ email: value });\n  }\n\n  return (\n    \u003cform data-testid=\"waitlist-consent-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"email\"\u003eemail\u003c/label\u003e\n      \u003cinput\n        id=\"email\"\n        name=\"email\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "waitlist-consent-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "email"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "email"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_includes",
+        "field": "email",
+        "substring": "@"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgot preventDefault",
+      "Uncontrolled input",
+      "No error message"
+    ],
+    "learning_objective": "React form — WaitlistConsentForm (hard)",
+    "difficulty": "hard",
+    "points": 40
+  },
+  {
+    "title": "PasswordStrengthForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `PasswordStrengthForm`\n- Use a **controlled input** for field `password` (value + onChange)\n- **Validation:** password min 8 characters\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `password`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function PasswordStrengthForm({ onSubmit }) {\n  // TODO: controlled password + validation\n  return (\n    \u003cform data-testid=\"password-strength-form\"\u003e\n      \u003cinput name=\"password\" placeholder=\"password\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function PasswordStrengthForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (value.length \u003c 8) {\n      setError(\"Minimum 8 characters\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ password: value });\n  }\n\n  return (\n    \u003cform data-testid=\"password-strength-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"password\"\u003epassword\u003c/label\u003e\n      \u003cinput\n        id=\"password\"\n        name=\"password\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "password-strength-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "password"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "password"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_min_length",
+        "field": "password",
+        "min": 8
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgot preventDefault",
+      "Uncontrolled input",
+      "No error message"
+    ],
+    "learning_objective": "React form — PasswordStrengthForm (hard)",
+    "difficulty": "hard",
+    "points": 40
+  },
+  {
+    "title": "IntlPhoneForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `IntlPhoneForm`\n- Use a **controlled input** for field `phone` (value + onChange)\n- **Validation:** phone min 10 digits\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `phone`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function IntlPhoneForm({ onSubmit }) {\n  // TODO: controlled phone + validation\n  return (\n    \u003cform data-testid=\"intl-phone-form\"\u003e\n      \u003cinput name=\"phone\" placeholder=\"phone\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function IntlPhoneForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (value.replace(/\\D/g, \"\").length \u003c 10) {\n      setError(\"Minimum 10 digits\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ phone: value });\n  }\n\n  return (\n    \u003cform data-testid=\"intl-phone-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"phone\"\u003ephone\u003c/label\u003e\n      \u003cinput\n        id=\"phone\"\n        name=\"phone\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "intl-phone-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "phone"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "phone"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_min_length",
+        "field": "phone",
+        "min": 10
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgot preventDefault",
+      "Uncontrolled input",
+      "No error message"
+    ],
+    "learning_objective": "React form — IntlPhoneForm (hard)",
+    "difficulty": "hard",
+    "points": 40
+  },
+  {
+    "title": "CompanySiteForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `CompanySiteForm`\n- Use a **controlled input** for field `website` (value + onChange)\n- **Validation:** URL must contain https\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `website`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function CompanySiteForm({ onSubmit }) {\n  // TODO: controlled website + validation\n  return (\n    \u003cform data-testid=\"company-site-form\"\u003e\n      \u003cinput name=\"website\" placeholder=\"website\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function CompanySiteForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.includes(\"https\")) {\n      setError(\"URL must contain https\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ website: value });\n  }\n\n  return (\n    \u003cform data-testid=\"company-site-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"website\"\u003ewebsite\u003c/label\u003e\n      \u003cinput\n        id=\"website\"\n        name=\"website\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "company-site-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "website"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "website"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_includes",
+        "field": "website",
+        "substring": "https"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgot preventDefault",
+      "Uncontrolled input",
+      "No error message"
+    ],
+    "learning_objective": "React form — CompanySiteForm (hard)",
+    "difficulty": "hard",
+    "points": 40
+  },
+  {
+    "title": "HeroCTAEmailForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `HeroCTAEmailForm`\n- Use a **controlled input** for field `email` (value + onChange)\n- **Validation:** email must contain @\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `email`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function HeroCTAEmailForm({ onSubmit }) {\n  // TODO: controlled email + validation\n  return (\n    \u003cform data-testid=\"hero-c-t-a-email-form\"\u003e\n      \u003cinput name=\"email\" placeholder=\"email\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function HeroCTAEmailForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (!value.includes(\"@\")) {\n      setError(\"Email must contain @\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ email: value });\n  }\n\n  return (\n    \u003cform data-testid=\"hero-c-t-a-email-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"email\"\u003eemail\u003c/label\u003e\n      \u003cinput\n        id=\"email\"\n        name=\"email\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "hero-c-t-a-email-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "email"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "email"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_includes",
+        "field": "email",
+        "substring": "@"
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgot preventDefault",
+      "Uncontrolled input",
+      "No error message"
+    ],
+    "learning_objective": "React form — HeroCTAEmailForm (hard)",
+    "difficulty": "hard",
+    "points": 40
+  },
+  {
+    "title": "LandingZipForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `LandingZipForm`\n- Use a **controlled input** for field `zipCode` (value + onChange)\n- **Validation:** zip code min 5 digits\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `zipCode`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function LandingZipForm({ onSubmit }) {\n  // TODO: controlled zipCode + validation\n  return (\n    \u003cform data-testid=\"landing-zip-form\"\u003e\n      \u003cinput name=\"zipCode\" placeholder=\"zipCode\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function LandingZipForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (value.trim().length \u003c 5) {\n      setError(\"Minimum 5 characters\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ zipCode: value });\n  }\n\n  return (\n    \u003cform data-testid=\"landing-zip-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"zipCode\"\u003ezipCode\u003c/label\u003e\n      \u003cinput\n        id=\"zipCode\"\n        name=\"zipCode\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "landing-zip-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "zipCode"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "zipCode"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_min_length",
+        "field": "zipCode",
+        "min": 5
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgot preventDefault",
+      "Uncontrolled input",
+      "No error message"
+    ],
+    "learning_objective": "React form — LandingZipForm (hard)",
+    "difficulty": "hard",
+    "points": 40
+  },
+  {
+    "title": "SearchDebouncedForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `SearchDebouncedForm`\n- Use a **controlled input** for field `query` (value + onChange)\n- **Validation:** query min 3 characters\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `query`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function SearchDebouncedForm({ onSubmit }) {\n  // TODO: controlled query + validation\n  return (\n    \u003cform data-testid=\"search-debounced-form\"\u003e\n      \u003cinput name=\"query\" placeholder=\"query\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function SearchDebouncedForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (value.trim().length \u003c 3) {\n      setError(\"Minimum 3 characters\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ query: value });\n  }\n\n  return (\n    \u003cform data-testid=\"search-debounced-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"query\"\u003equery\u003c/label\u003e\n      \u003cinput\n        id=\"query\"\n        name=\"query\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "search-debounced-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "query"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "query"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_min_length",
+        "field": "query",
+        "min": 3
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgot preventDefault",
+      "Uncontrolled input",
+      "No error message"
+    ],
+    "learning_objective": "React form — SearchDebouncedForm (hard)",
+    "difficulty": "hard",
+    "points": 40
+  },
+  {
+    "title": "NewsletterTaglineForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `NewsletterTaglineForm`\n- Use a **controlled input** for field `tagline` (value + onChange)\n- **Validation:** tagline max 80 characters\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `tagline`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function NewsletterTaglineForm({ onSubmit }) {\n  // TODO: controlled tagline + validation\n  return (\n    \u003cform data-testid=\"newsletter-tagline-form\"\u003e\n      \u003cinput name=\"tagline\" placeholder=\"tagline\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function NewsletterTaglineForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (value.length \u003e 80) {\n      setError(\"Maximum 80 characters\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ tagline: value });\n  }\n\n  return (\n    \u003cform data-testid=\"newsletter-tagline-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"tagline\"\u003etagline\u003c/label\u003e\n      \u003cinput\n        id=\"tagline\"\n        name=\"tagline\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "newsletter-tagline-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "tagline"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "tagline"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_required",
+        "field": "tagline"
+      },
+      {
+        "check": "validates_max_length",
+        "field": "tagline",
+        "max": 80
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgot preventDefault",
+      "Uncontrolled input",
+      "No error message"
+    ],
+    "learning_objective": "React form — NewsletterTaglineForm (hard)",
+    "difficulty": "hard",
+    "points": 40
+  },
+  {
+    "title": "BetaReasonForm",
+    "family": "form",
+    "spec_markdown": "## Goal\nReact form exercise: controlled input, validation, and submit via callback.\n\n## Build component `BetaReasonForm`\n- Use a **controlled input** for field `reason` (value + onChange)\n- **Validation:** reason min 20 characters\n- Include a **Submit** button\n- If invalid, show an **error message** (element with role=\"alert\")\n- If valid, call the **onSubmit** prop with an object containing `reason`\n\n## How to verify\nClick **Run tests** — your solution does not need to match the reference exactly, as long as it meets the criteria above.",
+    "starter_code": "import { useState } from \"react\";\n\nexport function BetaReasonForm({ onSubmit }) {\n  // TODO: controlled reason + validation\n  return (\n    \u003cform data-testid=\"beta-reason-form\"\u003e\n      \u003cinput name=\"reason\" placeholder=\"reason\" /\u003e\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_code": "import { useState } from \"react\";\n\nexport function BetaReasonForm({ onSubmit }) {\n  const [value, setValue] = useState(\"\");\n  const [error, setError] = useState(\"\");\n\n  function handleSubmit(e) {\n    e.preventDefault();\n    if (value.trim().length \u003c 20) {\n      setError(\"Minimum 20 characters\");\n      return;\n    }\n    setError(\"\");\n    onSubmit?.({ reason: value });\n  }\n\n  return (\n    \u003cform data-testid=\"beta-reason-form\" onSubmit={handleSubmit}\u003e\n      \u003clabel htmlFor=\"reason\"\u003ereason\u003c/label\u003e\n      \u003cinput\n        id=\"reason\"\n        name=\"reason\"\n        value={value}\n        onChange={(e) =\u003e setValue(e.target.value)}\n      /\u003e\n      {error \u0026\u0026 \u003cp role=\"alert\"\u003e{error}\u003c/p\u003e}\n      \u003cbutton type=\"submit\"\u003eSubmit\u003c/button\u003e\n    \u003c/form\u003e\n  );\n}\n",
+    "solution_explanation": "Controlled input, validation per instructions, error with role=alert, onSubmit when valid.",
+    "rubric_json": {
+      "criteria": [
+        {
+          "id": "tests_pass",
+          "label": "Functional criteria met",
+          "points": 40,
+          "auto": true
+        },
+        {
+          "id": "controlled",
+          "label": "Controlled inputs",
+          "points": 0,
+          "auto": false
+        },
+        {
+          "id": "validation",
+          "label": "Validation per instructions",
+          "points": 0,
+          "auto": false
+        }
+      ]
+    },
+    "test_cases": [
+      {
+        "check": "has_testid",
+        "id": "beta-reason-form"
+      },
+      {
+        "check": "controlled_input",
+        "field": "reason"
+      },
+      {
+        "check": "form_prevent_default"
+      },
+      {
+        "check": "calls_on_submit",
+        "field": "reason"
+      },
+      {
+        "check": "shows_error"
+      },
+      {
+        "check": "validates_min_length",
+        "field": "reason",
+        "min": 20
+      }
+    ],
+    "best_practices": [
+      "Controlled components",
+      "Validate before submit",
+      "Label htmlFor for a11y",
+      "preventDefault on form submit"
+    ],
+    "common_mistakes": [
+      "Forgot preventDefault",
+      "Uncontrolled input",
+      "No error message"
+    ],
+    "learning_objective": "React form — BetaReasonForm (hard)",
+    "difficulty": "hard",
+    "points": 40
+  }
+]

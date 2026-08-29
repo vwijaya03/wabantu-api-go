@@ -1,0 +1,1131 @@
+[
+  {
+    "slug": "tendem-hard-01",
+    "title": "Tendem Frontend Developer — Hard 01 — React Effects \u0026 Cleanup",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript"
+          ],
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form",
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero",
+          "difficulty": "hard"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-hard-02",
+    "title": "Tendem Frontend Developer — Hard 02 — Stale Closures",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript"
+          ],
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form",
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero",
+          "difficulty": "hard"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-hard-03",
+    "title": "Tendem Frontend Developer — Hard 03 — Hydration \u0026 SSR",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "html"
+          ],
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form",
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero",
+          "difficulty": "hard"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-hard-04",
+    "title": "Tendem Frontend Developer — Hard 04 — Performance \u0026 Memo",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript"
+          ],
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form",
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero",
+          "difficulty": "hard"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-hard-05",
+    "title": "Tendem Frontend Developer — Hard 05 — Context \u0026 Re-renders",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react"
+          ],
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form",
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero",
+          "difficulty": "hard"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-hard-06",
+    "title": "Tendem Frontend Developer — Hard 06 — Lists \u0026 Keys",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react"
+          ],
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form",
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero",
+          "difficulty": "hard"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-hard-07",
+    "title": "Tendem Frontend Developer — Hard 07 — Event Loop \u0026 Async",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "javascript"
+          ],
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form",
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero",
+          "difficulty": "hard"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-hard-08",
+    "title": "Tendem Frontend Developer — Hard 08 — Promises \u0026 Fetch",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "javascript"
+          ],
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form",
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero",
+          "difficulty": "hard"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-hard-09",
+    "title": "Tendem Frontend Developer — Hard 09 — Closures \u0026 Scope",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "javascript"
+          ],
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form",
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero",
+          "difficulty": "hard"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-hard-10",
+    "title": "Tendem Frontend Developer — Hard 10 — Type Coercion Traps",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "javascript"
+          ],
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form",
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero",
+          "difficulty": "hard"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-hard-11",
+    "title": "Tendem Frontend Developer — Hard 11 — CSS Flex Edge Cases",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "css"
+          ],
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form",
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero",
+          "difficulty": "hard"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-hard-12",
+    "title": "Tendem Frontend Developer — Hard 12 — Grid \u0026 Layout",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "css"
+          ],
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form",
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero",
+          "difficulty": "hard"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-hard-13",
+    "title": "Tendem Frontend Developer — Hard 13 — Stacking \u0026 z-index",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "css"
+          ],
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form",
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero",
+          "difficulty": "hard"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-hard-14",
+    "title": "Tendem Frontend Developer — Hard 14 — Responsive \u0026 Viewport",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "css",
+            "html"
+          ],
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form",
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero",
+          "difficulty": "hard"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-hard-15",
+    "title": "Tendem Frontend Developer — Hard 15 — Specificity Wars",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "css"
+          ],
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form",
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero",
+          "difficulty": "hard"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-hard-16",
+    "title": "Tendem Frontend Developer — Hard 16 — Semantic HTML",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "html"
+          ],
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form",
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero",
+          "difficulty": "hard"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-hard-17",
+    "title": "Tendem Frontend Developer — Hard 17 — ARIA \u0026 Accessibility",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "html",
+            "react"
+          ],
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form",
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero",
+          "difficulty": "hard"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-hard-18",
+    "title": "Tendem Frontend Developer — Hard 18 — Forms \u0026 Validation",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "html",
+            "react"
+          ],
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form",
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero",
+          "difficulty": "hard"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-hard-19",
+    "title": "Tendem Frontend Developer — Hard 19 — Landing Page LCP/CLS",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "css",
+            "html"
+          ],
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form",
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero",
+          "difficulty": "hard"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-hard-20",
+    "title": "Tendem Frontend Developer — Hard 20 — Waitlist Forms (Tendem)",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "html"
+          ],
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form",
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero",
+          "difficulty": "hard"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-hard-21",
+    "title": "Tendem Frontend Developer — Hard 21 — AI Code Review (Mindrift)",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript",
+            "css"
+          ],
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form",
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero",
+          "difficulty": "hard"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-hard-22",
+    "title": "Tendem Frontend Developer — Hard 22 — Hero Section Debug",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "css"
+          ],
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form",
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero",
+          "difficulty": "hard"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-hard-23",
+    "title": "Tendem Frontend Developer — Hard 23 — Portals \u0026 Modals",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react"
+          ],
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form",
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero",
+          "difficulty": "hard"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-hard-24",
+    "title": "Tendem Frontend Developer — Hard 24 — Controlled Inputs",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react"
+          ],
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form",
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero",
+          "difficulty": "hard"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-hard-25",
+    "title": "Tendem Frontend Developer — Hard 25 — Error Handling UI",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript"
+          ],
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form",
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero",
+          "difficulty": "hard"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-hard-26",
+    "title": "Tendem Frontend Developer — Hard 26 — Debounce \u0026 Search UX",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "javascript",
+            "react"
+          ],
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form",
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero",
+          "difficulty": "hard"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-hard-27",
+    "title": "Tendem Frontend Developer — Hard 27 — CORS \u0026 Credentials",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "javascript"
+          ],
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form",
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero",
+          "difficulty": "hard"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-hard-28",
+    "title": "Tendem Frontend Developer — Hard 28 — Tailwind/CSS Mental Model",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "css"
+          ],
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form",
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero",
+          "difficulty": "hard"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-hard-29",
+    "title": "Tendem Frontend Developer — Hard 29 — Conversion UX Patterns",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "html",
+            "css",
+            "react"
+          ],
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form",
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero",
+          "difficulty": "hard"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  },
+  {
+    "slug": "tendem-hard-30",
+    "title": "Tendem Frontend Developer — Hard 30 — Full Frontend Hard Mix",
+    "config": {
+      "sections": [
+        {
+          "type": "mcq",
+          "count": 5,
+          "timeLimitMinutes": 40,
+          "tags": [
+            "react",
+            "javascript",
+            "css",
+            "html"
+          ],
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_build",
+          "count": 1,
+          "timeLimitMinutes": 35,
+          "componentFamily": "form",
+          "difficulty": "hard"
+        },
+        {
+          "type": "react_debug",
+          "count": 1,
+          "timeLimitMinutes": 23,
+          "componentFamily": "hero",
+          "difficulty": "hard"
+        }
+      ],
+      "totalTimeLimitMinutes": 98,
+      "proctoring": {
+        "maxBlurEvents": 3,
+        "warnOnPaste": true,
+        "blockPasteInEditor": true
+      }
+    }
+  }
+]

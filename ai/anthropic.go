@@ -21,8 +21,9 @@ func isModelNotFoundErr(err error) bool {
 }
 
 type AnthropicConfig struct {
-	Model     string
-	MaxTokens int
+	Model       string
+	MaxTokens   int
+	HTTPTimeout time.Duration // zero = 20s default
 }
 
 func DefaultAnthropicConfig() AnthropicConfig {
@@ -45,10 +46,14 @@ func NewAnthropicClient(apiKey string, cfg AnthropicConfig) *AnthropicClient {
 	if cfg.MaxTokens <= 0 {
 		cfg.MaxTokens = 512
 	}
+	httpTimeout := cfg.HTTPTimeout
+	if httpTimeout <= 0 {
+		httpTimeout = 20 * time.Second
+	}
 	return &AnthropicClient{
 		client: anthropic.NewClient(
 			option.WithAPIKey(apiKey),
-			option.WithHTTPClient(&http.Client{Timeout: 20 * time.Second}),
+			option.WithHTTPClient(&http.Client{Timeout: httpTimeout}),
 		),
 		model:  cfg.Model,
 		maxTok: int64(cfg.MaxTokens),
