@@ -516,9 +516,20 @@ func replyFromBusinessCatalog(
 	profile *BusinessProfile,
 	catalog []CatalogItem,
 	history []Message,
+	vctx *CatalogVectorContext,
 ) (reply string, handled bool) {
 	if profile == nil {
 		return "", false
+	}
+	if vctx != nil && len(vctx.Hits) > 0 && CatalogSemanticAmbiguous(vctx.Hits) {
+		formal := strOrEmpty(profile.Tone) == "formal"
+		return CatalogAmbiguityReply(formal), true
+	}
+	resolve := resolveCatalogMatch
+	direct := matchCatalogItem
+	if vctx != nil {
+		resolve = vctx.resolve
+		direct = vctx.directMatch
 	}
 	formal := strOrEmpty(profile.Tone) == "formal"
 	bizName := strings.TrimSpace(profile.BusinessName)
@@ -551,13 +562,13 @@ func replyFromBusinessCatalog(
 	}
 
 	if IsProductSellInquiry(userText, catalog) {
-		if match := resolveCatalogMatch(userText, history, catalog); match != nil {
+		if match := resolve(userText, history, catalog); match != nil {
 			return buildCatalogItemReply(formal, match, 0), true
 		}
 	}
 
 	if IsConsultingPurchaseQuestion(userText, catalog) {
-		if match := resolveCatalogMatch(userText, history, catalog); match != nil {
+		if match := resolve(userText, history, catalog); match != nil {
 			text := strings.ToLower(strings.TrimSpace(userText))
 			if isAvailabilityQuestion(text) || isStockOrAvailabilityFollowUp(userText, catalog) {
 				qty, _ := parseOrderQty(userText)
@@ -568,7 +579,7 @@ func replyFromBusinessCatalog(
 	}
 
 	if IsPricingUnitClarification(userText) || isCatalogContextualReference(userText) {
-		if match := resolveCatalogMatch(userText, history, catalog); match != nil {
+		if match := resolve(userText, history, catalog); match != nil {
 			return buildPricingClarificationReply(formal, match), true
 		}
 		return "", false
@@ -578,7 +589,7 @@ func replyFromBusinessCatalog(
 		if len(catalog) == 0 {
 			return buildCatalogEmptyReply(formal, bizName, profile), true
 		}
-		if match := resolveCatalogMatch(userText, history, catalog); match != nil {
+		if match := resolve(userText, history, catalog); match != nil {
 			if IsPricingUnitClarification(userText) {
 				return buildPricingClarificationReply(formal, match), true
 			}
@@ -593,7 +604,7 @@ func replyFromBusinessCatalog(
 
 	// Nama produk disebut tanpa kata harga — tetap coba cocokkan jika jelas ke katalog.
 	if len(catalog) > 0 && !IsQuestionLike(userText) {
-		if match := matchCatalogItem(userText, catalog); match != nil {
+		if match := direct(userText, catalog); match != nil {
 			if strings.Contains(strings.ToLower(userText), strings.ToLower(match.Name)) ||
 				overlapScore(tokenize(userText), tokenize(match.Name)) >= 0.2 {
 				qty, _ := parseOrderQty(userText)

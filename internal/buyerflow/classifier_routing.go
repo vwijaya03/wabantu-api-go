@@ -65,6 +65,17 @@ func ClassifyComplexity(userText string, classifierLabel string, kbTopScore floa
 	return ComplexitySimple
 }
 
+// FAQDirectGuardsPass returns false when FAQ direct must be skipped (order/catalog intents).
+func FAQDirectGuardsPass(query string) bool {
+	if IsThirdPartyBuyerLookup(query) || IsSelfBuyerOrderLookup(query) || IsOrderStatusInquiry(query) {
+		return false
+	}
+	if IsCatalogListQuestion(query) || IsCatalogProductInquiry(query) || IsProductSellInquiry(query, nil) {
+		return false
+	}
+	return true
+}
+
 // topKBMatchScore returns the best hybrid KB overlap score for the query.
 func topKBMatchScore(query string, kb []KBEntry) float64 {
 	if len(kb) == 0 {
@@ -89,11 +100,7 @@ func topKBMatchScore(query string, kb []KBEntry) float64 {
 
 // tryFAQDirectAnswer returns a KB answer without calling the LLM (cost optimization).
 func tryFAQDirectAnswer(query string, kb []KBEntry) (answer string, ok bool) {
-	if IsThirdPartyBuyerLookup(query) || IsSelfBuyerOrderLookup(query) || IsOrderStatusInquiry(query) {
-		return "", false
-	}
-	// Katalog produk harus dari business_catalog_item, bukan FAQ yang mengarah ke IG/website.
-	if IsCatalogListQuestion(query) || IsCatalogProductInquiry(query) || IsProductSellInquiry(query, nil) {
+	if !FAQDirectGuardsPass(query) {
 		return "", false
 	}
 	if len(kb) == 0 {

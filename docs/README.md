@@ -24,6 +24,9 @@ Peta navigasi untuk menjawab pertanyaan tentang backend WABantu. Mulai dari sini
 | Tampilan gambar di inbox (proxy Meta) | [inbox-media-fase1.md](../docs-development-shipped/inbox-media-fase1.md) |
 | Persist media inbox ke S3 | [inbox-media-s3.md](../docs-development-shipped/inbox-media-s3.md) |
 | Vision match katalog dari gambar (planned) | [ai-image-context.md](../docs-development-shipped/ai-image-context.md) |
+| Bagaimana RAG / vector search FAQ & katalog? | [RAG_VECTOR_RETRIEVAL.md](./RAG_VECTOR_RETRIEVAL.md) |
+| Kenapa FAQ direct / retrieval fallback? | [RAG_VECTOR_RETRIEVAL.md](./RAG_VECTOR_RETRIEVAL.md) → §Query pipeline |
+| Setup Pinecone & embedding? | [RAG_VECTOR_RETRIEVAL.md](./RAG_VECTOR_RETRIEVAL.md) → §Secrets |
 | Tagihan Meta vs kuota WABantu | [META_WHATSAPP_MESSAGING_AND_BILLING.md](./META_WHATSAPP_MESSAGING_AND_BILLING.md) |
 | Kuota trial / paket / routing model AI | [LIMITS_AND_QUOTAS.md](../LIMITS_AND_QUOTAS.md) |
 | Roadmap WA (media, bukti transfer, stok) | [WHATSAPP_INBOX_MEDIA_PAYMENT_STOCK.md](./WHATSAPP_INBOX_MEDIA_PAYMENT_STOCK.md) |

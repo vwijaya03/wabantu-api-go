@@ -187,6 +187,20 @@ flowchart TD
 10. **Sell inquiry:** `jual abon sapi?` → `catalog_db` (`IsProductSellInquiry`), bukan LLM.
 11. **Stock follow-up:** `stoknya ada?` / `ada ga?` pendek → resolve produk dari `matchCatalogFromFocusedHistory` — skip outbound list katalog.
 
+### Retrieval vector (RAG)
+
+> Detail lengkap: [RAG_VECTOR_RETRIEVAL.md](./RAG_VECTOR_RETRIEVAL.md)
+
+| `retrieval_mode` | Perilaku di `ProcessAutoReply` |
+|------------------|--------------------------------|
+| `disabled` (default) | `retrieveHybridKB` lexical — status quo |
+| `shadow` | Vector + lexical dijalankan; log skor; **respons pelanggan tidak berubah** |
+| `vector` | RRF vector+lexical → urutan FAQ di prompt; FAQ direct pakai `DefaultFAQMinScore` + margin |
+
+Implementasi: `ai/retrieval_bridge.go` → `shared/retrieval.Service.RetrieveKB`. Fallback penuh ke lexical jika embed/Pinecone gagal atau circuit breaker OPEN.
+
+Katalog: `MatchCatalogItemSemantic` (vector top-3 → rules); ambigu → klarifikasi, bukan tebak SKU.
+
 ---
 
 ## Tabel deteksi intent

@@ -115,7 +115,7 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 		if !IsCatalogBrowsingIntent(userText) && !isGeneralStoreCatalogQuestion(userText) {
 			return OrderFlowResult{}, false
 		}
-		if catReply, ok := replyFromBusinessCatalog(userText, profile, catalog, history); ok {
+		if catReply, ok := replyFromBusinessCatalog(userText, profile, catalog, history, nil); ok {
 			return OrderFlowResult{Cleared: true, CatalogReply: true, Path: PathCatalogDB, Reply: catReply}, true
 		}
 		return OrderFlowResult{}, false
@@ -311,12 +311,12 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 		}
 		if !st.VariantComplete() {
 			if IsCatalogBrowsingIntent(userText) || isGeneralStoreCatalogQuestion(userText) {
-				if catReply, ok := replyFromBusinessCatalog(userText, profile, catalog, history); ok {
+				if catReply, ok := replyFromBusinessCatalog(userText, profile, catalog, history, nil); ok {
 					return OrderFlowResult{Cleared: true, CatalogReply: true, Path: PathCatalogDB, Reply: catReply}
 				}
 			}
 			if wouldRepeatOutbound(history, tmpl.AskVariant) {
-				if catReply, ok := replyFromBusinessCatalog(userText, profile, catalog, history); ok {
+				if catReply, ok := replyFromBusinessCatalog(userText, profile, catalog, history, nil); ok {
 					return OrderFlowResult{Cleared: true, CatalogReply: true, Path: PathCatalogDB, Reply: catReply}
 				}
 				return OrderFlowResult{Cleared: true, Path: PathOrderFlow, Reply: orderFlowLoopBreakReply(formal)}

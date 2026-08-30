@@ -41,6 +41,11 @@ Entri lama tanpa prefix datetime (mis. `inbox-media-fase1.md`) tetap valid; entr
 
 | File | Isi | Status |
 |------|-----|--------|
+| [20260830_173800_rag-catalog-retrieval.md](./20260830_173800_rag-catalog-retrieval.md) | Catalog semantic search + ambiguity clarify | Implementasi lokal |
+| [20260830_173800_rag-kb-retrieval.md](./20260830_173800_rag-kb-retrieval.md) | Vector KB retrieval di autoreply (shadow/vector) | Implementasi lokal |
+| [20260830_173800_rag-eval-suite.md](./20260830_173800_rag-eval-suite.md) | Eval Recall@1, FAQ precision, contract staging | Implementasi lokal |
+| [20260830_173800_rag-kb-indexing.md](./20260830_173800_rag-kb-indexing.md) | KB outbox indexing + reindex endpoint | Implementasi lokal |
+| [20260830_173800_rag-outbox-indexing.md](./20260830_173800_rag-outbox-indexing.md) | Transactional outbox + embedding columns | Implementasi lokal |
 | [2026-08-26_203200_apitest-encore-cloud-redis-fix.md](./2026-08-26_203200_apitest-encore-cloud-redis-fix.md) | Encore Cloud build tanpa Redis + fix `encore run` panic (`et` di `*_test.go`) | PR [#142](https://github.com/vwijaya03/wabantu-api-go/pull/142) merged |
 | [2026-08-26_201300_apiregistry-apitest-ping.md](./2026-08-26_201300_apiregistry-apitest-ping.md) | Izinkan path `/internal/`, snapshot **336 endpoint / 29 service** | PR [#141](https://github.com/vwijaya03/wabantu-api-go/pull/141) merged |
 | [2026-08-26_183000_api-http-smoke-apitest.md](./2026-08-26_183000_api-http-smoke-apitest.md) | HTTP smoke Encore per service (`internal/apitest`), CI `api-smoke.yml` | PR [#140](https://github.com/vwijaya03/wabantu-api-go/pull/140) merged |

@@ -1,6 +1,6 @@
 {
   "total_services": 29,
-  "total_endpoints": 336,
+  "total_endpoints": 337,
   "services": {
     "admin": 24,
     "ai": 3,
@@ -19,7 +19,7 @@
     "inbox": 21,
     "internal": 1,
     "inventory": 57,
-    "kb": 4,
+    "kb": 5,
     "leads": 3,
     "notification": 2,
     "order": 11,

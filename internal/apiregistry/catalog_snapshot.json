@@ -1,5 +1,5 @@
 {
-  "count": 336,
+  "count": 337,
   "endpoints": [
     {
       "service": "admin",
@@ -441,7 +441,7 @@
     {
       "service": "business",
       "file": "business/catalog.go",
-      "line": 309,
+      "line": 311,
       "access": "auth",
       "method": "DELETE",
       "path": "/api/v1/business/catalog/:id",
@@ -451,7 +451,7 @@
     {
       "service": "business",
       "file": "business/catalog.go",
-      "line": 211,
+      "line": 212,
       "access": "auth",
       "method": "PATCH",
       "path": "/api/v1/business/catalog/:id",
@@ -2608,7 +2608,7 @@
     {
       "service": "kb",
       "file": "kb/kb.go",
-      "line": 134,
+      "line": 138,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/knowledge-base",
@@ -2617,7 +2617,7 @@
     {
       "service": "kb",
       "file": "kb/kb.go",
-      "line": 212,
+      "line": 216,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/knowledge-base",
@@ -2626,7 +2626,7 @@
     {
       "service": "kb",
       "file": "kb/kb.go",
-      "line": 322,
+      "line": 376,
       "access": "auth",
       "method": "DELETE",
       "path": "/api/v1/knowledge-base/:id",
@@ -2635,11 +2635,20 @@
     {
       "service": "kb",
       "file": "kb/kb.go",
-      "line": 250,
+      "line": 278,
       "access": "auth",
       "method": "PATCH",
       "path": "/api/v1/knowledge-base/:id",
       "annotation": "auth method=PATCH path=/api/v1/knowledge-base/:id"
+    },
+    {
+      "service": "kb",
+      "file": "kb/retrieval_worker.go",
+      "line": 114,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/knowledge-base/reindex",
+      "annotation": "auth method=POST path=/api/v1/knowledge-base/reindex"
     },
     {
       "service": "leads",

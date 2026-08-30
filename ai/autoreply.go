@@ -15,8 +15,10 @@ import (
 	"encore.dev/rlog"
 	"encore.dev/storage/sqldb"
 
+	appflag "encore.app/wabantu/flag"
 	"encore.app/wabantu/shared/inboxrealtime"
 	appdb "encore.app/wabantu/shared/db"
+	"encore.app/wabantu/shared/retrieval"
 	"encore.app/wabantu/shared/strutil"
 	"encore.app/wabantu/shared/pii"
 	"encore.app/wabantu/usage"
@@ -409,7 +411,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 
 	// ── Katalog WABantu (business_catalog_item) — prioritas sebelum FAQ/LLM ──
 	if inScope {
-		if catReply, ok := replyFromBusinessCatalog(userText, profile, catalog, history); ok {
+		if catReply, ok := s.replyFromBusinessCatalogHybrid(ctx, payload.TenantID, payload.TenantSchema, userText, profile, catalog, history); ok {
 			if clearedOrderForCorrection {
 				catReply = prependSalesCorrection(strOrEmpty(profile.Tone) == "formal", catReply)
 			}
@@ -458,7 +460,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 
 	// ── Browsing katalog (mis. "mau tanya produk") — jangan redirect generik ──
 	if inScope && IsCatalogBrowsingIntent(userText) {
-		if catReply, ok := replyFromBusinessCatalog(userText, profile, catalog, history); ok {
+		if catReply, ok := s.replyFromBusinessCatalogHybrid(ctx, payload.TenantID, payload.TenantSchema, userText, profile, catalog, history); ok {
 			finalReply := applyOutputPolicy(catReply)
 			out := metaNoLLM(reasonAIGenerated, PathCatalogDB)
 			out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
@@ -529,16 +531,21 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return err == nil, err
 	}
 
-	kbHybrid := retrieveHybridKB(userText, kbEntries)
-	kbTopScore := topKBMatchScore(userText, kbEntries)
+	kbHybrid, kbTopScore, kbRetrieval := s.retrieveKBHybrid(ctx, payload.TenantID, payload.TenantSchema, userText, kbEntries)
 	rlog.Info("AI job: hybrid KB retrieval",
 		"selected", len(kbHybrid),
 		"total", len(kbEntries),
 		"topScore", kbTopScore,
+		"shadow", kbRetrieval != nil && kbRetrieval.ShadowOnly,
 	)
 
 	// FAQ bypass — no LLM call when KB match is strong (cost optimization).
-	if direct, ok := tryFAQDirectAnswer(userText, kbEntries); ok {
+	mode := appflag.RetrievalMode(ctx, payload.TenantID)
+	var rrfScores []retrieval.ScoredEntry
+	if kbRetrieval != nil {
+		rrfScores = kbRetrieval.Entries
+	}
+	if direct, ok := tryFAQDirectAnswerHybrid(userText, kbEntries, rrfScores, mode); ok {
 		finalReply := applyOutputPolicy(direct)
 		s.setCachedAnswer(ctx, payload.TenantID, userText, finalReply)
 		out := metaNoLLM(reasonAIGenerated, PathFAQDirect)

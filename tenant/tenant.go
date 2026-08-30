@@ -379,7 +379,15 @@ CREATE TABLE IF NOT EXISTS business_catalog_item (
     created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
     deleted_at          TIMESTAMPTZ,
-    deleted_by          UUID
+    deleted_by          UUID,
+    embedding_status    VARCHAR(20)  NOT NULL DEFAULT 'pending',
+    embedding_version   BIGINT       NOT NULL DEFAULT 0,
+    embedding_content_hash VARCHAR(64),
+    embedding_model     VARCHAR(64),
+    embedding_attempts  INT          NOT NULL DEFAULT 0,
+    embedding_last_error TEXT,
+    embedding_updated_at TIMESTAMPTZ,
+    embedding_indexed_at TIMESTAMPTZ
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_source_code
     ON business_catalog_item(source, external_code)
@@ -402,10 +410,45 @@ CREATE TABLE IF NOT EXISTS knowledge_base_entry (
     created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
     deleted_at  TIMESTAMPTZ,
-    deleted_by  UUID
+    deleted_by  UUID,
+    embedding_status    VARCHAR(20)  NOT NULL DEFAULT 'pending',
+    embedding_version   BIGINT       NOT NULL DEFAULT 0,
+    embedding_content_hash VARCHAR(64),
+    embedding_model     VARCHAR(64),
+    embedding_attempts  INT          NOT NULL DEFAULT 0,
+    embedding_last_error TEXT,
+    embedding_updated_at TIMESTAMPTZ,
+    embedding_indexed_at TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS idx_kb_entry_category
     ON knowledge_base_entry(category);
+
+CREATE TABLE IF NOT EXISTS retrieval_outbox (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_type      VARCHAR(32) NOT NULL,
+    entity_type     VARCHAR(32) NOT NULL,
+    entity_id       UUID NOT NULL,
+    version         BIGINT NOT NULL DEFAULT 1,
+    content_hash    VARCHAR(64),
+    status          VARCHAR(20) NOT NULL DEFAULT 'pending',
+    attempts        INT NOT NULL DEFAULT 0,
+    last_error      TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    processed_at    TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_retrieval_outbox_pending
+    ON retrieval_outbox(status, created_at)
+    WHERE status IN ('pending', 'failed');
+
+ALTER TABLE knowledge_base_entry ADD COLUMN IF NOT EXISTS embedding_status VARCHAR(20) NOT NULL DEFAULT 'pending';
+ALTER TABLE knowledge_base_entry ADD COLUMN IF NOT EXISTS embedding_version BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE knowledge_base_entry ADD COLUMN IF NOT EXISTS embedding_content_hash VARCHAR(64);
+ALTER TABLE knowledge_base_entry ADD COLUMN IF NOT EXISTS embedding_model VARCHAR(64);
+ALTER TABLE knowledge_base_entry ADD COLUMN IF NOT EXISTS embedding_attempts INT NOT NULL DEFAULT 0;
+ALTER TABLE knowledge_base_entry ADD COLUMN IF NOT EXISTS embedding_last_error TEXT;
+ALTER TABLE knowledge_base_entry ADD COLUMN IF NOT EXISTS embedding_updated_at TIMESTAMPTZ;
+ALTER TABLE knowledge_base_entry ADD COLUMN IF NOT EXISTS embedding_indexed_at TIMESTAMPTZ;
 
 -- branch: multi-branch org (default branch seeded at signup)
 CREATE TABLE IF NOT EXISTS branch (

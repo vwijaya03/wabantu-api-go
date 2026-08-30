@@ -205,6 +205,7 @@ func CreateCatalog(ctx context.Context, req *CreateCatalogRequest) (*CatalogItem
 		}
 		item.Prices = prices
 	}
+	afterCatalogItemWritten(ctx, user.TenantSchema, user.TenantID, item)
 	return &item, nil
 }
 
@@ -303,6 +304,7 @@ func UpdateCatalog(ctx context.Context, id string, req *UpdateCatalogRequest) (*
 		return nil, pErr
 	}
 	item.Prices = prices
+	afterCatalogItemWritten(ctx, user.TenantSchema, user.TenantID, item)
 	return &item, nil
 }
 
