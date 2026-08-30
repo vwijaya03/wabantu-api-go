@@ -83,6 +83,7 @@ func (s *Service) RetrieveKB(ctx context.Context, req RetrieveKBRequest, lexical
 	}
 
 	var vectorHits []Hit
+	start := time.Now()
 	err = WithBudget(ctx, s.Budget, func() error {
 		vecs, e := s.Embedder.Embed(ctx, []string{req.Query})
 		if e != nil {
@@ -94,6 +95,7 @@ func (s *Service) RetrieveKB(ctx context.Context, req RetrieveKBRequest, lexical
 		vectorHits, e = s.Store.Query(ctx, ns, vecs[0], req.TopK, PineconeFilterActiveKB())
 		return e
 	})
+	RecordQueryLatency(time.Since(start))
 	if err != nil {
 		if s.Breaker != nil {
 			s.Breaker.RecordFailure(err)

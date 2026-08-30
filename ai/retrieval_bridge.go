@@ -44,6 +44,7 @@ func (s *AutoReplyService) retrieveKBHybrid(
 	}, lexicalRanker)
 	if err != nil || res == nil {
 		retrieval.LogQuery(ctx, "kb", tenantID, string(mode), true, false)
+		recordRetrievalQueryMetrics("kb", string(mode), true, false, retrieval.LatencyP95Ms())
 		rlog.Warn("retrieval KB failed, lexical fallback", "err", err, "tenant", tenantID)
 		return lexical, topKBMatchScore(query, kb), res
 	}
@@ -55,6 +56,9 @@ func (s *AutoReplyService) retrieveKBHybrid(
 			"fused", len(res.Entries),
 			"lexical", len(res.LexicalHits),
 		)
+		zero := len(res.Entries) == 0
+		retrieval.LogQuery(ctx, "kb", tenantID, string(mode), false, zero)
+		recordRetrievalQueryMetrics("kb", string(mode), false, zero, retrieval.LatencyP95Ms())
 		return lexical, topKBMatchScore(query, kb), res
 	}
 
@@ -66,6 +70,9 @@ func (s *AutoReplyService) retrieveKBHybrid(
 	if len(ordered) == 0 {
 		ordered = lexical
 	}
+	zero := len(res.Entries) == 0
+	retrieval.LogQuery(ctx, "kb", tenantID, string(mode), false, zero)
+	recordRetrievalQueryMetrics("kb", string(mode), false, zero, retrieval.LatencyP95Ms())
 	return ordered, topScore, res
 }
 
@@ -143,9 +150,11 @@ func (s *AutoReplyService) replyFromBusinessCatalogHybrid(
 	hits, err := svc.RetrieveCatalogCandidates(qctx, tenant, userText, 3)
 	if err != nil || len(hits) == 0 {
 		retrieval.LogQuery(ctx, "catalog", tenantID, string(mode), err != nil, len(hits) == 0)
+		recordRetrievalQueryMetrics("catalog", string(mode), err != nil, len(hits) == 0, retrieval.LatencyP95Ms())
 		return replyFromBusinessCatalog(userText, profile, catalog, history)
 	}
 	retrieval.LogQuery(ctx, "catalog", tenantID, string(mode), false, false)
+	recordRetrievalQueryMetrics("catalog", string(mode), false, false, retrieval.LatencyP95Ms())
 	vctx := &bf.CatalogVectorContext{Hits: hits}
 	return bf.ReplyFromBusinessCatalogVector(userText, profile, catalog, history, vctx)
 }

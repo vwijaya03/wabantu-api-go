@@ -134,6 +134,23 @@ encore test ./internal/buyerflow/...
 4. `ai_retrieval_mode_vector` per tenant
 5. Index katalog via CRUD `business/catalog`
 
+### Superadmin APIs (flag service)
+
+| Endpoint | Fungsi |
+|----------|--------|
+| `GET /api/v1/flags/retrieval-indexing/:tenantId` | Progress embedding per tenant (KB + katalog + outbox) |
+| `GET /api/v1/flags/retrieval-observability` | Snapshot counter/latency in-process + Encore metrics |
+| `POST /api/v1/flags/retrieval-rollout` | Rollout massal async per tenant |
+
+### Query embed cache
+
+Single-query embeddings (autoreply hot path) di-cache in-process LRU (512 entri, TTL 15 menit). Indexing batch tidak di-cache.
+
+### Observability
+
+- Encore metrics: `retrieval_requests_total`, `retrieval_fallback_total`, `retrieval_indexing_*`, `retrieval_latency_p95_ms`
+- Structured logs: `retrieval query`, `retrieval shadow`
+
 ## Troubleshooting
 
 | Gejala | Tindakan |

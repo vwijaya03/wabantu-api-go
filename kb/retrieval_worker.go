@@ -58,6 +58,18 @@ func handleRetrievalIndexJob(ctx context.Context, job *RetrievalIndexJob) error 
 	return err
 }
 
+func indexingLagSec(enqueuedAt time.Time) uint64 {
+	lag := time.Since(enqueuedAt)
+	if lag <= 0 {
+		return 0
+	}
+	sec := uint64(lag.Seconds())
+	if sec == 0 {
+		return 1
+	}
+	return sec
+}
+
 func handleKBRetrievalIndexJob(ctx context.Context, job *RetrievalIndexJob) error {
 	ts, err := openTenantScope(ctx, job.TenantSchema)
 	if err != nil {
@@ -83,6 +95,8 @@ func handleKBRetrievalIndexJob(ctx context.Context, job *RetrievalIndexJob) erro
 		attempts := 1
 		_ = failOutbox(ctx, ts, job.OutboxID, attempts, procErr.Error())
 		_ = markKBIndexFailed(ctx, ts, job.EntityID, job.Version, attempts, procErr.Error())
+		retrieval.RecordIndexingOutcome(entityTypeKB, job.Lane, false, time.Since(job.EnqueuedAt))
+		recordIndexingMetrics(entityTypeKB, job.Lane, false, indexingLagSec(job.EnqueuedAt))
 		if retrieval.IsRetryableError(procErr) {
 			return procErr
 		}
@@ -90,6 +104,8 @@ func handleKBRetrievalIndexJob(ctx context.Context, job *RetrievalIndexJob) erro
 		return nil
 	}
 	_ = completeOutbox(ctx, ts, job.OutboxID)
+	retrieval.RecordIndexingOutcome(entityTypeKB, job.Lane, true, time.Since(job.EnqueuedAt))
+	recordIndexingMetrics(entityTypeKB, job.Lane, true, indexingLagSec(job.EnqueuedAt))
 	return markKBIndexed(ctx, ts, job.EntityID, job.Version)
 }
 

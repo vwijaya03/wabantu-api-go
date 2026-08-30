@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	"encore.app/wabantu/shared/retrieval"
 	appdb "encore.app/wabantu/shared/db"
@@ -44,12 +45,16 @@ func handleCatalogRetrievalIndexJob(ctx context.Context, job *RetrievalIndexJob)
 	if procErr != nil {
 		attempts := 1
 		_ = failOutbox(ctx, ts, job.OutboxID, attempts, procErr.Error())
+		retrieval.RecordIndexingOutcome(catalogEntityType, job.Lane, false, time.Since(job.EnqueuedAt))
+		recordIndexingMetrics(catalogEntityType, job.Lane, false, indexingLagSec(job.EnqueuedAt))
 		if retrieval.IsRetryableError(procErr) {
 			return procErr
 		}
 		return nil
 	}
 	_ = completeOutbox(ctx, ts, job.OutboxID)
+	retrieval.RecordIndexingOutcome(catalogEntityType, job.Lane, true, time.Since(job.EnqueuedAt))
+	recordIndexingMetrics(catalogEntityType, job.Lane, true, indexingLagSec(job.EnqueuedAt))
 	return markCatalogIndexed(ctx, ts, job.EntityID, job.Version)
 }
 

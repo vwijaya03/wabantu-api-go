@@ -15,7 +15,7 @@ func NewProductionService() *Service {
 	if !OpenAIConfigured(openKey) || !PineconeConfigured(pineHost, pineKey) {
 		return nil
 	}
-	emb := NewOpenAIEmbedder(openKey)
+	emb := NewCachingEmbedder(NewOpenAIEmbedder(openKey))
 	store := NewPineconeClient(pineHost, pineKey)
 	return NewService(emb, store)
 }
