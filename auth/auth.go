@@ -19,6 +19,7 @@ import (
 
 	"encore.app/wabantu/audit"
 	"encore.app/wabantu/branch"
+	"encore.app/wabantu/flag"
 	appdb "encore.app/wabantu/shared/db"
 	"encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/ratelimit"
@@ -268,6 +269,7 @@ func serveRegister(w http.ResponseWriter, req *http.Request) {
 	)
 	_ = branch.EnsureDefaultBranch(ctx, schemaName)
 	_ = tenant.RecordNewTenantSchemaVersion(ctx, tenantID)
+	_ = flag.EnableVectorForNewTenant(ctx, tenantID)
 
 	completeLogin(w, req, ctx, accountID, emailLower, nullStr(accountName), accountRole,
 		tenantID, tenantSlug, tenantName, schemaName, http.StatusCreated)

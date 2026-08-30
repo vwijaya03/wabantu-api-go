@@ -20,6 +20,7 @@ import (
 
 	appauth "encore.app/wabantu/auth"
 	"encore.app/wabantu/business"
+	"encore.app/wabantu/kb"
 	"encore.app/wabantu/shared/types"
 
 	"github.com/xuri/excelize/v2"
@@ -32,6 +33,7 @@ var tenantDB = sqldb.Named("tenant")
 type ImportRequest struct {
 	JobID         string            `json:"jobId"`
 	TenantSchema  string            `json:"tenantSchema"`
+	TenantID      string            `json:"tenantId"`
 	TargetTable   string            `json:"targetTable"` // "business_catalog_item" | "knowledge_base_entry"
 	Headers       []string          `json:"headers"`
 	ColumnMapping map[string]string `json:"columnMapping"`
@@ -236,6 +238,7 @@ func Execute(ctx context.Context, req *ExecuteRequest) (*ExecuteResponse, error)
 	_, err = ImportTopic.Publish(ctx, ImportRequest{
 		JobID:         jobID,
 		TenantSchema:  userData.TenantSchema,
+		TenantID:      userData.TenantID,
 		TargetTable:   target,
 		Headers:       staged.Headers,
 		ColumnMapping: req.ColumnMapping,
@@ -380,7 +383,7 @@ func handleImport(ctx context.Context, req ImportRequest) error {
 	result := ImportResult{TotalRows: len(req.Rows)}
 
 	for i, row := range req.Rows {
-		err := processRow(ctx, req.TenantSchema, req.TargetTable, req.Headers, req.ColumnMapping, row, i)
+		err := processRow(ctx, req.TenantSchema, req.TenantID, req.TargetTable, req.Headers, req.ColumnMapping, row, i)
 		if err != nil {
 			result.FailedCount++
 			result.Errors = append(result.Errors, RowError{
@@ -410,7 +413,7 @@ func importResultKey(jobID string) string {
 	return "import:result:" + jobID
 }
 
-func processRow(ctx context.Context, schema, target string, headers []string, mapping map[string]string, row []string, _ int) error {
+func processRow(ctx context.Context, schema, tenantID, target string, headers []string, mapping map[string]string, row []string, _ int) error {
 	vals := make(map[string]string)
 	for i, header := range headers {
 		col := mapping[header]
@@ -464,7 +467,10 @@ func processRow(ctx context.Context, schema, target string, headers []string, ma
 				barcode = EXCLUDED.barcode,
 				updated_at = NOW()`, schema),
 			code, name, desc, price, unit, active, barcode)
-		return err
+		if err != nil {
+			return err
+		}
+		return business.IndexImportedCatalog(ctx, schema, tenantID, "import", code)
 
 	case "knowledge_base_entry":
 		q := vals["question"]
@@ -476,9 +482,7 @@ func processRow(ctx context.Context, schema, target string, headers []string, ma
 		if v := vals["category"]; v != "" {
 			cat = &v
 		}
-		_, err := tenantDB.Exec(ctx, fmt.Sprintf(`
-			INSERT INTO "%s".knowledge_base_entry (question, answer, category, source)
-			VALUES ($1,$2,$3,'import')`, schema), q, a, cat)
+		_, err := kb.InsertKBEntryWithIndex(ctx, schema, tenantID, q, a, cat, "import", true)
 		return err
 
 	default:

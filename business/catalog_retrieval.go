@@ -82,6 +82,65 @@ func enqueueCatalogIndex(ctx context.Context, tenantSchema, tenantID, itemID, na
 	})
 }
 
+func afterCatalogItemDeleted(ctx context.Context, tenantSchema, tenantID, itemID string, version int64) {
+	if err := ensureCatalogRetrievalSchema(ctx, tenantSchema); err != nil {
+		return
+	}
+	ts, err := openTenantScope(ctx, tenantSchema)
+	if err != nil {
+		return
+	}
+	tx, err := ts.BeginTx(ctx, nil)
+	if err != nil {
+		return
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var outboxID string
+	err = tx.QueryRowContext(ctx, `
+		INSERT INTO retrieval_outbox (event_type, entity_type, entity_id, version, content_hash, status)
+		VALUES ($1, $2, $3::uuid, $4, '', 'pending')
+		RETURNING id::text`,
+		outboxDeleteCatalog, catalogEntityType, itemID, version,
+	).Scan(&outboxID)
+	if err != nil {
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		return
+	}
+	_ = kb.PublishRetrievalJob(ctx, &kb.RetrievalIndexJob{
+		TenantSchema: tenantSchema,
+		TenantID:     tenantID,
+		OutboxID:     outboxID,
+		EntityType:   catalogEntityType,
+		EntityID:     itemID,
+		Version:      version,
+		EventType:    outboxDeleteCatalog,
+		EnqueuedAt:   time.Now().UTC(),
+	})
+}
+
+// IndexImportedCatalog enqueues vector indexing for a row imported via CSV/XLSX.
+func IndexImportedCatalog(ctx context.Context, tenantSchema, tenantID, source, externalCode string) error {
+	ts, err := openTenantScope(ctx, tenantSchema)
+	if err != nil {
+		return err
+	}
+	row := ts.QueryRowContext(ctx, `
+		SELECT id, external_code, name, description, sell_price, sell_unit,
+		       is_active, barcode, source, created_at, updated_at
+		FROM business_catalog_item
+		WHERE source = $1 AND external_code = $2 AND deleted_at IS NULL`,
+		source, externalCode)
+	item, err := scanCatalog(row.Scan)
+	if err != nil {
+		return err
+	}
+	afterCatalogItemWritten(ctx, tenantSchema, tenantID, item)
+	return nil
+}
+
 func afterCatalogItemWritten(ctx context.Context, tenantSchema, tenantID string, item CatalogItem) {
 	desc := item.Description
 	enqueueCatalogIndex(ctx, tenantSchema, tenantID, item.ID, item.Name, desc, item.ExternalCode)
