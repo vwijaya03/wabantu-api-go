@@ -70,7 +70,7 @@ func InsertKBEntryWithIndex(
 }
 
 // EnqueueRAGBackfillForTenant queues index jobs for all active KB entries and catalog items
-// that are not yet indexed (or failed).
+// that are not yet indexed (or failed). Loops in batches until none remain (superadmin one-shot).
 func EnqueueRAGBackfillForTenant(ctx context.Context, tenantSchema, tenantID string, batchSize int) (kbEnqueued, catalogEnqueued int, err error) {
 	if batchSize <= 0 || batchSize > 500 {
 		batchSize = 200
@@ -83,12 +83,28 @@ func EnqueueRAGBackfillForTenant(ctx context.Context, tenantSchema, tenantID str
 		return 0, 0, err
 	}
 
-	kbEnqueued, err = enqueueKBBackfill(ctx, ts, tenantSchema, tenantID, batchSize)
-	if err != nil {
-		return kbEnqueued, 0, err
+	const maxRounds = 200 // safety: up to 200×batch per entity type (~100k rows)
+	for round := 0; round < maxRounds; round++ {
+		n, err := enqueueKBBackfill(ctx, ts, tenantSchema, tenantID, batchSize)
+		kbEnqueued += n
+		if err != nil {
+			return kbEnqueued, catalogEnqueued, err
+		}
+		if n < batchSize {
+			break
+		}
 	}
-	catalogEnqueued, err = enqueueCatalogBackfill(ctx, ts, tenantSchema, tenantID, batchSize)
-	return kbEnqueued, catalogEnqueued, err
+	for round := 0; round < maxRounds; round++ {
+		n, err := enqueueCatalogBackfill(ctx, ts, tenantSchema, tenantID, batchSize)
+		catalogEnqueued += n
+		if err != nil {
+			return kbEnqueued, catalogEnqueued, err
+		}
+		if n < batchSize {
+			break
+		}
+	}
+	return kbEnqueued, catalogEnqueued, nil
 }
 
 func enqueueKBBackfill(ctx context.Context, ts appdb.TenantScope, tenantSchema, tenantID string, batchSize int) (int, error) {
