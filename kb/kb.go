@@ -271,7 +271,7 @@ func Create(ctx context.Context, req *CreateRequest) (*CreateResponse, error) {
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
-	publishKBIndexAfterCommit(ctx, u.TenantSchema, u.TenantID, outboxID, entry.ID, outboxEventIndexKB, version)
+	publishKBIndexAfterCommit(ctx, u.TenantSchema, u.TenantID, outboxID, entry.ID, outboxEventIndexKB, version, retrieval.IndexLaneLive)
 	return &CreateResponse{Entry: entry}, nil
 }
 
@@ -369,7 +369,7 @@ func Update(ctx context.Context, id string, req *UpdateRequest) (*UpdateResponse
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
-	publishKBIndexAfterCommit(ctx, u.TenantSchema, u.TenantID, outboxID, entry.ID, outboxEventIndexKB, version)
+	publishKBIndexAfterCommit(ctx, u.TenantSchema, u.TenantID, outboxID, entry.ID, outboxEventIndexKB, version, retrieval.IndexLaneLive)
 	return &UpdateResponse{Entry: entry}, nil
 }
 
@@ -421,7 +421,7 @@ func Delete(ctx context.Context, id string) (*DeleteResponse, error) {
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
-	publishKBIndexAfterCommit(ctx, u.TenantSchema, u.TenantID, outboxID, id, outboxEventDeleteKB, version)
+	publishKBIndexAfterCommit(ctx, u.TenantSchema, u.TenantID, outboxID, id, outboxEventDeleteKB, version, retrieval.IndexLaneLive)
 	return &DeleteResponse{OK: true}, nil
 }
 

@@ -1,6 +1,6 @@
 {
   "total_services": 29,
-  "total_endpoints": 337,
+  "total_endpoints": 343,
   "services": {
     "admin": 24,
     "ai": 3,
@@ -13,7 +13,7 @@
     "business": 20,
     "events": 64,
     "finance": 60,
-    "flag": 4,
+    "flag": 10,
     "health": 2,
     "importcsv": 3,
     "inbox": 21,

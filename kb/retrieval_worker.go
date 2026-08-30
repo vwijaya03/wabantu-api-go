@@ -21,6 +21,7 @@ type RetrievalIndexJob struct {
 	EntityID     string    `json:"entityId"`
 	Version      int64     `json:"version"`
 	EventType    string    `json:"eventType"`
+	Lane         string    `json:"lane,omitempty"` // live | backfill
 	EnqueuedAt   time.Time `json:"enqueuedAt"`
 }
 
@@ -37,14 +38,24 @@ func handleRetrievalIndexJob(ctx context.Context, job *RetrievalIndexJob) error 
 	if job == nil {
 		return nil
 	}
+	lane := job.Lane
+	if lane == "" {
+		lane = retrieval.IndexLaneLive
+	}
+	var err error
 	switch job.EntityType {
 	case entityTypeKB:
-		return handleKBRetrievalIndexJob(ctx, job)
+		err = retrieval.WithIndexingLane(ctx, lane, func() error {
+			return handleKBRetrievalIndexJob(ctx, job)
+		})
 	case catalogEntityType:
-		return handleCatalogRetrievalIndexJob(ctx, job)
+		err = retrieval.WithIndexingLane(ctx, lane, func() error {
+			return handleCatalogRetrievalIndexJob(ctx, job)
+		})
 	default:
 		return nil
 	}
+	return err
 }
 
 func handleKBRetrievalIndexJob(ctx context.Context, job *RetrievalIndexJob) error {
@@ -168,7 +179,7 @@ func Reindex(ctx context.Context, req *ReindexRequest) (*ReindexResponse, error)
 		if err := tx.Commit(); err != nil {
 			return nil, err
 		}
-		publishKBIndexAfterCommit(ctx, u.TenantSchema, u.TenantID, outboxID, id, outboxEventIndexKB, version)
+		publishKBIndexAfterCommit(ctx, u.TenantSchema, u.TenantID, outboxID, id, outboxEventIndexKB, version, retrieval.IndexLaneBackfill)
 		enqueued++
 	}
 	return &ReindexResponse{Enqueued: enqueued}, rows.Err()

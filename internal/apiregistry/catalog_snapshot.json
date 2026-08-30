@@ -1,5 +1,5 @@
 {
-  "count": 337,
+  "count": 343,
   "endpoints": [
     {
       "service": "admin",
@@ -279,7 +279,7 @@
     {
       "service": "auth",
       "file": "auth/auth.go",
-      "line": 278,
+      "line": 280,
       "access": "public",
       "method": "POST",
       "path": "/api/v1/auth/login",
@@ -289,7 +289,7 @@
     {
       "service": "auth",
       "file": "auth/auth.go",
-      "line": 385,
+      "line": 387,
       "access": "public",
       "method": "POST",
       "path": "/api/v1/auth/logout",
@@ -299,7 +299,7 @@
     {
       "service": "auth",
       "file": "auth/auth.go",
-      "line": 410,
+      "line": 412,
       "access": "public",
       "method": "GET",
       "path": "/api/v1/auth/me",
@@ -319,7 +319,7 @@
     {
       "service": "auth",
       "file": "auth/auth.go",
-      "line": 139,
+      "line": 140,
       "access": "public",
       "method": "POST",
       "path": "/api/v1/auth/register",
@@ -578,7 +578,7 @@
     {
       "service": "business",
       "file": "business/interview.go",
-      "line": 221,
+      "line": 222,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/business/setup-interview/session/:sessionId",
@@ -588,7 +588,7 @@
     {
       "service": "business",
       "file": "business/interview.go",
-      "line": 238,
+      "line": 239,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/business/setup-interview/session/:sessionId/message",
@@ -598,7 +598,7 @@
     {
       "service": "business",
       "file": "business/interview.go",
-      "line": 400,
+      "line": 401,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/business/setup-interview/session/:sessionId/publish",
@@ -608,7 +608,7 @@
     {
       "service": "business",
       "file": "business/interview.go",
-      "line": 171,
+      "line": 172,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/business/setup-interview/start",
@@ -1741,7 +1741,7 @@
     {
       "service": "flag",
       "file": "flag/flag.go",
-      "line": 158,
+      "line": 161,
       "access": "auth",
       "method": "PATCH",
       "path": "/api/v1/flags/:key",
@@ -1750,11 +1750,65 @@
     {
       "service": "flag",
       "file": "flag/flag.go",
-      "line": 204,
+      "line": 217,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/flags/check/:key",
       "annotation": "auth method=GET path=/api/v1/flags/check/:key"
+    },
+    {
+      "service": "flag",
+      "file": "flag/retrieval_rollout.go",
+      "line": 231,
+      "access": "auth",
+      "method": "PUT",
+      "path": "/api/v1/flags/retrieval-mode",
+      "annotation": "auth method=PUT path=/api/v1/flags/retrieval-mode"
+    },
+    {
+      "service": "flag",
+      "file": "flag/retrieval_rollout.go",
+      "line": 220,
+      "access": "auth",
+      "method": "GET",
+      "path": "/api/v1/flags/retrieval-mode/:tenantId",
+      "annotation": "auth method=GET path=/api/v1/flags/retrieval-mode/:tenantId"
+    },
+    {
+      "service": "flag",
+      "file": "flag/rag_rollout_jobs.go",
+      "line": 636,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/flags/retrieval-rollout",
+      "annotation": "auth method=POST path=/api/v1/flags/retrieval-rollout"
+    },
+    {
+      "service": "flag",
+      "file": "flag/rag_rollout_jobs.go",
+      "line": 653,
+      "access": "auth",
+      "method": "GET",
+      "path": "/api/v1/flags/retrieval-rollout/active-jobs",
+      "annotation": "auth method=GET path=/api/v1/flags/retrieval-rollout/active-jobs"
+    },
+    {
+      "service": "flag",
+      "file": "flag/rag_rollout_jobs.go",
+      "line": 645,
+      "access": "auth",
+      "method": "GET",
+      "path": "/api/v1/flags/retrieval-rollout/jobs/:jobId",
+      "annotation": "auth method=GET path=/api/v1/flags/retrieval-rollout/jobs/:jobId"
+    },
+    {
+      "service": "flag",
+      "file": "flag/rag_rollout_jobs.go",
+      "line": 665,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/flags/retrieval-rollout/jobs/:jobId/cancel",
+      "annotation": "auth method=POST path=/api/v1/flags/retrieval-rollout/jobs/:jobId/cancel"
     },
     {
       "service": "health",
@@ -1777,7 +1831,7 @@
     {
       "service": "importcsv",
       "file": "importcsv/import.go",
-      "line": 205,
+      "line": 207,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/import/execute",
@@ -1787,7 +1841,7 @@
     {
       "service": "importcsv",
       "file": "importcsv/import.go",
-      "line": 130,
+      "line": 132,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/import/preview",
@@ -1797,7 +1851,7 @@
     {
       "service": "importcsv",
       "file": "importcsv/import.go",
-      "line": 187,
+      "line": 189,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/import/status/:jobId",
@@ -2644,7 +2698,7 @@
     {
       "service": "kb",
       "file": "kb/retrieval_worker.go",
-      "line": 114,
+      "line": 125,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/knowledge-base/reindex",

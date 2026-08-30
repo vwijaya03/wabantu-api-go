@@ -65,7 +65,7 @@ func InsertKBEntryWithIndex(
 	if err := tx.Commit(); err != nil {
 		return "", err
 	}
-	publishKBIndexAfterCommit(ctx, tenantSchema, tenantID, outboxID, entryID, outboxEventIndexKB, version)
+	publishKBIndexAfterCommit(ctx, tenantSchema, tenantID, outboxID, entryID, outboxEventIndexKB, version, retrieval.IndexLaneLive)
 	return entryID, nil
 }
 
@@ -159,7 +159,7 @@ func enqueueKBIndexOutbox(ctx context.Context, ts appdb.TenantScope, tenantSchem
 	if err := tx.Commit(); err != nil {
 		return false, err
 	}
-	publishKBIndexAfterCommit(ctx, tenantSchema, tenantID, outboxID, entryID, outboxEventIndexKB, version)
+	publishKBIndexAfterCommit(ctx, tenantSchema, tenantID, outboxID, entryID, outboxEventIndexKB, version, retrieval.IndexLaneBackfill)
 	return true, nil
 }
 
@@ -219,6 +219,7 @@ func enqueueCatalogIndexOutbox(ctx context.Context, ts appdb.TenantScope, tenant
 		EntityID:     itemID,
 		Version:      version,
 		EventType:    outboxIndexCatalog,
+		Lane:         retrieval.IndexLaneBackfill,
 	})
 	return true
 }

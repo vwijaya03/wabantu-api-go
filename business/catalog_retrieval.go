@@ -79,6 +79,7 @@ func enqueueCatalogIndex(ctx context.Context, tenantSchema, tenantID, itemID, na
 		Version:      version,
 		EventType:    outboxIndexCatalog,
 		EnqueuedAt:   time.Now().UTC(),
+		Lane:         retrieval.IndexLaneLive,
 	})
 }
 
@@ -118,6 +119,7 @@ func afterCatalogItemDeleted(ctx context.Context, tenantSchema, tenantID, itemID
 		Version:      version,
 		EventType:    outboxDeleteCatalog,
 		EnqueuedAt:   time.Now().UTC(),
+		Lane:         retrieval.IndexLaneLive,
 	})
 }
 

@@ -124,7 +124,10 @@ func failOutbox(ctx context.Context, ts interface {
 	return err
 }
 
-func publishKBIndexAfterCommit(ctx context.Context, tenantSchema, tenantID, outboxID, entryID, eventType string, version int64) {
+func publishKBIndexAfterCommit(ctx context.Context, tenantSchema, tenantID, outboxID, entryID, eventType string, version int64, lane string) {
+	if lane == "" {
+		lane = retrieval.IndexLaneLive
+	}
 	_, _ = RetrievalIndexTopic.Publish(ctx, &RetrievalIndexJob{
 		TenantSchema: tenantSchema,
 		TenantID:     tenantID,
@@ -133,6 +136,7 @@ func publishKBIndexAfterCommit(ctx context.Context, tenantSchema, tenantID, outb
 		EntityID:     entryID,
 		Version:      version,
 		EventType:    eventType,
+		Lane:         lane,
 		EnqueuedAt:   time.Now().UTC(),
 	})
 }

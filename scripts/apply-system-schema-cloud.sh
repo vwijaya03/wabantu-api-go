@@ -37,6 +37,8 @@ MIGRATIONS=(
   "11:system/migrations/11_ai_triage_anomaly.up.sql"
   "12:system/migrations/12_ai_triage_llm_scan.up.sql"
   "13:system/migrations/13_ai_triage_report.up.sql"
+  "14:system/migrations/14_tenant_access_consent.up.sql"
+  "15:system/migrations/15_rag_rollout_jobs.up.sql"
 )
 
 for entry in "${MIGRATIONS[@]}"; do
