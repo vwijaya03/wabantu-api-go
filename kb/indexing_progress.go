@@ -89,8 +89,21 @@ func GetTenantIndexingProgress(ctx context.Context, tenantSchema, tenantID strin
 		OutboxPercentDone: outboxPercentDone(outbox),
 		OldestPendingAt: oldest,
 	}
-	progress.IsComplete = progress.PercentComplete >= 100 && outbox.Pending == 0 && outbox.Failed == 0
+	progress.IsComplete = indexingEntityWorkComplete(kb, cat) && outbox.Failed == 0 && outbox.Dlq == 0
 	return progress, nil
+}
+
+// indexingEntityWorkComplete is true when all active KB/catalog rows are embedded (or none exist).
+// Orphan retrieval_outbox rows do not block completion — worker may have finished while outbox
+// was inserted manually or publish failed.
+func indexingEntityWorkComplete(kb, cat EntityIndexCounts) bool {
+	if kb.Pending+cat.Pending > 0 {
+		return false
+	}
+	if kb.Failed+cat.Failed+kb.Dlq+cat.Dlq > 0 {
+		return false
+	}
+	return entityPercentComplete(kb, cat) >= 100
 }
 
 func countEntityStatuses(ctx context.Context, ts appdb.TenantScope, query string) (EntityIndexCounts, error) {

@@ -29,3 +29,18 @@ func TestOutboxPercentDoneEmpty(t *testing.T) {
 		t.Fatal("empty outbox should be 100%")
 	}
 }
+
+func TestIndexingEntityWorkCompleteIgnoresOrphanOutbox(t *testing.T) {
+	kb := EntityIndexCounts{Indexed: 10, Total: 10}
+	cat := EntityIndexCounts{Indexed: 21, Total: 21}
+	if !indexingEntityWorkComplete(kb, cat) {
+		t.Fatal("all entities indexed should be complete")
+	}
+}
+
+func TestIndexingEntityWorkCompletePendingEntities(t *testing.T) {
+	kb := EntityIndexCounts{Indexed: 9, Pending: 1, Total: 10}
+	if indexingEntityWorkComplete(kb, EntityIndexCounts{}) {
+		t.Fatal("pending entities should not be complete")
+	}
+}
