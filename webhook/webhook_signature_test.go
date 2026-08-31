@@ -18,7 +18,7 @@ func signWebhookBody(body []byte, secret string) string {
 
 func TestVerifyInboundWebhookSignatureRequiresSigWhenSecretConfigured(t *testing.T) {
 	body := []byte(`{"object":"whatsapp_business_account","entry":[{"changes":[{"value":{"metadata":{"phone_number_id":"123"}}}]}]}`)
-	lookup := func(context.Context, string) (string, error) {
+	lookup := func(context.Context, string, string) (string, error) {
 		return "secret", nil
 	}
 	if err := verifyInboundWebhookSignature(context.Background(), body, "", nil, lookup); err == nil {
@@ -30,7 +30,7 @@ func TestVerifyInboundWebhookSignatureValidWhenSecretConfigured(t *testing.T) {
 	secret := "test-app-secret"
 	body := []byte(`{"object":"whatsapp_business_account","entry":[{"changes":[{"value":{"metadata":{"phone_number_id":"123"}}}]}]}`)
 	sig := signWebhookBody(body, secret)
-	lookup := func(context.Context, string) (string, error) {
+	lookup := func(context.Context, string, string) (string, error) {
 		return secret, nil
 	}
 	if err := verifyInboundWebhookSignature(context.Background(), body, sig, nil, lookup); err != nil {
@@ -38,9 +38,27 @@ func TestVerifyInboundWebhookSignatureValidWhenSecretConfigured(t *testing.T) {
 	}
 }
 
+func TestVerifyInboundWebhookSignaturePassesDisplayPhoneToLookup(t *testing.T) {
+	secret := "test-app-secret"
+	body := []byte(`{"object":"whatsapp_business_account","entry":[{"changes":[{"value":{"metadata":{"phone_number_id":"123","display_phone_number":"6285730864277"}}}]}]}`)
+	sig := signWebhookBody(body, secret)
+	lookup := func(_ context.Context, phoneNumberID, displayPhone string) (string, error) {
+		if phoneNumberID != "123" {
+			t.Fatalf("phoneNumberID=%q want 123", phoneNumberID)
+		}
+		if displayPhone != "6285730864277" {
+			t.Fatalf("displayPhone=%q want 6285730864277", displayPhone)
+		}
+		return secret, nil
+	}
+	if err := verifyInboundWebhookSignature(context.Background(), body, sig, nil, lookup); err != nil {
+		t.Fatalf("expected valid signature with display phone, got %v", err)
+	}
+}
+
 func TestVerifyInboundWebhookSignatureAllowsMissingSigWithoutSecret(t *testing.T) {
 	body := []byte(`{"object":"whatsapp_business_account","entry":[{"changes":[{"value":{"metadata":{"phone_number_id":"123"}}}]}]}`)
-	lookup := func(context.Context, string) (string, error) {
+	lookup := func(context.Context, string, string) (string, error) {
 		return "", nil
 	}
 	if err := verifyInboundWebhookSignature(context.Background(), body, "", nil, lookup); err != nil {
@@ -53,7 +71,7 @@ func TestVerifyInboundWebhookSignatureUsesMessagePhoneNumberID(t *testing.T) {
 	body := []byte(`{"object":"whatsapp_business_account","entry":[{"changes":[{"value":{"messages":[{"from":"1"}]}}]}]}`)
 	messages := []whatsapp.InboundMessage{{ToPhoneNumberID: "999"}}
 	sig := signWebhookBody(body, secret)
-	lookup := func(_ context.Context, phoneNumberID string) (string, error) {
+	lookup := func(_ context.Context, phoneNumberID, _ string) (string, error) {
 		if phoneNumberID != "999" {
 			t.Fatalf("phoneNumberID=%q want 999", phoneNumberID)
 		}

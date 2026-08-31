@@ -383,12 +383,12 @@ type inboundChannel struct {
 // then normalized business phone, and backfill meta_phone_number_id when missing.
 // lookupChannelMetaAppSecret returns meta_app_secret saved during WhatsApp OAuth connect.
 // No Encore global secret — each channel stores credentials at onboarding.
-func lookupChannelMetaAppSecret(ctx context.Context, phoneNumberID string) (string, error) {
+func lookupChannelMetaAppSecret(ctx context.Context, phoneNumberID, displayPhone string) (string, error) {
 	phoneNumberID = strings.TrimSpace(phoneNumberID)
 	if phoneNumberID == "" {
 		return "", fmt.Errorf("empty phone_number_id")
 	}
-	ref, err := tenant.ResolveWhatsAppInbound(ctx, phoneNumberID, "")
+	ref, err := tenant.ResolveWhatsAppInbound(ctx, phoneNumberID, displayPhone)
 	if err != nil {
 		return "", err
 	}

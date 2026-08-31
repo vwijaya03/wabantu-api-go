@@ -122,14 +122,27 @@ func VerifyWebhookSignature(payload []byte, signature, appSecret string) bool {
 
 // WebhookPhoneNumberID returns metadata.phone_number_id from any Meta WABA webhook payload.
 func WebhookPhoneNumberID(payload []byte) string {
+	return webhookMetadataField(payload, func(m webhookMetadata) string {
+		return strings.TrimSpace(m.PhoneNumberID)
+	})
+}
+
+// WebhookDisplayPhoneNumber returns metadata.display_phone_number from any Meta WABA webhook payload.
+func WebhookDisplayPhoneNumber(payload []byte) string {
+	return webhookMetadataField(payload, func(m webhookMetadata) string {
+		return strings.TrimSpace(m.DisplayPhoneNumber)
+	})
+}
+
+func webhookMetadataField(payload []byte, pick func(webhookMetadata) string) string {
 	var p webhookPayload
 	if err := json.Unmarshal(payload, &p); err != nil || p.Object != "whatsapp_business_account" {
 		return ""
 	}
 	for _, entry := range p.Entry {
 		for _, change := range entry.Changes {
-			if id := strings.TrimSpace(change.Value.Metadata.PhoneNumberID); id != "" {
-				return id
+			if v := pick(change.Value.Metadata); v != "" {
+				return v
 			}
 		}
 	}
@@ -192,12 +205,14 @@ type webhookChange struct {
 }
 
 type webhookValue struct {
-	Metadata struct {
-		DisplayPhoneNumber string `json:"display_phone_number"`
-		PhoneNumberID      string `json:"phone_number_id"`
-	} `json:"metadata"`
+	Metadata webhookMetadata `json:"metadata"`
 	Contacts []webhookContact  `json:"contacts"`
 	Messages []webhookMessage  `json:"messages"`
+}
+
+type webhookMetadata struct {
+	DisplayPhoneNumber string `json:"display_phone_number"`
+	PhoneNumberID      string `json:"phone_number_id"`
 }
 
 type webhookContact struct {

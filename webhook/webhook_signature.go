@@ -9,7 +9,7 @@ import (
 	"encore.app/wabantu/whatsapp"
 )
 
-type appSecretLookup func(ctx context.Context, phoneNumberID string) (string, error)
+type appSecretLookup func(ctx context.Context, phoneNumberID, displayPhone string) (string, error)
 
 func verifyInboundWebhookSignature(
 	ctx context.Context,
@@ -26,6 +26,10 @@ func verifyInboundWebhookSignature(
 	if phoneNumberID == "" && len(messages) > 0 {
 		phoneNumberID = messages[0].ToPhoneNumberID
 	}
+	displayPhone := whatsapp.WebhookDisplayPhoneNumber(body)
+	if displayPhone == "" && len(messages) > 0 {
+		displayPhone = messages[0].ToDisplayPhone
+	}
 	if phoneNumberID == "" {
 		if sigHeader != "" {
 			rlog.Warn("webhook signature present but phone_number_id missing in payload")
@@ -34,7 +38,7 @@ func verifyInboundWebhookSignature(
 		return nil
 	}
 
-	appSecret, err := lookup(ctx, phoneNumberID)
+	appSecret, err := lookup(ctx, phoneNumberID, displayPhone)
 	if err != nil {
 		rlog.Warn("webhook signature rejected: channel not found", "phoneNumberId", phoneNumberID, "err", err)
 		return fmt.Errorf("channel not found")

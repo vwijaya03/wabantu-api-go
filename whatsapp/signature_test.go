@@ -35,6 +35,9 @@ func TestWebhookPhoneNumberIDFromStatusPayload(t *testing.T) {
 	if got := WebhookPhoneNumberID(payload); got != "123456" {
 		t.Fatalf("phone_number_id=%q want 123456", got)
 	}
+	if got := WebhookDisplayPhoneNumber(payload); got != "15550001" {
+		t.Fatalf("display_phone_number=%q want 15550001", got)
+	}
 	if msgs := ParseWebhook(payload); len(msgs) != 0 {
 		t.Fatalf("expected no inbound messages from status webhook, got %d", len(msgs))
 	}
