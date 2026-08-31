@@ -41,12 +41,13 @@ type ragRolloutTarget struct {
 
 // RAGRolloutMessage processes one tenant in a bulk rollout job.
 type RAGRolloutMessage struct {
-	JobID         string `json:"jobId"`
-	ItemID        string `json:"itemId"`
-	TenantID      string `json:"tenantId"`
-	SchemaName    string `json:"schemaName"`
-	Mode          string `json:"mode"`
-	TenantDelayMs int    `json:"tenantDelayMs"`
+	JobID         string    `json:"jobId"`
+	ItemID        string    `json:"itemId"`
+	TenantID      string    `json:"tenantId"`
+	SchemaName    string    `json:"schemaName"`
+	Mode          string    `json:"mode"`
+	TenantDelayMs int       `json:"tenantDelayMs"`
+	NotBefore     time.Time `json:"notBefore,omitempty"`
 }
 
 var RAGRolloutTopic = pubsub.NewTopic[*RAGRolloutMessage]("rag-retrieval-rollout", pubsub.TopicConfig{
@@ -158,8 +159,8 @@ func enqueueRAGRollout(ctx context.Context, req *StartRAGRolloutRequest, started
 	}
 
 	enqueued := 0
-	for _, t := range filtered {
-		n, err := enqueueRAGRolloutTarget(ctx, jobID, t, mode, delay)
+	for i, t := range filtered {
+		n, err := enqueueRAGRolloutTarget(ctx, jobID, t, mode, delay, i)
 		if err != nil {
 			return nil, err
 		}
@@ -316,7 +317,7 @@ func filterRAGRolloutTargetsNotBusy(ctx context.Context, targets []ragRolloutTar
 	return out, nil
 }
 
-func enqueueRAGRolloutTarget(ctx context.Context, jobID string, target ragRolloutTarget, mode string, delayMs int) (int, error) {
+func enqueueRAGRolloutTarget(ctx context.Context, jobID string, target ragRolloutTarget, mode string, delayMs, sequenceIndex int) (int, error) {
 	var itemID string
 	err := db.QueryRow(ctx, `
 		INSERT INTO rag_rollout_job_item (job_id, tenant_id, schema_name, status)
@@ -327,6 +328,7 @@ func enqueueRAGRolloutTarget(ctx context.Context, jobID string, target ragRollou
 	if err != nil {
 		return 0, err
 	}
+	notBefore := time.Now().Add(time.Duration(sequenceIndex*delayMs) * time.Millisecond)
 	msg := &RAGRolloutMessage{
 		JobID:         jobID,
 		ItemID:        itemID,
@@ -334,6 +336,7 @@ func enqueueRAGRolloutTarget(ctx context.Context, jobID string, target ragRollou
 		SchemaName:    target.SchemaName,
 		Mode:          mode,
 		TenantDelayMs: delayMs,
+		NotBefore:     notBefore,
 	}
 	if _, err := RAGRolloutTopic.Publish(ctx, msg); err != nil {
 		return 0, fmt.Errorf("publish rollout: %w", err)
@@ -367,6 +370,10 @@ func handleRAGRolloutMessage(ctx context.Context, msg *RAGRolloutMessage) error 
 	if cancelled {
 		skipRAGRolloutItem(ctx, msg.ItemID, msg.JobID)
 		return nil
+	}
+
+	if !msg.NotBefore.IsZero() && time.Now().Before(msg.NotBefore) {
+		return rolloutTenantNotReady(msg.NotBefore)
 	}
 
 	var itemStatus string
@@ -423,12 +430,6 @@ func handleRAGRolloutMessage(ctx context.Context, msg *RAGRolloutMessage) error 
 	)
 	_ = incrementRAGRolloutJobCounter(ctx, msg.JobID, true)
 
-	delay := msg.TenantDelayMs
-	if delay <= 0 {
-		delay = defaultRolloutTenantDelayMs
-	}
-	time.Sleep(time.Duration(delay) * time.Millisecond)
-
 	rlog.Info("rag rollout tenant done",
 		"job", msg.JobID, "tenant", msg.TenantID, "mode", msg.Mode,
 		"kb", resp.KBEnqueued, "catalog", resp.CatalogEnqueued)
@@ -460,6 +461,10 @@ func incrementRAGRolloutJobCounter(ctx context.Context, jobID string, success bo
 	_, err := db.Exec(ctx, `
 		UPDATE rag_rollout_job SET failed_count = failed_count + 1 WHERE id = $1::uuid`, jobID)
 	return err
+}
+
+func rolloutTenantNotReady(notBefore time.Time) error {
+	return fmt.Errorf("rollout tenant temporarily scheduled at %s", notBefore.UTC().Format(time.RFC3339))
 }
 
 func finalizeRAGRolloutJobIfDone(ctx context.Context, jobID string) error {

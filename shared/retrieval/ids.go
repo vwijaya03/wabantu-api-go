@@ -79,18 +79,21 @@ func ChunkCatalog(itemID string, version int64, name, description, externalCode 
 }
 
 // BuildKBVectorRecords builds Pinecone records from chunks and embeddings.
-func BuildKBVectorRecords(entryID string, version int64, category string, chunks []Chunk, vectors [][]float32) ([]VectorRecord, error) {
+// Metadata stores entry_id + content_hash only (no raw Q&A text in Pinecone).
+func BuildKBVectorRecords(entryID string, version int64, category, contentHash string, chunks []Chunk, vectors [][]float32) ([]VectorRecord, error) {
 	if len(chunks) != len(vectors) {
 		return nil, fmt.Errorf("chunks/vectors length mismatch: %d vs %d", len(chunks), len(vectors))
 	}
 	recs := make([]VectorRecord, len(chunks))
 	for i, ch := range chunks {
 		meta := map[string]any{
-			"source":     string(SourceKB),
-			"entry_id":   entryID,
-			"version":    version,
-			"chunk":      ch.Index,
-			"content":    truncateMeta(ch.Text, 1000),
+			"source":   string(SourceKB),
+			"entry_id": entryID,
+			"version":  version,
+			"chunk":    ch.Index,
+		}
+		if contentHash != "" {
+			meta["content_hash"] = contentHash
 		}
 		if category != "" {
 			meta["category"] = category

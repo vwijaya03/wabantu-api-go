@@ -20,7 +20,7 @@ func IsRetryableError(err error) bool {
 		return true
 	}
 	msg := strings.ToLower(err.Error())
-	for _, s := range []string{"429", "408", "500", "502", "503", "504", "timeout", "temporarily", "rate limit"} {
+	for _, s := range []string{"429", "408", "500", "502", "503", "504", "timeout", "temporarily", "rate limit", "scheduled"} {
 		if strings.Contains(msg, s) {
 			return true
 		}

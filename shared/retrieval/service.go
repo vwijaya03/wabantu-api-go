@@ -20,11 +20,12 @@ type RetrieveKBRequest struct {
 
 // RetrieveKBResult holds fused hits and diagnostics.
 type RetrieveKBResult struct {
-	Entries     []ScoredEntry
-	VectorHits  []Hit
-	LexicalHits []ScoredEntry
-	UsedVector  bool
-	ShadowOnly  bool
+	Entries         []ScoredEntry
+	VectorHits      []Hit
+	LexicalHits     []ScoredEntry
+	UsedVector      bool
+	ShadowOnly      bool
+	LexicalFallback bool // true when vector path skipped/failed and lexical served
 }
 
 // Service wires embedder + vector store + resilience.
@@ -79,6 +80,7 @@ func (s *Service) RetrieveKB(ctx context.Context, req RetrieveKBRequest, lexical
 
 	if s.Breaker != nil && !s.Breaker.Allow() {
 		res.Entries = lexicalHits
+		res.LexicalFallback = runVector
 		return res, nil
 	}
 
@@ -101,6 +103,7 @@ func (s *Service) RetrieveKB(ctx context.Context, req RetrieveKBRequest, lexical
 			s.Breaker.RecordFailure(err)
 		}
 		res.Entries = lexicalHits
+		res.LexicalFallback = true
 		return res, nil
 	}
 	if s.Breaker != nil {
@@ -161,7 +164,7 @@ func (s *Service) IndexKB(ctx context.Context, tenant TenantIdentity, entryID, c
 	if err := ValidateVectors(s.Embedder, vectors); err != nil {
 		return err
 	}
-	recs, err := BuildKBVectorRecords(entryID, version, category, chunks, vectors)
+	recs, err := BuildKBVectorRecords(entryID, version, category, ContentHash(question, answer), chunks, vectors)
 	if err != nil {
 		return err
 	}

@@ -42,11 +42,17 @@ func (s *AutoReplyService) retrieveKBHybrid(
 		TopK:   20,
 		Mode:   mode,
 	}, lexicalRanker)
+	fallback := err != nil || (res != nil && res.LexicalFallback)
 	if err != nil || res == nil {
 		retrieval.LogQuery(ctx, "kb", tenantID, string(mode), true, false)
 		recordRetrievalQueryMetrics("kb", string(mode), true, false, retrieval.LatencyP95Ms())
 		rlog.Warn("retrieval KB failed, lexical fallback", "err", err, "tenant", tenantID)
 		return lexical, topKBMatchScore(query, kb), res
+	}
+
+	if fallback {
+		retrieval.LogQuery(ctx, "kb", tenantID, string(mode), true, len(res.Entries) == 0)
+		recordRetrievalQueryMetrics("kb", string(mode), true, len(res.Entries) == 0, retrieval.LatencyP95Ms())
 	}
 
 	if mode == retrieval.ModeShadow {
@@ -55,10 +61,18 @@ func (s *AutoReplyService) retrieveKBHybrid(
 			"vectorHits", len(res.VectorHits),
 			"fused", len(res.Entries),
 			"lexical", len(res.LexicalHits),
+			"fallback", fallback,
 		)
+		if fallback {
+			return lexical, topKBMatchScore(query, kb), res
+		}
 		zero := len(res.Entries) == 0
 		retrieval.LogQuery(ctx, "kb", tenantID, string(mode), false, zero)
 		recordRetrievalQueryMetrics("kb", string(mode), false, zero, retrieval.LatencyP95Ms())
+		return lexical, topKBMatchScore(query, kb), res
+	}
+
+	if fallback {
 		return lexical, topKBMatchScore(query, kb), res
 	}
 
@@ -148,7 +162,8 @@ func (s *AutoReplyService) replyFromBusinessCatalogHybrid(
 	defer cancel()
 	tenant := retrieval.TenantIdentity{TenantID: tenantID, TenantSchema: tenantSchema}
 	hits, err := svc.RetrieveCatalogCandidates(qctx, tenant, userText, 3)
-	if err != nil || len(hits) == 0 {
+	fallback := err != nil || len(hits) == 0
+	if fallback {
 		retrieval.LogQuery(ctx, "catalog", tenantID, string(mode), err != nil, len(hits) == 0)
 		recordRetrievalQueryMetrics("catalog", string(mode), err != nil, len(hits) == 0, retrieval.LatencyP95Ms())
 		return replyFromBusinessCatalog(userText, profile, catalog, history)
