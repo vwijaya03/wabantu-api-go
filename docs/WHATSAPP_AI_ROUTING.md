@@ -39,17 +39,15 @@ sequenceDiagram
 
 | Tahap | Package / file | Fungsi utama |
 |-------|----------------|--------------|
-| HTTP webhook | `webhook/webhook.go` | `handleMetaWebhook`, `receiveWebhook`, `ingestMessage` |
+| HTTP webhook | `webhook/webhook.go` | `handleWhatsAppWebhook`, `receiveWebhook`, `ingestMessage` |
 | Parse payload | `whatsapp/whatsapp.go` | `ParseWebhook`, `VerifyWebhookSignature` |
 | Antrian AI | `ai/inbound_jobs.go` | `PublishInboundJob`, `handleInboundAI` |
 | Orchestrator | `ai/autoreply.go` | `ProcessAutoReply` |
 | Kirim balasan | `ai/autoreply.go` | `sendAiMessage` → `whatsapp.SendText` |
 
-**Endpoint webhook (alias):**
+**Endpoint webhook:**
 
-- `POST /api/v1/webhook/whatsapp`
-- `POST /api/v1/whatsapp/webhook/meta`
-- `POST /webhook/whatsapp` (legacy)
+- `GET/POST /api/v1/webhook/whatsapp`
 
 ---
 

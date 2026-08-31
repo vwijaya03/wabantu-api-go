@@ -707,8 +707,6 @@ encore run
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
 | GET/POST | `/api/v1/webhook/whatsapp` | public raw | Meta verify + ingest |
-| GET/POST | `/api/v1/whatsapp/webhook/meta` | public raw | Nest-compatible alias |
-| * | `/whatsapp/webhook/meta`, `/webhook/whatsapp` | public raw | Legacy paths |
 
 ## WhatsApp (`whatsappapi/`)
 
@@ -757,7 +755,7 @@ Production path: **Pub/Sub** `ai-jobs`, not HTTP.
 ```mermaid
 sequenceDiagram
   participant M as Meta
-  participant W as webhook.HandleMetaWebhook
+  participant W as webhook.HandleWhatsAppWebhook
   participant DB as tenant schema
   participant PS as Pub/Sub ai-jobs
   participant AI as ai.handleInboundAI
@@ -1460,7 +1458,7 @@ Secrets per Encore environment name (`staging`, etc.) via `encore secret set --e
 
 | Step | Location |
 |------|----------|
-| Handler | `webhook.handleMetaWebhook` → `receiveWebhook` |
+| Handler | `webhook.handleWhatsAppWebhook` → `receiveWebhook` |
 | Auth | Signature optional (`MetaAppSecret`) |
 | Parse | `whatsapp.ParseWebhook` |
 | Per message | `ingestMessage` |

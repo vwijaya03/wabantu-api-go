@@ -15,7 +15,7 @@ import (
 //go:embed catalog_snapshot.json
 var catalogSnapshotJSON []byte
 
-const expectedEndpointCount = 335
+const expectedEndpointCount = 345
 
 type catalogEndpoint struct {
 	Service    string `json:"service"`
@@ -65,12 +65,14 @@ var serviceSmokePhase = map[string]struct {
 	"health":       {1, "covered", "health_smoke_test.go"},
 	"importcsv":    {1, "covered", "importcsv_smoke_test.go + importcsv/import_test.go"},
 	"inbox":        {1, "covered", "inbox_smoke_test.go"},
+	"internal":     {0, "pending", "internal/apiregistry — bukan service Encore publik"},
 	"inventory":    {1, "covered", "inventory_smoke_test.go (subset)"},
 	"kb":           {1, "covered", "kb_smoke_test.go"},
 	"leads":        {1, "covered", "leads_smoke_test.go"},
 	"notification": {1, "covered", "remaining_smoke_test.go"},
 	"order":        {1, "covered", "order_smoke_test.go"},
 	"payment":      {1, "covered", "payment_webhook_smoke_test.go (webhook only)"},
+	"scripts":      {0, "pending", "scripts/gen-api-catalog.go — bukan service Encore"},
 	"shipping":     {1, "covered", "remaining_smoke_test.go"},
 	"tenant":       {1, "covered", "catalog_smoke_test.go"},
 	"tenantaccess": {1, "covered", "catalog_smoke_test.go"},

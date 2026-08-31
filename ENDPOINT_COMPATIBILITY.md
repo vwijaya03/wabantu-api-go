@@ -92,8 +92,7 @@ Cookie `wabantu_at` + body `accessToken` — selaras Nest.
 | POST | `/api/v1/whatsapp/meta/connect/callback` | ✅ | ✅ |
 | DELETE | `/api/v1/whatsapp/channels/:id` | ✅ | ✅ |
 | POST | `/api/v1/whatsapp/channels/:id/test-message` | — | ⚠️ cek api-go |
-| GET/POST | `/api/v1/whatsapp/webhook/meta` | — | ✅ |
-| GET/POST | `/api/v1/webhook/whatsapp` | — | ✅ (alias) |
+| GET/POST | `/api/v1/webhook/whatsapp` | — | ✅ |
 
 REST OAuth: package **`whatsappapi/`** · Graph send: **`whatsapp/`**.
 

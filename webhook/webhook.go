@@ -52,29 +52,10 @@ var secrets struct {
 //
 //encore:api public raw path=/api/v1/webhook/whatsapp
 func HandleWhatsAppWebhook(w http.ResponseWriter, r *http.Request) {
-	handleMetaWebhook(w, r)
+	handleWhatsAppWebhook(w, r)
 }
 
-// HandleMetaWebhook is the Nest-compatible Meta webhook path (/whatsapp/webhook/meta).
-//
-//encore:api public raw path=/api/v1/whatsapp/webhook/meta
-func HandleMetaWebhook(w http.ResponseWriter, r *http.Request) {
-	handleMetaWebhook(w, r)
-}
-
-// Legacy paths (Meta apps configured before /api/v1 prefix).
-//
-//encore:api public raw path=/whatsapp/webhook/meta
-func HandleMetaWebhookLegacy(w http.ResponseWriter, r *http.Request) {
-	handleMetaWebhook(w, r)
-}
-
-//encore:api public raw path=/webhook/whatsapp
-func HandleWhatsAppWebhookLegacy(w http.ResponseWriter, r *http.Request) {
-	handleMetaWebhook(w, r)
-}
-
-func handleMetaWebhook(w http.ResponseWriter, r *http.Request) {
+func handleWhatsAppWebhook(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		verifyChallenge(w, r)

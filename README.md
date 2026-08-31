@@ -586,7 +586,7 @@ Handler auth global: `auth.AuthHandler` (`//encore:authhandler`) → `buildAuthU
 
 ## AI auto-reply (ringkas)
 
-1. `POST /webhook/whatsapp` (atau `/whatsapp/webhook/meta`) → simpan pesan masuk.
+1. `POST /api/v1/webhook/whatsapp` → simpan pesan masuk.
 2. `ai.PublishInboundJob` → topic Pub/Sub **`ai-jobs`**.
 3. Subscriber **`ai-auto-reply`** (`ai/inbound_jobs.go`) di proses yang sama dengan API:
    - Retry hingga **4×** (Encore `RetryPolicy` + penghitung Redis per `inboundMessageId`)

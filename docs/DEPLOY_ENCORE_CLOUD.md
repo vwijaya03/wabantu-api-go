@@ -360,7 +360,7 @@ Update URL callback ke domain Encore Cloud:
 
 | Integrasi | Yang diubah |
 |-----------|-------------|
-| **Meta WhatsApp** | Webhook URL → `https://staging-....encr.app/webhook/whatsapp` (atau path yang dipakai) |
+| **Meta WhatsApp** | Webhook URL → `https://staging-....encr.app/api/v1/webhook/whatsapp` |
 | **Midtrans** | Notification URL production/sandbox |
 | **OAuth redirect** | Jika ada callback ke API |
 

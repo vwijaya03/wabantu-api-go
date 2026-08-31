@@ -1,5 +1,5 @@
 {
-  "count": 343,
+  "count": 342,
   "endpoints": [
     {
       "service": "admin",
@@ -1758,6 +1758,15 @@
     },
     {
       "service": "flag",
+      "file": "flag/retrieval_indexing.go",
+      "line": 10,
+      "access": "auth",
+      "method": "GET",
+      "path": "/api/v1/flags/retrieval-indexing/:tenantId",
+      "annotation": "auth method=GET path=/api/v1/flags/retrieval-indexing/:tenantId"
+    },
+    {
+      "service": "flag",
       "file": "flag/retrieval_rollout.go",
       "line": 231,
       "access": "auth",
@@ -1773,6 +1782,15 @@
       "method": "GET",
       "path": "/api/v1/flags/retrieval-mode/:tenantId",
       "annotation": "auth method=GET path=/api/v1/flags/retrieval-mode/:tenantId"
+    },
+    {
+      "service": "flag",
+      "file": "flag/retrieval_indexing.go",
+      "line": 26,
+      "access": "auth",
+      "method": "GET",
+      "path": "/api/v1/flags/retrieval-observability",
+      "annotation": "auth method=GET path=/api/v1/flags/retrieval-observability"
     },
     {
       "service": "flag",
@@ -2698,7 +2716,7 @@
     {
       "service": "kb",
       "file": "kb/retrieval_worker.go",
-      "line": 125,
+      "line": 141,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/knowledge-base/reindex",
@@ -3137,16 +3155,6 @@
       "annotation": "auth method=POST path=/api/v1/whatsapp/meta/connect/init"
     },
     {
-      "service": "webhook",
-      "file": "webhook/webhook.go",
-      "line": 60,
-      "access": "public",
-      "method": "*",
-      "path": "/api/v1/whatsapp/webhook/meta",
-      "raw": true,
-      "annotation": "public raw path=/api/v1/whatsapp/webhook/meta"
-    },
-    {
       "service": "workflow",
       "file": "workflow/workflow.go",
       "line": 77,
@@ -3193,26 +3201,6 @@
       "method": "GET",
       "path": "/internal/apitest/ping",
       "annotation": "private method=GET path=/internal/apitest/ping"
-    },
-    {
-      "service": "webhook",
-      "file": "webhook/webhook.go",
-      "line": 72,
-      "access": "public",
-      "method": "*",
-      "path": "/webhook/whatsapp",
-      "raw": true,
-      "annotation": "public raw path=/webhook/whatsapp"
-    },
-    {
-      "service": "webhook",
-      "file": "webhook/webhook.go",
-      "line": 67,
-      "access": "public",
-      "method": "*",
-      "path": "/whatsapp/webhook/meta",
-      "raw": true,
-      "annotation": "public raw path=/whatsapp/webhook/meta"
     }
   ]
 }

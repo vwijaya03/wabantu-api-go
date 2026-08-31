@@ -335,8 +335,6 @@ Response `GetMessages`: tiap pesan bisa punya `media?: { url, mimeType, thumbnai
 | POST | `/api/v1/whatsapp/meta/connect/callback` | public | tukar `code` |
 | DELETE | `/api/v1/whatsapp/channels/:id` | auth | putuskan |
 | GET, POST | `/api/v1/webhook/whatsapp` | public raw | webhook Meta |
-| GET, POST | `/api/v1/whatsapp/webhook/meta` | public raw | alias sama |
-| GET, POST | `/webhook/whatsapp` | public raw | legacy (tanpa prefix) |
 
 Verify token: secret `WebhookVerifyToken`. Saat daftar app Meta, pilih path yang sudah dikonfigurasi di dashboard Meta.
 
@@ -429,7 +427,7 @@ Sama konsep dengan Nest: field tertentu dienkripsi dengan `DataEncryptionKey` (`
 
 ```
 Meta Cloud API
-    │ POST /api/v1/webhook/whatsapp (atau alias legacy)
+    │ POST /api/v1/webhook/whatsapp
     ▼
 webhook.HandleWhatsAppWebhook (raw)
     │ verify signature (MetaAppSecret, opsional)

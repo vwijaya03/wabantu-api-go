@@ -1,6 +1,6 @@
 {
   "total_services": 29,
-  "total_endpoints": 343,
+  "total_endpoints": 342,
   "services": {
     "admin": 24,
     "ai": 3,
@@ -13,7 +13,7 @@
     "business": 20,
     "events": 64,
     "finance": 60,
-    "flag": 10,
+    "flag": 12,
     "health": 2,
     "importcsv": 3,
     "inbox": 21,
@@ -28,7 +28,7 @@
     "tenant": 6,
     "tenantaccess": 5,
     "usage": 5,
-    "webhook": 4,
+    "webhook": 1,
     "whatsappapi": 5,
     "workflow": 4
   }
