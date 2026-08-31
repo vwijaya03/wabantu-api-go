@@ -185,7 +185,7 @@ func InitMetaConnect(ctx context.Context, p *MetaConnectInitParams) (*MetaConnec
 	q.Set("client_id", p.MetaAppID)
 	q.Set("redirect_uri", p.RedirectURI)
 	q.Set("state", state)
-	q.Set("scope", "whatsapp_business_messaging,whatsapp_business_management")
+	q.Set("scope", "whatsapp_business_messaging,whatsapp_business_management,business_management")
 	q.Set("response_type", "code")
 	oauthURL.RawQuery = q.Encode()
 
@@ -222,7 +222,7 @@ func CompleteMetaConnect(ctx context.Context, p *MetaConnectCallbackParams) (*Ch
 		return nil, apperr.BadRequest("Gagal menukar authorization code ke access token Meta")
 	}
 
-	discovered := fetchMetaWaba(ctx, accessToken, p.PhoneNumber)
+	discovered := fetchMetaWaba(ctx, accessToken, p.PhoneNumber, st.MetaAppID, st.MetaAppSecret)
 	metaPhoneID := p.MetaPhoneNumberID
 	metaWabaID := p.MetaWabaID
 	if metaPhoneID == nil || *metaPhoneID == "" {
@@ -264,6 +264,9 @@ func CompleteMetaConnect(ctx context.Context, p *MetaConnectCallbackParams) (*Ch
 		if regErr := tenant.RegisterWhatsAppInbound(ctx, schema, ch.ID, *ch.MetaPhoneNumberID, ch.PhoneNumber); regErr != nil {
 			return nil, apperr.BadRequest(regErr.Error())
 		}
+	} else {
+		rlog.Warn("OAuth connected but meta_phone_number_id empty — webhook akan gagal sampai reconnect atau backfill manual",
+			"tenant", schema, "channelId", ch.ID, "phone", ch.PhoneNumber)
 	}
 	return ch, nil
 }
@@ -496,104 +499,6 @@ func exchangeMetaCode(ctx context.Context, code, redirectURI, appID, appSecret s
 		return "", fmt.Errorf("no access_token in response")
 	}
 	return result.AccessToken, nil
-}
-
-type wabaDiscovery struct {
-	WabaID          string
-	PhoneNumberID   string
-}
-
-func truncGraphBody(body []byte) string {
-	const max = 400
-	s := strings.TrimSpace(string(body))
-	if len(s) <= max {
-		return s
-	}
-	return s[:max] + "…"
-}
-
-func fetchMetaWaba(ctx context.Context, accessToken, targetPhone string) wabaDiscovery {
-	u := url.URL{
-		Scheme: "https",
-		Host:   "graph.facebook.com",
-		Path:   "/" + whatsapp.GraphAPIVersion + "/me",
-	}
-	q := u.Query()
-	q.Set("fields", "whatsapp_business_accounts{id,phone_numbers{id,display_phone_number}}")
-	q.Set("access_token", accessToken)
-	u.RawQuery = q.Encode()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
-	if err != nil {
-		return wabaDiscovery{}
-	}
-	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
-	if err != nil {
-		rlog.Warn("fetchMetaWaba request failed", "err", err)
-		return wabaDiscovery{}
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		rlog.Warn("fetchMetaWaba non-2xx", "status", resp.StatusCode, "body", truncGraphBody(body))
-		return wabaDiscovery{}
-	}
-
-	var parsed struct {
-		WhatsAppBusinessAccounts json.RawMessage `json:"whatsapp_business_accounts"`
-	}
-	if err := json.Unmarshal(body, &parsed); err != nil {
-		rlog.Warn("fetchMetaWaba parse /me failed", "err", err, "body", truncGraphBody(body))
-		return wabaDiscovery{}
-	}
-
-	type phoneNode struct {
-		ID                  string `json:"id"`
-		DisplayPhoneNumber  string `json:"display_phone_number"`
-	}
-	type wabaNode struct {
-		ID           string `json:"id"`
-		PhoneNumbers struct {
-			Data []phoneNode `json:"data"`
-		} `json:"phone_numbers"`
-	}
-
-	var wabas []wabaNode
-	if err := json.Unmarshal(parsed.WhatsAppBusinessAccounts, &wabas); err != nil {
-		var wrapped struct {
-			Data []wabaNode `json:"data"`
-		}
-		if err2 := json.Unmarshal(parsed.WhatsAppBusinessAccounts, &wrapped); err2 != nil {
-			rlog.Warn("fetchMetaWaba no whatsapp_business_accounts in /me — meta_phone_number_id tidak terisi; webhook akan gagal sampai di-backfill",
-				"body", truncGraphBody(body))
-			return wabaDiscovery{}
-		}
-		wabas = wrapped.Data
-	}
-	if len(wabas) == 0 {
-		rlog.Warn("fetchMetaWaba empty WABA list from /me", "body", truncGraphBody(body))
-		return wabaDiscovery{}
-	}
-
-	target := normalizePhone(targetPhone)
-	var fallbackPhoneID string
-	for _, waba := range wabas {
-		phones := waba.PhoneNumbers.Data
-		if len(phones) == 0 {
-			continue
-		}
-		if fallbackPhoneID == "" && phones[0].ID != "" {
-			fallbackPhoneID = phones[0].ID
-		}
-		for _, phone := range phones {
-			candidate := normalizePhone(phone.DisplayPhoneNumber)
-			if candidate != "" && target != "" &&
-				(candidate == target || strings.HasSuffix(candidate, target) || strings.HasSuffix(target, candidate)) {
-				return wabaDiscovery{WabaID: waba.ID, PhoneNumberID: phone.ID}
-			}
-		}
-	}
-	return wabaDiscovery{WabaID: wabas[0].ID, PhoneNumberID: fallbackPhoneID}
 }
 
 type SendTestMessageRequest struct {
