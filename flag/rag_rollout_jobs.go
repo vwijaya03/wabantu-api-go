@@ -3,6 +3,7 @@ package flag
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -380,7 +381,7 @@ func handleRAGRolloutMessage(ctx context.Context, msg *RAGRolloutMessage) error 
 	err = db.QueryRow(ctx, `
 		SELECT status FROM rag_rollout_job_item WHERE id = $1::uuid`, msg.ItemID,
 	).Scan(&itemStatus)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}
 	if err != nil {
@@ -489,7 +490,7 @@ func finalizeRAGRolloutJobIfDone(ctx context.Context, jobID string) error {
 func ragRolloutJobCancelled(ctx context.Context, jobID string) (bool, error) {
 	var status string
 	err := db.QueryRow(ctx, `SELECT status FROM rag_rollout_job WHERE id = $1::uuid`, jobID).Scan(&status)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return true, nil
 	}
 	if err != nil {
@@ -536,7 +537,7 @@ func getRAGRolloutJob(ctx context.Context, jobID string) (*RAGRolloutJobSummary,
 		&s.KBEnqueuedTotal, &s.CatalogEnqueuedTotal, &s.TenantDelayMs,
 		&startedBy, &s.CreatedAt, &completedAt,
 	)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("rollout job not found")
 	}
 	if err != nil {
@@ -616,7 +617,7 @@ func cancelRAGRolloutJob(ctx context.Context, jobID string) (*RAGRolloutJobSumma
 	}
 	var status string
 	err := db.QueryRow(ctx, `SELECT status FROM rag_rollout_job WHERE id = $1::uuid`, jobID).Scan(&status)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("rollout job not found")
 	}
 	if err != nil {

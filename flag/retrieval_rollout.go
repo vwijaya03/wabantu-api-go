@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"encore.dev/rlog"
@@ -28,7 +29,7 @@ func loadFlag(ctx context.Context, key string) (FeatureFlag, bool, error) {
 		`SELECT key, enabled_globally, tenant_ids, COALESCE(description,''), created_at, updated_at
 		 FROM feature_flag WHERE key=$1`, key)
 	f, err := scanFlag(row.Scan)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return FeatureFlag{}, false, nil
 	}
 	if err != nil {
