@@ -1,11 +1,18 @@
 package retrieval
 
+import "sync"
+
 // Secrets holds RAG credentials (Encore secrets).
 var secrets struct {
 	OpenAIApiKey      string
 	PineconeApiKey    string
 	PineconeIndexHost string
 }
+
+var (
+	defaultService     *Service
+	defaultServiceOnce sync.Once
+)
 
 // NewProductionService builds a Service from Encore secrets when configured.
 func NewProductionService() *Service {
@@ -20,7 +27,10 @@ func NewProductionService() *Service {
 	return NewService(emb, store)
 }
 
-// DefaultService returns production service or nil (callers fall back to lexical).
+// DefaultService returns the singleton production service or nil when not configured.
 func DefaultService() *Service {
-	return NewProductionService()
+	defaultServiceOnce.Do(func() {
+		defaultService = NewProductionService()
+	})
+	return defaultService
 }

@@ -24,7 +24,7 @@ func handleCatalogRetrievalIndexJob(ctx context.Context, job *RetrievalIndexJob)
 	}
 	svc := retrieval.DefaultService()
 	if svc == nil {
-		svc = retrieval.NewService(retrieval.NewMockEmbedder(), retrieval.NewMemoryStore())
+		return recordCatalogIndexFailure(ctx, ts, job, retrieval.ErrServiceNotConfigured)
 	}
 	tenantIdent := retrieval.TenantIdentity{TenantID: job.TenantID, TenantSchema: job.TenantSchema}
 
@@ -43,19 +43,26 @@ func handleCatalogRetrievalIndexJob(ctx context.Context, job *RetrievalIndexJob)
 		return nil
 	}
 	if procErr != nil {
-		attempts := 1
-		_ = failOutbox(ctx, ts, job.OutboxID, attempts, procErr.Error())
-		retrieval.RecordIndexingOutcome(catalogEntityType, job.Lane, false, time.Since(job.EnqueuedAt))
-		recordIndexingMetrics(catalogEntityType, job.Lane, false, indexingLagSec(job.EnqueuedAt))
-		if retrieval.IsRetryableError(procErr) {
-			return procErr
-		}
-		return nil
+		return recordCatalogIndexFailure(ctx, ts, job, procErr)
 	}
 	_ = completeOutbox(ctx, ts, job.OutboxID)
 	retrieval.RecordIndexingOutcome(catalogEntityType, job.Lane, true, time.Since(job.EnqueuedAt))
 	recordIndexingMetrics(catalogEntityType, job.Lane, true, indexingLagSec(job.EnqueuedAt))
 	return markCatalogIndexed(ctx, ts, job.EntityID, job.Version)
+}
+
+func recordCatalogIndexFailure(ctx context.Context, ts appdb.TenantScope, job *RetrievalIndexJob, procErr error) error {
+	attempts, err := nextOutboxAttempt(ctx, ts, job.OutboxID)
+	if err != nil {
+		return fmt.Errorf("increment outbox attempts: %w", err)
+	}
+	_ = failOutbox(ctx, ts, job.OutboxID, attempts, procErr.Error())
+	retrieval.RecordIndexingOutcome(catalogEntityType, job.Lane, false, time.Since(job.EnqueuedAt))
+	recordIndexingMetrics(catalogEntityType, job.Lane, false, indexingLagSec(job.EnqueuedAt))
+	if retrieval.IsRetryableError(procErr) {
+		return procErr
+	}
+	return nil
 }
 
 func processCatalogIndex(ctx context.Context, ts appdb.TenantScope, svc *retrieval.Service, tenant retrieval.TenantIdentity, job *RetrievalIndexJob) error {

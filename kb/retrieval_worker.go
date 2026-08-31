@@ -77,7 +77,7 @@ func handleKBRetrievalIndexJob(ctx context.Context, job *RetrievalIndexJob) erro
 	}
 	svc := retrieval.DefaultService()
 	if svc == nil {
-		svc = retrieval.NewService(retrieval.NewMockEmbedder(), retrieval.NewMemoryStore())
+		return recordKBIndexFailure(ctx, ts, job, retrieval.ErrServiceNotConfigured)
 	}
 	tenantIdent := retrieval.TenantIdentity{TenantID: job.TenantID, TenantSchema: job.TenantSchema}
 
@@ -92,21 +92,28 @@ func handleKBRetrievalIndexJob(ctx context.Context, job *RetrievalIndexJob) erro
 	}
 
 	if procErr != nil {
-		attempts := 1
-		_ = failOutbox(ctx, ts, job.OutboxID, attempts, procErr.Error())
-		_ = markKBIndexFailed(ctx, ts, job.EntityID, job.Version, attempts, procErr.Error())
-		retrieval.RecordIndexingOutcome(entityTypeKB, job.Lane, false, time.Since(job.EnqueuedAt))
-		recordIndexingMetrics(entityTypeKB, job.Lane, false, indexingLagSec(job.EnqueuedAt))
-		if retrieval.IsRetryableError(procErr) {
-			return procErr
-		}
-		rlog.Warn("retrieval index permanent failure", "entity", job.EntityID, "err", procErr)
-		return nil
+		return recordKBIndexFailure(ctx, ts, job, procErr)
 	}
 	_ = completeOutbox(ctx, ts, job.OutboxID)
 	retrieval.RecordIndexingOutcome(entityTypeKB, job.Lane, true, time.Since(job.EnqueuedAt))
 	recordIndexingMetrics(entityTypeKB, job.Lane, true, indexingLagSec(job.EnqueuedAt))
 	return markKBIndexed(ctx, ts, job.EntityID, job.Version)
+}
+
+func recordKBIndexFailure(ctx context.Context, ts appdb.TenantScope, job *RetrievalIndexJob, procErr error) error {
+	attempts, err := nextOutboxAttempt(ctx, ts, job.OutboxID)
+	if err != nil {
+		return fmt.Errorf("increment outbox attempts: %w", err)
+	}
+	_ = failOutbox(ctx, ts, job.OutboxID, attempts, procErr.Error())
+	_ = markKBIndexFailed(ctx, ts, job.EntityID, job.Version, attempts, procErr.Error())
+	retrieval.RecordIndexingOutcome(entityTypeKB, job.Lane, false, time.Since(job.EnqueuedAt))
+	recordIndexingMetrics(entityTypeKB, job.Lane, false, indexingLagSec(job.EnqueuedAt))
+	if retrieval.IsRetryableError(procErr) {
+		return procErr
+	}
+	rlog.Warn("retrieval index permanent failure", "entity", job.EntityID, "err", procErr)
+	return nil
 }
 
 func processKBIndex(ctx context.Context, ts appdb.TenantScope, svc *retrieval.Service, tenant retrieval.TenantIdentity, job *RetrievalIndexJob) error {

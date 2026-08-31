@@ -369,7 +369,22 @@ func handleRAGRolloutMessage(ctx context.Context, msg *RAGRolloutMessage) error 
 		return nil
 	}
 
-	_, err = db.Exec(ctx, `
+	var itemStatus string
+	err = db.QueryRow(ctx, `
+		SELECT status FROM rag_rollout_job_item WHERE id = $1::uuid`, msg.ItemID,
+	).Scan(&itemStatus)
+	if err == sql.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	switch itemStatus {
+	case ragRolloutItemSucceeded, ragRolloutItemFailed, ragRolloutItemSkipped:
+		return nil
+	}
+
+	result, err := db.Exec(ctx, `
 		UPDATE rag_rollout_job_item
 		SET status = $2, attempts = attempts + 1, updated_at = now()
 		WHERE id = $1::uuid AND status = ANY($3::text[])`,
@@ -378,6 +393,10 @@ func handleRAGRolloutMessage(ctx context.Context, msg *RAGRolloutMessage) error 
 	)
 	if err != nil {
 		return err
+	}
+	affected := result.RowsAffected()
+	if affected == 0 {
+		return nil
 	}
 
 	if err := tenant.EnsureRetrievalSchema(ctx, msg.SchemaName); err != nil {

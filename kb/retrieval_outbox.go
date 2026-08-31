@@ -110,6 +110,16 @@ func completeOutbox(ctx context.Context, ts interface {
 	return err
 }
 
+func nextOutboxAttempt(ctx context.Context, ts appdb.TenantScope, outboxID string) (int, error) {
+	var attempts int
+	err := ts.QueryRowContext(ctx, `
+		UPDATE retrieval_outbox
+		SET attempts = attempts + 1, updated_at = NOW()
+		WHERE id = $1::uuid
+		RETURNING attempts`, outboxID).Scan(&attempts)
+	return attempts, err
+}
+
 func failOutbox(ctx context.Context, ts interface {
 	ExecContext(context.Context, string, ...any) (sql.Result, error)
 }, outboxID string, attempts int, errMsg string) error {
