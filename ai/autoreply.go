@@ -21,6 +21,7 @@ import (
 	"encore.app/wabantu/shared/retrieval"
 	"encore.app/wabantu/shared/strutil"
 	"encore.app/wabantu/shared/pii"
+	"encore.app/wabantu/shared/whatsappchannel"
 	"encore.app/wabantu/usage"
 	"encore.app/wabantu/whatsapp"
 	"github.com/redis/go-redis/v9"
@@ -1199,16 +1200,38 @@ func isMissingPIIColumn(err error) bool {
 
 func loadChannel(ctx context.Context, ts tenantScopedQuerier, id string) (*dbChannel, error) {
 	row := ts.QueryRowContext(ctx, fmt.Sprintf(`
-		SELECT id, provider, status, access_token, meta_phone_number_id,
-		       meta_waba_id, display_name, phone_number
+		SELECT id, provider, status,
+		       COALESCE(access_token_enc, ''), COALESCE(access_token, ''),
+		       meta_phone_number_id, meta_waba_id,
+		       COALESCE(display_name_enc, ''), COALESCE(display_name, ''),
+		       COALESCE(phone_number_enc, ''), COALESCE(phone_number, '')
 		FROM %s WHERE id = $1`, ts.T("whatsapp_channel")), id)
 	ch := &dbChannel{}
-	err := row.Scan(&ch.ID, &ch.Provider, &ch.Status, &ch.AccessToken,
-		&ch.MetaPhoneNumberID, &ch.MetaWabaID, &ch.DisplayName, &ch.PhoneNumber)
+	var tokenEnc, tokenLegacy, displayEnc, displayLegacy, phoneEnc, phoneLegacy string
+	err := row.Scan(&ch.ID, &ch.Provider, &ch.Status, &tokenEnc, &tokenLegacy,
+		&ch.MetaPhoneNumberID, &ch.MetaWabaID,
+		&displayEnc, &displayLegacy, &phoneEnc, &phoneLegacy)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
-	return ch, err
+	if err != nil {
+		return nil, err
+	}
+	key := strings.TrimSpace(secrets.DataEncryptionKey)
+	token, err := pii.DecryptOrLegacy(tokenEnc, tokenLegacy, key)
+	if err != nil {
+		return nil, err
+	}
+	if token != "" {
+		ch.AccessToken = &token
+	}
+	display, err := whatsappchannel.DecryptDisplay(displayEnc, displayLegacy, phoneEnc, phoneLegacy, key)
+	if err != nil {
+		return nil, err
+	}
+	ch.DisplayName = display.DisplayName
+	ch.PhoneNumber = display.PhoneNumber
+	return ch, nil
 }
 
 func loadHistory(ctx context.Context, ts tenantScopedQuerier, convoID string, limit int) ([]dbMessage, error) {

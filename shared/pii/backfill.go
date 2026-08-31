@@ -28,6 +28,7 @@ func BackfillTenant(ctx context.Context, db dbTX, encKey string) error {
 		backfillChecklistTitles,
 		backfillRecurringTitles,
 		backfillBroadcastRecipients,
+		backfillWhatsAppChannels,
 	}
 	for _, fn := range steps {
 		if err := fn(ctx, db, encKey); err != nil {
@@ -440,6 +441,68 @@ func backfillBroadcastRecipients(ctx context.Context, db dbTX, key string) error
 			UPDATE broadcast_recipient SET
 			  phone_number_enc = $1, phone_number_idx = $2, phone_number = $3
 			WHERE id = $4`, enc, idx, Placeholder, r.id)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func backfillWhatsAppChannels(ctx context.Context, db dbTX, key string) error {
+	rows, err := db.QueryContext(ctx, `
+		SELECT id, display_name, phone_number, access_token
+		FROM whatsapp_channel
+		WHERE (access_token_enc IS NULL OR access_token_enc = '')
+		  AND NULLIF(TRIM(access_token), '') IS NOT NULL
+		  AND access_token <> $1
+		LIMIT $2`, Placeholder, backfillBatch)
+	if err != nil {
+		if isMissingRelation(err) || isMissingColumn(err) {
+			return nil
+		}
+		return fmt.Errorf("backfill whatsapp_channel: %w", err)
+	}
+	type row struct {
+		id, display, phone, token string
+	}
+	var batch []row
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.id, &r.display, &r.phone, &r.token); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		batch = append(batch, r)
+	}
+	if err := finishRows(rows); err != nil {
+		return err
+	}
+	for _, r := range batch {
+		displayEnc, err := Encrypt(strings.TrimSpace(r.display), key)
+		if err != nil {
+			return err
+		}
+		phoneEnc, err := Encrypt(strings.TrimSpace(r.phone), key)
+		if err != nil {
+			return err
+		}
+		tokenEnc, err := Encrypt(strings.TrimSpace(r.token), key)
+		if err != nil {
+			return err
+		}
+		idx := BlindIndex(NormalizePhone(r.phone), key)
+		_, err = db.ExecContext(ctx, `
+			UPDATE whatsapp_channel SET
+			  display_name_enc = NULLIF($1, ''),
+			  phone_number_enc = NULLIF($2, ''),
+			  phone_number_idx = NULLIF($3, ''),
+			  access_token_enc = NULLIF($4, ''),
+			  display_name = $5,
+			  phone_number = $5,
+			  access_token = $5,
+			  updated_at = NOW()
+			WHERE id = $6::uuid`,
+			displayEnc, phoneEnc, idx, tokenEnc, Placeholder, r.id)
 		if err != nil {
 			return err
 		}

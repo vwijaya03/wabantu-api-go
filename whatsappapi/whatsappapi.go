@@ -21,6 +21,7 @@ import (
 	appauth "encore.app/wabantu/auth"
 	apperr "encore.app/wabantu/shared/errs"
 	appdb "encore.app/wabantu/shared/db"
+	"encore.app/wabantu/shared/whatsappchannel"
 	"encore.app/wabantu/system"
 	"encore.app/wabantu/tenant"
 	"encore.app/wabantu/whatsapp"
@@ -28,6 +29,10 @@ import (
 )
 
 var db = sqldb.Named("tenant")
+
+var secrets struct {
+	DataEncryptionKey string
+}
 
 // ListChannelsResponse wraps the channel list (Encore requires a named struct).
 type ListChannelsResponse struct {
@@ -114,7 +119,9 @@ func ListChannels(ctx context.Context) (*ListChannelsResponse, error) {
 	}
 
 	rows, err := ts.QueryContext(ctx, `
-		SELECT id, provider, display_name, phone_number,
+		SELECT id, provider,
+		       COALESCE(display_name_enc, ''), COALESCE(display_name, ''),
+		       COALESCE(phone_number_enc, ''), COALESCE(phone_number, ''),
 		       meta_phone_number_id, meta_waba_id, meta_app_id,
 		       status, last_error, connected_at
 		FROM whatsapp_channel
@@ -124,15 +131,27 @@ func ListChannels(ctx context.Context) (*ListChannelsResponse, error) {
 	}
 	defer rows.Close()
 
+	encKey := strings.TrimSpace(secrets.DataEncryptionKey)
 	var out []Channel
 	for rows.Next() {
 		var ch Channel
+		var displayEnc, displayLegacy, phoneEnc, phoneLegacy string
 		if err := rows.Scan(
-			&ch.ID, &ch.Provider, &ch.DisplayName, &ch.PhoneNumber,
+			&ch.ID, &ch.Provider,
+			&displayEnc, &displayLegacy, &phoneEnc, &phoneLegacy,
 			&ch.MetaPhoneNumberID, &ch.MetaWabaID, &ch.MetaAppID,
 			&ch.Status, &ch.LastError, &ch.ConnectedAt,
 		); err != nil {
 			continue
+		}
+		display, derr := whatsappchannel.DecryptDisplay(displayEnc, displayLegacy, phoneEnc, phoneLegacy, encKey)
+		if derr != nil {
+			rlog.Warn("decrypt whatsapp channel display failed", "channelId", ch.ID, "err", derr)
+			ch.DisplayName = displayLegacy
+			ch.PhoneNumber = phoneLegacy
+		} else {
+			ch.DisplayName = display.DisplayName
+			ch.PhoneNumber = display.PhoneNumber
 		}
 		out = append(out, ch)
 	}
@@ -400,60 +419,128 @@ type channelConnectParams struct {
 }
 
 func upsertChannel(ctx context.Context, ts appdb.TenantScope, p channelConnectParams) (*Channel, error) {
-	var existingID string
-	err := ts.QueryRowContext(ctx,
-		`SELECT id FROM whatsapp_channel WHERE phone_number = $1`, p.PhoneNumber,
-	).Scan(&existingID)
+	_ = tenant.RunPIISchemaPatches(ctx, ts.Sch.Schema)
+
+	encKey := strings.TrimSpace(secrets.DataEncryptionKey)
+	fields, err := whatsappchannel.PrepareWrite(p.DisplayName, p.PhoneNumber, p.AccessToken, encKey)
+	if err != nil {
+		return nil, apperr.Internal("failed to encrypt channel credentials")
+	}
+
+	existingID, err := whatsappchannel.FindIDByPhone(ctx, ts, p.PhoneNumber, encKey)
+	if err != nil && err != sql.ErrNoRows {
+		return nil, apperr.Internal("failed to lookup channel")
+	}
 
 	var ch Channel
 	if err == sql.ErrNoRows {
-		err = ts.QueryRowContext(ctx, `
-			INSERT INTO whatsapp_channel (
-				provider, display_name, phone_number, access_token,
-				meta_phone_number_id, meta_waba_id, meta_app_id, meta_app_secret,
-				status, connected_at
-			) VALUES ('meta_cloud', $1, $2, $3, $4, $5, $6, $7, 'connected', NOW())
-			RETURNING id, provider, display_name, phone_number,
-			          meta_phone_number_id, meta_waba_id, meta_app_id,
-			          status, last_error, connected_at`,
-			p.DisplayName, p.PhoneNumber, p.AccessToken,
-			p.MetaPhoneNumberID, p.MetaWabaID, p.MetaAppID, p.MetaAppSecret,
-		).Scan(
-			&ch.ID, &ch.Provider, &ch.DisplayName, &ch.PhoneNumber,
-			&ch.MetaPhoneNumberID, &ch.MetaWabaID, &ch.MetaAppID,
-			&ch.Status, &ch.LastError, &ch.ConnectedAt,
-		)
-	} else if err == nil {
-		err = ts.QueryRowContext(ctx, `
-			UPDATE whatsapp_channel SET
-				provider = 'meta_cloud',
-				display_name = $1,
-				access_token = $2,
-				meta_phone_number_id = COALESCE($3, meta_phone_number_id),
-				meta_waba_id = COALESCE($4, meta_waba_id),
-				meta_app_id = COALESCE($5, meta_app_id),
-				meta_app_secret = COALESCE($6, meta_app_secret),
-				status = 'connected',
-				connected_at = NOW(),
-				last_error = NULL,
-				updated_at = NOW()
-			WHERE id = $7
-			RETURNING id, provider, display_name, phone_number,
-			          meta_phone_number_id, meta_waba_id, meta_app_id,
-			          status, last_error, connected_at`,
-			p.DisplayName, p.AccessToken,
-			p.MetaPhoneNumberID, p.MetaWabaID, p.MetaAppID, p.MetaAppSecret,
-			existingID,
-		).Scan(
-			&ch.ID, &ch.Provider, &ch.DisplayName, &ch.PhoneNumber,
-			&ch.MetaPhoneNumberID, &ch.MetaWabaID, &ch.MetaAppID,
-			&ch.Status, &ch.LastError, &ch.ConnectedAt,
-		)
+		if fields.UsePII {
+			err = ts.QueryRowContext(ctx, `
+				INSERT INTO whatsapp_channel (
+					provider, display_name, display_name_enc,
+					phone_number, phone_number_enc, phone_number_idx,
+					access_token, access_token_enc,
+					meta_phone_number_id, meta_waba_id, meta_app_id, meta_app_secret,
+					status, connected_at
+				) VALUES ('meta_cloud', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'connected', NOW())
+				RETURNING id, provider,
+				          meta_phone_number_id, meta_waba_id, meta_app_id,
+				          status, last_error, connected_at`,
+				fields.DisplayName, fields.DisplayNameEnc,
+				fields.PhoneNumber, fields.PhoneNumberEnc, fields.PhoneNumberIdx,
+				fields.AccessToken, fields.AccessTokenEnc,
+				p.MetaPhoneNumberID, p.MetaWabaID, p.MetaAppID, p.MetaAppSecret,
+			).Scan(
+				&ch.ID, &ch.Provider,
+				&ch.MetaPhoneNumberID, &ch.MetaWabaID, &ch.MetaAppID,
+				&ch.Status, &ch.LastError, &ch.ConnectedAt,
+			)
+		} else {
+			err = ts.QueryRowContext(ctx, `
+				INSERT INTO whatsapp_channel (
+					provider, display_name, phone_number, access_token,
+					meta_phone_number_id, meta_waba_id, meta_app_id, meta_app_secret,
+					status, connected_at
+				) VALUES ('meta_cloud', $1, $2, $3, $4, $5, $6, $7, 'connected', NOW())
+				RETURNING id, provider, display_name, phone_number,
+				          meta_phone_number_id, meta_waba_id, meta_app_id,
+				          status, last_error, connected_at`,
+				p.DisplayName, p.PhoneNumber, p.AccessToken,
+				p.MetaPhoneNumberID, p.MetaWabaID, p.MetaAppID, p.MetaAppSecret,
+			).Scan(
+				&ch.ID, &ch.Provider, &ch.DisplayName, &ch.PhoneNumber,
+				&ch.MetaPhoneNumberID, &ch.MetaWabaID, &ch.MetaAppID,
+				&ch.Status, &ch.LastError, &ch.ConnectedAt,
+			)
+		}
+	} else {
+		if fields.UsePII {
+			err = ts.QueryRowContext(ctx, `
+				UPDATE whatsapp_channel SET
+					provider = 'meta_cloud',
+					display_name = $1,
+					display_name_enc = $2,
+					phone_number = $3,
+					phone_number_enc = $4,
+					phone_number_idx = $5,
+					access_token = $6,
+					access_token_enc = $7,
+					meta_phone_number_id = COALESCE($8, meta_phone_number_id),
+					meta_waba_id = COALESCE($9, meta_waba_id),
+					meta_app_id = COALESCE($10, meta_app_id),
+					meta_app_secret = COALESCE($11, meta_app_secret),
+					status = 'connected',
+					connected_at = NOW(),
+					last_error = NULL,
+					updated_at = NOW()
+				WHERE id = $12
+				RETURNING id, provider,
+				          meta_phone_number_id, meta_waba_id, meta_app_id,
+				          status, last_error, connected_at`,
+				fields.DisplayName, fields.DisplayNameEnc,
+				fields.PhoneNumber, fields.PhoneNumberEnc, fields.PhoneNumberIdx,
+				fields.AccessToken, fields.AccessTokenEnc,
+				p.MetaPhoneNumberID, p.MetaWabaID, p.MetaAppID, p.MetaAppSecret,
+				existingID,
+			).Scan(
+				&ch.ID, &ch.Provider,
+				&ch.MetaPhoneNumberID, &ch.MetaWabaID, &ch.MetaAppID,
+				&ch.Status, &ch.LastError, &ch.ConnectedAt,
+			)
+		} else {
+			err = ts.QueryRowContext(ctx, `
+				UPDATE whatsapp_channel SET
+					provider = 'meta_cloud',
+					display_name = $1,
+					access_token = $2,
+					meta_phone_number_id = COALESCE($3, meta_phone_number_id),
+					meta_waba_id = COALESCE($4, meta_waba_id),
+					meta_app_id = COALESCE($5, meta_app_id),
+					meta_app_secret = COALESCE($6, meta_app_secret),
+					status = 'connected',
+					connected_at = NOW(),
+					last_error = NULL,
+					updated_at = NOW()
+				WHERE id = $7
+				RETURNING id, provider, display_name, phone_number,
+				          meta_phone_number_id, meta_waba_id, meta_app_id,
+				          status, last_error, connected_at`,
+				p.DisplayName, p.AccessToken,
+				p.MetaPhoneNumberID, p.MetaWabaID, p.MetaAppID, p.MetaAppSecret,
+				existingID,
+			).Scan(
+				&ch.ID, &ch.Provider, &ch.DisplayName, &ch.PhoneNumber,
+				&ch.MetaPhoneNumberID, &ch.MetaWabaID, &ch.MetaAppID,
+				&ch.Status, &ch.LastError, &ch.ConnectedAt,
+			)
+		}
 	}
 	if err != nil {
 		rlog.Error("upsert channel failed", "err", err)
 		return nil, apperr.Internal("failed to save channel")
 	}
+	ch.DisplayName = p.DisplayName
+	ch.PhoneNumber = p.PhoneNumber
 	return &ch, nil
 }
 
@@ -533,16 +620,16 @@ func SendTestMessage(ctx context.Context, id string, req *SendTestMessageRequest
 	}
 
 	var token, phoneNumberID, status string
-	err = ts.QueryRowContext(ctx, `
-		SELECT COALESCE(access_token,''), COALESCE(meta_phone_number_id,''), status
-		FROM whatsapp_channel WHERE id = $1`, id,
-	).Scan(&token, &phoneNumberID, &status)
+	creds, err := whatsappchannel.LoadCredentials(ctx, ts, id, strings.TrimSpace(secrets.DataEncryptionKey))
 	if err == sql.ErrNoRows {
 		return nil, apperr.NotFound("Channel tidak ditemukan")
 	}
 	if err != nil {
 		return nil, apperr.Internal("channel lookup failed")
 	}
+	token = creds.AccessToken
+	phoneNumberID = creds.MetaPhoneNumberID
+	status = creds.Status
 	if status != "connected" || token == "" || phoneNumberID == "" {
 		return nil, apperr.BadRequest("Channel WhatsApp belum terhubung")
 	}
