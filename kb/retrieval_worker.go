@@ -190,7 +190,8 @@ func Reindex(ctx context.Context, req *ReindexRequest) (*ReindexResponse, error)
 		}
 		hash := kbContentHash(question, answer)
 		var outboxID string
-		err = tx.QueryRowContext(ctx, `
+		tTx := txn(ts, tx)
+		err = tTx.QueryRowContext(ctx, `
 			INSERT INTO retrieval_outbox (event_type, entity_type, entity_id, version, content_hash, status)
 			VALUES ($1, $2, $3::uuid, $4, $5, 'pending')
 			RETURNING id::text`, outboxEventIndexKB, entityTypeKB, id, version, hash,

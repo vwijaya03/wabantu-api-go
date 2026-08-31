@@ -242,10 +242,11 @@ func Create(ctx context.Context, req *CreateRequest) (*CreateResponse, error) {
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	tTx := txn(ts, tx)
 
 	var entry KBEntry
 	var version int64
-	err = tx.QueryRowContext(ctx, `
+	err = tTx.QueryRowContext(ctx, `
 		INSERT INTO knowledge_base_entry (question, answer, category, source, is_active,
 		    embedding_version, embedding_status, embedding_content_hash, embedding_model, embedding_updated_at)
 		VALUES ($1, $2, $3, $4, $5, 1, 'pending', $6, $7, NOW())
@@ -259,7 +260,7 @@ func Create(ctx context.Context, req *CreateRequest) (*CreateResponse, error) {
 	}
 
 	var outboxID string
-	err = tx.QueryRowContext(ctx, `
+	err = tTx.QueryRowContext(ctx, `
 		INSERT INTO retrieval_outbox (event_type, entity_type, entity_id, version, content_hash, status)
 		VALUES ($1, $2, $3::uuid, $4, $5, 'pending')
 		RETURNING id::text`,
@@ -332,6 +333,7 @@ func Update(ctx context.Context, id string, req *UpdateRequest) (*UpdateResponse
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	tTx := txn(ts, tx)
 
 	query := fmt.Sprintf(`
 		UPDATE knowledge_base_entry
@@ -341,7 +343,7 @@ func Update(ctx context.Context, id string, req *UpdateRequest) (*UpdateResponse
 		joinStrings(sets, ", "), argN)
 
 	var entry KBEntry
-	err = tx.QueryRowContext(ctx, query, args...).Scan(
+	err = tTx.QueryRowContext(ctx, query, args...).Scan(
 		&entry.ID, &entry.Question, &entry.Answer, &entry.Category,
 		&entry.Source, &entry.IsActive, &entry.CreatedAt, &entry.UpdatedAt)
 	if err == sql.ErrNoRows {
@@ -351,13 +353,13 @@ func Update(ctx context.Context, id string, req *UpdateRequest) (*UpdateResponse
 		return nil, fmt.Errorf("update KB entry: %w", err)
 	}
 
-	version, err := bumpKBEmbeddingPendingTx(ctx, tx, entry.ID, entry.Question, entry.Answer)
+	version, err := bumpKBEmbeddingPendingTx(ctx, tTx, entry.ID, entry.Question, entry.Answer)
 	if err != nil {
 		return nil, fmt.Errorf("bump embedding version: %w", err)
 	}
 	hash := kbContentHash(entry.Question, entry.Answer)
 	var outboxID string
-	err = tx.QueryRowContext(ctx, `
+	err = tTx.QueryRowContext(ctx, `
 		INSERT INTO retrieval_outbox (event_type, entity_type, entity_id, version, content_hash, status)
 		VALUES ($1, $2, $3::uuid, $4, $5, 'pending')
 		RETURNING id::text`,
@@ -393,9 +395,10 @@ func Delete(ctx context.Context, id string) (*DeleteResponse, error) {
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	tTx := txn(ts, tx)
 
 	var version int64
-	err = tx.QueryRowContext(ctx, `
+	err = tTx.QueryRowContext(ctx, `
 		UPDATE knowledge_base_entry
 		SET deleted_at = NOW(), deleted_by = $1,
 		    embedding_status = 'pending', embedding_updated_at = NOW()
@@ -409,7 +412,7 @@ func Delete(ctx context.Context, id string) (*DeleteResponse, error) {
 	}
 
 	var outboxID string
-	err = tx.QueryRowContext(ctx, `
+	err = tTx.QueryRowContext(ctx, `
 		INSERT INTO retrieval_outbox (event_type, entity_type, entity_id, version, status)
 		VALUES ($1, $2, $3::uuid, $4, 'pending')
 		RETURNING id::text`,

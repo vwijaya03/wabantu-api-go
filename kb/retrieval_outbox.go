@@ -24,18 +24,18 @@ func kbContentHash(question, answer string) string {
 	return retrieval.ContentHash(question, answer)
 }
 
-func enqueueKBOutboxTx(ctx context.Context, tx *sql.Tx, eventType, entryID string, version int64, hash string) error {
-	_, err := tx.ExecContext(ctx, `
+func enqueueKBOutboxTx(ctx context.Context, ts appdb.TenantScope, eventType, entryID string, version int64, hash string) error {
+	_, err := ts.ExecContext(ctx, `
 		INSERT INTO retrieval_outbox (event_type, entity_type, entity_id, version, content_hash, status)
 		VALUES ($1, $2, $3::uuid, $4, $5, 'pending')`,
 		eventType, entityTypeKB, entryID, version, hash)
 	return err
 }
 
-func bumpKBEmbeddingPendingTx(ctx context.Context, tx *sql.Tx, entryID, question, answer string) (int64, error) {
+func bumpKBEmbeddingPendingTx(ctx context.Context, ts appdb.TenantScope, entryID, question, answer string) (int64, error) {
 	hash := kbContentHash(question, answer)
 	var version int64
-	err := tx.QueryRowContext(ctx, `
+	err := ts.QueryRowContext(ctx, `
 		UPDATE knowledge_base_entry
 		SET embedding_version = embedding_version + 1,
 		    embedding_status = 'pending',

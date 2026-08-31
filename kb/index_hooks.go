@@ -38,9 +38,10 @@ func InsertKBEntryWithIndex(
 		return "", err
 	}
 	defer func() { _ = tx.Rollback() }()
+	tTx := txn(ts, tx)
 
 	var version int64
-	err = tx.QueryRowContext(ctx, `
+	err = tTx.QueryRowContext(ctx, `
 		INSERT INTO knowledge_base_entry (question, answer, category, source, is_active,
 		    embedding_version, embedding_status, embedding_content_hash, embedding_model, embedding_updated_at)
 		VALUES ($1, $2, $3, $4, $5, 1, 'pending', $6, $7, NOW())
@@ -53,7 +54,7 @@ func InsertKBEntryWithIndex(
 	}
 
 	var outboxID string
-	err = tx.QueryRowContext(ctx, `
+	err = tTx.QueryRowContext(ctx, `
 		INSERT INTO retrieval_outbox (event_type, entity_type, entity_id, version, content_hash, status)
 		VALUES ($1, $2, $3::uuid, $4, $5, 'pending')
 		RETURNING id::text`,
@@ -144,10 +145,11 @@ func enqueueKBIndexOutbox(ctx context.Context, ts appdb.TenantScope, tenantSchem
 		return false, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	tTx := txn(ts, tx)
 
 	hash := kbContentHash(question, answer)
 	var outboxID string
-	err = tx.QueryRowContext(ctx, `
+	err = tTx.QueryRowContext(ctx, `
 		INSERT INTO retrieval_outbox (event_type, entity_type, entity_id, version, content_hash, status)
 		VALUES ($1, $2, $3::uuid, $4, $5, 'pending')
 		RETURNING id::text`,
@@ -196,10 +198,11 @@ func enqueueCatalogIndexOutbox(ctx context.Context, ts appdb.TenantScope, tenant
 		return false
 	}
 	defer func() { _ = tx.Rollback() }()
+	tTx := txn(ts, tx)
 
 	hash := retrieval.ContentHash(name, desc, code)
 	var outboxID string
-	err = tx.QueryRowContext(ctx, `
+	err = tTx.QueryRowContext(ctx, `
 		INSERT INTO retrieval_outbox (event_type, entity_type, entity_id, version, content_hash, status)
 		VALUES ($1, $2, $3::uuid, $4, $5, 'pending')
 		RETURNING id::text`,
