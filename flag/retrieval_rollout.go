@@ -70,12 +70,16 @@ func addTenantToFlag(ctx context.Context, key, description, tenantID string) err
 	}
 	if !ok {
 		idsJSON, _ := json.Marshal([]string{tenantID})
-		_, err = db.Exec(ctx,
+		row := db.QueryRow(ctx,
 			`INSERT INTO feature_flag (key, enabled_globally, tenant_ids, description)
-			 VALUES ($1, false, $2, $3)`,
+			 VALUES ($1, false, $2, $3)
+			 RETURNING key, enabled_globally, tenant_ids, COALESCE(description,''), created_at, updated_at`,
 			key, idsJSON, description)
+		if _, err := scanFlag(row.Scan); err != nil {
+			return err
+		}
 		invalidateCache(key)
-		return err
+		return nil
 	}
 	if containsID(f.TenantIDs, tenantID) {
 		return nil

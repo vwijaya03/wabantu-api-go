@@ -66,6 +66,7 @@ var tenantTableNames = []string{
 	"inv_stock_balance",
 	"inv_sales_return",
 	"knowledge_base_entry",
+	"retrieval_outbox",
 	"payment_transaction",
 	"pur_purchase_order",
 	"inv_invoice_line",

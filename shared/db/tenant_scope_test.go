@@ -87,6 +87,16 @@ func indexOf(s, sub string) int {
 	return -1
 }
 
+func TestQualifySQLRetrievalOutbox(t *testing.T) {
+	sch := SchemaSQL{Schema: "t_omah_apparel"}
+	in := `INSERT INTO retrieval_outbox (event_type, entity_type, entity_id) VALUES ($1, $2, $3)`
+	out := QualifySQL(sch, in)
+	want := `INSERT INTO "t_omah_apparel"."retrieval_outbox" (event_type, entity_type, entity_id) VALUES ($1, $2, $3)`
+	if out != want {
+		t.Fatalf("QualifySQL() = %q, want %q", out, want)
+	}
+}
+
 func TestTenantScope_BeginTxWithoutPoolFails(t *testing.T) {
 	ts := TenantScope{
 		Q:   stdQuerier{q: &sql.DB{}},
