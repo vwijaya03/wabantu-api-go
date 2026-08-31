@@ -27,7 +27,7 @@ Centang semua ini **sebelum** `encore run` atau membuka `web-frontend`. Kalau ad
 | 5 | **Redis** jalan (session, rate limit, import staging, SSE) | `docker compose -f ../infra/docker-compose.yml ps redis` atau `redis-cli ping` → `PONG` |
 | 6 | **Encore login** | `encore auth login` (sekali per laptop) |
 | 7 | **App terdaftar** di Encore Cloud | `encore.app` punya `id` valid; tidak error `app_not_found` saat `encore run` |
-| 8 | **Secrets** ter-set | `encore secret list` → minimal `JWTSecret`, `DataEncryptionKey`, `RedisURL`; untuk AI tambah `AnthropicApiKey`; untuk RAG vector tambah `OpenAIApiKey`, `PineconeApiKey`, `PineconeIndexHost` (opsional — default lexical); untuk platform admin tambah `PlatformAdminBootstrapSecret` ([Bagian 8.1](./DEVELOPER_DOCUMENTATION.md#81-platform-admin-internal-operator-wabantu-owner)) |
+| 8 | **Secrets** ter-set | `encore secret list` → minimal `JWTSecret`, `DataEncryptionKey`, `RedisURL`, `AnthropicAPIKey`; untuk RAG vector tambah `OpenAIApiKey`, `PineconeApiKey`, `PineconeIndexHost` (opsional — default lexical); untuk platform admin tambah `PlatformAdminBootstrapSecret` ([Bagian 8.1](./DEVELOPER_DOCUMENTATION.md#81-platform-admin-internal-operator-wabantu-owner)) |
 | 9 | File **`../api/.env`** ada (sumber secret) | `ls ../api/.env` — copy dari `api/.env.example` bila perlu |
 | 10 | **`encore check`** lulus | `cd api-go && encore check` |
 
@@ -141,8 +141,7 @@ Mapping nama secret (field di kode Go → nilai dari Nest `.env`):
 | `JWTSecret` | `JWT_ACCESS_SECRET` | Ya |
 | `DataEncryptionKey` | `DATA_ENCRYPTION_KEY` | Ya |
 | `RedisURL` | `redis://localhost:6379` | Ya |
-| `AnthropicApiKey` | `ANTHROPIC_API_KEY` | Untuk AI |
-| `AnthropicAPIKey` | sama (juga dipakai `business`, `finance`) | Import katalog/transaksi dari gambar, import website |
+| `AnthropicAPIKey` | `ANTHROPIC_API_KEY` | AI auto-reply, vision, import katalog/transaksi |
 | `AiInternalToken` | `AI_INTERNAL_TOKEN` | Untuk worker AI |
 | `OpenAIApiKey` | `OPENAI_API_KEY` | Embedding FAQ/katalog (RAG) — `text-embedding-3-small` |
 | `PineconeApiKey` | `PINECONE_API_KEY` | Vector index Pinecone (RAG) |
@@ -167,7 +166,6 @@ cd api-go
 printf '%s' 'ISI_DARI_JWT_ACCESS_SECRET' | encore secret set --type local JWTSecret
 printf '%s' 'ISI_DARI_DATA_ENCRYPTION_KEY' | encore secret set --type local DataEncryptionKey
 printf '%s' 'redis://localhost:6379' | encore secret set --type local RedisURL
-printf '%s' 'ISI_ANTHROPIC_API_KEY' | encore secret set --type local AnthropicApiKey
 printf '%s' 'ISI_ANTHROPIC_API_KEY' | encore secret set --type local AnthropicAPIKey
 printf '%s' 'change-me-long-random-secret' | encore secret set --type local AiInternalToken
 ```

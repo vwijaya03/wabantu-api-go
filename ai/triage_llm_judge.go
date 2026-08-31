@@ -31,7 +31,7 @@ type llmJudgeVerdict struct {
 }
 
 func judgeTriageTurn(ctx context.Context, businessName string, catalog []dbCatalogItem, turn AITriageTurn) (llmJudgeVerdict, CompletionUsage, error) {
-	client := NewAnthropicClient(secrets.AnthropicApiKey, AnthropicConfig{
+	client := NewAnthropicClient(secrets.AnthropicAPIKey, AnthropicConfig{
 		Model:     DefaultHaikuAPIID(),
 		MaxTokens: 256,
 	})

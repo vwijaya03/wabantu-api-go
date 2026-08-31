@@ -618,7 +618,7 @@ Hapus volume Docker yang dibuat Encore untuk Postgres, atau gunakan perintah res
 | `JWT_ACCESS_SECRET` | `JWTSecret` |
 | `DATA_ENCRYPTION_KEY` | `DataEncryptionKey` |
 | `REDIS_HOST` + `REDIS_PORT` | `RedisURL` → `redis://host:port` |
-| `ANTHROPIC_API_KEY` | `AnthropicApiKey` + `AnthropicAPIKey` |
+| `ANTHROPIC_API_KEY` | `AnthropicAPIKey` |
 | `AI_INTERNAL_TOKEN` | `AiInternalToken` |
 | `META_WEBHOOK_VERIFY_TOKEN` | `WebhookVerifyToken` |
 | *(opsional, Fase 1b)* `AWSS3_BUCKET` / `AWSS3_REGION` / `AWSS3_ACCESS_KEY_ID` / `AWSS3_SECRET_ACCESS_KEY` | `AWSS3Bucket`, `AWSS3Region`, `AWSS3AccessKeyID`, `AWSS3SecretAccessKey` |
@@ -679,7 +679,7 @@ Normal — tenant baru di DB Encore terpisah dari data Nest lama.
 1. Log `encore run`: webhook ingest + publish job.
 2. Worker jalan? `AI_INTERNAL_TOKEN` = secret `AiInternalToken`.
 3. `curl` internal endpoint (lihat Bagian 12).
-4. `AnthropicApiKey` terisi.
+4. `AnthropicAPIKey` terisi.
 5. Conversation `ai_handled = true`, channel connected.
 
 ### Meta webhook 403 verify

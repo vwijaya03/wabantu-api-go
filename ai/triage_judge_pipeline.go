@@ -209,7 +209,7 @@ func judgeTriageTurnBatch(ctx context.Context, businessName string, catalog []db
 		return []llmJudgeVerdict{v}, usage, err
 	}
 
-	client := NewAnthropicClient(secrets.AnthropicApiKey, AnthropicConfig{
+	client := NewAnthropicClient(secrets.AnthropicAPIKey, AnthropicConfig{
 		Model:     DefaultHaikuAPIID(),
 		MaxTokens: triageJudgeBatchMaxTokens,
 	})

@@ -14,7 +14,7 @@ import (
 // ─── Encore secrets ──────────────────────────────────────────────────────────
 
 var secrets struct {
-	AnthropicApiKey   string
+	AnthropicAPIKey   string
 	RedisURL          string
 	AiInternalToken   string
 	DataEncryptionKey string
@@ -32,7 +32,7 @@ var svc *AutoReplyService
 
 func init() {
 	rdb := newRedisClient()
-	client := NewAnthropicClient(secrets.AnthropicApiKey, AnthropicConfig{
+	client := NewAnthropicClient(secrets.AnthropicAPIKey, AnthropicConfig{
 		Model:     defaultAnthropicModel,
 		MaxTokens: defaultAnthropicMaxToks,
 	})

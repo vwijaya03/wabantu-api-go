@@ -403,7 +403,7 @@ Ringkasan cepat:
 | `RedisURL` | `auth` | Ya |
 | `DataEncryptionKey` | `auth` | Ya |
 | `PlatformAdminBootstrapSecret` | `auth` | Hanya untuk bootstrap platform admin ([Bagian 8.1](#81-platform-admin-internal-operator-wabantu-owner)) |
-| `AnthropicApiKey` / `AnthropicAPIKey` | `ai`, `business`, `finance` | Untuk AI, import katalog/transaksi gambar (`AnthropicAPIKey`; struct wajib bernama `secrets`) |
+| `AnthropicAPIKey` | `ai`, `business`, `finance`, `events`, `inventory` | AI auto-reply, vision, import gambar |
 | `AiInternalToken` | `ai` | Untuk internal AI HTTP |
 | `OpenAIApiKey` | `shared/retrieval` | Embedding RAG (`text-embedding-3-small`) — opsional; tanpa ini = lexical |
 | `PineconeApiKey` | `shared/retrieval` | Vector index Pinecone — opsional |
@@ -523,8 +523,7 @@ encore secret list
 | `JWTSecret` | `JWT_ACCESS_SECRET` |
 | `DataEncryptionKey` | `DATA_ENCRYPTION_KEY` |
 | `RedisURL` | `redis://{REDIS_HOST}:{REDIS_PORT}` (default `localhost:6379`) |
-| `AnthropicApiKey` | `ANTHROPIC_API_KEY` |
-| `AnthropicAPIKey` | `ANTHROPIC_API_KEY` (nama duplikat untuk package `business`) |
+| `AnthropicAPIKey` | `ANTHROPIC_API_KEY` |
 | `AiInternalToken` | `AI_INTERNAL_TOKEN` |
 | `OpenAIApiKey` | `OPENAI_API_KEY` |
 | `PineconeApiKey` | `PINECONE_API_KEY` |
@@ -608,8 +607,7 @@ Secret tidak hot-reload. Lupa restart = perilaku aneh (nilai lama/kosong).
 | `DataEncryptionKey` | `auth/auth.go` | Enkripsi field sensitif | Ya |
 | `RedisURL` | `auth/auth.go`, `ai/api.go` | Session, rate limit, SSE, AI retry counter | Ya |
 | `PlatformAdminBootstrapSecret` | `auth/auth.go` | Header bootstrap akun `super_admin` internal | Hanya jika pakai bootstrap |
-| `AnthropicApiKey` | `ai/api.go` | Model AI auto-reply | Untuk fitur AI |
-| `AnthropicAPIKey` | `business/business.go`, `finance/transaction_image.go` | Import website, import katalog/transaksi gambar | Struct wajib `secrets` per service |
+| `AnthropicAPIKey` | `ai/api.go`, `business/business.go`, `finance/transaction_image.go`, … | Model AI + vision import | Untuk fitur AI |
 | `AiInternalToken` | `ai/api.go` | `X-Ai-Internal-Token` pada internal AI HTTP | Jika panggil internal AI |
 | `OpenAIApiKey` | `shared/retrieval/config.go` | Embedding query + batch indexing | Untuk RAG vector (opsional) |
 | `PineconeApiKey` | `shared/retrieval/config.go` | Upsert/query vector Pinecone | Untuk RAG vector (opsional) |
@@ -1403,7 +1401,6 @@ Secrets per Encore environment name (`staging`, etc.) via `encore secret set --e
 | AI outbound delivery | — | `sendAiMessage` calls `whatsapp.SendText` (Meta Cloud API) before persisting `message` |
 | Webhook tenant routing | — | `system.whatsapp_inbound_map`: satu `meta_phone_number_id` → satu `tenant_schema`; duplikat ditolak saat OAuth connect |
 | Internal AI endpoints `public` | High for prod | Protect with `AiInternalToken` |
-| Duplicate Anthropic secret names | Low | `AnthropicApiKey` vs `AnthropicAPIKey` |
 | Limited automated tests | Medium | Regression risk on schema patches |
 
 **Non-idiomatic Go:** `autoreply.go` remains large; pipeline stages are partially split (`order_flow.go`, `greeting.go`, `product_scope.go`).

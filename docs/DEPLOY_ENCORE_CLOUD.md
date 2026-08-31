@@ -127,7 +127,6 @@ cd api-go
 printf '%s' 'rediss://...' | encore secret set --env=staging RedisURL
 printf '%s' '...' | encore secret set --env=staging JWTSecret
 printf '%s' '...' | encore secret set --env=staging DataEncryptionKey
-printf '%s' '...' | encore secret set --env=staging AnthropicApiKey
 printf '%s' '...' | encore secret set --env=staging AnthropicAPIKey
 printf '%s' '...' | encore secret set --env=staging AiInternalToken
 printf '%s' '...' | encore secret set --env=staging WebhookVerifyToken

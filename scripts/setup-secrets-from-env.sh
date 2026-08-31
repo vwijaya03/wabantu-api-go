@@ -93,7 +93,6 @@ fi
 ANTHROPIC_MODEL="$(env_get ANTHROPIC_MODEL || true)"
 ANTHROPIC_MAX_TOKENS="$(env_get ANTHROPIC_MAX_TOKENS || true)"
 
-set_secret AnthropicApiKey "$ANTHROPIC_API_KEY"
 set_secret AnthropicAPIKey "$ANTHROPIC_API_KEY"
 # Model / max tokens use code defaults (see ai/api.go). Set these only if you add them back to secrets struct.
 # set_secret AnthropicModel "${ANTHROPIC_MODEL:-claude-sonnet-4-5}"
