@@ -187,7 +187,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		rlog.Warn("AI job: missing contact or channel")
 		return false, nil
 	}
-	if channel.Provider != "meta_cloud" || channel.Status != "tsected" {
+	if channel.Provider != "meta_cloud" || channel.Status != "connected" {
 		rlog.Warn("AI job: unsupported/invalid channel",
 			"provider", channel.Provider,
 			"status", channel.Status,
@@ -1307,8 +1307,8 @@ func (s *AutoReplyService) sendAiMessage(
 	if channel.Provider != "meta_cloud" {
 		return fmt.Errorf("unsupported channel provider %q", channel.Provider)
 	}
-	if channel.Status != "tsected" {
-		return fmt.Errorf("whatsapp channel not tsected")
+	if channel.Status != "connected" {
+		return fmt.Errorf("whatsapp channel not connected")
 	}
 	if channel.AccessToken == nil || strings.TrimSpace(*channel.AccessToken) == "" {
 		return fmt.Errorf("whatsapp channel missing access token")
