@@ -2,7 +2,7 @@
 
 > **Audience:** Senior full-stack developers from Node.js/TypeScript (Express, NestJS, Prisma/TypeORM) learning **Go** and **Encore**.  
 > **Codebase:** `api-go/` — Encore rewrite of NestJS `api/`.  
-> **Companion docs:** [README.md](./README.md) · [APP_FLOW_GUIDE.md](./APP_FLOW_GUIDE.md) · [ENDPOINT_COMPATIBILITY.md](./ENDPOINT_COMPATIBILITY.md) · **[docs/README.md](./docs/README.md)** (indeks docs) · **[docs/WHATSAPP_AI_ROUTING.md](./docs/WHATSAPP_AI_ROUTING.md)** (webhook → AI routing) · **[docs/WHATSAPP_INBOX_MEDIA_PAYMENT_STOCK.md](./docs/WHATSAPP_INBOX_MEDIA_PAYMENT_STOCK.md)** (roadmap media/bukti/stok) · **[docs-development-shipped/inbox-media-fase1.md](./docs-development-shipped/inbox-media-fase1.md)** (media inbox proxy Meta) · **[docs-development-shipped/inbox-media-s3.md](./docs-development-shipped/inbox-media-s3.md)** (persist media S3) · **[docs-development-shipped/payment-proof-fase2.md](./docs-development-shipped/payment-proof-fase2.md)** (bukti transfer, limit 5x) · **[docs-development-shipped/ai-image-caption.md](./docs-development-shipped/ai-image-caption.md)** (caption gambar → teks) · **[docs-development-shipped/ai-stock-guard-fase4.md](./docs-development-shipped/ai-stock-guard-fase4.md)** (stok per gudang) · **[docs-development-shipped/ai-order-chat-lookup.md](./docs-development-shipped/ai-order-chat-lookup.md)** (order lookup scoped chat) · **[docs-development-shipped/ai-image-context.md](./docs-development-shipped/ai-image-context.md)** (vision katalog, planned) · **[LIMITS_AND_QUOTAS.md](./LIMITS_AND_QUOTAS.md)** (rate limit, trial/paid kuota, billing checkout) · **[docs/FINANCE_MODULE.md](./docs/FINANCE_MODULE.md)** (modul keuangan) · **[docs/ORDER_CUSTOMER_CHAT.md](./docs/ORDER_CUSTOMER_CHAT.md)** (nomor pesanan, cancel & status via chat)
+> **Companion docs:** [README.md](./README.md) · [APP_FLOW_GUIDE.md](./APP_FLOW_GUIDE.md) · [ENDPOINT_COMPATIBILITY.md](./ENDPOINT_COMPATIBILITY.md) · **[docs/README.md](./docs/README.md)** (indeks docs) · **[docs/WHATSAPP_AI_ROUTING.md](./docs/WHATSAPP_AI_ROUTING.md)** (webhook → AI routing) · **[docs/RAG_VECTOR_RETRIEVAL.md](./docs/RAG_VECTOR_RETRIEVAL.md)** (Pinecone + embedding FAQ/katalog) · **[docs/WHATSAPP_INBOX_MEDIA_PAYMENT_STOCK.md](./docs/WHATSAPP_INBOX_MEDIA_PAYMENT_STOCK.md)** (roadmap media/bukti/stok) · **[docs-development-shipped/inbox-media-fase1.md](./docs-development-shipped/inbox-media-fase1.md)** (media inbox proxy Meta) · **[docs-development-shipped/inbox-media-s3.md](./docs-development-shipped/inbox-media-s3.md)** (persist media S3) · **[docs-development-shipped/payment-proof-fase2.md](./docs-development-shipped/payment-proof-fase2.md)** (bukti transfer, limit 5x) · **[docs-development-shipped/ai-image-caption.md](./docs-development-shipped/ai-image-caption.md)** (caption gambar → teks) · **[docs-development-shipped/ai-stock-guard-fase4.md](./docs-development-shipped/ai-stock-guard-fase4.md)** (stok per gudang) · **[docs-development-shipped/ai-order-chat-lookup.md](./docs-development-shipped/ai-order-chat-lookup.md)** (order lookup scoped chat) · **[docs-development-shipped/ai-image-context.md](./docs-development-shipped/ai-image-context.md)** (vision katalog, planned) · **[docs-development-shipped/20260831_101000_rag-hardening-webhook-cleanup.md](./docs-development-shipped/20260831_101000_rag-hardening-webhook-cleanup.md)** (RAG hardening + webhook kanonik) · **[LIMITS_AND_QUOTAS.md](./LIMITS_AND_QUOTAS.md)** (rate limit, trial/paid kuota, billing checkout) · **[docs/FINANCE_MODULE.md](./docs/FINANCE_MODULE.md)** (modul keuangan) · **[docs/ORDER_CUSTOMER_CHAT.md](./docs/ORDER_CUSTOMER_CHAT.md)** (nomor pesanan, cancel & status via chat)
 
 **Baru belajar Go?** Langsung ke **[Bagian 18 Go untuk developer Node.js](#18-go-language-guide-for-nodejs-developers-with-wabantu-examples)** — penjelasan pointer, error, context, interface, dll. dengan contoh nyata dari repo ini.
 
@@ -263,7 +263,7 @@ sequenceDiagram
 | `whatsapp/` | **Library** — parse webhook, send text (no HTTP APIs) |
 | `ai/` | Auto-reply pipeline, Anthropic, Pub/Sub workers, summarization |
 | `business/` | Business profile, catalog, website import |
-| `kb/` | Knowledge base CRUD |
+| `kb/` | Knowledge base CRUD + **retrieval outbox** (`retrieval_outbox`, Pub/Sub indexing) |
 | `leads/` | Lead pipeline + `CaptureFromMessage` (private) |
 | `order/` | Orders |
 | `payment/` | Midtrans QRIS + webhook |
@@ -276,7 +276,8 @@ sequenceDiagram
 | `branch/` | Multi-branch (Pro plan) |
 | `analytics/` | Dashboard metrics |
 | `audit/` | Audit log write (private) + read |
-| `flag/` | Feature flags (system DB) |
+| `flag/` | Feature flags (system DB) + **RAG rollout** (`/flags/retrieval-mode`, indexing, observability) |
+| `shared/retrieval/` | **Library** — OpenAI embeddings, Pinecone, RRF, `DefaultService()` singleton |
 | `health/` | Liveness/readiness |
 | `tenant/` | Internal tenant CRUD, **RunTenantDDL**, schema patches |
 
@@ -404,6 +405,9 @@ Ringkasan cepat:
 | `PlatformAdminBootstrapSecret` | `auth` | Hanya untuk bootstrap platform admin ([Bagian 8.1](#81-platform-admin-internal-operator-wabantu-owner)) |
 | `AnthropicApiKey` / `AnthropicAPIKey` | `ai`, `business`, `finance` | Untuk AI, import katalog/transaksi gambar (`AnthropicAPIKey`; struct wajib bernama `secrets`) |
 | `AiInternalToken` | `ai` | Untuk internal AI HTTP |
+| `OpenAIApiKey` | `shared/retrieval` | Embedding RAG (`text-embedding-3-small`) — opsional; tanpa ini = lexical |
+| `PineconeApiKey` | `shared/retrieval` | Vector index Pinecone — opsional |
+| `PineconeIndexHost` | `shared/retrieval` | Host index tanpa `https://` — opsional |
 | `WebhookVerifyToken` | `webhook` | Meta webhook GET challenge (`hub.verify_token`) |
 | `Midtrans*` | `payment` | Payment |
 | `RajaOngkir*` | `shipping` | Shipping |
@@ -522,6 +526,9 @@ encore secret list
 | `AnthropicApiKey` | `ANTHROPIC_API_KEY` |
 | `AnthropicAPIKey` | `ANTHROPIC_API_KEY` (nama duplikat untuk package `business`) |
 | `AiInternalToken` | `AI_INTERNAL_TOKEN` |
+| `OpenAIApiKey` | `OPENAI_API_KEY` |
+| `PineconeApiKey` | `PINECONE_API_KEY` |
+| `PineconeIndexHost` | `PINECONE_INDEX_HOST` (host saja, tanpa `https://`) |
 | `WebhookVerifyToken` | `META_WEBHOOK_VERIFY_TOKEN` |
 | `MidtransServerKey` | `MIDTRANS_SERVER_KEY` |
 | `MidtransClientKey` | `MIDTRANS_CLIENT_KEY` |
@@ -604,6 +611,9 @@ Secret tidak hot-reload. Lupa restart = perilaku aneh (nilai lama/kosong).
 | `AnthropicApiKey` | `ai/api.go` | Model AI auto-reply | Untuk fitur AI |
 | `AnthropicAPIKey` | `business/business.go`, `finance/transaction_image.go` | Import website, import katalog/transaksi gambar | Struct wajib `secrets` per service |
 | `AiInternalToken` | `ai/api.go` | `X-Ai-Internal-Token` pada internal AI HTTP | Jika panggil internal AI |
+| `OpenAIApiKey` | `shared/retrieval/config.go` | Embedding query + batch indexing | Untuk RAG vector (opsional) |
+| `PineconeApiKey` | `shared/retrieval/config.go` | Upsert/query vector Pinecone | Untuk RAG vector (opsional) |
+| `PineconeIndexHost` | `shared/retrieval/config.go` | Host index serverless Pinecone | Untuk RAG vector (opsional) |
 | `WebhookVerifyToken` | `webhook/webhook.go` | Verifikasi GET challenge Meta | Untuk webhook WA |
 | *(per channel)* `meta_app_secret` | `whatsapp_channel` (tenant DB) | `X-Hub-Signature-256` setelah OAuth connect | Disarankan prod |
 | `MidtransServerKey` | `payment/payment.go` | QRIS | Untuk payment |
@@ -618,6 +628,8 @@ Secret tidak hot-reload. Lupa restart = perilaku aneh (nilai lama/kosong).
 | `AWSS3SecretAccessKey` | `shared/mediastorage/s3.go` | IAM secret | Opsional |
 
 Detail persist media: [docs-development-shipped/inbox-media-s3.md](./docs-development-shipped/inbox-media-s3.md).
+
+**RAG / vector retrieval:** `OpenAIApiKey`, `PineconeApiKey`, `PineconeIndexHost` dikonsumsi `shared/retrieval`. Jika kosong, `DefaultService()` = `nil` → autoreply lexical; indexing worker retry (`ErrServiceNotConfigured`). Mode tenant: `disabled` / `shadow` / `vector`. Panduan: [docs/RAG_VECTOR_RETRIEVAL.md](./docs/RAG_VECTOR_RETRIEVAL.md).
 
 ---
 
