@@ -1,6 +1,10 @@
 package db
 
-import "testing"
+import (
+	"context"
+	"database/sql"
+	"testing"
+)
 
 func TestQualify(t *testing.T) {
 	got := Qualify("t_demo", "contact")
@@ -65,4 +69,15 @@ func indexOf(s, sub string) int {
 		}
 	}
 	return -1
+}
+
+func TestTenantScope_BeginTxWithoutPoolFails(t *testing.T) {
+	ts := TenantScope{
+		Q:   stdQuerier{q: &sql.DB{}},
+		Sch: SchemaSQL{Schema: "t_demo"},
+	}
+	_, err := ts.BeginTx(context.Background(), nil)
+	if err == nil {
+		t.Fatal("expected BeginTx error when pool is not set")
+	}
 }

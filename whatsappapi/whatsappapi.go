@@ -29,8 +29,6 @@ import (
 
 var db = sqldb.Named("tenant")
 
-const graphVersion = "v21.0"
-
 // ListChannelsResponse wraps the channel list (Encore requires a named struct).
 type ListChannelsResponse struct {
 	Items []Channel `json:"items"`
@@ -181,7 +179,7 @@ func InitMetaConnect(ctx context.Context, p *MetaConnectInitParams) (*MetaConnec
 	oauthURL := url.URL{
 		Scheme: "https",
 		Host:   "www.facebook.com",
-		Path:   "/" + graphVersion + "/dialog/oauth",
+		Path:   "/" + whatsapp.GraphAPIVersion + "/dialog/oauth",
 	}
 	q := oauthURL.Query()
 	q.Set("client_id", p.MetaAppID)
@@ -313,6 +311,75 @@ func DisconnectChannel(ctx context.Context, id string) (*Channel, error) {
 	return &ch, nil
 }
 
+type DeleteChannelResponse struct {
+	ID      string `json:"id"`
+	Message string `json:"message"`
+}
+
+// DeleteChannelPermanent hard-deletes a WhatsApp channel row and related inbox data.
+//
+//encore:api auth method=DELETE path=/api/v1/whatsapp/channels/:id/permanent tag:owner
+func DeleteChannelPermanent(ctx context.Context, id string) (*DeleteChannelResponse, error) {
+	user, err := currentUser()
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOwner(user); err != nil {
+		return nil, err
+	}
+
+	ts, err := openTenantScope(ctx, user.TenantSchema)
+	if err != nil {
+		return nil, apperr.Internal("database connection failed")
+	}
+
+	tx, err := ts.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, apperr.Internal("failed to start transaction")
+	}
+	defer tx.Rollback()
+	tTx := ts.WithQ(tx)
+
+	var exists bool
+	if err := tTx.QueryRowContext(ctx,
+		`SELECT EXISTS(SELECT 1 FROM whatsapp_channel WHERE id = $1)`, id,
+	).Scan(&exists); err != nil {
+		return nil, apperr.Internal("failed to check channel")
+	}
+	if !exists {
+		return nil, apperr.NotFound("Channel tidak ditemukan")
+	}
+
+	if _, err := tTx.ExecContext(ctx, `
+		DELETE FROM message
+		WHERE conversation_id IN (SELECT id FROM conversation WHERE channel_id = $1)`, id); err != nil {
+		return nil, apperr.Internal("failed to delete channel messages")
+	}
+	if _, err := tTx.ExecContext(ctx, `
+		DELETE FROM conversation_summary
+		WHERE conversation_id IN (SELECT id FROM conversation WHERE channel_id = $1)`, id); err != nil {
+		return nil, apperr.Internal("failed to delete conversation summaries")
+	}
+	if _, err := tTx.ExecContext(ctx, `DELETE FROM conversation WHERE channel_id = $1`, id); err != nil {
+		return nil, apperr.Internal("failed to delete conversations")
+	}
+	if _, err := tTx.ExecContext(ctx, `DELETE FROM whatsapp_channel WHERE id = $1`, id); err != nil {
+		return nil, apperr.Internal("failed to delete channel")
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, apperr.Internal("failed to commit channel delete")
+	}
+
+	if unregErr := tenant.UnregisterWhatsAppInbound(ctx, user.TenantSchema, id); unregErr != nil {
+		rlog.Warn("unregister whatsapp inbound map failed", "err", unregErr, "channelId", id)
+	}
+
+	return &DeleteChannelResponse{
+		ID:      id,
+		Message: "Channel dihapus permanen",
+	}, nil
+}
+
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 func oauthStateKey(state string) string {
@@ -403,7 +470,7 @@ func exchangeMetaCode(ctx context.Context, code, redirectURI, appID, appSecret s
 	u := url.URL{
 		Scheme: "https",
 		Host:   "graph.facebook.com",
-		Path:   "/" + graphVersion + "/oauth/access_token",
+		Path:   "/" + whatsapp.GraphAPIVersion + "/oauth/access_token",
 	}
 	q := u.Query()
 	q.Set("client_id", appID)
@@ -436,11 +503,20 @@ type wabaDiscovery struct {
 	PhoneNumberID   string
 }
 
+func truncGraphBody(body []byte) string {
+	const max = 400
+	s := strings.TrimSpace(string(body))
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "…"
+}
+
 func fetchMetaWaba(ctx context.Context, accessToken, targetPhone string) wabaDiscovery {
 	u := url.URL{
 		Scheme: "https",
 		Host:   "graph.facebook.com",
-		Path:   "/" + graphVersion + "/me",
+		Path:   "/" + whatsapp.GraphAPIVersion + "/me",
 	}
 	q := u.Query()
 	q.Set("fields", "whatsapp_business_accounts{id,phone_numbers{id,display_phone_number}}")
@@ -453,15 +529,21 @@ func fetchMetaWaba(ctx context.Context, accessToken, targetPhone string) wabaDis
 	}
 	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
 	if err != nil {
+		rlog.Warn("fetchMetaWaba request failed", "err", err)
 		return wabaDiscovery{}
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		rlog.Warn("fetchMetaWaba non-2xx", "status", resp.StatusCode, "body", truncGraphBody(body))
+		return wabaDiscovery{}
+	}
 
 	var parsed struct {
 		WhatsAppBusinessAccounts json.RawMessage `json:"whatsapp_business_accounts"`
 	}
 	if err := json.Unmarshal(body, &parsed); err != nil {
+		rlog.Warn("fetchMetaWaba parse /me failed", "err", err, "body", truncGraphBody(body))
 		return wabaDiscovery{}
 	}
 
@@ -482,11 +564,14 @@ func fetchMetaWaba(ctx context.Context, accessToken, targetPhone string) wabaDis
 			Data []wabaNode `json:"data"`
 		}
 		if err2 := json.Unmarshal(parsed.WhatsAppBusinessAccounts, &wrapped); err2 != nil {
+			rlog.Warn("fetchMetaWaba no whatsapp_business_accounts in /me — meta_phone_number_id tidak terisi; webhook akan gagal sampai di-backfill",
+				"body", truncGraphBody(body))
 			return wabaDiscovery{}
 		}
 		wabas = wrapped.Data
 	}
 	if len(wabas) == 0 {
+		rlog.Warn("fetchMetaWaba empty WABA list from /me", "body", truncGraphBody(body))
 		return wabaDiscovery{}
 	}
 

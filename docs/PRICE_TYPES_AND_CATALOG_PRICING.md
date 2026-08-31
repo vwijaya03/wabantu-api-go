@@ -54,7 +54,9 @@ Patch index otomatis via `ensureCatalogIndexes` (dipanggil dari `ensurePricingSc
 ## UI (web-frontend)
 
 - `/dashboard/catalog/price-types` — CRUD tipe harga
-- `/dashboard/catalog` — form harga per tipe
+- `/dashboard/catalog` — form harga per tipe; revamp tabel + Sheet (lihat [web-frontend/docs/CATALOG_MODULE.md](../../web-frontend/docs/CATALOG_MODULE.md))
+- `/dashboard/catalog/import-image` — import screenshot AI ([CATALOG_IMAGE_IMPORT.md](./CATALOG_IMAGE_IMPORT.md))
+- `/dashboard/catalog/import-text` — import teks/caption AI ([CATALOG_TEXT_IMPORT.md](./CATALOG_TEXT_IMPORT.md))
 - `/dashboard/contacts` — pilih tipe harga (tanpa opsi duplikat “default” sintetis)
 - `/dashboard/orders` — harga katalog mengikuti kontak terpilih
 

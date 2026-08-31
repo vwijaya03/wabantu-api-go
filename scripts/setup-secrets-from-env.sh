@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 # Import secrets from ../api/.env into Encore local secrets.
 #
+# Key mappings (api/.env → Encore secret):
+#   JWT_ACCESS_SECRET          → JWTSecret
+#   DATA_ENCRYPTION_KEY        → DataEncryptionKey
+#   META_WEBHOOK_VERIFY_TOKEN  → WebhookVerifyToken  (Meta webhook GET verify)
+#   ...
+#
 # Prerequisites (once per machine):
 #   1. encore auth login
 #   2. encore app init    # registers this repo on Encore Cloud (fixes app_not_found)
@@ -69,6 +75,7 @@ REDIS_PORT="$(env_get REDIS_PORT || true)"
 ANTHROPIC_API_KEY="$(env_get ANTHROPIC_API_KEY || true)"
 AI_INTERNAL_TOKEN="$(env_get AI_INTERNAL_TOKEN || true)"
 META_WEBHOOK_VERIFY_TOKEN="$(env_get META_WEBHOOK_VERIFY_TOKEN || true)"
+WEBHOOK_VERIFY_TOKEN="$(env_get WEBHOOK_VERIFY_TOKEN || true)"
 MIDTRANS_SERVER_KEY="$(env_get MIDTRANS_SERVER_KEY || true)"
 MIDTRANS_CLIENT_KEY="$(env_get MIDTRANS_CLIENT_KEY || true)"
 MIDTRANS_IS_PRODUCTION="$(env_get MIDTRANS_IS_PRODUCTION || true)"
@@ -98,7 +105,11 @@ set_secret AnthropicAPIKey "$ANTHROPIC_API_KEY"
 # set_secret AnthropicModel "${ANTHROPIC_MODEL:-claude-sonnet-4-5}"
 # set_secret AnthropicMaxToks "${ANTHROPIC_MAX_TOKENS:-1024}"
 set_secret AiInternalToken "$AI_INTERNAL_TOKEN"
-set_secret WebhookVerifyToken "$META_WEBHOOK_VERIFY_TOKEN"
+
+# WhatsApp / Meta webhook (must match Verify token in Meta Developer Console)
+WEBHOOK_VERIFY_VALUE="${META_WEBHOOK_VERIFY_TOKEN:-$WEBHOOK_VERIFY_TOKEN}"
+set_secret WebhookVerifyToken "$WEBHOOK_VERIFY_VALUE"
+
 set_secret MidtransServerKey "$MIDTRANS_SERVER_KEY"
 set_secret MidtransClientKey "$MIDTRANS_CLIENT_KEY"
 set_secret MidtransIsProduction "${MIDTRANS_IS_PRODUCTION:-false}"

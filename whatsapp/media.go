@@ -35,7 +35,7 @@ func DownloadMedia(ctx context.Context, accessToken, mediaID string) (*MediaDown
 		return nil, fmt.Errorf("missing access token")
 	}
 
-	metaURL := fmt.Sprintf("https://graph.facebook.com/%s/%s", graphVersion, mediaID)
+	metaURL := fmt.Sprintf("https://graph.facebook.com/%s/%s", GraphAPIVersion, mediaID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, metaURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create meta request: %w", err)

@@ -164,6 +164,9 @@ func (ts TenantScope) QueryRowContext(ctx context.Context, query string, args ..
 }
 
 func (ts TenantScope) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
+	if ts.pool != nil {
+		return ts.pool.BeginTx(ctx, opts)
+	}
 	beginner, ok := ts.Q.(interface {
 		BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
 	})

@@ -1,5 +1,5 @@
 {
-  "count": 342,
+  "count": 346,
   "endpoints": [
     {
       "service": "admin",
@@ -498,6 +498,36 @@
       "raw": true,
       "tag": "owner",
       "annotation": "auth raw method=POST path=/api/v1/business/catalog/import-image/preview tag:owner"
+    },
+    {
+      "service": "business",
+      "file": "business/catalog_text.go",
+      "line": 122,
+      "access": "auth",
+      "method": "GET",
+      "path": "/api/v1/business/catalog/import-text/draft/:jobId",
+      "tag": "owner",
+      "annotation": "auth method=GET path=/api/v1/business/catalog/import-text/draft/:jobId tag:owner"
+    },
+    {
+      "service": "business",
+      "file": "business/catalog_text.go",
+      "line": 151,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/business/catalog/import-text/draft/:jobId/commit",
+      "tag": "owner",
+      "annotation": "auth method=POST path=/api/v1/business/catalog/import-text/draft/:jobId/commit tag:owner"
+    },
+    {
+      "service": "business",
+      "file": "business/catalog_text.go",
+      "line": 35,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/business/catalog/import-text/preview",
+      "tag": "owner",
+      "annotation": "auth method=POST path=/api/v1/business/catalog/import-text/preview tag:owner"
     },
     {
       "service": "business",
@@ -1795,7 +1825,7 @@
     {
       "service": "flag",
       "file": "flag/rag_rollout_jobs.go",
-      "line": 636,
+      "line": 660,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/flags/retrieval-rollout",
@@ -1804,7 +1834,7 @@
     {
       "service": "flag",
       "file": "flag/rag_rollout_jobs.go",
-      "line": 653,
+      "line": 677,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/flags/retrieval-rollout/active-jobs",
@@ -1813,7 +1843,7 @@
     {
       "service": "flag",
       "file": "flag/rag_rollout_jobs.go",
-      "line": 645,
+      "line": 669,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/flags/retrieval-rollout/jobs/:jobId",
@@ -1822,7 +1852,7 @@
     {
       "service": "flag",
       "file": "flag/rag_rollout_jobs.go",
-      "line": 665,
+      "line": 689,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/flags/retrieval-rollout/jobs/:jobId/cancel",
@@ -2716,7 +2746,7 @@
     {
       "service": "kb",
       "file": "kb/retrieval_worker.go",
-      "line": 141,
+      "line": 148,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/knowledge-base/reindex",
@@ -3111,7 +3141,7 @@
     {
       "service": "whatsappapi",
       "file": "whatsappapi/whatsappapi.go",
-      "line": 107,
+      "line": 105,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/whatsapp/channels",
@@ -3120,7 +3150,7 @@
     {
       "service": "whatsappapi",
       "file": "whatsappapi/whatsappapi.go",
-      "line": 275,
+      "line": 273,
       "access": "auth",
       "method": "DELETE",
       "path": "/api/v1/whatsapp/channels/:id",
@@ -3129,7 +3159,17 @@
     {
       "service": "whatsappapi",
       "file": "whatsappapi/whatsappapi.go",
-      "line": 525,
+      "line": 321,
+      "access": "auth",
+      "method": "DELETE",
+      "path": "/api/v1/whatsapp/channels/:id/permanent",
+      "tag": "owner",
+      "annotation": "auth method=DELETE path=/api/v1/whatsapp/channels/:id/permanent tag:owner"
+    },
+    {
+      "service": "whatsappapi",
+      "file": "whatsappapi/whatsappapi.go",
+      "line": 610,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/whatsapp/channels/:id/test-message",
@@ -3139,7 +3179,7 @@
     {
       "service": "whatsappapi",
       "file": "whatsappapi/whatsappapi.go",
-      "line": 203,
+      "line": 201,
       "access": "public",
       "method": "POST",
       "path": "/api/v1/whatsapp/meta/connect/callback",
@@ -3148,7 +3188,7 @@
     {
       "service": "whatsappapi",
       "file": "whatsappapi/whatsappapi.go",
-      "line": 149,
+      "line": 147,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/whatsapp/meta/connect/init",

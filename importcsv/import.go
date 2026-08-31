@@ -458,7 +458,7 @@ func processRow(ctx context.Context, schema, tenantID, target string, headers []
 			INSERT INTO "%s".business_catalog_item
 				(external_code, name, description, sell_price, sell_unit, is_active, barcode, source)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,'import')
-			ON CONFLICT (source, external_code) DO UPDATE SET
+			ON CONFLICT (source, external_code) WHERE deleted_at IS NULL DO UPDATE SET
 				name = EXCLUDED.name,
 				description = EXCLUDED.description,
 				sell_price = EXCLUDED.sell_price,

@@ -396,9 +396,9 @@ func lookupChannelMetaAppSecret(ctx context.Context, phoneNumberID string) (stri
 	var secret sql.NullString
 	err = pool.QueryRowContext(ctx,
 		fmt.Sprintf(
-			`SELECT meta_app_secret FROM %s.whatsapp_channel WHERE meta_phone_number_id = $1 LIMIT 1`,
+			`SELECT meta_app_secret FROM %s.whatsapp_channel WHERE id = $1::uuid LIMIT 1`,
 			appdb.QuoteIdent(ref.Schema)),
-		phoneNumberID,
+		ref.ChannelID,
 	).Scan(&secret)
 	if err == sql.ErrNoRows {
 		return "", fmt.Errorf("no channel for phone_number_id=%s", phoneNumberID)

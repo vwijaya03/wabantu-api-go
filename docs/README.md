@@ -28,6 +28,8 @@ Peta navigasi untuk menjawab pertanyaan tentang backend WABantu. Mulai dari sini
 | Kenapa FAQ direct / retrieval fallback? | [RAG_VECTOR_RETRIEVAL.md](./RAG_VECTOR_RETRIEVAL.md) → §Query pipeline |
 | Setup Pinecone & embedding? | [RAG_VECTOR_RETRIEVAL.md](./RAG_VECTOR_RETRIEVAL.md) → §Secrets |
 | Rollout RAG / webhook cleanup (2026-08-31)? | [20260831_101000_rag-hardening-webhook-cleanup.md](../docs-development-shipped/20260831_101000_rag-hardening-webhook-cleanup.md) |
+| Import katalog dari teks (caption WA, deskripsi toko)? | [CATALOG_TEXT_IMPORT.md](./CATALOG_TEXT_IMPORT.md) |
+| Revamp UI katalog + fix upsert import (2026-08-31)? | [20260831_161500_catalog-revamp-text-import.md](../docs-development-shipped/20260831_161500_catalog-revamp-text-import.md) |
 | Tagihan Meta vs kuota WABantu | [META_WHATSAPP_MESSAGING_AND_BILLING.md](./META_WHATSAPP_MESSAGING_AND_BILLING.md) |
 | Kuota trial / paket / routing model AI | [LIMITS_AND_QUOTAS.md](../LIMITS_AND_QUOTAS.md) |
 | Roadmap WA (media, bukti transfer, stok) | [WHATSAPP_INBOX_MEDIA_PAYMENT_STOCK.md](./WHATSAPP_INBOX_MEDIA_PAYMENT_STOCK.md) |
@@ -74,6 +76,7 @@ Peta navigasi untuk menjawab pertanyaan tentang backend WABantu. Mulai dari sini
 |------|-----|
 | [PRICE_TYPES_AND_CATALOG_PRICING.md](./PRICE_TYPES_AND_CATALOG_PRICING.md) | Tipe harga katalog |
 | [CATALOG_IMAGE_IMPORT.md](./CATALOG_IMAGE_IMPORT.md) | Import katalog dari gambar (dashboard) |
+| [CATALOG_TEXT_IMPORT.md](./CATALOG_TEXT_IMPORT.md) | Import katalog dari teks (dashboard) |
 | [INVENTORY_MODULE.md](./INVENTORY_MODULE.md) | Modul gudang & stok |
 
 ## Keuangan & modul lain

@@ -436,65 +436,13 @@ func CommitCatalogImageImport(ctx context.Context, jobId string, req *CommitCata
 	}
 	_ = staging
 
-	ts, err := openTenantScope(ctx, user.TenantSchema)
+	res, err := commitCatalogDraftItems(ctx, user, req.Items, catalogImageSource)
 	if err != nil {
-		return nil, apperr.Internal("database connection failed")
+		return nil, err
 	}
-
-	var saved, skipped int
-	for _, it := range req.Items {
-		if !it.Include {
-			skipped++
-			continue
-		}
-		code := strings.TrimSpace(it.ExternalCode)
-		name := strings.TrimSpace(it.Name)
-		if code == "" || name == "" {
-			skipped++
-			continue
-		}
-		var desc *string
-		if d := strings.TrimSpace(it.Description); d != "" {
-			desc = &d
-		}
-		unit := strings.TrimSpace(it.SellUnit)
-		if unit == "" {
-			unit = "pcs"
-		}
-		price := it.SellPrice
-
-		_, err := ts.ExecContext(ctx, `
-			INSERT INTO business_catalog_item
-				(external_code, name, description, sell_price, sell_unit, is_active, source)
-			VALUES ($1,$2,$3,$4,$5,true,$6)
-			ON CONFLICT (source, external_code) DO UPDATE SET
-				name = EXCLUDED.name,
-				description = EXCLUDED.description,
-				sell_price = EXCLUDED.sell_price,
-				sell_unit = EXCLUDED.sell_unit,
-				is_active = true,
-				updated_at = NOW()`, code, name, desc, price, unit, catalogImageSource)
-		if err != nil {
-			rlog.Warn("catalog image commit row failed", "code", code, "err", err)
-			skipped++
-			continue
-		}
-		saved++
-	}
-
 	_ = appauth.RedisClient().Del(ctx, catalogImageStagingKey(jobId)).Err()
-
-	msg := fmt.Sprintf("%d produk disimpan ke katalog", saved)
-	if skipped > 0 {
-		msg += fmt.Sprintf(" (%d dilewati)", skipped)
-	}
-
-	return &CommitCatalogImageResponse{
-		JobID:       jobId,
-		SavedCount:  saved,
-		SkippedCount: skipped,
-		Message:     msg,
-	}, nil
+	res.JobID = jobId
+	return res, nil
 }
 
 func loadCatalogImageStaging(ctx context.Context, jobID, tenantSchema string) (*catalogImageStaging, error) {

@@ -273,6 +273,7 @@ api-go/
   middleware/                # global rate limit
   business/                  # profil bisnis, import website, katalog CRUD + import gambar (vision)
   docs/CATALOG_IMAGE_IMPORT.md  # import screenshot → Haiku → konfirmasi → business_catalog_item
+  docs/CATALOG_TEXT_IMPORT.md   # import teks/caption → Haiku → konfirmasi → business_catalog_item
   docs/UNIT_ECONOMICS_AND_PRICING.md  # biaya Meta + Anthropic, margin paket, rekomendasi harga
   docs/META_WHATSAPP_MESSAGING_AND_BILLING.md  # CSW 24 jam, template, skenario inbox, beda tagihan Meta vs kuota WABantu
   docs/FINANCE_MODULE.md        # modul keuangan — endpoint, schema, arsitektur saldo, approval, cron
@@ -384,7 +385,12 @@ Ringkas:
 
 Index unik SKU: `(source, external_code) WHERE deleted_at IS NULL` — produk terhapus tidak memblokir SKU yang sama.
 
-UI `/dashboard/catalog` + `/dashboard/catalog/price-types`. List memakai pagination (default 25 item). Jalankan migrasi tenant untuk patch index lama.
+**Import AI (owner, dashboard):**
+
+- Gambar: `GET/POST /api/v1/business/catalog/import-image/*` — lihat [docs/CATALOG_IMAGE_IMPORT.md](./docs/CATALOG_IMAGE_IMPORT.md)
+- Teks: `POST/GET /api/v1/business/catalog/import-text/preview`, `.../draft/:jobId`, `.../draft/:jobId/commit` — lihat [docs/CATALOG_TEXT_IMPORT.md](./docs/CATALOG_TEXT_IMPORT.md)
+
+UI `/dashboard/catalog` + `/dashboard/catalog/price-types` + `/dashboard/catalog/import-image` + `/dashboard/catalog/import-text`. List memakai pagination (default 25 item). Jalankan migrasi tenant untuk patch index lama.
 
 ## Contacts dan pesanan
 

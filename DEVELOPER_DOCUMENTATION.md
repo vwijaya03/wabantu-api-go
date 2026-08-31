@@ -743,7 +743,7 @@ Production path: **Pub/Sub** `ai-jobs`, not HTTP.
 
 | Service | Base path | Auth |
 |---------|-----------|------|
-| business | `/api/v1/business/profile`, `/catalog?q=&page=&pageSize=`, `/catalog/import-image/*` (vision preview + commit); `PATCH profile` termasuk `paymentVerificationMode` | auth; katalog write owner |
+| business | `/api/v1/business/profile`, `/catalog?q=&page=&pageSize=`, `/catalog/import-image/*` (vision preview + commit), `/catalog/import-text/*` (text preview + commit); `PATCH profile` termasuk `paymentVerificationMode` | auth; katalog write owner |
 | kb | `/api/v1/knowledge-base` | auth |
 | inbox contacts | `/api/v1/inbox/contacts?q=&page=&pageSize=` + POST/PATCH/DELETE + batch status/delete | auth |
 | leads | `/api/v1/leads` | auth; internal CRM capture pipeline |
@@ -873,7 +873,7 @@ erDiagram
 | Table | Purpose |
 |-------|---------|
 | `business_profile` | AI context, tone, timezone |
-| `business_catalog_item` | Products/services (`source`: `manual`, `import`, `image_import`) |
+| `business_catalog_item` | Products/services (`source`: `manual`, `import`, `image_import`, `text_import`) |
 | `knowledge_base_entry` | Q&A for AI |
 | `whatsapp_channel` | Meta connection |
 | `contact` | Customer phone |
@@ -970,6 +970,8 @@ See sequence in Bagian 5. Key branches:
   8. Activity logging per tenant (`usage.RecordAIActivity`, paths in `reply_meta.go` incl. `catalog_db`)
 
 **Import katalog dari gambar (dashboard, bukan WA):** `business/catalog_image.go` + `ai/vision.go` — lihat [docs/CATALOG_IMAGE_IMPORT.md](./docs/CATALOG_IMAGE_IMPORT.md).
+
+**Import katalog dari teks (dashboard):** `business/catalog_text.go` + `ai/catalog_text.go` — lihat [docs/CATALOG_TEXT_IMPORT.md](./docs/CATALOG_TEXT_IMPORT.md). Commit image + text memakai `commitCatalogDraftItems` dengan `ON CONFLICT (source, external_code) WHERE deleted_at IS NULL`.
 
 **Import transaksi dari gambar:** `finance/transaction_image.go` + `aivision/vision.go` (hindari import cycle ke package `ai`) — lihat [docs/TRANSACTION_IMAGE_IMPORT.md](./docs/TRANSACTION_IMAGE_IMPORT.md).
 
