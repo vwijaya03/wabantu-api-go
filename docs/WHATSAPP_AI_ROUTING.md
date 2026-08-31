@@ -45,9 +45,11 @@ sequenceDiagram
 | Orchestrator | `ai/autoreply.go` | `ProcessAutoReply` |
 | Kirim balasan | `ai/autoreply.go` | `sendAiMessage` → `whatsapp.SendText` |
 
-**Endpoint webhook:**
+**Endpoint webhook (kanonik):**
 
 - `GET/POST /api/v1/webhook/whatsapp`
+
+Path legacy (`/api/v1/whatsapp/webhook/meta`, `/webhook/whatsapp`) **dihapus** — update Meta Developer Console ke path di atas saat deploy.
 
 ---
 
@@ -195,7 +197,13 @@ flowchart TD
 | `shadow` | Vector + lexical dijalankan; log skor; **respons pelanggan tidak berubah** |
 | `vector` | RRF vector+lexical → urutan FAQ di prompt; FAQ direct pakai `DefaultFAQMinScore` + margin |
 
-Implementasi: `ai/retrieval_bridge.go` → `shared/retrieval.Service.RetrieveKB`. Fallback penuh ke lexical jika embed/Pinecone gagal atau circuit breaker OPEN.
+Implementasi: `ai/retrieval_bridge.go` → `shared/retrieval.Service.RetrieveKB` (singleton `DefaultService()`). Mode per tenant: `disabled` / `shadow` / `vector` (`flag/retrieval_mode.go`).
+
+- **Fallback lexical** saat embed/Pinecone gagal, circuit OPEN, atau secrets belum dikonfigurasi — field `LexicalFallback` + metric `retrieval_fallback_total`.
+- **Shadow mode:** vector dijalankan, respons pelanggan tidak berubah; bandingkan log `retrieval shadow`.
+- **Pinecone metadata:** hanya `entry_id` + `content_hash` — teks FAQ dari PostgreSQL saat runtime.
+
+Detail: [RAG_VECTOR_RETRIEVAL.md](./RAG_VECTOR_RETRIEVAL.md) · shipped hardening: [../docs-development-shipped/20260831_101000_rag-hardening-webhook-cleanup.md](../docs-development-shipped/20260831_101000_rag-hardening-webhook-cleanup.md).
 
 Katalog: `MatchCatalogItemSemantic` (vector top-3 → rules); ambigu → klarifikasi, bukan tebak SKU.
 

@@ -27,6 +27,7 @@ Peta navigasi untuk menjawab pertanyaan tentang backend WABantu. Mulai dari sini
 | Bagaimana RAG / vector search FAQ & katalog? | [RAG_VECTOR_RETRIEVAL.md](./RAG_VECTOR_RETRIEVAL.md) |
 | Kenapa FAQ direct / retrieval fallback? | [RAG_VECTOR_RETRIEVAL.md](./RAG_VECTOR_RETRIEVAL.md) → §Query pipeline |
 | Setup Pinecone & embedding? | [RAG_VECTOR_RETRIEVAL.md](./RAG_VECTOR_RETRIEVAL.md) → §Secrets |
+| Rollout RAG / webhook cleanup (2026-08-31)? | [20260831_101000_rag-hardening-webhook-cleanup.md](../docs-development-shipped/20260831_101000_rag-hardening-webhook-cleanup.md) |
 | Tagihan Meta vs kuota WABantu | [META_WHATSAPP_MESSAGING_AND_BILLING.md](./META_WHATSAPP_MESSAGING_AND_BILLING.md) |
 | Kuota trial / paket / routing model AI | [LIMITS_AND_QUOTAS.md](../LIMITS_AND_QUOTAS.md) |
 | Roadmap WA (media, bukti transfer, stok) | [WHATSAPP_INBOX_MEDIA_PAYMENT_STOCK.md](./WHATSAPP_INBOX_MEDIA_PAYMENT_STOCK.md) |
@@ -48,6 +49,15 @@ Peta navigasi untuk menjawab pertanyaan tentang backend WABantu. Mulai dari sini
 | [inbox-media-s3.md](../docs-development-shipped/inbox-media-s3.md) | Persist media inbox ke Amazon S3 |
 | [ai-image-context.md](../docs-development-shipped/ai-image-context.md) | Vision match katalog + fallback gambar (planned) |
 | [LIMITS_AND_QUOTAS.md](../LIMITS_AND_QUOTAS.md) | Kuota paket, AI token, broadcast |
+
+## RAG / vector retrieval
+
+| File | Isi |
+|------|-----|
+| [RAG_VECTOR_RETRIEVAL.md](./RAG_VECTOR_RETRIEVAL.md) | Arsitektur Pinecone + OpenAI, indexing outbox, query pipeline, rollout |
+| [20260831_101000_rag-hardening-webhook-cleanup.md](../docs-development-shipped/20260831_101000_rag-hardening-webhook-cleanup.md) | Hardening produksi + webhook kanonik |
+| [20260830_173800_rag-kb-retrieval.md](../docs-development-shipped/20260830_173800_rag-kb-retrieval.md) | Wire autoreply KB hybrid |
+| [20260830_173800_rag-outbox-indexing.md](../docs-development-shipped/20260830_173800_rag-outbox-indexing.md) | Outbox + kolom embedding |
 
 ## Order & pembeli
 

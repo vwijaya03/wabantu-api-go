@@ -708,6 +708,8 @@ encore run
 |--------|------|------|---------|
 | GET/POST | `/api/v1/webhook/whatsapp` | public raw | Meta verify + ingest |
 
+**Migrasi:** Handler/route legacy (`/api/v1/whatsapp/webhook/meta`, `/webhook/whatsapp`) dihapus. Satu path kanonik untuk semua environment.
+
 ## WhatsApp (`whatsappapi/`)
 
 | Method | Path | Auth |
@@ -746,7 +748,7 @@ Production path: **Pub/Sub** `ai-jobs`, not HTTP.
 | branch | `/api/v1/branches` | auth |
 | analytics | `/api/v1/analytics/overview` | auth |
 | admin | `/api/v1/admin/*`, `GET .../tenant/:id/ai-activity` (+ summary), **`/admin/ai-triage/*`** (loop engineering) | super_admin |
-| flag | `/api/v1/flags` | auth |
+| flag | `/api/v1/flags`, **`/flags/retrieval-mode`**, **`/flags/retrieval-indexing/:tenantId`**, **`/flags/retrieval-observability`**, **`/flags/retrieval-rollout`** (+ jobs) | auth; retrieval APIs **super_admin** |
 | health | `/api/v1/health`, `/ready` | public |
 | tenant | `/api/v1/internal/tenant/*` | private |
 
@@ -953,7 +955,7 @@ See sequence in Bagian 5. Key branches:
   3. **Katalog DB** (`catalog_reply.go`) — minta list/harga: jawab dari `business_catalog_item` (path `catalog_db`), penanda `[Katalog WABantu: kosong]`; FAQ tidak mengalahkan list katalog
   4. Business scope + keyword classifier (`product_scope.go`, `safety.go`) — off-topic products (e.g. food at apparel shop), purchase intent (`pesen`, `mau` + pcs)
   5. Post-checkout context (`IsActiveCheckoutFromHistory`) — payment/transfer/ongkir after order without re-classifying as out-of-scope
-  6. FAQ cache / KB direct answer / hybrid KB retrieval (`retrieveHybridKB`; skip untuk pertanyaan list katalog)
+  6. FAQ cache / KB direct answer / hybrid KB retrieval (`retrieveKBHybrid` via `ai/retrieval_bridge.go` + `shared/retrieval`; mode `disabled`/`shadow`/`vector` per tenant; skip untuk pertanyaan list katalog) — lihat [docs/RAG_VECTOR_RETRIEVAL.md](./docs/RAG_VECTOR_RETRIEVAL.md)
   7. LLM reply (Haiku/Sonnet per plan) with history + **katalog DB** di konteks + conversation summary (`memory.go`)
   8. Activity logging per tenant (`usage.RecordAIActivity`, paths in `reply_meta.go` incl. `catalog_db`)
 

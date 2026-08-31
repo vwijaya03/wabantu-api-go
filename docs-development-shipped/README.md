@@ -41,6 +41,7 @@ Entri lama tanpa prefix datetime (mis. `inbox-media-fase1.md`) tetap valid; entr
 
 | File | Isi | Status |
 |------|-----|--------|
+| [20260831_101000_rag-hardening-webhook-cleanup.md](./20260831_101000_rag-hardening-webhook-cleanup.md) | Hapus webhook legacy; RAG hardening CR-1–CR-12 (singleton, metadata hash, rollout stagger, observability) | PR [#145](https://github.com/vwijaya03/wabantu-api-go/pull/145) + [#81](https://github.com/vwijaya03/wabantu-web-frontend/pull/81) |
 | [20260830_173800_rag-catalog-retrieval.md](./20260830_173800_rag-catalog-retrieval.md) | Catalog semantic search + ambiguity clarify | Implementasi lokal |
 | [20260830_173800_rag-kb-retrieval.md](./20260830_173800_rag-kb-retrieval.md) | Vector KB retrieval di autoreply (shadow/vector) | Implementasi lokal |
 | [20260830_173800_rag-eval-suite.md](./20260830_173800_rag-eval-suite.md) | Eval Recall@1, FAQ precision, contract staging | Implementasi lokal |

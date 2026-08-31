@@ -277,7 +277,7 @@ api-go/
   kb/                        # knowledge base FAQ
   whatsapp/                  # library Meta Cloud API (kirim pesan, Graph)
   whatsappapi/               # REST OAuth + channels (/api/v1/whatsapp/*)
-  webhook/                   # GET/POST webhook Meta (+ alias legacy)
+  webhook/                   # GET/POST /api/v1/webhook/whatsapp (kanonik)
   finance/                   # modul keuangan (wallet, transaksi, anggaran, investasi, recurring, checklist, laporan)
   broadcast/                 # broadcast WA (plan Business+)
   inbox/                     # conversations, messages, contacts

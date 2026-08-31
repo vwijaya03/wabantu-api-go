@@ -57,14 +57,18 @@ Pinecone index: **Manual**, **1536** dim, metric **cosine**, serverless on-deman
 - `embedding_model`, `embedding_attempts`, `embedding_last_error`
 - `embedding_updated_at`, `embedding_indexed_at`
 
-### Vector ID
+### Vector ID & metadata Pinecone
 
 - KB: `kb:{entry_id}:v{version}:c{chunk}`
 - Catalog: `catalog:{item_id}:v{version}:c{chunk}`
 
+**Keamanan metadata:** Pinecone hanya menyimpan `entry_id` (atau id katalog) + `content_hash` (SHA256). Teks FAQ/katalog **tidak** disimpan di Pinecone — konten diambil dari PostgreSQL saat query. Lihat `shared/retrieval/ids.go`.
+
 ### Outbox
 
 Tabel `retrieval_outbox` — event `index_kb` / `delete_kb` / `index_catalog` dengan retry & DLQ (`MaxIndexAttempts=8`).
+
+**Worker indexing:** `kb/retrieval_worker.go` memanggil `retrieval.DefaultService()` (singleton `sync.Once`). Jika secrets OpenAI/Pinecone belum dikonfigurasi, worker mengembalikan `ErrServiceNotConfigured` (retry Pub/Sub) — **bukan** mock/silent success. Counter attempt atomik via `nextOutboxAttempt()`.
 
 ### Reindex
 
@@ -78,7 +82,8 @@ Package: `shared/retrieval/`
 2. Pinecone query (namespace tenant)
 3. Lexical overlap (`retrieveHybridKB` legacy)
 4. RRF merge
-5. Fallback penuh ke lexical jika embed/Pinecone gagal atau circuit OPEN
+5. Fallback penuh ke lexical jika embed/Pinecone gagal, circuit OPEN, atau `DefaultService() == nil`
+6. Field `RetrieveKBResult.LexicalFallback == true` saat vector path dilewati/gagal — tercatat di metrics `retrieval_fallback_total` dan log structured (`ai/retrieval_bridge.go`)
 
 ### FAQ direct (recalibrated)
 
@@ -128,19 +133,31 @@ encore test ./internal/buyerflow/...
 
 ## Operasi & rollout
 
-1. Backfill staging (`/knowledge-base/reindex`)
-2. `ai_retrieval_mode_shadow` satu tenant pilot
-3. Kalibrasi threshold dari eval suite
-4. `ai_retrieval_mode_vector` per tenant
-5. Index katalog via CRUD `business/catalog`
+1. Pastikan secrets `OpenAIApiKey`, `PineconeApiKey`, `PineconeIndexHost` terisi di environment target.
+2. Backfill staging (`POST /api/v1/knowledge-base/reindex`).
+3. `ai_retrieval_mode_shadow` satu tenant pilot — pantau log `retrieval shadow` dan `retrieval_fallback_total`.
+4. Kalibrasi threshold dari eval suite (`shared/retrieval/eval/`).
+5. `ai_retrieval_mode_vector` per tenant (API atau rollout massal).
+6. Index katalog otomatis via CRUD `business/catalog`.
 
 ### Superadmin APIs (flag service)
 
 | Endpoint | Fungsi |
 |----------|--------|
+| `GET /api/v1/flags/retrieval-mode/:tenantId` | Mode aktif tenant |
+| `PUT /api/v1/flags/retrieval-mode` | Set `disabled` / `shadow` / `vector` |
 | `GET /api/v1/flags/retrieval-indexing/:tenantId` | Progress embedding per tenant (KB + katalog + outbox) |
 | `GET /api/v1/flags/retrieval-observability` | Snapshot counter/latency in-process + Encore metrics |
 | `POST /api/v1/flags/retrieval-rollout` | Rollout massal async per tenant |
+| `GET /api/v1/flags/retrieval-rollout/jobs/:jobId` | Detail job rollout |
+| `GET /api/v1/flags/retrieval-rollout/active-jobs` | Job rollout yang masih berjalan |
+| `POST /api/v1/flags/retrieval-rollout/jobs/:jobId/cancel` | Batalkan job |
+
+**Frontend:** `/dashboard/admin/ai-retrieval` (super_admin) — `lib/api/flags.ts` memakai path relatif `/flags/...` (base axios sudah `/api/v1`).
+
+### Rollout stagger (tanpa sleep di handler)
+
+Saat enqueue rollout, setiap tenant mendapat `NotBefore = now + sequenceIndex * delayMs`. Subscriber Pub/Sub menolak pesan sebelum waktunya (`rolloutTenantNotReady`) sehingga throttle tidak memblokir worker. Handler idempotent untuk item status terminal.
 
 ### Query embed cache
 
@@ -148,16 +165,19 @@ Single-query embeddings (autoreply hot path) di-cache in-process LRU (512 entri,
 
 ### Observability
 
-- Encore metrics: `retrieval_requests_total`, `retrieval_fallback_total`, `retrieval_indexing_*`, `retrieval_latency_p95_ms`
-- Structured logs: `retrieval query`, `retrieval shadow`
+- Encore metrics: `retrieval_requests_total`, **`retrieval_fallback_total`** (lexical fallback), `retrieval_indexing_*`, `retrieval_latency_p95_ms`
+- Structured logs: `retrieval query`, `retrieval shadow`, `retrieval KB failed, lexical fallback`
+- `RetrieveKBResult.LexicalFallback` — set di `shared/retrieval/service.go`, dipakai `ai/retrieval_bridge.go`
 
 ## Troubleshooting
 
 | Gejala | Tindakan |
 |--------|----------|
 | `embedding_status=pending` lama | Cek Pub/Sub worker, secrets, outbox DLQ |
-| Semua query lexical | Mode `disabled` atau circuit OPEN / secrets kosong |
+| Semua query lexical | Mode `disabled`, circuit OPEN, secrets kosong, atau `LexicalFallback` tinggi — cek observability API |
+| Indexing retry terus | Secrets belum di-set — worker sengaja tidak mock-fallback |
 | FAQ direct miss | Naikkan data KB; cek shadow logs; kalibrasi MinScore |
+| Meta webhook 404 | Pastikan URL = `/api/v1/webhook/whatsapp` (bukan path legacy) |
 
 ## File utama
 
@@ -167,7 +187,8 @@ Single-query embeddings (autoreply hot path) di-cache in-process LRU (512 entri,
 | `kb/retrieval_*.go` | Outbox hooks, worker, reindex |
 | `business/catalog_retrieval.go` | Outbox katalog |
 | `ai/retrieval_bridge.go` | Wire autoreply |
-| `flag/retrieval_mode.go` | Feature flags |
+| `flag/retrieval_mode.go` | Feature flags per tenant |
+| `flag/rag_rollout_jobs.go` | Rollout async + stagger `NotBefore` |
 | `tenant/schema_patch_retrieval.go` | Migrasi tenant |
 
-Lihat juga: [WHATSAPP_AI_ROUTING.md](./WHATSAPP_AI_ROUTING.md)
+Lihat juga: [WHATSAPP_AI_ROUTING.md](./WHATSAPP_AI_ROUTING.md) · shipped: [../docs-development-shipped/20260831_101000_rag-hardening-webhook-cleanup.md](../docs-development-shipped/20260831_101000_rag-hardening-webhook-cleanup.md)

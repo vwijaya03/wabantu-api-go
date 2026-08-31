@@ -334,7 +334,7 @@ Response `GetMessages`: tiap pesan bisa punya `media?: { url, mimeType, thumbnai
 | POST | `/api/v1/whatsapp/meta/connect/init` | auth | OAuth URL |
 | POST | `/api/v1/whatsapp/meta/connect/callback` | public | tukar `code` |
 | DELETE | `/api/v1/whatsapp/channels/:id` | auth | putuskan |
-| GET, POST | `/api/v1/webhook/whatsapp` | public raw | webhook Meta |
+| GET, POST | `/api/v1/webhook/whatsapp` | public raw | webhook Meta (path kanonik) |
 
 Verify token: secret `WebhookVerifyToken`. Saat daftar app Meta, pilih path yang sudah dikonfigurasi di dashboard Meta.
 
@@ -425,12 +425,19 @@ Sama konsep dengan Nest: field tertentu dienkripsi dengan `DataEncryptionKey` (`
 
 ## 11) Alur WhatsApp webhook
 
+**Path kanonik (satu-satunya):** `GET/POST /api/v1/webhook/whatsapp`.
+
+Path legacy berikut **sudah dihapus** — jangan daftarkan lagi di Meta Developer Console:
+
+- `/api/v1/whatsapp/webhook/meta`
+- `/webhook/whatsapp`
+
 ```
 Meta Cloud API
     │ POST /api/v1/webhook/whatsapp
     ▼
 webhook.HandleWhatsAppWebhook (raw)
-    │ verify signature (MetaAppSecret, opsional)
+    │ verify signature (meta_app_secret per channel, opsional)
     │ parse payload
     ▼
 ingestMessage()
@@ -446,6 +453,8 @@ File: `webhook/webhook.go`, `whatsapp/whatsapp.go`.
 **Detail lengkap** (workflow intercept, Pub/Sub, side effects): **[docs/WHATSAPP_AI_ROUTING.md](./docs/WHATSAPP_AI_ROUTING.md)** §Fase 1.
 
 **OAuth / connect channel:** service `whatsappapi/` — init + callback; kirim pesan memakai library `whatsapp/`.
+
+**Deploy / staging:** pastikan Callback URL Meta = `https://<env>.encr.app/api/v1/webhook/whatsapp` (lihat [docs/DEPLOY_ENCORE_CLOUD.md](./docs/DEPLOY_ENCORE_CLOUD.md) §Langkah 9).
 
 ---
 
@@ -472,6 +481,40 @@ Secret: `AiInternalToken` (sama nilai `AI_INTERNAL_TOKEN` di `api/.env`).
 **Stack lama:** `ai-worker/` + Nest — **jangan** dijalankan bersamaan untuk dev FE baru.
 
 **`ai-worker-go/`:** eksperimen Asynq terpisah; bukan requirement `encore run`.
+
+---
+
+## 12c) RAG / vector retrieval (ops superadmin)
+
+Dokumen lengkap: **[docs/RAG_VECTOR_RETRIEVAL.md](./docs/RAG_VECTOR_RETRIEVAL.md)** · shipped: **[docs-development-shipped/20260831_101000_rag-hardening-webhook-cleanup.md](./docs-development-shipped/20260831_101000_rag-hardening-webhook-cleanup.md)**.
+
+### Mode per tenant
+
+| Mode | Perilaku |
+|------|----------|
+| `disabled` (default) | FAQ/katalog pakai lexical saja |
+| `shadow` | Vector dijalankan, respons pelanggan tidak berubah (bandingkan log) |
+| `vector` | RRF vector+lexical mempengaruhi routing & prompt |
+
+API: `GET/PUT /api/v1/flags/retrieval-mode` · FE: `/dashboard/admin/ai-retrieval`.
+
+### Indexing & observability
+
+```
+KB/catalog CRUD ──tx──► retrieval_outbox ──► Pub/Sub ──► worker (DefaultService singleton)
+                                                              │
+                                         secrets kosong → retry (bukan mock)
+                                                              ▼
+                                                         Pinecone (metadata: entry_id + content_hash saja)
+```
+
+- Progress: `GET /api/v1/flags/retrieval-indexing/:tenantId`
+- Metrics: `GET /api/v1/flags/retrieval-observability` + `retrieval_fallback_total` saat lexical fallback
+- Rollout massal: `POST /api/v1/flags/retrieval-rollout` — stagger via `NotBefore` per tenant (tanpa sleep di handler)
+
+### Autoreply wire
+
+`ai/retrieval_bridge.go` → `retrieveKBHybrid` / `tryFAQDirectAnswerHybrid` — budget ~400ms, circuit breaker, `LexicalFallback` tercatat di log & metrics.
 
 ---
 
@@ -642,6 +685,8 @@ Normal — tenant baru di DB Encore terpisah dari data Nest lama.
 ### Meta webhook 403 verify
 
 Secret `WebhookVerifyToken` harus sama dengan token di Meta Developer Console.
+
+**Callback URL** wajib `https://<host>/api/v1/webhook/whatsapp` — path legacy tidak lagi didukung (404 jika masih terdaftar di Meta).
 
 ---
 
