@@ -33,10 +33,38 @@ func TryShippingFAQReply(userText string, profile *BusinessProfile, kb []KBEntry
 	if IsShippingQuoteQuestion(userText) {
 		return buildShippingQuoteReply(userText, profile, kb, formal), true
 	}
-	if ans, ok := tryFAQDirectAnswer(userText, kb); ok {
+	if ans, ok := tryShippingKBFAQ(userText, kb); ok {
 		return ans, true
 	}
 	return buildShippingDefaultReply(profile, formal), true
+}
+
+func tryShippingKBFAQ(userText string, kb []KBEntry) (string, bool) {
+	if ans, ok := tryFAQDirectAnswer(userText, kb); ok {
+		return ans, true
+	}
+	qTokens := tokenize(userText)
+	var best KBEntry
+	var bestScore float64
+	for _, entry := range kb {
+		cat := ""
+		if entry.Category != nil {
+			cat = *entry.Category
+		}
+		if !strings.Contains(strings.ToLower(cat), "pengiriman") && !strings.Contains(strings.ToLower(cat), "shipping") {
+			continue
+		}
+		text := entry.Question + " " + entry.Answer
+		score := overlapScore(qTokens, tokenize(text))
+		if score > bestScore {
+			bestScore = score
+			best = entry
+		}
+	}
+	if bestScore >= 0.35 && strings.TrimSpace(best.Answer) != "" {
+		return strings.TrimSpace(best.Answer), true
+	}
+	return "", false
 }
 
 func buildShippingQuoteReply(userText string, profile *BusinessProfile, kb []KBEntry, formal bool) string {

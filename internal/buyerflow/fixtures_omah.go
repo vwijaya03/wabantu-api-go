@@ -3,9 +3,12 @@ package buyerflow
 // Shared Omah Apparel fixtures for tests & conversation simulator.
 
 func omahProfile() *BusinessProfile {
+	area := "seluruh Pulau Jawa & Indonesia"
 	return &BusinessProfile{
 		BusinessName: "Omah Apparel",
 		Tone:         strPtr("casual"),
+		DeliveryArea: &area,
+		ProductsServices: strPtr("fashion, celana dalam, abon sapi"),
 	}
 }
 

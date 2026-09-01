@@ -530,6 +530,10 @@ func replyFromBusinessCatalog(
 	formal := strOrEmpty(profile.Tone) == "formal"
 	bizName := strings.TrimSpace(profile.BusinessName)
 
+	if IsShippingFAQQuestion(userText) {
+		return "", false
+	}
+
 	if isGenericVisualProductInquiry(userText, catalog) {
 		return buildGenericVisualProductInquiryReply(formal, bizName, catalog, profile), true
 	}

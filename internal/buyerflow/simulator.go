@@ -211,6 +211,25 @@ func (s *Simulator) Turn(userText string) TurnOutcome {
 		return out
 	}
 
+	if inScope {
+		formal := strOrEmpty(s.Profile.Tone) == "formal"
+		if shipReply, ok := TryShippingFAQReply(userText, s.Profile, s.KB, formal); ok {
+			out.Path = PathShippingFAQ
+			out.Reply = shipReply
+			s.appendHistory(userText, out.Reply)
+			return out
+		}
+	}
+
+	if inScope {
+		if ans, ok := tryFAQDirectAnswer(userText, s.KB); ok {
+			out.Path = PathFAQDirect
+			out.Reply = ans
+			s.appendHistory(userText, out.Reply)
+			return out
+		}
+	}
+
 	out.Path = PathConsulting
 	out.Reply = "consulting"
 	s.appendHistory(userText, out.Reply)
@@ -231,19 +250,38 @@ func newOmahSimulator() *Simulator {
 	return &Simulator{
 		Profile: p,
 		Catalog: omahCatalog(),
-		KB:      omahPaymentKB(),
+		KB:      omahKB(),
 		ScopeKW: businessScopeKeywords(p),
 	}
 }
 
+func omahKB() []KBEntry {
+	catPay := "Nomor Rekening"
+	catShip := "Pengiriman"
+	return []KBEntry{
+		{
+			Question: "Nomor Rekening",
+			Answer:   "BCA 110220330 atas nama Omah Apparel\nMandiri 311211111 atas nama Omah Apparel",
+			Category: &catPay,
+			IsActive: true,
+		},
+		{
+			Question: "berapa lama pengiriman",
+			Answer:   "Estimasi pengiriman 2-3 hari kerja via JNE.",
+			Category: &catShip,
+			IsActive: true,
+		},
+		{
+			Question: "bisa kirim ke luar kota",
+			Answer:   "Bisa kak, kami kirim ke luar kota dan seluruh Indonesia.",
+			Category: &catShip,
+			IsActive: true,
+		},
+	}
+}
+
 func omahPaymentKB() []KBEntry {
-	cat := "Nomor Rekening"
-	return []KBEntry{{
-		Question: "Nomor Rekening",
-		Answer:   "BCA 110220330 atas nama Omah Apparel\nMandiri 311211111 atas nama Omah Apparel",
-		Category: &cat,
-		IsActive: true,
-	}}
+	return omahKB()[:1]
 }
 
 func fullAddressBlock() string {
