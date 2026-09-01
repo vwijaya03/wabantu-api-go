@@ -24,3 +24,12 @@ func TestPerTenantEmbedQuotaRejectedMetric(t *testing.T) {
 		t.Fatalf("quota rejected counter: before=%d after=%d", before, after)
 	}
 }
+
+func TestKbRetrievalZeroResult(t *testing.T) {
+	if !kbRetrievalZeroResult(&retrieval.RetrieveKBResult{ZeroVectorHits: true, Entries: []retrieval.ScoredEntry{{EntryID: "x"}}}) {
+		t.Fatal("zero vector hits should count as zero result")
+	}
+	if kbRetrievalZeroResult(&retrieval.RetrieveKBResult{Entries: []retrieval.ScoredEntry{{EntryID: "x"}}}) {
+		t.Fatal("non-empty entries without zero vector should not be zero result")
+	}
+}

@@ -634,7 +634,11 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 			"tenantId", payload.TenantID,
 			"convoId", convo.ID,
 		)
-		return false, err
+		fallbackText := applyOutputPolicy(scopeDirectionReply(profile))
+		out := metaNoLLM(reasonAIGenerated, PathAutoFallback)
+		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
+		sendErr := s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, fallbackText, "ai", out)
+		return sendErr == nil, sendErr
 	}
 
 	groundedReply, wasGrounded, groundReason := groundLLMReply(reply, userText, profile, catalog, history,

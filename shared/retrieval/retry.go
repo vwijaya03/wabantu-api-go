@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-const MaxIndexAttempts = 8
+const MaxIndexAttempts = 6 // align with Pub/Sub MaxRetries=5 (1 initial + 5 retries)
 
 // ErrServiceNotConfigured is returned when RAG secrets are missing in production paths.
 var ErrServiceNotConfigured = errors.New("retrieval service not configured")

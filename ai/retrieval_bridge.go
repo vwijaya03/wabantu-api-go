@@ -22,8 +22,10 @@ func (s *AutoReplyService) retrieveKBHybrid(
 	ts tenantScopedQuerier,
 	kb []dbKBEntry,
 ) ([]dbKBEntry, float64, *retrieval.RetrieveKBResult) {
+	logCtx := ctx
 	lexical := retrieveHybridKB(query, kb)
 	mode := appflag.RetrievalMode(ctx, tenantID)
+	modeStr := string(mode)
 
 	svc := retrieval.DefaultService()
 	if svc == nil || mode == retrieval.ModeDisabled {
@@ -33,12 +35,13 @@ func (s *AutoReplyService) retrieveKBHybrid(
 	if mode == retrieval.ModeVector || mode == retrieval.ModeShadow {
 		if !s.checkTenantEmbedQuota(ctx, tenantID) {
 			retrieval.RecordEmbedQuotaRejected()
-			rlog.Warn("retrieval embed quota exceeded, lexical fallback", "tenant", tenantID)
+			rlog.Warn("retrieval embed quota exceeded, lexical fallback",
+				"tenant", tenantID, "mode", modeStr, "fallback_reason", "embed_quota")
 			return lexical, topKBMatchScore(query, kb), nil
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, retrievalBudget)
+	qctx, cancel := context.WithTimeout(ctx, retrievalBudget)
 	defer cancel()
 
 	tenant := retrieval.TenantIdentity{TenantID: tenantID, TenantSchema: tenantSchema}
@@ -46,23 +49,37 @@ func (s *AutoReplyService) retrieveKBHybrid(
 		return lexicalRankedEntries(q, kb, topK), nil
 	}
 
-	res, err := svc.RetrieveKB(ctx, retrieval.RetrieveKBRequest{
+	res, err := svc.RetrieveKB(qctx, retrieval.RetrieveKBRequest{
 		Tenant: tenant,
 		Query:  query,
 		TopK:   20,
 		Mode:   mode,
 	}, lexicalRanker)
-	fallback := err != nil || (res != nil && res.LexicalFallback)
+
 	if err != nil || res == nil {
-		retrieval.LogQuery(ctx, "kb", tenantID, string(mode), true, false)
-		recordRetrievalQueryMetrics("kb", string(mode), true, false, retrieval.LatencyP95Ms())
-		rlog.Warn("retrieval KB failed, lexical fallback", "err", err, "tenant", tenantID)
+		reason := retrieval.FallbackReasonQueryError
+		if err != nil {
+			reason = retrieval.ClassifyVectorError(err)
+		}
+		retrieval.LogQueryWithReason(logCtx, "kb", tenantID, modeStr, true, true, reason)
+		recordRetrievalQueryMetrics("kb", modeStr, true, true, retrieval.LatencyP95Ms())
+		rlog.Warn("retrieval KB failed, lexical fallback",
+			"err", err, "tenant", tenantID, "mode", modeStr, "fallback_reason", reason)
 		return lexical, topKBMatchScore(query, kb), res
 	}
 
+	fallback := res.LexicalFallback
+	zero := kbRetrievalZeroResult(res)
 	if fallback {
-		retrieval.LogQuery(ctx, "kb", tenantID, string(mode), true, len(res.Entries) == 0)
-		recordRetrievalQueryMetrics("kb", string(mode), true, len(res.Entries) == 0, retrieval.LatencyP95Ms())
+		retrieval.LogQueryWithReason(logCtx, "kb", tenantID, modeStr, true, zero, res.FallbackReason)
+		recordRetrievalQueryMetrics("kb", modeStr, true, zero, retrieval.LatencyP95Ms())
+		rlog.Warn("retrieval KB lexical fallback",
+			"tenant", tenantID,
+			"mode", modeStr,
+			"fallback_reason", res.FallbackReason,
+			"vector_hits", len(res.VectorHits),
+			"zero_vector", res.ZeroVectorHits,
+		)
 	}
 
 	if mode == retrieval.ModeShadow {
@@ -72,13 +89,12 @@ func (s *AutoReplyService) retrieveKBHybrid(
 			"fused", len(res.Entries),
 			"lexical", len(res.LexicalHits),
 			"fallback", fallback,
+			"zero_vector", res.ZeroVectorHits,
 		)
-		if fallback {
-			return lexical, topKBMatchScore(query, kb), res
+		if !fallback {
+			retrieval.LogQueryWithReason(logCtx, "kb", tenantID, modeStr, false, zero, "")
+			recordRetrievalQueryMetrics("kb", modeStr, false, zero, retrieval.LatencyP95Ms())
 		}
-		zero := len(res.Entries) == 0
-		retrieval.LogQuery(ctx, "kb", tenantID, string(mode), false, zero)
-		recordRetrievalQueryMetrics("kb", string(mode), false, zero, retrieval.LatencyP95Ms())
 		return lexical, topKBMatchScore(query, kb), res
 	}
 
@@ -106,10 +122,19 @@ func (s *AutoReplyService) retrieveKBHybrid(
 	if len(ordered) == 0 {
 		ordered = lexical
 	}
-	zero := len(res.Entries) == 0
-	retrieval.LogQuery(ctx, "kb", tenantID, string(mode), false, zero)
-	recordRetrievalQueryMetrics("kb", string(mode), false, zero, retrieval.LatencyP95Ms())
+	retrieval.LogQueryWithReason(logCtx, "kb", tenantID, modeStr, false, zero, "")
+	recordRetrievalQueryMetrics("kb", modeStr, false, zero, retrieval.LatencyP95Ms())
 	return ordered, topScore, res
+}
+
+func kbRetrievalZeroResult(res *retrieval.RetrieveKBResult) bool {
+	if res == nil {
+		return false
+	}
+	if res.ZeroVectorHits {
+		return true
+	}
+	return len(res.Entries) == 0
 }
 
 func lexicalRankedEntries(query string, kb []dbKBEntry, topK int) []retrieval.ScoredEntry {
@@ -191,17 +216,29 @@ func (s *AutoReplyService) replyFromBusinessCatalogHybrid(
 		rlog.Warn("catalog embed quota exceeded, lexical fallback", "tenant", tenantID)
 		return replyFromBusinessCatalog(userText, profile, catalog, history)
 	}
+	logCtx := ctx
 	qctx, cancel := context.WithTimeout(ctx, retrievalBudget)
 	defer cancel()
 	tenant := retrieval.TenantIdentity{TenantID: tenantID, TenantSchema: tenantSchema}
 	hits, err := svc.RetrieveCatalogCandidates(qctx, tenant, userText, 3)
-	fallback := err != nil || len(hits) == 0
+	zero := len(hits) == 0
+	fallback := err != nil || zero
 	if fallback {
-		retrieval.LogQuery(ctx, "catalog", tenantID, string(mode), err != nil, len(hits) == 0)
-		recordRetrievalQueryMetrics("catalog", string(mode), err != nil, len(hits) == 0, retrieval.LatencyP95Ms())
+		reason := retrieval.FallbackReasonQueryError
+		if err != nil {
+			reason = retrieval.ClassifyVectorError(err)
+		} else if zero {
+			reason = retrieval.FallbackReasonQueryError
+		}
+		retrieval.LogQueryWithReason(logCtx, "catalog", tenantID, string(mode), err != nil, zero, reason)
+		recordRetrievalQueryMetrics("catalog", string(mode), err != nil, zero, retrieval.LatencyP95Ms())
+		if err != nil {
+			rlog.Warn("catalog vector retrieval failed, lexical fallback",
+				"err", err, "tenant", tenantID, "fallback_reason", reason)
+		}
 		return replyFromBusinessCatalog(userText, profile, catalog, history)
 	}
-	retrieval.LogQuery(ctx, "catalog", tenantID, string(mode), false, false)
+	retrieval.LogQueryWithReason(logCtx, "catalog", tenantID, string(mode), false, false, "")
 	recordRetrievalQueryMetrics("catalog", string(mode), false, false, retrieval.LatencyP95Ms())
 
 	catalogExpanded := catalog

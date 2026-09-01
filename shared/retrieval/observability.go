@@ -18,6 +18,7 @@ var (
 	embedCacheMisses  atomic.Uint64
 	indexingSuccess      atomic.Uint64
 	indexingFailure      atomic.Uint64
+	indexingDLQ          atomic.Uint64
 	embedQuotaRejected   atomic.Uint64
 )
 
@@ -64,6 +65,11 @@ func (t *latencyTracker) percentile(p float64) uint64 {
 
 // LogQuery records retrieval observability fields (structured logs + in-process counters).
 func LogQuery(ctx context.Context, source, tenantID, mode string, failed, zeroResult bool) {
+	LogQueryWithReason(ctx, source, tenantID, mode, failed, zeroResult, "")
+}
+
+// LogQueryWithReason adds optional fallback_reason for ops triage.
+func LogQueryWithReason(ctx context.Context, source, tenantID, mode string, failed, zeroResult bool, fallbackReason FallbackReason) {
 	retrievalRequests.Add(1)
 	if failed {
 		retrievalFallback.Add(1)
@@ -71,13 +77,17 @@ func LogQuery(ctx context.Context, source, tenantID, mode string, failed, zeroRe
 	if zeroResult {
 		retrievalZeroHit.Add(1)
 	}
-	rlog.Info("retrieval query",
+	fields := []any{
 		"source", source,
 		"tenant_id", tenantID,
 		"retrieval_mode", mode,
 		"fallback", failed,
 		"zero_result", zeroResult,
-	)
+	}
+	if fallbackReason != "" {
+		fields = append(fields, "fallback_reason", string(fallbackReason))
+	}
+	rlog.Info("retrieval query", fields...)
 	_ = ctx
 }
 
@@ -105,6 +115,11 @@ func RecordIndexingOutcome(entity, lane string, success bool, lag time.Duration)
 	_ = entity
 	_ = lane
 	_ = lag
+}
+
+// RecordIndexingDLQ increments when an outbox row moves to DLQ status.
+func RecordIndexingDLQ() {
+	indexingDLQ.Add(1)
 }
 
 // RecordEmbedQuotaRejected increments when a tenant exceeds hourly embed quota.
@@ -142,6 +157,7 @@ type ObservabilitySnapshot struct {
 	EmbedCacheHitRatio float64 `json:"embedCacheHitRatio"`
 	IndexingSuccess uint64 `json:"indexingSuccess"`
 	IndexingFailure uint64 `json:"indexingFailure"`
+	IndexingDLQ     uint64 `json:"indexingDlq"`
 }
 
 // SnapshotObservability returns in-process counters and latency percentiles.
@@ -162,6 +178,7 @@ func SnapshotObservability() ObservabilitySnapshot {
 		EmbedCacheMisses: cm,
 		IndexingSuccess:  indexingSuccess.Load(),
 		IndexingFailure:  indexingFailure.Load(),
+		IndexingDLQ:      indexingDLQ.Load(),
 	}
 	if req > 0 {
 		snap.FallbackRatio = float64(fb) / float64(req)

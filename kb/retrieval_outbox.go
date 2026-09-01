@@ -80,6 +80,7 @@ func markKBIndexFailed(ctx context.Context, ts interface {
 	status := "failed"
 	if retrieval.ShouldDLQ(attempts) {
 		status = "dlq"
+		retrieval.RecordIndexingDLQ()
 	}
 	_, err := ts.ExecContext(ctx, `
 		UPDATE knowledge_base_entry
@@ -136,6 +137,7 @@ func failOutbox(ctx context.Context, ts interface {
 	status := "failed"
 	if retrieval.ShouldDLQ(attempts) {
 		status = "dlq"
+		retrieval.RecordIndexingDLQ()
 	}
 	_, err := ts.ExecContext(ctx, `
 		UPDATE retrieval_outbox
