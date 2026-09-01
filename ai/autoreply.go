@@ -412,7 +412,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 
 	// ── Katalog WABantu (business_catalog_item) — prioritas sebelum FAQ/LLM ──
 	if inScope {
-		if catReply, ok := s.replyFromBusinessCatalogHybrid(ctx, payload.TenantID, payload.TenantSchema, userText, profile, catalog, history); ok {
+		if catReply, ok := s.replyFromBusinessCatalogHybrid(ctx, payload.TenantID, payload.TenantSchema, userText, ts, profile, catalog, history); ok {
 			if clearedOrderForCorrection {
 				catReply = prependSalesCorrection(strOrEmpty(profile.Tone) == "formal", catReply)
 			}
@@ -461,7 +461,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 
 	// ── Browsing katalog (mis. "mau tanya produk") — jangan redirect generik ──
 	if inScope && IsCatalogBrowsingIntent(userText) {
-		if catReply, ok := s.replyFromBusinessCatalogHybrid(ctx, payload.TenantID, payload.TenantSchema, userText, profile, catalog, history); ok {
+		if catReply, ok := s.replyFromBusinessCatalogHybrid(ctx, payload.TenantID, payload.TenantSchema, userText, ts, profile, catalog, history); ok {
 			finalReply := applyOutputPolicy(catReply)
 			out := metaNoLLM(reasonAIGenerated, PathCatalogDB)
 			out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
@@ -532,7 +532,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return err == nil, err
 	}
 
-	kbHybrid, kbTopScore, kbRetrieval := s.retrieveKBHybrid(ctx, payload.TenantID, payload.TenantSchema, userText, kbEntries)
+	kbHybrid, kbTopScore, kbRetrieval := s.retrieveKBHybrid(ctx, payload.TenantID, payload.TenantSchema, userText, ts, kbEntries)
 	rlog.Info("AI job: hybrid KB retrieval",
 		"selected", len(kbHybrid),
 		"total", len(kbEntries),
@@ -546,7 +546,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	if kbRetrieval != nil {
 		rrfScores = kbRetrieval.Entries
 	}
-	if direct, ok := tryFAQDirectAnswerHybrid(userText, kbEntries, rrfScores, mode); ok {
+	if direct, ok := tryFAQDirectAnswerHybrid(userText, kbHybrid, rrfScores, kbRetrieval, mode); ok {
 		finalReply := applyOutputPolicy(direct)
 		s.setCachedAnswer(ctx, payload.TenantID, userText, finalReply)
 		out := metaNoLLM(reasonAIGenerated, PathFAQDirect)
@@ -884,7 +884,7 @@ type scoredKB struct {
 	score float64
 }
 
-func retrieveHybridKB(query string, kb []dbKBEntry) []dbKBEntry {
+func scoreKBEntries(query string, kb []dbKBEntry) []scoredKB {
 	qTokens := tokenize(query)
 	qScope := ExtractScopeKeywords(query)
 
@@ -900,14 +900,16 @@ func retrieveHybridKB(query string, kb []dbKBEntry) []dbKBEntry {
 			scored = append(scored, scoredKB{entry: entry, score: score})
 		}
 	}
-
-	// Sort descending by score (simple insertion sort for small N).
 	for i := 1; i < len(scored); i++ {
 		for j := i; j > 0 && scored[j].score > scored[j-1].score; j-- {
 			scored[j], scored[j-1] = scored[j-1], scored[j]
 		}
 	}
+	return scored
+}
 
+func retrieveHybridKB(query string, kb []dbKBEntry) []dbKBEntry {
+	scored := scoreKBEntries(query, kb)
 	limit := 8
 	if len(scored) < limit {
 		limit = len(scored)

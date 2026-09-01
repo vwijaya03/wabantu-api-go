@@ -110,6 +110,9 @@ func (s *Service) RetrieveKB(ctx context.Context, req RetrieveKBRequest, lexical
 		s.Breaker.RecordSuccess()
 	}
 
+	vectorHits = FilterHitsByScore(vectorHits, VectorMinSimilarity)
+	lexicalHits = FilterScoredEntries(lexicalHits, LexicalMinScore)
+
 	res.VectorHits = vectorHits
 	res.UsedVector = true
 	res.ShadowOnly = req.Mode == ModeShadow

@@ -124,5 +124,5 @@ func (s *Service) RetrieveCatalogCandidates(ctx context.Context, tenant TenantId
 	if s.Breaker != nil {
 		s.Breaker.RecordSuccess()
 	}
-	return hits, nil
+	return FilterHitsByScore(hits, VectorMinSimilarity), nil
 }
