@@ -96,11 +96,18 @@ func alwaysApplyRetrievalPatch(ctx context.Context, q any, schemaName string) er
 }
 
 func applyKBEmbeddingColumns(ctx context.Context, q any, schemaName string) error {
-	if encore.Meta().Environment.Cloud != encore.CloudLocal {
+	if encore.Meta().Environment.Cloud == encore.CloudLocal {
+		sch := appdb.SchemaSQL{Schema: schemaName}
+		return applyKBEmbeddingColumnsOnTables(ctx, tenantschema.Q(q), sch.T("knowledge_base_entry"), sch.T("business_catalog_item"))
+	}
+	ready, err := tenantschema.RetrievalReady(ctx, q, schemaName)
+	if err != nil {
+		return err
+	}
+	if ready {
 		return nil
 	}
-	sch := appdb.SchemaSQL{Schema: schemaName}
-	return applyKBEmbeddingColumnsOnTables(ctx, tenantschema.Q(q), sch.T("knowledge_base_entry"), sch.T("business_catalog_item"))
+	return EnsureCloudAdminTenantDDL(ctx, schemaName)
 }
 
 func applyKBEmbeddingColumnsOnTables(ctx context.Context, q tenantschema.Querier, kbTable, catTable string) error {

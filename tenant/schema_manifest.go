@@ -13,7 +13,7 @@ var SchemaManifests = []PatchManifest{
 	{
 		Version:          CurrentSchemaPatchVersion,
 		RequiresAdminDDL: false,
-		Description:      "Payment proof, inventory, finance — applied via migrate-tenant-schemas on cloud",
+		Description:      "Payment proof, inventory, finance, RAG retrieval — migrate-tenant-schemas / rollout applies admin DDL on cloud otomatis",
 	},
 }
 
