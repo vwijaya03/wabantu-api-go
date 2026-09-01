@@ -4,13 +4,13 @@ import (
 	"context"
 	"testing"
 
-	"encore.app/wabantu/shared/db"
+	appdb "encore.app/wabantu/shared/db"
 )
 
 func TestTxnQualifiesKnowledgeBaseInsert(t *testing.T) {
-	sch := db.SchemaSQL{Schema: "t_demo"}
+	sch := appdb.SchemaSQL{Schema: "t_demo"}
 	raw := `INSERT INTO knowledge_base_entry (question) VALUES ('x')`
-	got := db.QualifySQL(sch, raw)
+	got := appdb.QualifySQL(sch, raw)
 	want := `"t_demo"."knowledge_base_entry"`
 	if got == raw || !contains(got, want) {
 		t.Fatalf("QualifySQL() = %q want qualified %q", got, want)
