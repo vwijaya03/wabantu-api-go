@@ -14,6 +14,10 @@
 #
 # Jangan pakai UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN (HTTP REST).
 # api-go butuh Redis TCP URL (rediss://...) → disimpan sebagai Encore secret RedisURL.
+#
+# Key mappings (api/.env → Encore secret), selain RedisURL:
+#   META_WEBHOOK_VERIFY_TOKEN / WEBHOOK_VERIFY_TOKEN → WebhookVerifyToken
+#   OPENAI_API_KEY, PINECONE_API_KEY, PINECONE_INDEX_HOST → RAG (wajib terdefinisi)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -93,6 +97,7 @@ DATA_ENCRYPTION_KEY="$(env_get DATA_ENCRYPTION_KEY || true)"
 ANTHROPIC_API_KEY="$(env_get ANTHROPIC_API_KEY || true)"
 AI_INTERNAL_TOKEN="$(env_get AI_INTERNAL_TOKEN || true)"
 META_WEBHOOK_VERIFY_TOKEN="$(env_get META_WEBHOOK_VERIFY_TOKEN || true)"
+WEBHOOK_VERIFY_TOKEN="$(env_get WEBHOOK_VERIFY_TOKEN || true)"
 MIDTRANS_SERVER_KEY="$(env_get MIDTRANS_SERVER_KEY || true)"
 MIDTRANS_CLIENT_KEY="$(env_get MIDTRANS_CLIENT_KEY || true)"
 MIDTRANS_IS_PRODUCTION="$(env_get MIDTRANS_IS_PRODUCTION || true)"
@@ -110,7 +115,8 @@ set_cloud_secret DataEncryptionKey "$DATA_ENCRYPTION_KEY"
 set_cloud_secret RedisURL "$REDIS_URL"
 set_cloud_secret AnthropicAPIKey "$ANTHROPIC_API_KEY"
 set_cloud_secret AiInternalToken "$AI_INTERNAL_TOKEN"
-set_cloud_secret WebhookVerifyToken "$META_WEBHOOK_VERIFY_TOKEN"
+WEBHOOK_VERIFY_VALUE="${META_WEBHOOK_VERIFY_TOKEN:-$WEBHOOK_VERIFY_TOKEN}"
+set_cloud_secret WebhookVerifyToken "$WEBHOOK_VERIFY_VALUE"
 set_cloud_secret MidtransServerKey "$MIDTRANS_SERVER_KEY" true
 set_cloud_secret MidtransClientKey "$MIDTRANS_CLIENT_KEY" true
 set_cloud_secret MidtransIsProduction "${MIDTRANS_IS_PRODUCTION:-false}" true
