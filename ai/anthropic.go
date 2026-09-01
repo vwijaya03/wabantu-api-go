@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"net/http"
 	"strings"
 	"time"
@@ -57,17 +58,33 @@ func NewAnthropicClient(apiKey string, cfg AnthropicConfig) *AnthropicClient {
 
 // CompletionUsage holds token counts from the Anthropic API.
 type CompletionUsage struct {
-	InputTokens  int
-	OutputTokens int
+	InputTokens              int
+	OutputTokens             int
+	CacheReadInputTokens     int
+	CacheCreationInputTokens int
 }
 
-func (c *AnthropicClient) GenerateReply(ctx context.Context, system, business, kb, history, userMessage string) (string, error) {
-	text, _, err := c.GenerateReplyWithModel(ctx, c.model, system, business, kb, history, userMessage)
+const (
+	anthropicMaxRetries = 3
+	anthropicRetryBase  = 500 * time.Millisecond
+)
+
+func anthropicRetryDelay(attempt int) time.Duration {
+	if attempt < 0 {
+		attempt = 0
+	}
+	base := anthropicRetryBase * time.Duration(1<<attempt)
+	jitter := time.Duration(rand.Int63n(int64(base/2) + 1))
+	return base + jitter
+}
+
+func (c *AnthropicClient) GenerateReply(ctx context.Context, req SalesReplyRequest) (string, error) {
+	text, _, err := c.GenerateReplyWithModel(ctx, c.model, req)
 	return text, err
 }
 
 // GenerateReplyWithModel runs completion on the given model (Haiku / Sonnet hybrid routing).
-func (c *AnthropicClient) GenerateReplyWithModel(ctx context.Context, model, system, business, kb, history, userMessage string) (text string, usage CompletionUsage, err error) {
+func (c *AnthropicClient) GenerateReplyWithModel(ctx context.Context, model string, req SalesReplyRequest) (text string, usage CompletionUsage, err error) {
 	if strings.TrimSpace(model) == "" {
 		model = c.model
 	}
@@ -75,7 +92,7 @@ func (c *AnthropicClient) GenerateReplyWithModel(ctx context.Context, model, sys
 
 	var lastErr error
 	for i, tryModel := range FallbackModels(model) {
-		text, usage, err = c.generateOnce(ctx, tryModel, system, business, kb, history, userMessage)
+		text, usage, err = c.generateOnceWithRetry(ctx, tryModel, req, 0.3)
 		if err == nil {
 			if i > 0 {
 				rlog.Info("anthropic completion succeeded after fallback", "model", tryModel, "attempt", i+1)
@@ -91,48 +108,57 @@ func (c *AnthropicClient) GenerateReplyWithModel(ctx context.Context, model, sys
 	return "", usage, fmt.Errorf("anthropic API error: %w", lastErr)
 }
 
-func (c *AnthropicClient) generateOnce(ctx context.Context, model, system, business, kb, history, userMessage string) (text string, usage CompletionUsage, err error) {
-	prompt := strings.Join([]string{
-		"Konteks bisnis:",
-		business,
-		"",
-		kb,
-		"",
-		history,
-		"",
-		fmt.Sprintf("Pesan pelanggan terbaru: %s", userMessage),
-		"Tugas: berikan satu balasan WhatsApp sales assistant yang aman, membantu, dan mendorong checkout. Produk/harga hanya dari katalog resmi.",
-	}, "\n")
+func (c *AnthropicClient) generateOnceWithRetry(ctx context.Context, model string, req SalesReplyRequest, temperature float64) (string, CompletionUsage, error) {
+	var usage CompletionUsage
+	var lastErr error
+	for attempt := 0; attempt < anthropicMaxRetries; attempt++ {
+		if attempt > 0 {
+			delay := anthropicRetryDelay(attempt - 1)
+			rlog.Warn("anthropic retrying after transient error", "model", model, "attempt", attempt+1, "delay", delay)
+			select {
+			case <-ctx.Done():
+				return "", usage, ctx.Err()
+			case <-time.After(delay):
+			}
+		}
+		text, u, err := c.generateOnce(ctx, model, req, temperature)
+		if err == nil {
+			return text, u, nil
+		}
+		lastErr = err
+		if !IsAnthropicRetryable(err) || attempt == anthropicMaxRetries-1 {
+			return "", usage, err
+		}
+	}
+	return "", usage, lastErr
+}
+
+func (c *AnthropicClient) generateOnce(ctx context.Context, model string, req SalesReplyRequest, temperature float64) (text string, usage CompletionUsage, err error) {
+	systemBlocks := buildSalesSystemBlocks(req)
+	messages := buildSalesMessages(req)
 
 	rlog.Info("anthropic request",
 		"model", model,
 		"maxTokens", c.maxTok,
-		"sysLen", len(system),
-		"businessLen", len(business),
-		"kbLen", len(kb),
-		"histLen", len(history),
-		"userMsgLen", len(userMessage),
+		"sysBlocks", len(systemBlocks),
+		"businessLen", len(req.Business),
+		"kbLen", len(req.KB),
+		"histTurns", len(req.History),
+		"userMsgLen", len(req.UserText),
 	)
 
 	resp, err := c.client.Messages.New(ctx, anthropic.MessageNewParams{
 		Model:       anthropic.Model(model),
 		MaxTokens:   c.maxTok,
-		Temperature: anthropic.Float(0.3),
-		System: []anthropic.TextBlockParam{
-			{Text: system},
-		},
-		Messages: []anthropic.MessageParam{
-			anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
-		},
+		Temperature: anthropic.Float(temperature),
+		System:      systemBlocks,
+		Messages:    messages,
 	})
 	if err != nil {
 		rlog.Error("anthropic messages.create failed", "err", err, "model", model)
 		return "", usage, err
 	}
-	usage = CompletionUsage{
-		InputTokens:  int(resp.Usage.InputTokens),
-		OutputTokens: int(resp.Usage.OutputTokens),
-	}
+	usage = usageFromResponse(resp)
 
 	var parts []string
 	for _, block := range resp.Content {
@@ -146,10 +172,21 @@ func (c *AnthropicClient) generateOnce(ctx context.Context, model, system, busin
 		return "", usage, fmt.Errorf("AI response kosong")
 	}
 
-	rlog.Info("anthropic completion received", "model", model, "len", len(text), "inputTok", usage.InputTokens, "outputTok", usage.OutputTokens)
-	if len(text) > 1200 {
-		text = text[:1200]
+	if resp.StopReason == anthropic.StopReasonMaxTokens {
+		rlog.Warn("anthropic completion truncated by max_tokens", "model", model, "outputTok", usage.OutputTokens)
 	}
+
+	text = finalizeAnthropicReply(text, resp.StopReason)
+
+	rlog.Info("anthropic completion received",
+		"model", model,
+		"len", len(text),
+		"inputTok", usage.InputTokens,
+		"outputTok", usage.OutputTokens,
+		"cacheReadTok", usage.CacheReadInputTokens,
+		"cacheCreateTok", usage.CacheCreationInputTokens,
+		"stopReason", resp.StopReason,
+	)
 	return text, usage, nil
 }
 
@@ -189,10 +226,7 @@ func (c *AnthropicClient) CompleteText(ctx context.Context, model, system, user 
 		if text == "" {
 			return "", CompletionUsage{}, fmt.Errorf("empty completion from model %s", tryModel)
 		}
-		usage := CompletionUsage{
-			InputTokens:  int(resp.Usage.InputTokens),
-			OutputTokens: int(resp.Usage.OutputTokens),
-		}
+		usage := usageFromResponse(resp)
 		if i > 0 {
 			rlog.Info("anthropic CompleteText succeeded after fallback", "model", tryModel)
 		}

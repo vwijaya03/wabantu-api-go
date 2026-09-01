@@ -24,7 +24,7 @@ func IsAnthropicRetryable(err error) bool {
 		"timeout", "deadline exceeded", "connection reset", "connection refused",
 		"temporary failure", "no such host", "i/o timeout", "eof",
 		"429", "too many requests", "overloaded", "529",
-		"502", "503", "504",
+		"500", "502", "503", "504",
 	} {
 		if strings.Contains(s, p) {
 			return true

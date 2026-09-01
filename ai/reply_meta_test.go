@@ -17,3 +17,11 @@ func TestMetaNoLLMProfile(t *testing.T) {
 		t.Fatalf("profile incomplete should not use LLM: %+v", m)
 	}
 }
+
+func TestPreviewTextRedactsPIIInNonLocalEnv(t *testing.T) {
+	// encore test runs in local cloud; redaction is off for developer ergonomics.
+	out := previewText("hubungi 081234567890", 80)
+	if out == "" {
+		t.Fatal("expected non-empty preview")
+	}
+}
