@@ -44,7 +44,7 @@ func TestMemoryStoreQuery(t *testing.T) {
 	emb := NewMockEmbedder()
 	vecs, _ := emb.Embed(t.Context(), []string{"berapa harga produk"})
 	rec := VectorRecord{ID: "kb:1:v1:c0", Values: vecs[0], Metadata: map[string]any{
-		"source": "kb", "entry_id": "1",
+		"source": "kb", "entry_id": "1", "embedding_model": EmbeddingModel,
 	}}
 	if err := store.Upsert(t.Context(), "t_test", []VectorRecord{rec}); err != nil {
 		t.Fatal(err)

@@ -207,7 +207,7 @@ func enqueueCatalogIndexOutbox(ctx context.Context, ts appdb.TenantScope, tenant
 	defer func() { _ = tx.Rollback() }()
 	tTx := txn(ts, tx)
 
-	hash := retrieval.ContentHash(name, desc, code)
+	hash := retrieval.CatalogContentHash(name, desc, code)
 	var outboxID string
 	err = tTx.QueryRowContext(ctx, `
 		INSERT INTO retrieval_outbox (event_type, entity_type, entity_id, version, content_hash, status)

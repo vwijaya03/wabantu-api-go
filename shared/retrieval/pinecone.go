@@ -17,6 +17,7 @@ type VectorStore interface {
 	Query(ctx context.Context, namespace string, vector []float32, topK int, filter map[string]any) ([]Hit, error)
 	DeleteIDs(ctx context.Context, namespace string, ids []string) error
 	DeleteByFilter(ctx context.Context, namespace string, filter map[string]any) error
+	DeleteNamespace(ctx context.Context, namespace string) error
 }
 
 // PineconeClient talks to Pinecone index host via REST.
@@ -97,6 +98,13 @@ func (c *PineconeClient) DeleteByFilter(ctx context.Context, namespace string, f
 	return c.post(ctx, "/vectors/delete", pineconeDeleteRequest{Filter: filter, Namespace: namespace}, nil)
 }
 
+func (c *PineconeClient) DeleteNamespace(ctx context.Context, namespace string) error {
+	if namespace == "" {
+		return nil
+	}
+	return c.post(ctx, "/vectors/delete", pineconeDeleteRequest{DeleteAll: true, Namespace: namespace}, nil)
+}
+
 func (c *PineconeClient) post(ctx context.Context, path string, body any, out any) error {
 	b, err := json.Marshal(body)
 	if err != nil {
@@ -164,6 +172,7 @@ type pineconeDeleteRequest struct {
 	IDs       []string       `json:"ids,omitempty"`
 	Filter    map[string]any `json:"filter,omitempty"`
 	Namespace string         `json:"namespace,omitempty"`
+	DeleteAll bool           `json:"deleteAll,omitempty"`
 }
 
 // PineconeConfigured returns true when host and key are set.

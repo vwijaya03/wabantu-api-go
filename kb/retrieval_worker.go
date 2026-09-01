@@ -84,7 +84,7 @@ func handleKBRetrievalIndexJob(ctx context.Context, job *RetrievalIndexJob) erro
 	var procErr error
 	switch job.EventType {
 	case outboxEventDeleteKB:
-		procErr = retrieval.DeleteKBEntryVectors(ctx, svc, tenantIdent, job.EntityID, job.Version)
+		procErr = retrieval.DeleteAllKBEntryVectors(ctx, svc, tenantIdent, job.EntityID, job.Version)
 	case outboxEventIndexKB:
 		procErr = processKBIndex(ctx, ts, svc, tenantIdent, job)
 	default:
@@ -122,6 +122,10 @@ func processKBIndex(ctx context.Context, ts appdb.TenantScope, svc *retrieval.Se
 		return err
 	}
 	if !ok {
+		// Inactive or superseded — remove any stale vectors.
+		if err := retrieval.DeleteAllKBEntryVectors(ctx, svc, tenant, job.EntityID, job.Version); err != nil {
+			rlog.Warn("retrieval delete inactive KB vectors failed", "entry", job.EntityID, "err", err)
+		}
 		return nil
 	}
 	if err := retrieval.IndexKBEntry(ctx, svc, retrieval.KBIndexInput{
@@ -130,8 +134,8 @@ func processKBIndex(ctx context.Context, ts appdb.TenantScope, svc *retrieval.Se
 	}); err != nil {
 		return err
 	}
-	if ver > 1 {
-		_ = svc.DeleteKB(ctx, tenant, job.EntityID, ver-1)
+	if err := retrieval.PurgeStaleKBVersions(ctx, svc, tenant, job.EntityID, ver); err != nil {
+		rlog.Warn("retrieval purge stale KB versions failed", "entry", job.EntityID, "version", ver, "err", err)
 	}
 	return nil
 }

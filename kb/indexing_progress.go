@@ -39,6 +39,15 @@ type TenantIndexingProgress struct {
 	OldestPendingAt   *time.Time        `json:"oldestPendingAt,omitempty"`
 }
 
+// IndexedPercentComplete returns KB+catalog indexed percent for a tenant schema.
+func IndexedPercentComplete(ctx context.Context, tenantSchema string) (int, error) {
+	progress, err := GetTenantIndexingProgress(ctx, tenantSchema, "")
+	if err != nil {
+		return 0, err
+	}
+	return progress.PercentComplete, nil
+}
+
 // GetTenantIndexingProgress returns embedding/outbox progress for a tenant schema.
 func GetTenantIndexingProgress(ctx context.Context, tenantSchema, tenantID string) (*TenantIndexingProgress, error) {
 	if tenantSchema == "" {

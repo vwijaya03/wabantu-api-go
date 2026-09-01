@@ -24,7 +24,7 @@ func (s *AutoReplyService) retrieveKBHybrid(
 ) ([]dbKBEntry, float64, *retrieval.RetrieveKBResult) {
 	logCtx := ctx
 	lexical := retrieveHybridKB(query, kb)
-	mode := appflag.RetrievalMode(ctx, tenantID)
+	mode := appflag.EffectiveRetrievalMode(ctx, tenantID, tenantSchema)
 	modeStr := string(mode)
 
 	svc := retrieval.DefaultService()
@@ -203,7 +203,7 @@ func (s *AutoReplyService) replyFromBusinessCatalogHybrid(
 	catalog []dbCatalogItem,
 	history []dbMessage,
 ) (string, bool) {
-	mode := appflag.RetrievalMode(ctx, tenantID)
+	mode := appflag.EffectiveRetrievalMode(ctx, tenantID, tenantSchema)
 	if mode != retrieval.ModeVector {
 		return replyFromBusinessCatalog(userText, profile, catalog, history)
 	}

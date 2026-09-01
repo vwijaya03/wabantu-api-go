@@ -25,6 +25,7 @@ func (noopStore) DeleteIDs(context.Context, string, []string) error { return nil
 func (noopStore) DeleteByFilter(context.Context, string, map[string]any) error {
 	return nil
 }
+func (noopStore) DeleteNamespace(context.Context, string) error { return nil }
 
 func TestRetrieveKB_VectorFailureSetsLexicalFallback(t *testing.T) {
 	svc := NewService(failingEmbedder{}, noopStore{})
@@ -134,6 +135,7 @@ func (m mockVectorStore) DeleteIDs(context.Context, string, []string) error { re
 func (m mockVectorStore) DeleteByFilter(context.Context, string, map[string]any) error {
 	return nil
 }
+func (m mockVectorStore) DeleteNamespace(context.Context, string) error { return nil }
 
 func TestRetrieveKB_VectorFloorFiltersNoise(t *testing.T) {
 	store := mockVectorStore{hits: []Hit{

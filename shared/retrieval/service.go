@@ -187,14 +187,14 @@ func (s *Service) IndexKB(ctx context.Context, tenant TenantIdentity, entryID, c
 	if err := ValidateVectors(s.Embedder, vectors); err != nil {
 		return err
 	}
-	recs, err := BuildKBVectorRecords(entryID, version, category, ContentHash(question, answer), chunks, vectors)
+	recs, err := BuildKBVectorRecords(entryID, version, category, KBContentHash(question, answer), chunks, vectors)
 	if err != nil {
 		return err
 	}
 	return s.Store.Upsert(ctx, ns, recs)
 }
 
-// DeleteKB removes all vectors for a KB entry (by prefix ids for v1 single chunk).
+// DeleteKB removes vectors for one KB entry version (current + legacy id).
 func (s *Service) DeleteKB(ctx context.Context, tenant TenantIdentity, entryID string, version int64) error {
 	if s == nil || s.Store == nil {
 		return nil
@@ -203,26 +203,14 @@ func (s *Service) DeleteKB(ctx context.Context, tenant TenantIdentity, entryID s
 	if err != nil {
 		return err
 	}
-	// v1: single chunk at index 0; delete by id
-	id := KBVectorID(entryID, version, 0)
-	return s.Store.DeleteIDs(ctx, ns, []string{id})
-}
-
-// DeleteKBAllVersions deletes vectors for entry across known versions (best-effort ids 0..maxVer).
-func (s *Service) DeleteKBAllVersions(ctx context.Context, tenant TenantIdentity, entryID string, maxVersion int64) error {
-	if maxVersion < 0 {
-		maxVersion = 0
-	}
-	ids := make([]string, 0, maxVersion+1)
-	for v := int64(0); v <= maxVersion; v++ {
-		ids = append(ids, KBVectorID(entryID, v, 0))
-	}
-	if s == nil || s.Store == nil {
-		return nil
-	}
-	ns, err := Namespace(tenant)
-	if err != nil {
-		return err
+	ids := []string{
+		LegacyKBVectorID(entryID, version, 0),
+		KBVectorID(entryID, version, 0),
 	}
 	return s.Store.DeleteIDs(ctx, ns, ids)
+}
+
+// DeleteKBAllVersions deletes vectors for entry across known versions (best-effort).
+func (s *Service) DeleteKBAllVersions(ctx context.Context, tenant TenantIdentity, entryID string, maxVersion int64) error {
+	return DeleteAllKBEntryVectors(ctx, s, tenant, entryID, maxVersion)
 }
