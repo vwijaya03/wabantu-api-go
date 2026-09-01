@@ -63,6 +63,7 @@ func seedFinanceCategories(ctx context.Context, conn *sql.Conn) error {
 		err := conn.QueryRowContext(ctx, `
 			SELECT id FROM fin_category
 			WHERE name=$1 AND is_system=true AND parent_id IS NULL AND deleted_at IS NULL
+			ORDER BY display_order, created_at, id
 			LIMIT 1`, p.name,
 		).Scan(&id)
 		if err == nil {
@@ -77,6 +78,17 @@ func seedFinanceCategories(ctx context.Context, conn *sql.Conn) error {
 			RETURNING id`,
 			p.name, p.typ, p.icon, p.color, p.order,
 		).Scan(&id)
+		if err == nil {
+			return id, nil
+		}
+		if isPgUniqueViolation(err) {
+			err = conn.QueryRowContext(ctx, `
+				SELECT id FROM fin_category
+				WHERE name=$1 AND is_system=true AND parent_id IS NULL AND deleted_at IS NULL
+				ORDER BY display_order, created_at, id
+				LIMIT 1`, p.name,
+			).Scan(&id)
+		}
 		return id, err
 	}
 
@@ -101,6 +113,9 @@ func seedFinanceCategories(ctx context.Context, conn *sql.Conn) error {
 			VALUES ($1,$2,$3,$4,$5,true,$6)`,
 			c.name, c.typ, *c.parentID, c.icon, c.color, c.order,
 		)
+		if err == nil || isPgUniqueViolation(err) {
+			return nil
+		}
 		return err
 	}
 

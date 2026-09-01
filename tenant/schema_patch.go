@@ -237,8 +237,8 @@ func RunSchemaPatches(ctx context.Context, schemaName string) error {
 }
 
 // runTenantBootstrapPatches applies patches + seeds during signup on an open tenant
-// connection. Skips re-running admin DDL (RunTenantDDL already did) and avoids TenantConn
-// so lazy background migration cannot race with bootstrap.
+// connection. Skips re-running admin DDL (RunTenantDDL already did). RunTenantDDL
+// wraps this with withSchemaMigrationLock so lazy background migration cannot race.
 func runTenantBootstrapPatches(ctx context.Context, conn *sql.Conn, schemaName string) error {
 	if !schemaNameRe.MatchString(schemaName) {
 		return fmt.Errorf("invalid schema name: %q", schemaName)
