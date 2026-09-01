@@ -92,7 +92,7 @@ func (c *AnthropicClient) GenerateReplyWithModel(ctx context.Context, model stri
 
 	var lastErr error
 	for i, tryModel := range FallbackModels(model) {
-		text, usage, err = c.generateOnceWithRetry(ctx, tryModel, req, 0.3)
+		text, usage, err = c.generateOnceWithRetry(ctx, tryModel, req)
 		if err == nil {
 			if i > 0 {
 				rlog.Info("anthropic completion succeeded after fallback", "model", tryModel, "attempt", i+1)
@@ -108,7 +108,7 @@ func (c *AnthropicClient) GenerateReplyWithModel(ctx context.Context, model stri
 	return "", usage, fmt.Errorf("anthropic API error: %w", lastErr)
 }
 
-func (c *AnthropicClient) generateOnceWithRetry(ctx context.Context, model string, req SalesReplyRequest, temperature float64) (string, CompletionUsage, error) {
+func (c *AnthropicClient) generateOnceWithRetry(ctx context.Context, model string, req SalesReplyRequest) (string, CompletionUsage, error) {
 	var usage CompletionUsage
 	var lastErr error
 	for attempt := 0; attempt < anthropicMaxRetries; attempt++ {
@@ -121,7 +121,7 @@ func (c *AnthropicClient) generateOnceWithRetry(ctx context.Context, model strin
 			case <-time.After(delay):
 			}
 		}
-		text, u, err := c.generateOnce(ctx, model, req, temperature)
+		text, u, err := c.generateOnce(ctx, model, req)
 		if err == nil {
 			return text, u, nil
 		}
@@ -133,7 +133,7 @@ func (c *AnthropicClient) generateOnceWithRetry(ctx context.Context, model strin
 	return "", usage, lastErr
 }
 
-func (c *AnthropicClient) generateOnce(ctx context.Context, model string, req SalesReplyRequest, temperature float64) (text string, usage CompletionUsage, err error) {
+func (c *AnthropicClient) generateOnce(ctx context.Context, model string, req SalesReplyRequest) (text string, usage CompletionUsage, err error) {
 	systemBlocks := buildSalesSystemBlocks(req)
 	messages := buildSalesMessages(req)
 
@@ -148,11 +148,10 @@ func (c *AnthropicClient) generateOnce(ctx context.Context, model string, req Sa
 	)
 
 	resp, err := c.client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:       anthropic.Model(model),
-		MaxTokens:   c.maxTok,
-		Temperature: anthropic.Float(temperature),
-		System:      systemBlocks,
-		Messages:    messages,
+		Model:     anthropic.Model(model),
+		MaxTokens: c.maxTok,
+		System:    systemBlocks,
+		Messages:  messages,
 	})
 	if err != nil {
 		rlog.Error("anthropic messages.create failed", "err", err, "model", model)

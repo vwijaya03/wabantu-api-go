@@ -203,11 +203,10 @@ func (c *AnthropicClient) callCatalogToolsRound(
 	messages []anthropic.MessageParam,
 ) (*anthropic.Message, error) {
 	return c.client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:       anthropic.Model(model),
-		MaxTokens:   c.maxTok,
-		Temperature: anthropic.Float(0.2),
-		System:      systemBlocks,
-		Tools:       tools,
-		Messages:    messages,
+		Model:     anthropic.Model(model),
+		MaxTokens: c.maxTok,
+		System:    systemBlocks,
+		Tools:     tools,
+		Messages:  messages,
 	})
 }

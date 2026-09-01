@@ -56,11 +56,10 @@ func ExtractCatalogFromScreenshot(ctx context.Context, apiKey string, imageBytes
 	b64 := base64.StdEncoding.EncodeToString(imageBytes)
 
 	resp, err := client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:       anthropic.Model(model),
-		MaxTokens:   4096,
-		Temperature: anthropic.Float(0.1),
+		Model:     anthropic.Model(model),
+		MaxTokens: 4096,
 		System: []anthropic.TextBlockParam{
-			{Text: catalogVisionSystem},
+			{Text: catalogVisionSystem, CacheControl: anthropic.NewCacheControlEphemeralParam()},
 		},
 		Messages: []anthropic.MessageParam{
 			anthropic.NewUserMessage(
