@@ -115,8 +115,15 @@ Copy secret dari `../api/.env` + `REDIS_URL` cloud:
 ```bash
 cd api-go
 
+# Pastikan ../api/.env punya OPENAI_API_KEY, PINECONE_API_KEY, PINECONE_INDEX_HOST (RAG)
 REDIS_URL='rediss://default:PASSWORD@HOST.upstash.io:6379' \
   ./scripts/setup-secrets-for-cloud.sh staging
+```
+
+Alternatif (tanpa validasi Redis Upstash di script):
+
+```bash
+./scripts/setup-secrets-from-env.sh --env staging
 ```
 
 ### Opsi B — Manual
@@ -137,7 +144,12 @@ printf '%s' '...' | encore secret set --env=staging RajaOngkirApiKey
 printf '%s' 'starter' | encore secret set --env=staging RajaOngkirAccountType
 printf '%s' '...' | encore secret set --env=staging SentryDSN
 printf '%s' '...' | encore secret set --env=staging PlatformAdminBootstrapSecret
+printf '%s' '...' | encore secret set --env=staging OpenAIApiKey
+printf '%s' '...' | encore secret set --env=staging PineconeApiKey
+printf '%s' '...' | encore secret set --env=staging PineconeIndexHost
 ```
+
+> **RAG:** `OpenAIApiKey`, `PineconeApiKey`, `PineconeIndexHost` **wajib terdefinisi** di Encore (deploy gagal jika belum). Isi dari `OPENAI_API_KEY`, `PINECONE_API_KEY`, `PINECONE_INDEX_HOST` di `api/.env`. Host Pinecone tanpa `https://`.
 
 Mapping nama secret ↔ `api/.env`: lihat tabel di [README.md](../README.md#3-set-secrets-dari-apienv).
 
@@ -367,7 +379,7 @@ Update URL callback ke domain Encore Cloud:
 
 **Migrasi dari path lama:** jika production masih memakai `/api/v1/whatsapp/webhook/meta` atau `/webhook/whatsapp`, ubah ke path kanonik di atas — handler legacy sudah dihapus dari api-go (lihat [docs-development-shipped/20260831_101000_rag-hardening-webhook-cleanup.md](../docs-development-shipped/20260831_101000_rag-hardening-webhook-cleanup.md)).
 
-**RAG (opsional):** setelah deploy, isi secrets `OpenAIApiKey`, `PineconeApiKey`, `PineconeIndexHost`; jalankan `POST /api/v1/knowledge-base/reindex` per tenant pilot sebelum mengaktifkan mode `shadow`/`vector` via `/api/v1/flags/retrieval-mode`.
+**RAG:** secrets `OpenAIApiKey`, `PineconeApiKey`, `PineconeIndexHost` wajib di-set **sebelum deploy** (lihat Langkah 3). Setelah deploy: `POST /api/v1/knowledge-base/reindex` per tenant pilot sebelum mode `shadow`/`vector` via `/api/v1/flags/retrieval-mode`. Panduan: [RAG_VECTOR_RETRIEVAL.md](./RAG_VECTOR_RETRIEVAL.md).
 
 ---
 
