@@ -28,6 +28,7 @@ Peta navigasi untuk menjawab pertanyaan tentang backend WABantu. Mulai dari sini
 | Kenapa FAQ direct / retrieval fallback? | [RAG_VECTOR_RETRIEVAL.md](./RAG_VECTOR_RETRIEVAL.md) → §Query pipeline |
 | Setup Pinecone & embedding? | [RAG_VECTOR_RETRIEVAL.md](./RAG_VECTOR_RETRIEVAL.md) → §Secrets |
 | Rollout RAG / webhook cleanup (2026-08-31)? | [20260831_101000_rag-hardening-webhook-cleanup.md](../docs-development-shipped/20260831_101000_rag-hardening-webhook-cleanup.md) |
+| Deploy RAG staging gagal / FAQ stuck `invalid embedding version`? | [20260901_143000_rag-staging-rollout-hotfixes.md](../docs-development-shipped/20260901_143000_rag-staging-rollout-hotfixes.md) |
 | Import katalog dari teks (caption WA, deskripsi toko)? | [CATALOG_TEXT_IMPORT.md](./CATALOG_TEXT_IMPORT.md) |
 | Revamp UI katalog + fix upsert import (2026-08-31)? | [20260831_161500_catalog-revamp-text-import.md](../docs-development-shipped/20260831_161500_catalog-revamp-text-import.md) |
 | Tagihan Meta vs kuota WABantu | [META_WHATSAPP_MESSAGING_AND_BILLING.md](./META_WHATSAPP_MESSAGING_AND_BILLING.md) |
@@ -58,6 +59,7 @@ Peta navigasi untuk menjawab pertanyaan tentang backend WABantu. Mulai dari sini
 |------|-----|
 | [RAG_VECTOR_RETRIEVAL.md](./RAG_VECTOR_RETRIEVAL.md) | Arsitektur Pinecone + OpenAI, indexing outbox, query pipeline, rollout |
 | [20260831_101000_rag-hardening-webhook-cleanup.md](../docs-development-shipped/20260831_101000_rag-hardening-webhook-cleanup.md) | Hardening produksi + webhook kanonik |
+| [20260901_143000_rag-staging-rollout-hotfixes.md](../docs-development-shipped/20260901_143000_rag-staging-rollout-hotfixes.md) | Hotfix deploy staging PR #146–#150 (secrets, DDL cloud, backfill FAQ) |
 | [20260830_173800_rag-kb-retrieval.md](../docs-development-shipped/20260830_173800_rag-kb-retrieval.md) | Wire autoreply KB hybrid |
 | [20260830_173800_rag-outbox-indexing.md](../docs-development-shipped/20260830_173800_rag-outbox-indexing.md) | Outbox + kolom embedding |
 
@@ -93,6 +95,7 @@ Peta navigasi untuk menjawab pertanyaan tentang backend WABantu. Mulai dari sini
 | File | Isi |
 |------|-----|
 | [DEPLOY_ENCORE_CLOUD.md](./DEPLOY_ENCORE_CLOUD.md) | Deploy Encore Cloud (+ hot-fix `business_profile` dynamic grants) |
+| [20260901_143000_rag-staging-rollout-hotfixes.md](../docs-development-shipped/20260901_143000_rag-staging-rollout-hotfixes.md) | Troubleshooting deploy RAG staging (PR #146–#150) |
 | [DEPLOY_REDIS.md](./DEPLOY_REDIS.md) | Redis production |
 | [STAGING_ACCESS.md](./STAGING_ACCESS.md) | Akses staging |
 
