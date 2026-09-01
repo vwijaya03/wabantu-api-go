@@ -32,6 +32,16 @@ func enqueueKBOutboxTx(ctx context.Context, ts appdb.TenantScope, eventType, ent
 	return err
 }
 
+// supersedeStaleKBOutboxTx marks pending/failed KB outbox rows done so a new version can be enqueued cleanly.
+func supersedeStaleKBOutboxTx(ctx context.Context, ts appdb.TenantScope, entryID string) error {
+	_, err := ts.ExecContext(ctx, `
+		UPDATE retrieval_outbox
+		SET status = 'done', processed_at = NOW(), updated_at = NOW(), last_error = NULL
+		WHERE entity_type = $1 AND entity_id = $2::uuid AND status IN ('pending', 'failed')`,
+		entityTypeKB, entryID)
+	return err
+}
+
 func bumpKBEmbeddingPendingTx(ctx context.Context, ts appdb.TenantScope, entryID, question, answer string) (int64, error) {
 	hash := kbContentHash(question, answer)
 	var version int64
