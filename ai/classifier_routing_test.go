@@ -49,3 +49,18 @@ func TestClassifyComplexityVeryLongUsesSonnet(t *testing.T) {
 		t.Fatalf("long message should be complex, got %s", got)
 	}
 }
+
+func TestFAQDirectGuardsPass_blocksBrowseNotShipping(t *testing.T) {
+	if FAQDirectGuardsPass("toko ini jual apa aja?") {
+		t.Fatal("browse/list should block FAQ direct")
+	}
+	if !FAQDirectGuardsPass("berapa lama pengiriman?") {
+		t.Fatal("shipping FAQ should allow FAQ direct")
+	}
+	if FAQDirectGuardsPass("rekomendasi best seller") {
+		t.Fatal("recommendation should block FAQ direct")
+	}
+	if FAQDirectGuardsPass("boleh beli 1 pcs?") {
+		t.Fatal("consulting purchase should block FAQ direct")
+	}
+}

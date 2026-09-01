@@ -770,6 +770,22 @@ func catalogExternalFooter(profile *BusinessProfile, catalogEmpty bool) string {
 	return ""
 }
 
+// sanitizeCatalogContextField neutralizes delimiter/injection patterns in catalog text for LLM context.
+func sanitizeCatalogContextField(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return s
+	}
+	replacer := strings.NewReplacer(
+		"---", "—",
+		"RETRIEVED KNOWLEDGE", "[data]",
+		"END RETRIEVED KNOWLEDGE", "",
+		"\n", " ",
+		"\r", " ",
+	)
+	return strings.TrimSpace(replacer.Replace(s))
+}
+
 // BuildCatalogContext injects DB catalog into LLM system context.
 func BuildCatalogContext(catalog []CatalogItem) string {
 	if len(catalog) == 0 {
@@ -789,7 +805,9 @@ func BuildCatalogContext(catalog []CatalogItem) string {
 				price += fmt.Sprintf(" (~%s/pcs)", formatMoney(info.PerPiecePrice))
 			}
 		}
-		lines = append(lines, fmt.Sprintf("- %s | %s | kode internal: %s", it.Name, price, it.ExternalCode))
+		name := sanitizeCatalogContextField(it.Name)
+		code := sanitizeCatalogContextField(it.ExternalCode)
+		lines = append(lines, fmt.Sprintf("- %s | %s | kode internal: %s", name, price, code))
 	}
 	lines = append(lines, "Aturan: jawab produk/harga hanya dari daftar di atas. Jangan tampilkan kode internal/SKU ke pelanggan. Jangan dump daftar panjang — gunakan kategori + produk unggulan. Jangan mengarang produk di luar daftar.")
 	return strings.Join(lines, "\n")

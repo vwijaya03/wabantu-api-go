@@ -34,7 +34,7 @@ func TestGroundLLMReply_fallback(t *testing.T) {
 	}}
 	history := []dbMessage{{Direction: "out", Body: "Harga boxer Rp56900/paket"}}
 	bad := "Boxer mono spot cuma Rp99999/pcs, bahan katun premium."
-	got, grounded, reason := groundLLMReply(bad, "itu harga per biji berapa", profile, catalog, history)
+	got, grounded, reason := groundLLMReply(bad, "itu harga per biji berapa", profile, catalog, history, nil)
 	if !grounded || reason == "" {
 		t.Fatalf("expected grounded reply, reason=%s", reason)
 	}
