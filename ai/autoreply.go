@@ -432,6 +432,18 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		}
 	}
 
+	// ── Shipping FAQ — ongkir/estimasi kirim sebelum FAQ umum/LLM ──
+	if inScope {
+		formal := strOrEmpty(profile.Tone) == "formal"
+		if shipReply, ok := tryShippingFAQReply(userText, profile, kbEntries, formal); ok {
+			finalReply := applyOutputPolicy(shipReply)
+			out := metaNoLLM(reasonAIGenerated, PathShippingFAQ)
+			out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
+			err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
+			return err == nil, err
+		}
+	}
+
 	// ── Handle: sensitive escalation ─────────────────────────────────────
 	if classifier.Label == "sensitive_escalate" {
 		out := metaNoLLM(reasonOutOfScope, PathEscalate)
