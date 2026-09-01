@@ -71,14 +71,68 @@ func ClassifyComplexity(userText string, classifierLabel string, kbTopScore floa
 }
 
 // FAQDirectGuardsPass returns false when FAQ direct must be skipped (order/catalog intents).
+// Shipping FAQ (ongkir, estimasi kirim) is allowed — those should use KB faq_direct.
 func FAQDirectGuardsPass(query string) bool {
 	if IsThirdPartyBuyerLookup(query) || IsSelfBuyerOrderLookup(query) || IsOrderStatusInquiry(query) {
 		return false
 	}
-	if IsCatalogListQuestion(query) || IsCatalogProductInquiry(query) || IsProductSellInquiry(query, nil) {
+	if isShippingFAQAllowed(query) {
+		return true
+	}
+	if IsCatalogListQuestion(query) || IsCatalogBrowsingIntent(query) ||
+		isGeneralStoreCatalogQuestion(query) || IsRecommendationRequest(query) {
+		return false
+	}
+	if IsCatalogProductInquiry(query) || IsProductSellInquiry(query, nil) ||
+		looksLikeNamedProductSellInquiry(query) {
+		return false
+	}
+	if IsConsultingPurchaseQuestion(query, nil) || IsPricingUnitClarification(query) ||
+		brandVariantFAQGuard(query) {
 		return false
 	}
 	return true
+}
+
+// looksLikeNamedProductSellInquiry — "jual abon sapi?" tanpa catalog match tetap ke catalog_db.
+func looksLikeNamedProductSellInquiry(query string) bool {
+	if isGeneralStoreCatalogQuestion(query) || HasPurchaseIntent(query) {
+		return false
+	}
+	text := strings.ToLower(strings.TrimSpace(query))
+	if text == "" || !IsQuestionLike(query) {
+		return false
+	}
+	hasSell := strings.Contains(text, "jual") || strings.Contains(text, "jualan") || strings.Contains(text, "menjual")
+	return hasSell
+}
+
+func brandVariantFAQGuard(query string) bool {
+	if isGeneralStoreCatalogQuestion(query) || IsCatalogListQuestion(query) {
+		return false
+	}
+	return hasBrandVariantSignal(strings.ToLower(strings.TrimSpace(query)))
+}
+
+func isShippingFAQAllowed(query string) bool {
+	text := strings.ToLower(strings.TrimSpace(query))
+	if text == "" {
+		return false
+	}
+	if IsShippingQuoteQuestion(query) {
+		return true
+	}
+	signals := []string{
+		"pengiriman", "ongkir", "ongkos kirim", "kirim ke",
+		"estimasi sampai", "berapa lama", "lama sampai", "waktu kirim",
+		"luar kota", "wilayah pengiriman", "area kirim", "delivery",
+	}
+	for _, s := range signals {
+		if strings.Contains(text, s) {
+			return true
+		}
+	}
+	return false
 }
 
 // topKBMatchScore returns the best hybrid KB overlap score for the query.

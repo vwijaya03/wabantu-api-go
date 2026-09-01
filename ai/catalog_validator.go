@@ -134,19 +134,26 @@ func priceAllowedInCatalog(amount float64, allowed []float64) bool {
 	return false
 }
 
+type catalogReplyFunc func(userText string, profile *dbBusinessProfile, catalog []dbCatalogItem, history []dbMessage) (string, bool)
+
 // groundLLMReply — validator + fallback catalog_db jika LLM halu harga/produk.
+// catalogFn may use vector hybrid matching when provided; defaults to lexical catalog_db.
 func groundLLMReply(
 	reply string,
 	userText string,
 	profile *dbBusinessProfile,
 	catalog []dbCatalogItem,
 	history []dbMessage,
+	catalogFn catalogReplyFunc,
 ) (final string, grounded bool, reason string) {
 	v := validateReplyAgainstCatalog(reply, catalog)
 	if v.OK {
 		return reply, false, ""
 	}
-	if catReply, ok := replyFromBusinessCatalog(userText, profile, catalog, history); ok {
+	if catalogFn == nil {
+		catalogFn = replyFromBusinessCatalog
+	}
+	if catReply, ok := catalogFn(userText, profile, catalog, history); ok {
 		return catReply, true, v.Reason
 	}
 	if IsPaymentQuestion(userText) {

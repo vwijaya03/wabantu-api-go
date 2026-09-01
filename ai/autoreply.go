@@ -625,7 +625,10 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return false, err
 	}
 
-	groundedReply, wasGrounded, groundReason := groundLLMReply(reply, userText, profile, catalog, history)
+	groundedReply, wasGrounded, groundReason := groundLLMReply(reply, userText, profile, catalog, history,
+		func(ut string, p *dbBusinessProfile, c []dbCatalogItem, h []dbMessage) (string, bool) {
+			return s.replyFromBusinessCatalogHybrid(ctx, payload.TenantID, payload.TenantSchema, ut, ts, p, c, h)
+		})
 	if wasGrounded {
 		rlog.Warn("AI job: LLM reply grounded to catalog",
 			"reason", groundReason,
