@@ -78,7 +78,7 @@ Cache in-process query embedding (`query_embed_cache.go`) memakai key `sha256(mo
 |---------|-------|---------------------|
 | Embed per tenant per jam | 500 | Fallback lexical; metric `embed_quota_rejected` |
 | Budget concurrency global | 8 (`retrieval.Budget`) | Tunggu slot |
-| Circuit breaker | 5 failure / 30s cooldown | Fallback lexical |
+| Circuit breaker | **Per-tenant** (`BreakerPool`: 5 failure / 30s cooldown) | Fallback lexical; tenant lain tidak terpengaruh |
 
 Redis down saat cek quota: **fail-closed** (tidak embed) untuk melindungi API key bersama.
 

@@ -25,6 +25,7 @@ Peta navigasi untuk menjawab pertanyaan tentang backend WABantu. Mulai dari sini
 | Persist media inbox ke S3 | [inbox-media-s3.md](../docs-development-shipped/inbox-media-s3.md) |
 | Vision match katalog dari gambar (planned) | [ai-image-context.md](../docs-development-shipped/ai-image-context.md) |
 | Bagaimana RAG / vector search FAQ & katalog? | [RAG_VECTOR_RETRIEVAL.md](./RAG_VECTOR_RETRIEVAL.md) |
+| Skrip acceptance percakapan Omah? | [RAG_CONVERSATION_ACCEPTANCE.md](./RAG_CONVERSATION_ACCEPTANCE.md) |
 | Kenapa FAQ direct / retrieval fallback? | [RAG_VECTOR_RETRIEVAL.md](./RAG_VECTOR_RETRIEVAL.md) → §Query pipeline |
 | Setup Pinecone & embedding? | [RAG_VECTOR_RETRIEVAL.md](./RAG_VECTOR_RETRIEVAL.md) → §Secrets |
 | Rollout RAG / webhook cleanup (2026-08-31)? | [20260831_101000_rag-hardening-webhook-cleanup.md](../docs-development-shipped/20260831_101000_rag-hardening-webhook-cleanup.md) |
@@ -58,6 +59,7 @@ Peta navigasi untuk menjawab pertanyaan tentang backend WABantu. Mulai dari sini
 | File | Isi |
 |------|-----|
 | [RAG_VECTOR_RETRIEVAL.md](./RAG_VECTOR_RETRIEVAL.md) | Arsitektur Pinecone + OpenAI, indexing outbox, query pipeline, rollout |
+| [RAG_CONVERSATION_ACCEPTANCE.md](./RAG_CONVERSATION_ACCEPTANCE.md) | Skrip penerimaan percakapan smooth (fixture Omah) + cara jalankan test |
 | [20260831_101000_rag-hardening-webhook-cleanup.md](../docs-development-shipped/20260831_101000_rag-hardening-webhook-cleanup.md) | Hardening produksi + webhook kanonik |
 | [20260901_143000_rag-staging-rollout-hotfixes.md](../docs-development-shipped/20260901_143000_rag-staging-rollout-hotfixes.md) | Hotfix deploy staging PR #146–#150 (secrets, DDL cloud, backfill FAQ) |
 | [20260830_173800_rag-kb-retrieval.md](../docs-development-shipped/20260830_173800_rag-kb-retrieval.md) | Wire autoreply KB hybrid |

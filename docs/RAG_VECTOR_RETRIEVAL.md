@@ -66,7 +66,7 @@ Pinecone index: **Manual**, **1536** dim, metric **cosine**, serverless on-deman
 
 ### Outbox
 
-Tabel `retrieval_outbox` — event `index_kb` / `delete_kb` / `index_catalog` dengan retry & DLQ (`MaxIndexAttempts=8`).
+Tabel `retrieval_outbox` — event `index_kb` / `delete_kb` / `index_catalog` dengan retry & DLQ (`MaxIndexAttempts=6`, selaras Pub/Sub `MaxRetries=5`).
 
 **Worker indexing:** `kb/retrieval_worker.go` memanggil `retrieval.DefaultService()` (singleton `sync.Once`). Jika secrets OpenAI/Pinecone belum dikonfigurasi, worker mengembalikan `ErrServiceNotConfigured` (retry Pub/Sub) — **bukan** mock/silent success. Counter attempt atomik via `nextOutboxAttempt()`.
 
@@ -93,13 +93,35 @@ Package: `shared/retrieval/`
 5. Fallback penuh ke lexical jika embed/Pinecone gagal, circuit OPEN, atau `DefaultService() == nil`
 6. Field `RetrieveKBResult.LexicalFallback == true` saat vector path dilewati/gagal — tercatat di metrics `retrieval_fallback_total` dan log structured (`ai/retrieval_bridge.go`)
 
-### FAQ direct (recalibrated)
+### FAQ direct (vector mode)
 
-Gunakan skor RRF (bukan 0.72 lexical):
+Gate di `shared/retrieval/thresholds.go` → `FAQDirectOKWithPolicy`:
 
-- `top1 >= DefaultFAQMinScore` (0.014)
-- `top1 - top2 >= DefaultFAQMinMargin` (0.003)
-- Guard intent order/katalog tetap aktif
+| Parameter | Nilai | Keterangan |
+|-----------|-------|------------|
+| `VectorMinSimilarity` | **0.30** | Cosine floor — hit di bawah ini dibuang sebelum RRF |
+| `LexicalMinScore` | **0.08** | Floor skor lexical sebelum fusion |
+| `DefaultFAQMinScore` | 0.014 | Skor RRF fused minimum |
+| `DefaultFAQMinMargin` | 0.003 | Margin top1 − top2 (wajib meski hanya 1 kandidat) |
+
+Guard intent order/katalog: `FAQDirectGuardsPass` (`internal/buyerflow/classifier_routing.go`) — browse, rekomendasi, konsultasi, shipping **diizinkan** lewat FAQ/shipping handler.
+
+Vector-first fetch: hit Pinecone di luar window preload di-fetch by ID dari PostgreSQL (`ai/kb_fetch.go`, `ai/retrieval_bridge.go`).
+
+## Error handling & resilience
+
+| Komponen | Perilaku | Observability |
+|----------|----------|---------------|
+| **Circuit breaker** | **Per-tenant** (`BreakerPool`) — satu tenant down tidak membuka circuit global | `fallback_reason=circuit_open` |
+| **Client timeout** | Budget query ~400ms; `DeadlineExceeded` **tidak** trip breaker | `fallback_reason=client_timeout` |
+| **Embed/Pinecone error** | Fallback lexical; `LexicalFallback=true` | `retrieval_fallback_total`, log `fallback_reason` |
+| **Zero vector hit** | `RetrieveKBResult.ZeroVectorHits=true` saat vector jalan tapi 0 hit ≥ floor | `zero_result_total` |
+| **DLQ indexing** | Outbox status `dlq` setelah 6 attempt | `indexingDlq` di observability snapshot |
+| **LLM gagal** | Langsung `scopeDirectionReply` (`PathAutoFallback`), tidak tunggu retry job habis | `ai/autoreply.go` |
+
+Structured log: `retrieval query` dengan field `fallback`, `zero_result`, `fallback_reason`.
+
+Keamanan: lihat [AI_SECURITY_PRIVACY.md](./AI_SECURITY_PRIVACY.md).
 
 ## Feature flag (`retrieval_mode`)
 
@@ -129,15 +151,13 @@ Lihat `flag/retrieval_mode.go`.
 
 ```bash
 cd api-go
+./scripts/run-ai-regression-tests.sh    # buyerflow + shared/retrieval + apiregistry
 encore test ./shared/retrieval/...
-encore test ./kb/...
 encore test ./ai/...
 encore test ./internal/buyerflow/...
 ```
 
-- Unit: MockEmbedder 1536, RRF, circuit breaker, outbox idempotency
-- Eval: `shared/retrieval/eval/` — Recall@1, FAQ precision
-- Contract staging: `RUN_RAG_CONTRACT=1` + build tag `staging`
+Acceptance Omah: [RAG_CONVERSATION_ACCEPTANCE.md](./RAG_CONVERSATION_ACCEPTANCE.md)
 
 ## Operasi & rollout
 
@@ -174,9 +194,9 @@ Single-query embeddings (autoreply hot path) di-cache in-process LRU (512 entri,
 
 ### Observability
 
-- Encore metrics: `retrieval_requests_total`, **`retrieval_fallback_total`** (lexical fallback), `retrieval_indexing_*`, `retrieval_latency_p95_ms`
-- Structured logs: `retrieval query`, `retrieval shadow`, `retrieval KB failed, lexical fallback`
-- `RetrieveKBResult.LexicalFallback` — set di `shared/retrieval/service.go`, dipakai `ai/retrieval_bridge.go`
+- Encore metrics: `retrieval_requests_total`, **`retrieval_fallback_total`**, `retrieval_indexing_*`, `retrieval_latency_p95_ms`
+- Structured logs: `retrieval query` (field `fallback_reason`), `retrieval shadow`, `retrieval KB lexical fallback`
+- `RetrieveKBResult`: `LexicalFallback`, `ZeroVectorHits`, `FallbackReason`
 
 ## Troubleshooting
 
