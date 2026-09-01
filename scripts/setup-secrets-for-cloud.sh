@@ -36,6 +36,14 @@ env_get() {
   printf '%s' "$value"
 }
 
+normalize_pinecone_host() {
+  local h="$1"
+  h="${h#https://}"
+  h="${h#http://}"
+  h="${h%/}"
+  printf '%s' "$h"
+}
+
 set_cloud_secret() {
   local name="$1"
   local value="$2"
@@ -91,6 +99,9 @@ MIDTRANS_IS_PRODUCTION="$(env_get MIDTRANS_IS_PRODUCTION || true)"
 RAJAONGKIR_API_KEY="$(env_get RAJAONGKIR_API_KEY || true)"
 RAJAONGKIR_ACCOUNT_TYPE="$(env_get RAJAONGKIR_ACCOUNT_TYPE || true)"
 SENTRY_DSN="$(env_get SENTRY_DSN || true)"
+OPENAI_API_KEY="$(env_get OPENAI_API_KEY || true)"
+PINECONE_API_KEY="$(env_get PINECONE_API_KEY || true)"
+PINECONE_INDEX_HOST="$(env_get PINECONE_INDEX_HOST || true)"
 PLATFORM_ADMIN_BOOTSTRAP="$(env_get PLATFORM_ADMIN_BOOTSTRAP_SECRET || true)"
 GITHUB_ACTIONS_TOKEN="$(env_get GITHUB_ACTIONS_TOKEN || true)"
 
@@ -108,5 +119,10 @@ set_cloud_secret RajaOngkirAccountType "${RAJAONGKIR_ACCOUNT_TYPE:-starter}" tru
 set_cloud_secret SentryDSN "$SENTRY_DSN" true
 set_cloud_secret PlatformAdminBootstrapSecret "$PLATFORM_ADMIN_BOOTSTRAP"
 set_cloud_secret GitHubActionsToken "$GITHUB_ACTIONS_TOKEN" true
+
+# RAG (wajib terdefinisi di Encore agar deploy lolos; runtime fallback lexical jika kosong)
+set_cloud_secret OpenAIApiKey "$OPENAI_API_KEY"
+set_cloud_secret PineconeApiKey "$PINECONE_API_KEY"
+set_cloud_secret PineconeIndexHost "$(normalize_pinecone_host "$PINECONE_INDEX_HOST")"
 
 echo "Done. Verify: encore secret list --env=$ENV_NAME"

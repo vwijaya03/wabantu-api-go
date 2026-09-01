@@ -1,10 +1,19 @@
 #!/usr/bin/env bash
-# Import secrets from ../api/.env into Encore local secrets.
+# Import secrets from ../api/.env into Encore secrets.
+#
+# Usage:
+#   ./scripts/setup-secrets-from-env.sh              # --type local (encore run)
+#   ./scripts/setup-secrets-from-env.sh --env staging # Encore Cloud env (staging, prod, …)
+#
+# Untuk cloud + RedisURL Upstash, lebih lengkap: ./scripts/setup-secrets-for-cloud.sh staging
 #
 # Key mappings (api/.env → Encore secret):
 #   JWT_ACCESS_SECRET          → JWTSecret
 #   DATA_ENCRYPTION_KEY        → DataEncryptionKey
 #   META_WEBHOOK_VERIFY_TOKEN  → WebhookVerifyToken  (Meta webhook GET verify)
+#   OPENAI_API_KEY             → OpenAIApiKey
+#   PINECONE_API_KEY           → PineconeApiKey
+#   PINECONE_INDEX_HOST        → PineconeIndexHost
 #   ...
 #
 # Prerequisites (once per machine):
@@ -14,6 +23,33 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_FILE="${ROOT}/../api/.env"
+SECRET_TARGET_TYPE="local"
+SECRET_TARGET_ENV=""
+
+usage() {
+  echo "Usage: $0 [--env <encore-env-name>]" >&2
+  echo "  default: encore secret set --type local (local dev)" >&2
+  echo "  --env staging: encore secret set --env=staging (cloud)" >&2
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --env)
+      [[ $# -ge 2 ]] || { usage; exit 1; }
+      SECRET_TARGET_ENV="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      usage
+      exit 1
+      ;;
+  esac
+done
 
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "Missing $ENV_FILE — copy from api/.env.example first." >&2
@@ -46,9 +82,20 @@ set_secret() {
     echo "skip $name (empty)"
     return 0
   fi
+  local target_label
+  if [[ -n "$SECRET_TARGET_ENV" ]]; then
+    target_label="env=$SECRET_TARGET_ENV"
+  else
+    target_label="type=$SECRET_TARGET_TYPE"
+  fi
   for attempt in 1 2 3 4 5; do
-    if printf '%s' "$value" | encore secret set --type local "$name"; then
-      echo "ok $name"
+    if [[ -n "$SECRET_TARGET_ENV" ]]; then
+      if printf '%s' "$value" | encore secret set --env="$SECRET_TARGET_ENV" "$name"; then
+        echo "ok $name → $target_label"
+        return 0
+      fi
+    elif printf '%s' "$value" | encore secret set --type "$SECRET_TARGET_TYPE" "$name"; then
+      echo "ok $name → $target_label"
       return 0
     fi
     echo "retry $name ($attempt/5) — encore cloud timeout, waiting..." >&2
@@ -122,4 +169,8 @@ set_secret OpenAIApiKey "$OPENAI_API_KEY"
 set_secret PineconeApiKey "$PINECONE_API_KEY"
 set_secret PineconeIndexHost "$(normalize_pinecone_host "$PINECONE_INDEX_HOST")"
 
-echo "Done. Run: encore secret list"
+if [[ -n "$SECRET_TARGET_ENV" ]]; then
+  echo "Done. Run: encore secret list --env=$SECRET_TARGET_ENV"
+else
+  echo "Done. Run: encore secret list"
+fi
