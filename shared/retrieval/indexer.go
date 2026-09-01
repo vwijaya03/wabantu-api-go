@@ -73,11 +73,12 @@ func IndexCatalogItem(ctx context.Context, svc *Service, in CatalogIndexInput) e
 	recs := make([]VectorRecord, len(chunks))
 	for i, ch := range chunks {
 		meta := map[string]any{
-			"source":   string(SourceCatalog),
-			"entry_id": in.ItemID,
-			"version":  in.Version,
-			"chunk":    ch.Index,
-			"name":     truncateMeta(in.Name, 200),
+			"source":          string(SourceCatalog),
+			"entry_id":        in.ItemID,
+			"version":         in.Version,
+			"chunk":           ch.Index,
+			"embedding_model": EmbeddingModel,
+			"name":            truncateMeta(in.Name, 200),
 		}
 		if in.ExternalCode != "" {
 			meta["external_code"] = in.ExternalCode
@@ -111,7 +112,7 @@ func (s *Service) RetrieveCatalogCandidates(ctx context.Context, tenant TenantId
 		if e != nil {
 			return e
 		}
-		filter := map[string]any{"source": map[string]any{"$eq": string(SourceCatalog)}}
+		filter := PineconeFilterActiveCatalog()
 		hits, e = s.Store.Query(ctx, ns, vecs[0], topK, filter)
 		return e
 	})

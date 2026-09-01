@@ -79,7 +79,7 @@ func (m *MemoryStore) DeleteIDs(_ context.Context, namespace string, ids []strin
 	return nil
 }
 
-func (m *MemoryStore) DeleteByFilter(ctx context.Context, namespace string, filter map[string]any) error {
+func (m *MemoryStore) DeleteByFilter(_ context.Context, namespace string, filter map[string]any) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	ns := m.byNS[namespace]
@@ -88,6 +88,13 @@ func (m *MemoryStore) DeleteByFilter(ctx context.Context, namespace string, filt
 			delete(ns, id)
 		}
 	}
+	return nil
+}
+
+func (m *MemoryStore) DeleteNamespace(_ context.Context, namespace string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.byNS, namespace)
 	return nil
 }
 

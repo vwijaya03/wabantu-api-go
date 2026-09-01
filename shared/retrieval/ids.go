@@ -12,14 +12,14 @@ import (
 // tenantNamespaceRE validates Pinecone namespace derived from tenant schema.
 var tenantNamespaceRE = regexp.MustCompile(`^t_[a-z0-9_]{1,60}$`)
 
-// KBVectorID is deterministic: kb:{entry_id}:v{version}:c{chunk_index}.
+// KBVectorID is deterministic: kb:{entry_id}:m{model_slug}:v{version}:c{chunk_index}.
 func KBVectorID(entryID string, version int64, chunkIndex int) string {
-	return fmt.Sprintf("kb:%s:v%d:c%d", entryID, version, chunkIndex)
+	return KBVectorIDForModel(entryID, EmbeddingModel, version, chunkIndex)
 }
 
-// CatalogVectorID is deterministic: catalog:{item_id}:v{version}:c{chunk_index}.
+// CatalogVectorID is deterministic: catalog:{item_id}:m{model_slug}:v{version}:c{chunk_index}.
 func CatalogVectorID(itemID string, version int64, chunkIndex int) string {
-	return fmt.Sprintf("catalog:%s:v%d:c%d", itemID, version, chunkIndex)
+	return CatalogVectorIDForModel(itemID, EmbeddingModel, version, chunkIndex)
 }
 
 // ContentHash returns SHA256 hex of normalized text for idempotency checks.
@@ -91,10 +91,11 @@ func BuildKBVectorRecords(entryID string, version int64, category, contentHash s
 	recs := make([]VectorRecord, len(chunks))
 	for i, ch := range chunks {
 		meta := map[string]any{
-			"source":   string(SourceKB),
-			"entry_id": entryID,
-			"version":  version,
-			"chunk":    ch.Index,
+			"source":          string(SourceKB),
+			"entry_id":        entryID,
+			"version":         version,
+			"chunk":           ch.Index,
+			"embedding_model": EmbeddingModel,
 		}
 		if contentHash != "" {
 			meta["content_hash"] = contentHash
@@ -130,10 +131,19 @@ func Namespace(tenant TenantIdentity) (string, error) {
 	return ns, nil
 }
 
-// PineconeFilterActiveKB returns metadata filter for active KB entries.
+// PineconeFilterActiveKB returns metadata filter for active KB entries on the current model.
 func PineconeFilterActiveKB() map[string]any {
 	return map[string]any{
-		"source": map[string]any{"$eq": string(SourceKB)},
+		"source":          map[string]any{"$eq": string(SourceKB)},
+		"embedding_model": map[string]any{"$eq": EmbeddingModel},
+	}
+}
+
+// PineconeFilterActiveCatalog returns metadata filter for catalog vectors on the current model.
+func PineconeFilterActiveCatalog() map[string]any {
+	return map[string]any{
+		"source":          map[string]any{"$eq": string(SourceCatalog)},
+		"embedding_model": map[string]any{"$eq": EmbeddingModel},
 	}
 }
 

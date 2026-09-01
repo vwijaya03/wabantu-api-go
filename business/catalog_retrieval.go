@@ -20,7 +20,7 @@ func ensureCatalogRetrievalSchema(ctx context.Context, schema string) error {
 }
 
 func catalogContentHash(name, description, code string) string {
-	return retrieval.ContentHash(name, description, code)
+	return retrieval.CatalogContentHash(name, description, code)
 }
 
 func enqueueCatalogIndex(ctx context.Context, tenantSchema, tenantID, itemID, name string, description *string, code string) {

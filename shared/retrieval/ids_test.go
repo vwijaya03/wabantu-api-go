@@ -7,7 +7,7 @@ import (
 
 func TestKBVectorIDDeterministic(t *testing.T) {
 	id := KBVectorID("abc", 3, 0)
-	if id != "kb:abc:v3:c0" {
+	if id != "kb:abc:mte3s:v3:c0" {
 		t.Fatalf("unexpected id: %s", id)
 	}
 }

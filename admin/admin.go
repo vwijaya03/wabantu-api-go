@@ -16,6 +16,7 @@ import (
 
 	appauth "encore.app/wabantu/auth"
 	"encore.app/wabantu/billing"
+	"encore.app/wabantu/shared/retrieval"
 	"encore.app/wabantu/shared/types"
 	"encore.app/wabantu/tenant"
 )
@@ -446,6 +447,12 @@ func DeleteTenant(ctx context.Context, id string, p *DeleteTenantParams) (*Delet
 	}
 	if _, err = db.Exec(ctx, `DELETE FROM payment_webhook_map WHERE tenant_schema=$1`, t.SchemaName); err != nil {
 		rlog.Warn("delete payment webhook mappings failed", "tenantId", id, "err", err)
+	}
+	if svc := retrieval.DefaultService(); svc != nil {
+		tenantIdent := retrieval.TenantIdentity{TenantID: id, TenantSchema: t.SchemaName}
+		if err := retrieval.DeleteTenantNamespace(ctx, svc, tenantIdent); err != nil {
+			rlog.Warn("delete pinecone namespace failed", "tenantId", id, "schema", t.SchemaName, "err", err)
+		}
 	}
 
 	rlog.Warn("tenant schema wiped", "tenantId", id, "schema", t.SchemaName)

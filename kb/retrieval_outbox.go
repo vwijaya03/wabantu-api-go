@@ -3,6 +3,7 @@ package kb
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"time"
 
 	appdb "encore.app/wabantu/shared/db"
@@ -21,7 +22,7 @@ func ensureRetrievalSchema(ctx context.Context, schema string) error {
 }
 
 func kbContentHash(question, answer string) string {
-	return retrieval.ContentHash(question, answer)
+	return retrieval.KBContentHash(question, answer)
 }
 
 func enqueueKBOutboxTx(ctx context.Context, ts appdb.TenantScope, eventType, entryID string, version int64, hash string) error {
@@ -93,12 +94,15 @@ func markKBIndexFailed(ctx context.Context, ts interface {
 }
 
 func loadKBForIndex(ctx context.Context, ts appdb.TenantScope, entryID string, wantVersion int64) (question, answer, category string, version int64, hash string, ok bool, err error) {
+	var isActive bool
+	var storedModel sql.NullString
 	err = ts.QueryRowContext(ctx, `
-		SELECT question, answer, COALESCE(category,''), embedding_version, COALESCE(embedding_content_hash,'')
+		SELECT question, answer, COALESCE(category,''), embedding_version,
+		       COALESCE(embedding_content_hash,''), is_active, embedding_model
 		FROM knowledge_base_entry
 		WHERE id = $1::uuid AND deleted_at IS NULL`,
 		entryID,
-	).Scan(&question, &answer, &category, &version, &hash)
+	).Scan(&question, &answer, &category, &version, &hash, &isActive, &storedModel)
 	if err == sql.ErrNoRows {
 		return "", "", "", 0, "", false, nil
 	}
@@ -107,6 +111,13 @@ func loadKBForIndex(ctx context.Context, ts appdb.TenantScope, entryID string, w
 	}
 	if version != wantVersion {
 		return "", "", "", version, hash, false, nil
+	}
+	if !isActive {
+		return "", "", "", version, hash, false, nil
+	}
+	if storedModel.Valid && !retrieval.StoredEmbeddingModelOK(storedModel.String) {
+		return "", "", "", version, hash, false, fmt.Errorf("embedding model mismatch: stored %q want %q",
+			storedModel.String, retrieval.EmbeddingModel)
 	}
 	return question, answer, category, version, hash, true, nil
 }

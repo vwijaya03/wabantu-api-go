@@ -542,7 +542,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	)
 
 	// FAQ bypass — no LLM call when KB match is strong (cost optimization).
-	mode := appflag.RetrievalMode(ctx, payload.TenantID)
+	mode := appflag.EffectiveRetrievalMode(ctx, payload.TenantID, payload.TenantSchema)
 	var rrfScores []retrieval.ScoredEntry
 	if kbRetrieval != nil {
 		rrfScores = kbRetrieval.Entries

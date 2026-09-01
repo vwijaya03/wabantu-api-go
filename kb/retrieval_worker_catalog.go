@@ -8,6 +8,7 @@ import (
 
 	"encore.app/wabantu/shared/retrieval"
 	appdb "encore.app/wabantu/shared/db"
+	"encore.dev/rlog"
 )
 
 const catalogEntityType = "catalog"
@@ -31,12 +32,7 @@ func handleCatalogRetrievalIndexJob(ctx context.Context, job *RetrievalIndexJob)
 	var procErr error
 	switch job.EventType {
 	case outboxDeleteCatalog:
-		ns, err := retrieval.Namespace(tenantIdent)
-		if err != nil {
-			return err
-		}
-		id := retrieval.CatalogVectorID(job.EntityID, job.Version, 0)
-		procErr = svc.Store.DeleteIDs(ctx, ns, []string{id})
+		procErr = retrieval.DeleteAllCatalogItemVectors(ctx, svc, tenantIdent, job.EntityID, job.Version)
 	case outboxIndexCatalog:
 		procErr = processCatalogIndex(ctx, ts, svc, tenantIdent, job)
 	default:
@@ -67,8 +63,14 @@ func recordCatalogIndexFailure(ctx context.Context, ts appdb.TenantScope, job *R
 
 func processCatalogIndex(ctx context.Context, ts appdb.TenantScope, svc *retrieval.Service, tenant retrieval.TenantIdentity, job *RetrievalIndexJob) error {
 	name, desc, code, ver, hash, ok, err := loadCatalogForIndex(ctx, ts, job.EntityID, job.Version)
-	if err != nil || !ok {
+	if err != nil {
 		return err
+	}
+	if !ok {
+		if err := retrieval.DeleteAllCatalogItemVectors(ctx, svc, tenant, job.EntityID, job.Version); err != nil {
+			rlog.Warn("retrieval delete inactive catalog vectors failed", "item", job.EntityID, "err", err)
+		}
+		return nil
 	}
 	if err := retrieval.IndexCatalogItem(ctx, svc, retrieval.CatalogIndexInput{
 		Tenant: tenant, ItemID: job.EntityID, Name: name, Description: desc,
@@ -76,22 +78,22 @@ func processCatalogIndex(ctx context.Context, ts appdb.TenantScope, svc *retriev
 	}); err != nil {
 		return err
 	}
-	if ver > 1 {
-		id := retrieval.CatalogVectorID(job.EntityID, ver-1, 0)
-		ns, _ := retrieval.Namespace(tenant)
-		_ = svc.Store.DeleteIDs(ctx, ns, []string{id})
+	if err := retrieval.PurgeStaleCatalogVersions(ctx, svc, tenant, job.EntityID, ver); err != nil {
+		rlog.Warn("retrieval purge stale catalog versions failed", "item", job.EntityID, "version", ver, "err", err)
 	}
 	return nil
 }
 
 func loadCatalogForIndex(ctx context.Context, ts appdb.TenantScope, itemID string, wantVersion int64) (name, description, code string, version int64, hash string, ok bool, err error) {
+	var isActive bool
+	var storedModel sql.NullString
 	err = ts.QueryRowContext(ctx, `
 		SELECT name, COALESCE(description,''), COALESCE(external_code,''),
-		       embedding_version, COALESCE(embedding_content_hash,'')
+		       embedding_version, COALESCE(embedding_content_hash,''), is_active, embedding_model
 		FROM business_catalog_item
 		WHERE id = $1::uuid AND deleted_at IS NULL`,
 		itemID,
-	).Scan(&name, &description, &code, &version, &hash)
+	).Scan(&name, &description, &code, &version, &hash, &isActive, &storedModel)
 	if err == sql.ErrNoRows {
 		return "", "", "", 0, "", false, nil
 	}
@@ -100,6 +102,13 @@ func loadCatalogForIndex(ctx context.Context, ts appdb.TenantScope, itemID strin
 	}
 	if version != wantVersion {
 		return "", "", "", version, hash, false, nil
+	}
+	if !isActive {
+		return "", "", "", version, hash, false, nil
+	}
+	if storedModel.Valid && !retrieval.StoredEmbeddingModelOK(storedModel.String) {
+		return "", "", "", version, hash, false, fmt.Errorf("embedding model mismatch: stored %q want %q",
+			storedModel.String, retrieval.EmbeddingModel)
 	}
 	return name, description, code, version, hash, true, nil
 }

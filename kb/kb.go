@@ -358,12 +358,16 @@ func Update(ctx context.Context, id string, req *UpdateRequest) (*UpdateResponse
 		return nil, fmt.Errorf("bump embedding version: %w", err)
 	}
 	hash := kbContentHash(entry.Question, entry.Answer)
+	eventType := outboxEventIndexKB
+	if !entry.IsActive {
+		eventType = outboxEventDeleteKB
+	}
 	var outboxID string
 	err = tTx.QueryRowContext(ctx, `
 		INSERT INTO retrieval_outbox (event_type, entity_type, entity_id, version, content_hash, status)
 		VALUES ($1, $2, $3::uuid, $4, $5, 'pending')
 		RETURNING id::text`,
-		outboxEventIndexKB, entityTypeKB, entry.ID, version, hash,
+		eventType, entityTypeKB, entry.ID, version, hash,
 	).Scan(&outboxID)
 	if err != nil {
 		return nil, err
@@ -371,7 +375,7 @@ func Update(ctx context.Context, id string, req *UpdateRequest) (*UpdateResponse
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
-	publishKBIndexAfterCommit(ctx, u.TenantSchema, u.TenantID, outboxID, entry.ID, outboxEventIndexKB, version, retrieval.IndexLaneLive)
+	publishKBIndexAfterCommit(ctx, u.TenantSchema, u.TenantID, outboxID, entry.ID, eventType, version, retrieval.IndexLaneLive)
 	return &UpdateResponse{Entry: entry}, nil
 }
 
