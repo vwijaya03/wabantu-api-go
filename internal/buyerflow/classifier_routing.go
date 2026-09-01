@@ -29,7 +29,8 @@ var complexKeywords = []string{
 const faqDirectAnswerMinScore = 0.72
 
 // ClassifyComplexity decides simple (Haiku) vs complex (Sonnet) for hybrid routing.
-func ClassifyComplexity(userText string, classifierLabel string, kbTopScore float64) MessageComplexity {
+// strongFAQMatch should come from retrieval.FAQDirectOK (RRF scale), not lexical kbTopScore.
+func ClassifyComplexity(userText string, classifierLabel string, kbTopScore float64, strongFAQMatch bool) MessageComplexity {
 	text := strings.ToLower(strings.TrimSpace(userText))
 	runes := utf8.RuneCountInString(userText)
 
@@ -44,6 +45,10 @@ func ClassifyComplexity(userText string, classifierLabel string, kbTopScore floa
 	}
 
 	// Strong FAQ match + short question → simple (often answered without Sonnet).
+	if strongFAQMatch && runes <= 160 {
+		return ComplexitySimple
+	}
+	// Legacy lexical score path (preload / disabled retrieval).
 	if kbTopScore >= faqDirectAnswerMinScore && runes <= 160 {
 		return ComplexitySimple
 	}

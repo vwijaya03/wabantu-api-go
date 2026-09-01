@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"encore.dev/rlog"
 	"github.com/anthropics/anthropic-sdk-go"
@@ -17,6 +18,8 @@ type toolUseCall struct {
 }
 
 const maxCatalogToolRounds = 4
+
+const catalogToolsTaskHint = "Tugas: balas singkat (maks 8 baris). Untuk produk/harga WAJIB panggil search_catalog atau get_product dulu. Jangan mengarang harga."
 
 func catalogToolDefinitions() []anthropic.ToolUnionParam {
 	return []anthropic.ToolUnionParam{
@@ -60,7 +63,8 @@ func catalogToolDefinitions() []anthropic.ToolUnionParam {
 // GenerateSalesReplyWithCatalogTools — LLM + tool catalog (poin 1), fallback ke completion biasa jika gagal.
 func (c *AnthropicClient) GenerateSalesReplyWithCatalogTools(
 	ctx context.Context,
-	model, system, business, kb, history, userMessage string,
+	model string,
+	req SalesReplyRequest,
 	exec *CatalogToolExecutor,
 ) (text string, usage CompletionUsage, usedTools bool, err error) {
 	if strings.TrimSpace(model) == "" {
@@ -68,18 +72,27 @@ func (c *AnthropicClient) GenerateSalesReplyWithCatalogTools(
 	}
 	model = ResolveAnthropicModel(model)
 
-	text, usage, usedTools, err = c.generateWithCatalogToolsOnce(ctx, model, system, business, kb, history, userMessage, exec)
+	toolReq := req
+	if strings.TrimSpace(toolReq.TaskHint) == "" {
+		toolReq.TaskHint = catalogToolsTaskHint
+	}
+
+	text, usage, usedTools, err = c.generateWithCatalogToolsOnce(ctx, model, toolReq, exec)
 	if err == nil {
 		return text, usage, usedTools, nil
 	}
 	if !isModelNotFoundErr(err) {
 		rlog.Warn("anthropic catalog tools failed, falling back to plain completion", "err", err)
-		plain, u, plainErr := c.GenerateReplyWithModel(ctx, model, system, business, kb, history, userMessage)
+		plainReq := req
+		if strings.TrimSpace(plainReq.TaskHint) == "" {
+			plainReq.TaskHint = "Tugas: berikan satu balasan WhatsApp sales assistant yang aman, membantu, dan mendorong checkout. Produk/harga hanya dari katalog resmi."
+		}
+		plain, u, plainErr := c.GenerateReplyWithModel(ctx, model, plainReq)
 		return plain, u, false, plainErr
 	}
 	var lastErr error
 	for i, tryModel := range FallbackModels(model) {
-		text, usage, usedTools, err = c.generateWithCatalogToolsOnce(ctx, tryModel, system, business, kb, history, userMessage, exec)
+		text, usage, usedTools, err = c.generateWithCatalogToolsOnce(ctx, tryModel, toolReq, exec)
 		if err == nil {
 			if i > 0 {
 				rlog.Info("anthropic catalog tools succeeded after model fallback", "model", tryModel)
@@ -91,7 +104,11 @@ func (c *AnthropicClient) GenerateSalesReplyWithCatalogTools(
 			break
 		}
 	}
-	plain, u, plainErr := c.GenerateReplyWithModel(ctx, model, system, business, kb, history, userMessage)
+	plainReq := req
+	if strings.TrimSpace(plainReq.TaskHint) == "" {
+		plainReq.TaskHint = "Tugas: berikan satu balasan WhatsApp sales assistant yang aman, membantu, dan mendorong checkout. Produk/harga hanya dari katalog resmi."
+	}
+	plain, u, plainErr := c.GenerateReplyWithModel(ctx, model, plainReq)
 	if plainErr == nil {
 		return plain, u, false, nil
 	}
@@ -103,44 +120,34 @@ func (c *AnthropicClient) GenerateSalesReplyWithCatalogTools(
 
 func (c *AnthropicClient) generateWithCatalogToolsOnce(
 	ctx context.Context,
-	model, system, business, kb, history, userMessage string,
+	model string,
+	req SalesReplyRequest,
 	exec *CatalogToolExecutor,
 ) (string, CompletionUsage, bool, error) {
-	prompt := strings.Join([]string{
-		"Konteks bisnis:",
-		business,
-		"",
-		kb,
-		"",
-		history,
-		"",
-		fmt.Sprintf("Pesan pelanggan terbaru: %s", userMessage),
-		"Tugas: balas singkat (maks 8 baris). Untuk produk/harga WAJIB panggil search_catalog atau get_product dulu. Jangan mengarang harga.",
-	}, "\n")
-
-	messages := []anthropic.MessageParam{
-		anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
-	}
+	systemBlocks := buildSalesSystemBlocks(req)
+	messages := buildSalesMessages(req)
 	tools := catalogToolDefinitions()
 	var usage CompletionUsage
 	usedTools := false
 
 	for round := 0; round < maxCatalogToolRounds; round++ {
-		resp, err := c.client.Messages.New(ctx, anthropic.MessageNewParams{
-			Model:       anthropic.Model(model),
-			MaxTokens:   c.maxTok,
-			Temperature: anthropic.Float(0.2),
-			System: []anthropic.TextBlockParam{
-				{Text: system},
-			},
-			Tools:    tools,
-			Messages: messages,
-		})
+		resp, err := c.callCatalogToolsRound(ctx, model, systemBlocks, tools, messages)
 		if err != nil {
-			return "", usage, usedTools, err
+			if IsAnthropicRetryable(err) {
+				delay := anthropicRetryDelay(0)
+				select {
+				case <-ctx.Done():
+					return "", usage, usedTools, ctx.Err()
+				case <-time.After(delay):
+				}
+				resp, err = c.callCatalogToolsRound(ctx, model, systemBlocks, tools, messages)
+			}
+			if err != nil {
+				return "", usage, usedTools, err
+			}
 		}
-		usage.InputTokens += int(resp.Usage.InputTokens)
-		usage.OutputTokens += int(resp.Usage.OutputTokens)
+		roundUsage := usageFromResponse(resp)
+		addUsage(&usage, roundUsage)
 
 		var textParts []string
 		var toolUses []toolUseCall
@@ -162,9 +169,10 @@ func (c *AnthropicClient) generateWithCatalogToolsOnce(
 			if out == "" {
 				return "", usage, usedTools, fmt.Errorf("AI response kosong")
 			}
-			if len(out) > 1200 {
-				out = out[:1200]
+			if resp.StopReason == anthropic.StopReasonMaxTokens {
+				rlog.Warn("anthropic catalog tools truncated by max_tokens", "model", model, "round", round)
 			}
+			out = finalizeAnthropicReply(out, resp.StopReason)
 			return out, usage, usedTools, nil
 		}
 
@@ -185,4 +193,21 @@ func (c *AnthropicClient) generateWithCatalogToolsOnce(
 		messages = append(messages, anthropic.NewUserMessage(resultBlocks...))
 	}
 	return "", usage, usedTools, fmt.Errorf("catalog tool loop exceeded %d rounds", maxCatalogToolRounds)
+}
+
+func (c *AnthropicClient) callCatalogToolsRound(
+	ctx context.Context,
+	model string,
+	systemBlocks []anthropic.TextBlockParam,
+	tools []anthropic.ToolUnionParam,
+	messages []anthropic.MessageParam,
+) (*anthropic.Message, error) {
+	return c.client.Messages.New(ctx, anthropic.MessageNewParams{
+		Model:       anthropic.Model(model),
+		MaxTokens:   c.maxTok,
+		Temperature: anthropic.Float(0.2),
+		System:      systemBlocks,
+		Tools:       tools,
+		Messages:    messages,
+	})
 }

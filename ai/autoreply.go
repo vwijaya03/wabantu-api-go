@@ -555,8 +555,13 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return err == nil, err
 	}
 
+	strongFAQMatch := false
+	if len(rrfScores) > 0 && FAQDirectGuardsPass(userText) {
+		_, strongFAQMatch = retrieval.FAQDirectOK(rrfScores, retrieval.DefaultFAQMinScore, retrieval.DefaultFAQMinMargin)
+	}
+
 	planCode, _ := loadSubscriptionPlanCode(ctx, ts)
-	complexity := ClassifyComplexity(userText, classifier.Label, kbTopScore)
+	complexity := ClassifyComplexity(userText, classifier.Label, kbTopScore, strongFAQMatch)
 	route := ResolveRouting(planCode, complexity)
 	if ac, ok := ActivityContextFrom(ctx); ok {
 		ac.RouteReason = route.Reason
@@ -600,17 +605,26 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	}
 	kbCtx := BuildKnowledgeContext(kbForPrompt)
 	summary, _ := GetLatestSummary(ctx, payload.TenantSchema, convo.ID)
-	histCtx := BuildConversationContextWithSummary(summary, histForPrompt)
 	rlog.Info("AI job: context sizes",
 		"sys", len(sys),
 		"business", len(business),
 		"kb", len(kbCtx),
-		"hist", len(histCtx),
+		"histTurns", len(histForPrompt),
 	)
 
 	toolExec := NewCatalogToolExecutor(catalog)
 	reply, compUsage, usedTools, err := s.anthropic.GenerateSalesReplyWithCatalogTools(
-		ctx, route.Model, sys, business, kbCtx, histCtx, userText, toolExec,
+		ctx,
+		route.Model,
+		SalesReplyRequest{
+			System:   sys,
+			Business: business,
+			KB:       kbCtx,
+			Summary:  summary,
+			History:  histForPrompt,
+			UserText: userText,
+		},
+		toolExec,
 	)
 	if err != nil {
 		rlog.Error("AI job: anthropic sales reply failed",

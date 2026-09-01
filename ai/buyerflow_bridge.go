@@ -84,6 +84,7 @@ var (
 	CurrentGreetingPeriodWIB      = bf.CurrentGreetingPeriodWIB
 	DetectGreetingPeriodFromText  = bf.DetectGreetingPeriodFromText
 	ExtractScopeKeywords          = bf.ExtractScopeKeywords
+	FAQDirectGuardsPass             = bf.FAQDirectGuardsPass
 	GreetingFeedbackReply         = bf.GreetingFeedbackReply
 	GreetingReply                 = bf.GreetingReply
 	HasPurchaseIntent             = bf.HasPurchaseIntent
