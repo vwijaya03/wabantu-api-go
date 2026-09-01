@@ -521,10 +521,6 @@ func replyFromBusinessCatalog(
 	if profile == nil {
 		return "", false
 	}
-	if vctx != nil && len(vctx.Hits) > 0 && CatalogSemanticAmbiguous(vctx.Hits) {
-		formal := strOrEmpty(profile.Tone) == "formal"
-		return CatalogAmbiguityReply(formal), true
-	}
 	resolve := resolveCatalogMatch
 	direct := matchCatalogItem
 	if vctx != nil {
@@ -545,6 +541,10 @@ func replyFromBusinessCatalog(
 	if IsCatalogBrowsingIntent(userText) || isGeneralStoreCatalogQuestion(userText) ||
 		IsRecommendationRequest(userText) {
 		return buildCatalogListReply(formal, bizName, catalog, profile), true
+	}
+
+	if reply, ok := tryBrandVariantReply(formal, userText, history, catalog, vctx); ok {
+		return reply, true
 	}
 
 	// Checkout eksplisit → order flow state machine, bukan balasan katalog statis.
