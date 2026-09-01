@@ -110,7 +110,7 @@ func EnqueueRAGBackfillForTenant(ctx context.Context, tenantSchema, tenantID str
 
 func enqueueKBBackfill(ctx context.Context, ts appdb.TenantScope, tenantSchema, tenantID string, batchSize int) (int, error) {
 	rows, err := ts.QueryContext(ctx, `
-		SELECT id::text, question, answer, embedding_version
+		SELECT id::text, question, answer
 		FROM knowledge_base_entry
 		WHERE deleted_at IS NULL AND is_active = true
 		  AND embedding_status IN ('pending', 'failed')
@@ -124,11 +124,10 @@ func enqueueKBBackfill(ctx context.Context, ts appdb.TenantScope, tenantSchema, 
 	enqueued := 0
 	for rows.Next() {
 		var id, question, answer string
-		var version int64
-		if err := rows.Scan(&id, &question, &answer, &version); err != nil {
+		if err := rows.Scan(&id, &question, &answer); err != nil {
 			return enqueued, err
 		}
-		n, err := enqueueKBIndexOutbox(ctx, ts, tenantSchema, tenantID, id, question, answer, version)
+		n, err := enqueueKBIndexOutbox(ctx, ts, tenantSchema, tenantID, id, question, answer)
 		if err != nil {
 			return enqueued, err
 		}
@@ -139,13 +138,21 @@ func enqueueKBBackfill(ctx context.Context, ts appdb.TenantScope, tenantSchema, 
 	return enqueued, rows.Err()
 }
 
-func enqueueKBIndexOutbox(ctx context.Context, ts appdb.TenantScope, tenantSchema, tenantID, entryID, question, answer string, version int64) (bool, error) {
+func enqueueKBIndexOutbox(ctx context.Context, ts appdb.TenantScope, tenantSchema, tenantID, entryID, question, answer string) (bool, error) {
 	tx, err := ts.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err
 	}
 	defer func() { _ = tx.Rollback() }()
 	tTx := txn(ts, tx)
+
+	if err := supersedeStaleKBOutboxTx(ctx, tTx, entryID); err != nil {
+		return false, err
+	}
+	version, err := bumpKBEmbeddingPendingTx(ctx, tTx, entryID, question, answer)
+	if err != nil {
+		return false, err
+	}
 
 	hash := kbContentHash(question, answer)
 	var outboxID string

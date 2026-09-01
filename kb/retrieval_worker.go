@@ -166,7 +166,7 @@ func Reindex(ctx context.Context, req *ReindexRequest) (*ReindexResponse, error)
 		batch = req.BatchSize
 	}
 	rows, err := ts.QueryContext(ctx, `
-		SELECT id::text, question, answer, embedding_version
+		SELECT id::text, question, answer
 		FROM knowledge_base_entry
 		WHERE deleted_at IS NULL AND is_active = true
 		  AND embedding_status IN ('pending', 'failed')
@@ -180,31 +180,16 @@ func Reindex(ctx context.Context, req *ReindexRequest) (*ReindexResponse, error)
 	enqueued := 0
 	for rows.Next() {
 		var id, question, answer string
-		var version int64
-		if err := rows.Scan(&id, &question, &answer, &version); err != nil {
+		if err := rows.Scan(&id, &question, &answer); err != nil {
 			return nil, err
 		}
-		tx, err := ts.BeginTx(ctx, nil)
+		ok, err := enqueueKBIndexOutbox(ctx, ts, u.TenantSchema, u.TenantID, id, question, answer)
 		if err != nil {
 			return nil, err
 		}
-		hash := kbContentHash(question, answer)
-		var outboxID string
-		tTx := txn(ts, tx)
-		err = tTx.QueryRowContext(ctx, `
-			INSERT INTO retrieval_outbox (event_type, entity_type, entity_id, version, content_hash, status)
-			VALUES ($1, $2, $3::uuid, $4, $5, 'pending')
-			RETURNING id::text`, outboxEventIndexKB, entityTypeKB, id, version, hash,
-		).Scan(&outboxID)
-		if err != nil {
-			_ = tx.Rollback()
-			return nil, err
+		if ok {
+			enqueued++
 		}
-		if err := tx.Commit(); err != nil {
-			return nil, err
-		}
-		publishKBIndexAfterCommit(ctx, u.TenantSchema, u.TenantID, outboxID, id, outboxEventIndexKB, version, retrieval.IndexLaneBackfill)
-		enqueued++
 	}
 	return &ReindexResponse{Enqueued: enqueued}, rows.Err()
 }
