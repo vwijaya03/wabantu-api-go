@@ -16,8 +16,9 @@ var (
 	retrievalZeroHit  atomic.Uint64
 	embedCacheHits    atomic.Uint64
 	embedCacheMisses  atomic.Uint64
-	indexingSuccess   atomic.Uint64
-	indexingFailure   atomic.Uint64
+	indexingSuccess      atomic.Uint64
+	indexingFailure      atomic.Uint64
+	embedQuotaRejected   atomic.Uint64
 )
 
 type latencyTracker struct {
@@ -104,6 +105,16 @@ func RecordIndexingOutcome(entity, lane string, success bool, lag time.Duration)
 	_ = entity
 	_ = lane
 	_ = lag
+}
+
+// RecordEmbedQuotaRejected increments when a tenant exceeds hourly embed quota.
+func RecordEmbedQuotaRejected() {
+	embedQuotaRejected.Add(1)
+}
+
+// EmbedQuotaRejected returns the in-process embed quota rejection counter.
+func EmbedQuotaRejected() uint64 {
+	return embedQuotaRejected.Load()
 }
 
 // RecordEmbedCacheStats increments in-process cache counters (also called from CachingEmbedder).

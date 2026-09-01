@@ -28,6 +28,14 @@ func (s *AutoReplyService) retrieveKBHybrid(
 		return lexical, topKBMatchScore(query, kb), nil
 	}
 
+	if mode == retrieval.ModeVector || mode == retrieval.ModeShadow {
+		if !s.checkTenantEmbedQuota(ctx, tenantID) {
+			retrieval.RecordEmbedQuotaRejected()
+			rlog.Warn("retrieval embed quota exceeded, lexical fallback", "tenant", tenantID)
+			return lexical, topKBMatchScore(query, kb), nil
+		}
+	}
+
 	ctx, cancel := context.WithTimeout(ctx, retrievalBudget)
 	defer cancel()
 
@@ -156,6 +164,11 @@ func (s *AutoReplyService) replyFromBusinessCatalogHybrid(
 	}
 	svc := retrieval.DefaultService()
 	if svc == nil {
+		return replyFromBusinessCatalog(userText, profile, catalog, history)
+	}
+	if !s.checkTenantEmbedQuota(ctx, tenantID) {
+		retrieval.RecordEmbedQuotaRejected()
+		rlog.Warn("catalog embed quota exceeded, lexical fallback", "tenant", tenantID)
 		return replyFromBusinessCatalog(userText, profile, catalog, history)
 	}
 	qctx, cancel := context.WithTimeout(ctx, retrievalBudget)

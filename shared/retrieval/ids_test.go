@@ -1,6 +1,9 @@
 package retrieval
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestKBVectorIDDeterministic(t *testing.T) {
 	id := KBVectorID("abc", 3, 0)
@@ -25,5 +28,20 @@ func TestNamespaceValidation(t *testing.T) {
 	ns, err := Namespace(TenantIdentity{TenantSchema: "t_acme"})
 	if err != nil || ns != "t_acme" {
 		t.Fatalf("unexpected: %s %v", ns, err)
+	}
+}
+
+func TestNamespaceRejectsInjectionChars(t *testing.T) {
+	cases := []string{
+		"t_a; DROP TABLE",
+		"t_../other",
+		"t_",
+		"t_" + strings.Repeat("a", 61),
+		"public",
+	}
+	for _, tc := range cases {
+		if _, err := Namespace(TenantIdentity{TenantSchema: tc}); err == nil {
+			t.Fatalf("expected error for namespace %q", tc)
+		}
 	}
 }
