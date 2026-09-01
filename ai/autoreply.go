@@ -16,7 +16,6 @@ import (
 	"encore.dev/storage/sqldb"
 
 	appflag "encore.app/wabantu/flag"
-	"encore.app/wabantu/shared/inboxrealtime"
 	appdb "encore.app/wabantu/shared/db"
 	"encore.app/wabantu/shared/retrieval"
 	"encore.app/wabantu/shared/strutil"
@@ -205,7 +204,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		out := metaNoLLM(reasonProfileIncomplete, PathProfileIncomplete)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact,
-			nonAiDefaultReply(profile), "system", out)
+			nonAiDefaultReply(profile), payload.InboundMessageID, "system", out)
 		return err == nil, err
 	}
 
@@ -226,7 +225,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		greet := GreetingReply(userText, strOrEmpty(profile.Tone), strOrEmpty(profile.GreetingTemplate))
 		out := metaNoLLM(reasonNonQuestion, PathGreeting)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, greet, "ai", out)
+		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, greet, payload.InboundMessageID, "ai", out)
 		return err == nil, err
 	}
 
@@ -234,7 +233,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		greet := GreetingFeedbackReply(userText, strOrEmpty(profile.Tone))
 		out := metaNoLLM(reasonNonQuestion, PathGreeting)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, greet, "ai", out)
+		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, greet, payload.InboundMessageID, "ai", out)
 		return err == nil, err
 	}
 
@@ -250,7 +249,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		}
 		out := metaNoLLM(reasonOutOfScope, PathInjectionGuard)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, text, "system", out)
+		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, text, payload.InboundMessageID, "system", out)
 		return err == nil, err
 	}
 
@@ -274,7 +273,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 			finalReply := applyOutputPolicy(ans)
 			out := metaNoLLM(reasonAIGenerated, PathPaymentFAQ)
 			out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-			err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
+			err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, finalReply, payload.InboundMessageID, "ai", out)
 			return err == nil, err
 		}
 	}
@@ -288,7 +287,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 			out.OrderAction = "cancel_draft"
 			out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 			err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact,
-				orderFlowCancelReply(tone), "system", out)
+				orderFlowCancelReply(tone), payload.InboundMessageID, "system", out)
 			return err == nil, err
 		}
 		// Tanpa draft aktif: "ga jadi beli + ada nomor pesanan?" → jawab status, jangan cancel order lama.
@@ -302,7 +301,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		out.OrderAction = "cancel"
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact,
-			orderNoneToCancelReply(), "system", out)
+			orderNoneToCancelReply(), payload.InboundMessageID, "system", out)
 		return err == nil, err
 	}
 	if IsThirdPartyBuyerLookup(userText) {
@@ -325,7 +324,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 				greet := GreetingReply(userText, tone, strOrEmpty(profile.GreetingTemplate))
 				out := metaNoLLM(reasonNonQuestion, PathGreeting)
 				out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-				err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, greet, "ai", out)
+				err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, greet, payload.InboundMessageID, "ai", out)
 				return err == nil, err
 			}
 			// Fall through → classifier / LLM for harga, tanya produk, dll.
@@ -406,7 +405,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		finalReply := applyOutputPolicy(replyRecipientPolicyQuestion(userText, kbEntries, formal))
 		out := metaNoLLM(reasonAIGenerated, PathRecipientPolicy)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
+		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, finalReply, payload.InboundMessageID, "ai", out)
 		return err == nil, err
 	}
 
@@ -419,7 +418,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 			finalReply := applyOutputPolicy(catReply)
 			out := metaNoLLM(reasonAIGenerated, PathCatalogDB)
 			out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-			err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
+			err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, finalReply, payload.InboundMessageID, "ai", out)
 			return err == nil, err
 		}
 		if clearedOrderForCorrection {
@@ -427,7 +426,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 			out := metaNoLLM(reasonAIGenerated, PathConsulting)
 			out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 			err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact,
-				salesCorrectionReply(formal), "ai", out)
+				salesCorrectionReply(formal), payload.InboundMessageID, "ai", out)
 			return err == nil, err
 		}
 	}
@@ -439,7 +438,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 			finalReply := applyOutputPolicy(shipReply)
 			out := metaNoLLM(reasonAIGenerated, PathShippingFAQ)
 			out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-			err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
+			err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, finalReply, payload.InboundMessageID, "ai", out)
 			return err == nil, err
 		}
 	}
@@ -450,7 +449,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact,
 			"Maaf kak, untuk topik ini tim CS kami akan langsung mengambil alih dan segera menghubungi kakak 🙏",
-			"system", out)
+			payload.InboundMessageID, "system", out)
 		if err != nil {
 			return false, err
 		}
@@ -467,7 +466,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		}
 		out := metaNoLLM(reasonOutOfScope, PathOutOfScope)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, text, "system", out)
+		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, text, payload.InboundMessageID, "system", out)
 		return err == nil, err
 	}
 
@@ -481,7 +480,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		}
 		out := metaNoLLM(reasonNonQuestion, PathNonQuestion)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, text, "system", out)
+		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, text, payload.InboundMessageID, "system", out)
 		return err == nil, err
 	}
 
@@ -490,7 +489,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		out := metaNoLLM(reasonNonQuestion, PathLowConfidence)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact,
-			scopeDirectionReply(profile), "system", out)
+			scopeDirectionReply(profile), payload.InboundMessageID, "system", out)
 		return err == nil, err
 	}
 
@@ -511,7 +510,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		out := metaNoLLM(reasonAIGenerated, PathConsulting)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact,
-			casualPraiseReply(formal), "ai", out)
+			casualPraiseReply(formal), payload.InboundMessageID, "ai", out)
 		return err == nil, err
 	}
 
@@ -529,7 +528,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	if cached != "" {
 		out := metaNoLLM(reasonAIGenerated, PathFAQCache)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, cached, "ai", out)
+		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, cached, payload.InboundMessageID, "ai", out)
 		return err == nil, err
 	}
 
@@ -552,7 +551,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		s.setCachedAnswer(ctx, payload.TenantID, userText, finalReply)
 		out := metaNoLLM(reasonAIGenerated, PathFAQDirect)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
+		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, finalReply, payload.InboundMessageID, "ai", out)
 		return err == nil, err
 	}
 
@@ -582,7 +581,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact,
 			"Maaf kak, kuota AI bulan ini sudah mencapai batas. Tim kami akan segera menghubungi kakak ya 🙏",
-			"system", out)
+			payload.InboundMessageID, "system", out)
 		return err == nil, err
 	}
 
@@ -637,7 +636,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		fallbackText := applyOutputPolicy(scopeDirectionReply(profile))
 		out := metaNoLLM(reasonAIGenerated, PathAutoFallback)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		sendErr := s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, fallbackText, "ai", out)
+		sendErr := s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, fallbackText, payload.InboundMessageID, "ai", out)
 		return sendErr == nil, sendErr
 	}
 
@@ -655,16 +654,8 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 
 	_, _, newSession := usage.TrackAIExchange(ctx, payload.TenantID, convo.ID)
 	tokens := compUsage.InputTokens + compUsage.OutputTokens
-	usage.RecordAITokens(ctx, payload.TenantID, convo.ID, tokens)
-	if newSession {
-		_ = usage.RecordEvent(ctx, payload.TenantSchema, "ai_conversation", 1, nil)
-	}
-	if tokens > 0 {
-		_ = usage.RecordEvent(ctx, payload.TenantSchema, "ai_token", tokens, nil)
-	}
 
 	finalReply := applyOutputPolicy(groundedReply)
-	s.setCachedAnswer(ctx, payload.TenantID, userText, finalReply)
 	llmPath := PathLLM
 	if usedTools {
 		llmPath = PathLLMTools
@@ -674,8 +665,19 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	}
 	out := metaFromRoute(reasonAIGenerated, llmPath, route)
 	out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, compUsage.InputTokens, compUsage.OutputTokens)
-	err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
-	return err == nil, err
+	err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, finalReply, payload.InboundMessageID, "ai", out)
+	if err != nil {
+		return false, err
+	}
+
+	usage.RecordAITokens(ctx, payload.TenantID, convo.ID, tokens)
+	if newSession {
+		_ = usage.RecordEvent(ctx, payload.TenantSchema, "ai_conversation", 1, nil)
+	}
+	if tokens > 0 {
+		_ = usage.RecordEvent(ctx, payload.TenantSchema, "ai_token", tokens, nil)
+	}
+	return true, nil
 }
 
 // FallbackAutoReply sends a generic fallback and pauses AI on the conversation.
@@ -705,7 +707,7 @@ func (s *AutoReplyService) FallbackAutoReply(ctx context.Context, payload AiRepl
 	out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 	err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact,
 		"Maaf kak, saat ini sistem kami sedang sibuk. Tim kami akan bantu balas secepatnya ya 🙏",
-		"system", out)
+		payload.InboundMessageID, "system", out)
 	if err != nil {
 		return err
 	}
@@ -733,7 +735,7 @@ func (s *AutoReplyService) handleCustomerOrderCancel(
 	tone := strOrEmpty(profile.Tone)
 	send := func(text string, meta AiReplyMeta) (bool, error) {
 		meta.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err := s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, text, "system", meta)
+		err := s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, text, payload.InboundMessageID, "system", meta)
 		return err == nil, err
 	}
 	if res.AccessDenied {
@@ -805,7 +807,7 @@ func (s *AutoReplyService) handleThirdPartyBuyerLookupDenied(
 	meta := metaNoLLM(reasonOutOfScope, PathOrderLookupDenied)
 	meta.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 	err := s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact,
-		thirdPartyBuyerLookupDeniedReply(), "system", meta)
+		thirdPartyBuyerLookupDeniedReply(), payload.InboundMessageID, "system", meta)
 	return err == nil, err
 }
 
@@ -829,7 +831,7 @@ func (s *AutoReplyService) handleCustomerOrderStatus(
 	meta.OrderAction = "status"
 	send := func(text string) (bool, error) {
 		meta.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err := s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, text, "system", meta)
+		err := s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, text, payload.InboundMessageID, "system", meta)
 		return err == nil, err
 	}
 	if res.AccessDenied {
@@ -1313,8 +1315,11 @@ func (s *AutoReplyService) sendAiMessage(
 	channel *dbChannel,
 	contact *dbContact,
 	text, author string,
+	inboundMessageID string,
 	meta AiReplyMeta,
 ) error {
+	meta = metaForSend(meta, inboundMessageID)
+
 	rlog.Info("AI job: sending WhatsApp text",
 		"len", len(text),
 		"author", author,
@@ -1323,6 +1328,7 @@ func (s *AutoReplyService) sendAiMessage(
 		"llmUsed", meta.LLMUsed,
 		"model", meta.Model,
 		"tier", meta.Tier,
+		"inboundId", inboundMessageID,
 	)
 
 	if channel == nil || contact == nil {
@@ -1345,6 +1351,35 @@ func (s *AutoReplyService) sendAiMessage(
 		return fmt.Errorf("invalid contact phone")
 	}
 
+	if inboundMessageID != "" {
+		if s.aiSendAlreadyDone(ctx, inboundMessageID) {
+			rlog.Info("AI job: skip duplicate send (redis done key)", "inboundId", inboundMessageID)
+			return nil
+		}
+	}
+
+	draft, found, err := s.findOutboundForInbound(ctx, ts, inboundMessageID)
+	if err != nil {
+		return fmt.Errorf("lookup outbound draft: %w", err)
+	}
+	if found && draft.ExternalID != "" {
+		rlog.Info("AI job: skip duplicate send (already persisted)", "inboundId", inboundMessageID, "msgId", draft.ID)
+		s.markAiSendDone(ctx, inboundMessageID)
+		return nil
+	}
+
+	var msgID string
+	var msgCreatedAt time.Time
+	if found {
+		msgID = draft.ID
+	} else {
+		msgID, msgCreatedAt, err = s.insertPendingOutbound(ctx, ts, convo.ID, author, text, meta)
+		if err != nil {
+			rlog.Error("AI job: failed inserting pending outbound", "err", err)
+			return fmt.Errorf("insert message: %w", err)
+		}
+	}
+
 	extID, err := whatsapp.SendText(
 		ctx,
 		*channel.AccessToken,
@@ -1353,43 +1388,26 @@ func (s *AutoReplyService) sendAiMessage(
 		text,
 	)
 	if err != nil {
+		s.markOutboundFailed(ctx, ts, msgID)
 		rlog.Error("AI job: meta SendText failed",
 			"err", err,
 			"convoId", convo.ID,
 			"channelId", channel.ID,
+			"msgId", msgID,
 		)
 		return fmt.Errorf("send whatsapp: %w", err)
 	}
 
 	preview := strutil.TruncateUTF8(text, 280)
-
-	metadataJSON, _ := json.Marshal(meta)
-	var msgCreatedAt time.Time
-	err = ts.QueryRowContext(ctx, fmt.Sprintf(`
-		INSERT INTO %s (conversation_id, external_id, direction, author, type, body, metadata, status)
-		VALUES ($1, $2, 'out', $3, 'text', $4, $5::jsonb, 'sent')
-		RETURNING created_at`, ts.T("message")),
-		convo.ID, extID, author, text, string(metadataJSON),
-	).Scan(&msgCreatedAt)
-	if err != nil {
-		rlog.Error("AI job: failed inserting outbound message", "err", err)
-		return fmt.Errorf("insert message: %w", err)
+	if msgCreatedAt.IsZero() {
+		msgCreatedAt = time.Now().UTC()
+	}
+	if err := s.finalizeOutbound(ctx, ts, tenantID, convo.ID, msgID, extID, preview, msgCreatedAt); err != nil {
+		rlog.Error("AI job: failed finalizing outbound", "err", err, "msgId", msgID)
+		return err
 	}
 
-	_, err = ts.ExecContext(ctx, fmt.Sprintf(`
-		UPDATE %s
-		SET last_message_at = $1, last_message_preview = $2, status = 'open'
-		WHERE id = $3`, ts.T("conversation")),
-		msgCreatedAt, preview, convo.ID,
-	)
-	if err != nil {
-		rlog.Error("AI job: failed updating conversation", "err", err)
-		return fmt.Errorf("update conversation: %w", err)
-	}
-
-	if tenantID != "" && s.rdb != nil {
-		inboxrealtime.Publish(ctx, s.rdb, tenantID)
-	}
+	s.markAiSendDone(ctx, inboundMessageID)
 	return nil
 }
 

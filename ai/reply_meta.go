@@ -40,8 +40,9 @@ type AiReplyMeta struct {
 	Model       string `json:"model,omitempty"`
 	Tier        string `json:"tier,omitempty"`
 	LLMUsed     bool   `json:"llmUsed"`
-	OrderID     string `json:"orderId,omitempty"`
-	OrderAction string `json:"orderAction,omitempty"`
+	OrderID         string `json:"orderId,omitempty"`
+	OrderAction     string `json:"orderAction,omitempty"`
+	InboundReplyTo  string `json:"inboundReplyTo,omitempty"`
 }
 
 func metaFromRoute(reason, path string, route RoutingDecision) AiReplyMeta {

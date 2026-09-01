@@ -44,7 +44,7 @@ func (s *AutoReplyService) handleOrderFlow(
 			msg = applyOutputPolicy(text)
 		}
 		meta.LogAndRecord(ctx, convo.ID, inboundID, 0, 0)
-		err := s.sendAiMessage(ctx, ts, tenantID, convo, channel, contact, msg, author, meta)
+		err := s.sendAiMessage(ctx, ts, tenantID, convo, channel, contact, msg, author, inboundID, meta)
 		return err == nil, err
 	}
 
@@ -135,7 +135,7 @@ func (s *AutoReplyService) handleOrderFlow(
 		meta.OrderID = res.OrderID
 		meta.OrderAction = "create"
 		meta.LogAndRecord(ctx, convo.ID, inboundID, 0, 0)
-		err := s.sendAiMessage(ctx, ts, tenantID, convo, channel, contact, res.Reply, "system", meta)
+		err := s.sendAiMessage(ctx, ts, tenantID, convo, channel, contact, res.Reply, "system", inboundID, meta)
 		return err == nil, err
 	}
 
