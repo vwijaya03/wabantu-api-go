@@ -330,7 +330,9 @@ func RunTenantDDL(ctx context.Context, schemaName string) error {
 	if err := applyCloudAdminTenantDDL(ctx, schemaName); err != nil {
 		return fmt.Errorf("cloud admin DDL: %w", err)
 	}
-	if err := runTenantBootstrapPatches(ctx, conn, schemaName); err != nil {
+	if err := withSchemaMigrationLock(ctx, schemaName, func() error {
+		return runTenantBootstrapPatches(ctx, conn, schemaName)
+	}); err != nil {
 		return fmt.Errorf("schema patches: %w", err)
 	}
 	if err := ensureCloudSchemaDeployGrants(ctx, conn, schemaName); err != nil {
