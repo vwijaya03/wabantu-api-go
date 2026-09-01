@@ -118,8 +118,8 @@ var fallbackByTier = map[string][]string{
 	"sonnet": {APIIDSonnet46, "claude-sonnet-4-5-20250929", AliasSonnet46},
 }
 
-// DefaultHaikuAPIID returns the pinned Haiku model for API calls.
-func DefaultHaikuAPIID() string { return APIIDHaiku45 }
+// DefaultHaikuAPIID returns the pinned Haiku model for API calls (canonical alias).
+func DefaultHaikuAPIID() string { return AliasHaiku45 }
 
 // DefaultSonnetAPIID returns the pinned Sonnet model for API calls.
 func DefaultSonnetAPIID() string { return APIIDSonnet46 }
