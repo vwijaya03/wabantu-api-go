@@ -51,8 +51,24 @@ func TestTryShippingFAQReply_kbFirst(t *testing.T) {
 	}
 }
 
-func TestFAQDirectGuardsPass_allowsShippingAfterPR8(t *testing.T) {
-	if !FAQDirectGuardsPass("berapa ongkir ke surabaya?") {
-		t.Fatal("shipping quote should pass FAQ guards")
+func TestTryShippingFAQReply_kbETA(t *testing.T) {
+	cat := "Pengiriman"
+	kb := []KBEntry{{
+		Question: "berapa lama pengiriman",
+		Answer:   "Estimasi pengiriman 2-3 hari kerja via JNE.",
+		Category: &cat,
+		IsActive: true,
+	}}
+	reply, ok := TryShippingFAQReply("berapa lama pengiriman?", nil, kb, false)
+	if !ok || !strings.Contains(reply, "2-3 hari") {
+		t.Fatalf("expected ETA KB, got %q ok=%v", reply, ok)
+	}
+}
+
+func TestCatalogSkipsShippingFAQ(t *testing.T) {
+	profile := omahProfile()
+	_, ok := replyFromBusinessCatalog("berapa ongkir ke surabaya?", profile, omahCatalog(), nil, nil)
+	if ok {
+		t.Fatal("shipping quote must not be handled by catalog_db")
 	}
 }

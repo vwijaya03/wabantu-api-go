@@ -56,4 +56,84 @@ var regressionCases = []regressionCase{
 		wantPath: PathCatalogDB,
 		wantSubstr: []string{"Abon"},
 	},
+	// --- Acceptance criteria (RAG smooth conversations plan) ---
+	{
+		name:     "greeting_sore_bang",
+		input:    "sore bang",
+		wantPath: PathGreeting,
+	},
+	{
+		name:     "catalog_list_toko_jual_apa",
+		input:    "toko ini jual apa aja?",
+		wantPath: PathCatalogDB,
+		wantSubstr: []string{"Pria", "Anak", "Abon"},
+	},
+	{
+		name:     "catalog_excluding_abon",
+		input:    "selain abon sapi ada apa aja?",
+		wantPath: PathCatalogDB,
+		wantSubstr: []string{"boxer", "BOXER"},
+	},
+	{
+		name:     "boxer_mono_L_price",
+		input:    "boxer mono spot ukuran L berapa?",
+		wantPath: PathCatalogDB,
+		wantSubstr: []string{"56900", "L"},
+		wantNot:  []string{"- M"},
+	},
+	{
+		name:     "boxer_mono_sizes_list",
+		input:    "boxer mono spot ada ukuran apa aja?",
+		wantPath: PathCatalogDB,
+		wantSubstr: []string{"L", "M"},
+	},
+	{
+		name:     "shipping_eta_faq_direct",
+		input:    "berapa lama pengiriman?",
+		wantPath: PathShippingFAQ,
+		wantSubstr: []string{"2-3 hari"},
+	},
+	{
+		name:     "shipping_luar_kota_faq",
+		input:    "bisa kirim ke luar kota?",
+		wantPath: PathShippingFAQ,
+		wantSubstr: []string{"luar kota"},
+	},
+	{
+		name:     "shipping_quote_template",
+		input:    "berapa ongkir ke surabaya?",
+		wantPath: PathShippingFAQ,
+		wantSubstr: []string{"alamat lengkap"},
+	},
+	{
+		name:     "order_abon_two_pcs",
+		input:    "mau beli abon sapi 2 pcs",
+		wantPath: PathOrderFlow,
+	},
+	{
+		name:     "off_topic_not_faq_direct",
+		input:    "resep nasi goreng enak gimana?",
+		wantPath: PathConsulting,
+		extraCheck: func(t interface {
+			Helper()
+			Fatal(...any)
+		}, out TurnOutcome) {
+			if out.Path == PathFAQDirect {
+				t.Fatal("off-topic must not use faq_direct")
+			}
+		},
+	},
+	{
+		name:     "catalog_list_not_faq_direct",
+		input:    "minta list produk",
+		wantPath: PathCatalogDB,
+		extraCheck: func(t interface {
+			Helper()
+			Fatal(...any)
+		}, out TurnOutcome) {
+			if out.Path == PathFAQDirect {
+				t.Fatal("catalog list must not use faq_direct")
+			}
+		},
+	},
 }

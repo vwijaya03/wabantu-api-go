@@ -61,6 +61,36 @@ func TestRegressionScript(t *testing.T) {
 	}
 }
 
+func TestRegressionShippingScript(t *testing.T) {
+	sim := NewOmahSimulator()
+	steps := []struct {
+		input    string
+		wantPath string
+	}{
+		{"mau tanya produk dulu", PathCatalogDB},
+		{"berapa ongkir ke bandung?", PathShippingFAQ},
+		{"berapa lama pengiriman?", PathShippingFAQ},
+	}
+	for i, step := range steps {
+		out := sim.Turn(step.input)
+		if out.Path != step.wantPath {
+			t.Fatalf("step %d path=%q want %q reply=%q", i, out.Path, step.wantPath, out.Reply)
+		}
+	}
+}
+
+func TestRegressionOrderRevisionScript(t *testing.T) {
+	sim := NewOmahSimulator()
+	out := sim.Turn("mau beli abon sapi 2 pcs")
+	if out.Path != PathOrderFlow {
+		t.Fatalf("setup order path=%q", out.Path)
+	}
+	rev := sim.Turn("revisi jadi 5 pcs")
+	if rev.Path != PathOrderFlow {
+		t.Fatalf("revision path=%q want %q reply=%q", rev.Path, PathOrderFlow, rev.Reply)
+	}
+}
+
 func TestTryPaymentFAQAnswer(t *testing.T) {
 	cat := "Nomor Rekening"
 	kb := []KBEntry{{

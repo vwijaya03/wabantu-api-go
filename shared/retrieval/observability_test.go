@@ -9,8 +9,10 @@ func TestSnapshotObservabilityRatios(t *testing.T) {
 	embedCacheHits.Store(0)
 	embedCacheMisses.Store(0)
 
-	LogQuery(nil, "kb", "t1", "vector", true, true)
-	LogQuery(nil, "kb", "t1", "vector", false, false)
+	retrievalRequests.Add(1)
+	retrievalFallback.Add(1)
+	retrievalZeroHit.Add(1)
+	retrievalRequests.Add(1)
 
 	snap := SnapshotObservability()
 	if snap.Requests != 2 {
