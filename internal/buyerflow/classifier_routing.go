@@ -76,7 +76,7 @@ func FAQDirectGuardsPass(query string) bool {
 	if IsThirdPartyBuyerLookup(query) || IsSelfBuyerOrderLookup(query) || IsOrderStatusInquiry(query) {
 		return false
 	}
-	if isShippingFAQAllowed(query) {
+	if IsShippingFAQQuestion(query) {
 		return true
 	}
 	if IsCatalogListQuestion(query) || IsCatalogBrowsingIntent(query) ||
@@ -112,27 +112,6 @@ func brandVariantFAQGuard(query string) bool {
 		return false
 	}
 	return hasBrandVariantSignal(strings.ToLower(strings.TrimSpace(query)))
-}
-
-func isShippingFAQAllowed(query string) bool {
-	text := strings.ToLower(strings.TrimSpace(query))
-	if text == "" {
-		return false
-	}
-	if IsShippingQuoteQuestion(query) {
-		return true
-	}
-	signals := []string{
-		"pengiriman", "ongkir", "ongkos kirim", "kirim ke",
-		"estimasi sampai", "berapa lama", "lama sampai", "waktu kirim",
-		"luar kota", "wilayah pengiriman", "area kirim", "delivery",
-	}
-	for _, s := range signals {
-		if strings.Contains(text, s) {
-			return true
-		}
-	}
-	return false
 }
 
 // topKBMatchScore returns the best hybrid KB overlap score for the query.

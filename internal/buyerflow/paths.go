@@ -25,6 +25,7 @@ const (
 	PathAutoFallback      = "auto_fallback"
 	PathPaymentProof      = "payment_proof"
 	PathPaymentFAQ        = "payment_faq"
+	PathShippingFAQ       = "shipping_faq"
 	PathProductImageMatch = "product_image_match"
 	PathImageFallback     = "image_fallback"
 )
