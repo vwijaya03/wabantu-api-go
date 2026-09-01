@@ -52,7 +52,7 @@ Pinecone index: **Manual**, **1536** dim, metric **cosine**, serverless on-deman
 ### Kolom PG (`knowledge_base_entry`, `business_catalog_item`)
 
 - `embedding_status` — `pending` | `indexed` | `failed` | `dlq`
-- `embedding_version` — monotonic per update
+- `embedding_version` — monotonic per update (**minimal 1** saat indexing KB; `0` = belum pernah di-bump / legacy pre-RAG)
 - `embedding_content_hash` — SHA256 konten
 - `embedding_model`, `embedding_attempts`, `embedding_last_error`
 - `embedding_updated_at`, `embedding_indexed_at`
@@ -70,9 +70,17 @@ Tabel `retrieval_outbox` — event `index_kb` / `delete_kb` / `index_catalog` de
 
 **Worker indexing:** `kb/retrieval_worker.go` memanggil `retrieval.DefaultService()` (singleton `sync.Once`). Jika secrets OpenAI/Pinecone belum dikonfigurasi, worker mengembalikan `ErrServiceNotConfigured` (retry Pub/Sub) — **bukan** mock/silent success. Counter attempt atomik via `nextOutboxAttempt()`.
 
-### Reindex
+### Reindex & backfill
 
-`POST /api/v1/knowledge-base/reindex` — backfill batch entri `pending`/`failed`.
+`POST /api/v1/knowledge-base/reindex` (owner) dan `EnqueueRAGBackfillForTenant` (rollout superadmin) memproses entri `pending`/`failed`:
+
+1. **`supersedeStaleKBOutboxTx`** — outbox KB `pending`/`failed` lama ditandai `done` (hindari `isComplete` stuck).
+2. **`bumpKBEmbeddingPendingTx`** — increment `embedding_version`, reset status ke `pending` (sama seperti create/update FAQ).
+3. Insert outbox baru + publish Pub/Sub.
+
+> **Legacy (pre PR #150):** backfill mengirim `embedding_version=0` → worker gagal `invalid embedding version`. Setelah deploy #150, **wajib** rollout ulang atau reindex — merge saja tidak retry otomatis.
+
+Katalog backfill tidak memakai bump version (indexer katalog tidak menolak version 0).
 
 ## Query pipeline
 
@@ -133,12 +141,13 @@ encore test ./internal/buyerflow/...
 
 ## Operasi & rollout
 
-1. Pastikan secrets `OpenAIApiKey`, `PineconeApiKey`, `PineconeIndexHost` terisi di environment target.
-2. Backfill staging (`POST /api/v1/knowledge-base/reindex`).
-3. `ai_retrieval_mode_shadow` satu tenant pilot — pantau log `retrieval shadow` dan `retrieval_fallback_total`.
-4. Kalibrasi threshold dari eval suite (`shared/retrieval/eval/`).
-5. `ai_retrieval_mode_vector` per tenant (API atau rollout massal).
-6. Index katalog otomatis via CRUD `business/catalog`.
+1. Pastikan secrets `OpenAIApiKey`, `PineconeApiKey`, `PineconeIndexHost` terisi di environment target (`setup-secrets-for-cloud.sh staging`).
+2. Deploy ke cloud — DDL retrieval (`embedding_*`, `retrieval_outbox`) diterapkan otomatis via `EnsureCloudAdminTenantDDL` (PR #149); opsional `POST /api/v1/admin/migrate-tenant-schemas`.
+3. **Backfill** — `POST /api/v1/knowledge-base/reindex` per tenant **atau** rollout massal di `/dashboard/admin/ai-retrieval` (scope **Semua tenant aktif** untuk retry tenant yang sudah vector).
+4. `ai_retrieval_mode_shadow` satu tenant pilot — pantau log `retrieval shadow` dan `retrieval_fallback_total`.
+5. Kalibrasi threshold dari eval suite (`shared/retrieval/eval/`).
+6. `ai_retrieval_mode_vector` per tenant (API atau rollout massal).
+7. Index katalog otomatis via CRUD `business/catalog`.
 
 ### Superadmin APIs (flag service)
 
@@ -174,6 +183,9 @@ Single-query embeddings (autoreply hot path) di-cache in-process LRU (512 entri,
 | Gejala | Tindakan |
 |--------|----------|
 | `embedding_status=pending` lama | Cek Pub/Sub worker, secrets, outbox DLQ |
+| KB `failed`, error `invalid embedding version` | Deploy PR #150+; rollout `all_active` atau `POST .../reindex` (bukan cukup merge) |
+| `isComplete: false` padahal katalog OK | FAQ gagal atau outbox KB `failed` — lihat `GET .../retrieval-indexing/:tenantId` |
+| `column "embedding_version" does not exist` | Deploy PR #149+; migrate tenant / rollout RAG |
 | Semua query lexical | Mode `disabled`, circuit OPEN, secrets kosong, atau `LexicalFallback` tinggi — cek observability API |
 | Indexing retry terus | Secrets belum di-set — worker sengaja tidak mock-fallback |
 | FAQ direct miss | Naikkan data KB; cek shadow logs; kalibrasi MinScore |
@@ -190,5 +202,6 @@ Single-query embeddings (autoreply hot path) di-cache in-process LRU (512 entri,
 | `flag/retrieval_mode.go` | Feature flags per tenant |
 | `flag/rag_rollout_jobs.go` | Rollout async + stagger `NotBefore` |
 | `tenant/schema_patch_retrieval.go` | Migrasi tenant |
+| `tenant/cloud_admin_ddl.go` | DDL retrieval di Encore Cloud (role admin) |
 
-Lihat juga: [WHATSAPP_AI_ROUTING.md](./WHATSAPP_AI_ROUTING.md) · shipped: [../docs-development-shipped/20260831_101000_rag-hardening-webhook-cleanup.md](../docs-development-shipped/20260831_101000_rag-hardening-webhook-cleanup.md)
+Lihat juga: [WHATSAPP_AI_ROUTING.md](./WHATSAPP_AI_ROUTING.md) · shipped: [../docs-development-shipped/20260831_101000_rag-hardening-webhook-cleanup.md](../docs-development-shipped/20260831_101000_rag-hardening-webhook-cleanup.md) · [../docs-development-shipped/20260901_143000_rag-staging-rollout-hotfixes.md](../docs-development-shipped/20260901_143000_rag-staging-rollout-hotfixes.md)

@@ -379,7 +379,7 @@ Update URL callback ke domain Encore Cloud:
 
 **Migrasi dari path lama:** jika production masih memakai `/api/v1/whatsapp/webhook/meta` atau `/webhook/whatsapp`, ubah ke path kanonik di atas — handler legacy sudah dihapus dari api-go (lihat [docs-development-shipped/20260831_101000_rag-hardening-webhook-cleanup.md](../docs-development-shipped/20260831_101000_rag-hardening-webhook-cleanup.md)).
 
-**RAG:** secrets `OpenAIApiKey`, `PineconeApiKey`, `PineconeIndexHost` wajib di-set **sebelum deploy** (lihat Langkah 3). Setelah deploy: `POST /api/v1/knowledge-base/reindex` per tenant pilot sebelum mode `shadow`/`vector` via `/api/v1/flags/retrieval-mode`. Panduan: [RAG_VECTOR_RETRIEVAL.md](./RAG_VECTOR_RETRIEVAL.md).
+**RAG:** secrets `OpenAIApiKey`, `PineconeApiKey`, `PineconeIndexHost` wajib di-set **sebelum deploy** (lihat Langkah 3). Setelah deploy: migrate tenant (DDL retrieval otomatis di cloud), lalu **rollout atau reindex** — merge saja tidak retry FAQ yang sudah `failed`. Panduan: [RAG_VECTOR_RETRIEVAL.md](./RAG_VECTOR_RETRIEVAL.md) · shipped: [../docs-development-shipped/20260901_143000_rag-staging-rollout-hotfixes.md](../docs-development-shipped/20260901_143000_rag-staging-rollout-hotfixes.md).
 
 ---
 
@@ -518,6 +518,10 @@ cd api-go && encore auth login
 | API `prepare catalog pricing failed` / DDL error | App role cloud tidak bisa `CREATE`/`ALTER`/`DROP` | Deploy kode terbaru (`shared/tenantschema` skip DDL jika schema sudah ada); `./scripts/verify-cloud-tenant-schemas.sh staging` |
 | `relation "public.tenant" does not exist` | DB cloud **kosong** (belum ada tabel) | Script terbaru restore **schema system** dulu; atau `git push encore` sampai deploy sukses |
 | Webhook Meta gagal verifikasi | Token tidak sama | Samakan `WebhookVerifyToken` dengan Meta console |
+| Deploy gagal: `OpenAIApiKey` / `Pinecone*` tidak terdefinisi | Secret RAG belum di env cloud | `setup-secrets-for-cloud.sh staging` (PR #147) |
+| RAG rollout: `embedding_version does not exist` | DDL retrieval belum di tenant cloud | Deploy PR #149+; `POST migrate-tenant-schemas` atau rollout |
+| FAQ indexing `invalid embedding version` | Backfill pre-#150 kirim version 0 | Deploy #150; rollout/reindex ulang — lihat [shipped hotfix](../docs-development-shipped/20260901_143000_rag-staging-rollout-hotfixes.md) |
+| Migrate tenant: duplicate key finance category | Seed non-idempotent (pre-#148) | Deploy PR #148+ |
 
 ---
 

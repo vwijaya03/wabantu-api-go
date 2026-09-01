@@ -258,7 +258,7 @@ Owner selalu `approved` langsung. `adjustment` selalu owner-only.
 - Wallet default: **Kas Tunai** (type=cash, visibility=all)
 - Approval setting: disabled
 
-Idempoten — skip jika sudah ada data.
+Idempoten — skip jika sudah ada data (`ON CONFLICT DO NOTHING` pada kategori sistem; PR [#148](https://github.com/vwijaya03/wabantu-api-go/pull/148)). Bootstrap migrasi tenant memakai **advisory lock** per schema (`tenant/migration_lock.go`) agar dua worker tidak seed bersamaan.
 
 ## Migrasi tenant yang sudah ada
 
