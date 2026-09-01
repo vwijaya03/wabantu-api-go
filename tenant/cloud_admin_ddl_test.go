@@ -17,6 +17,7 @@ func TestCloudAdminDDLCoversCloudTenantReady(t *testing.T) {
 		"TenantPatchReady",
 		"PricingReady",
 		"KnowledgeBaseReady",
+		"RetrievalReady",
 		"FinanceModuleReady",
 		"EventsModuleReady",
 		"PIIReady",

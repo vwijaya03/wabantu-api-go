@@ -118,6 +118,22 @@ func KnowledgeBaseReady(ctx context.Context, q any, schema string) (bool, error)
 	return TableExists(ctx, q, schema, "knowledge_base_entry")
 }
 
+// RetrievalReady — RAG outbox + embedding columns on KB and catalog.
+func RetrievalReady(ctx context.Context, q any, schema string) (bool, error) {
+	q = Q(q)
+	ok, err := TableExists(ctx, q, schema, "retrieval_outbox")
+	if err != nil || !ok {
+		return false, err
+	}
+	for _, table := range []string{"knowledge_base_entry", "business_catalog_item"} {
+		ok, err = ColumnExists(ctx, q, schema, table, "embedding_version")
+		if err != nil || !ok {
+			return false, err
+		}
+	}
+	return true, nil
+}
+
 // TenantPatchReady — schema_patch.go fully applied (branches, workflow, indexes).
 func TenantPatchReady(ctx context.Context, q any, schema string) (bool, error) {
 	q = Q(q)
@@ -206,6 +222,7 @@ func CloudTenantReady(ctx context.Context, q any, schema string) (bool, error) {
 		TenantPatchReady,
 		PricingReady,
 		KnowledgeBaseReady,
+		RetrievalReady,
 		FinanceModuleReady,
 		EventsModuleReady,
 		PIIReady,

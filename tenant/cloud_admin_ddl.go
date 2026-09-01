@@ -46,6 +46,11 @@ func cloudAdminTenantDDLBlocks() []cloudAdminDDLBlock {
 			sql:    tenantschema.InventorySchemaSQL,
 			covers: "InventoryModuleReady",
 		},
+		{
+			label:  "retrieval patch",
+			sql:    retrievalOutboxPatchSQL,
+			covers: "RetrievalReady",
+		},
 	}
 }
 

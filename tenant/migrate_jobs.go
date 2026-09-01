@@ -336,6 +336,10 @@ func processTenantSchemaMigrationLocked(ctx context.Context, tenantID, schemaNam
 	if err := RunEventsSchemaPatches(ctx, schemaName); err != nil {
 		return err
 	}
+	// RAG outbox + embedding columns — same: apply via admin DDL on cloud when missing.
+	if err := EnsureRetrievalSchema(ctx, schemaName); err != nil {
+		return err
+	}
 
 	ver, err := getTenantSchemaPatchVersion(ctx, tenantID)
 	if err != nil {
