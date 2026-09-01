@@ -543,6 +543,10 @@ func replyFromBusinessCatalog(
 		return buildCatalogListReply(formal, bizName, catalog, profile), true
 	}
 
+	if reply, ok := tryBrandVariantReply(formal, userText, history, catalog, vctx); ok {
+		return reply, true
+	}
+
 	// Checkout eksplisit → order flow state machine, bukan balasan katalog statis.
 	if hasPurchaseIntent(userText, catalog) {
 		return "", false
