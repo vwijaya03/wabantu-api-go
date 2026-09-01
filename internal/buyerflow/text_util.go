@@ -4,13 +4,26 @@ import (
 	"strings"
 )
 
+// apparelSizeTokens are single-letter size suffixes dropped by the old len>=2 filter.
+var apparelSizeTokens = map[string]struct{}{
+	"s": {}, "m": {}, "l": {},
+}
+
+func isApparelSizeToken(w string) bool {
+	if len(w) != 1 {
+		return false
+	}
+	_, ok := apparelSizeTokens[w]
+	return ok
+}
+
 func tokenize(text string) []string {
 	lower := strings.ToLower(text)
 	cleaned := nonAlphaNum.ReplaceAllString(lower, " ")
 	words := strings.Fields(cleaned)
 	var out []string
 	for _, w := range words {
-		if len(w) >= 2 {
+		if len(w) >= 2 || isApparelSizeToken(w) {
 			out = append(out, w)
 		}
 	}

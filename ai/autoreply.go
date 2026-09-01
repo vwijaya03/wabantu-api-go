@@ -526,6 +526,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 
 	cached, _ := s.getCachedAnswer(ctx, payload.TenantID, userText)
 	if cached != "" {
+		cached = applyOutputPolicy(cached)
 		out := metaNoLLM(reasonAIGenerated, PathFAQCache)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, cached, payload.InboundMessageID, "ai", out)
