@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 type failingEmbedder struct{}
@@ -48,7 +49,7 @@ func TestRetrieveKB_VectorFailureSetsLexicalFallback(t *testing.T) {
 
 func TestRetrieveKB_CircuitOpenSetsLexicalFallback(t *testing.T) {
 	svc := NewService(NewMockEmbedder(), noopStore{})
-	svc.Breaker = NewCircuitBreaker(1, 0)
+	svc.Breaker = NewCircuitBreaker(1, time.Hour)
 	svc.Breaker.RecordFailure(errors.New("pinecone down"))
 
 	res, err := svc.RetrieveKB(context.Background(), RetrieveKBRequest{
@@ -61,6 +62,63 @@ func TestRetrieveKB_CircuitOpenSetsLexicalFallback(t *testing.T) {
 	}
 	if res == nil || !res.LexicalFallback {
 		t.Fatalf("expected LexicalFallback on circuit open, got %+v", res)
+	}
+	if res.FallbackReason != FallbackReasonCircuitOpen {
+		t.Fatalf("expected circuit_open reason, got %q", res.FallbackReason)
+	}
+}
+
+func TestRetrieveKB_ClientTimeoutDoesNotTripBreaker(t *testing.T) {
+	svc := NewService(ctxDeadlineEmbedder{}, noopStore{})
+	svc.Breakers = NewBreakerPool(1, time.Hour)
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Nanosecond)
+	defer cancel()
+	time.Sleep(2 * time.Nanosecond)
+
+	res, err := svc.RetrieveKB(ctx, RetrieveKBRequest{
+		Tenant: TenantIdentity{TenantID: "t_timeout", TenantSchema: "t_acme"},
+		Query:  "harga",
+		Mode:   ModeVector,
+	}, func(_ context.Context, _ string, _ int) ([]ScoredEntry, error) {
+		return []ScoredEntry{{EntryID: "e1", Score: 1}}, nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if res == nil || !res.LexicalFallback {
+		t.Fatalf("expected lexical fallback, got %+v", res)
+	}
+	if res.FallbackReason != FallbackReasonClientTimeout {
+		t.Fatalf("expected client_timeout, got %q", res.FallbackReason)
+	}
+	cb := svc.Breakers.For("t_timeout")
+	if cb.Open() {
+		t.Fatal("client timeout should not open per-tenant breaker")
+	}
+}
+
+type ctxDeadlineEmbedder struct{}
+
+func (ctxDeadlineEmbedder) Embed(ctx context.Context, _ []string) ([][]float32, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+func (ctxDeadlineEmbedder) Dimensions() int { return 1536 }
+func (ctxDeadlineEmbedder) Model() string   { return "test" }
+
+func TestRetrieveKB_ZeroVectorHitsFlag(t *testing.T) {
+	store := mockVectorStore{hits: []Hit{}}
+	svc := NewService(NewMockEmbedder(), store)
+	res, err := svc.RetrieveKB(context.Background(), RetrieveKBRequest{
+		Tenant: TenantIdentity{TenantID: "t1", TenantSchema: "t_acme"},
+		Query:  "harga",
+		Mode:   ModeVector,
+	}, nil)
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if !res.ZeroVectorHits {
+		t.Fatalf("expected ZeroVectorHits=true, got %+v", res)
 	}
 }
 

@@ -26,13 +26,16 @@ type RetrieveKBResult struct {
 	UsedVector      bool
 	ShadowOnly      bool
 	LexicalFallback bool // true when vector path skipped/failed and lexical served
+	ZeroVectorHits  bool // true when vector path ran but returned no hits above floor
+	FallbackReason  FallbackReason
 }
 
 // Service wires embedder + vector store + resilience.
 type Service struct {
 	Embedder Embedder
 	Store    VectorStore
-	Breaker  *CircuitBreaker
+	Breaker  *CircuitBreaker // legacy/tests; production uses Breakers
+	Breakers *BreakerPool
 	Budget   *Budget
 }
 
@@ -40,9 +43,22 @@ func NewService(embedder Embedder, store VectorStore) *Service {
 	return &Service{
 		Embedder: embedder,
 		Store:    store,
-		Breaker:  NewCircuitBreaker(5, 30*time.Second),
+		Breakers: NewBreakerPool(5, 30*time.Second),
 		Budget:   NewBudget(8),
 	}
+}
+
+func (s *Service) breakerFor(tenantID string) *CircuitBreaker {
+	if s == nil {
+		return nil
+	}
+	if s.Breaker != nil {
+		return s.Breaker
+	}
+	if s.Breakers != nil {
+		return s.Breakers.For(tenantID)
+	}
+	return nil
 }
 
 // RetrieveKB runs vector + lexical RRF fusion when mode allows.
@@ -78,9 +94,11 @@ func (s *Service) RetrieveKB(ctx context.Context, req RetrieveKBRequest, lexical
 		return res, nil
 	}
 
-	if s.Breaker != nil && !s.Breaker.Allow() {
+	breaker := s.breakerFor(req.Tenant.TenantID)
+	if breaker != nil && !breaker.Allow() {
 		res.Entries = lexicalHits
 		res.LexicalFallback = runVector
+		res.FallbackReason = FallbackReasonCircuitOpen
 		return res, nil
 	}
 
@@ -99,15 +117,16 @@ func (s *Service) RetrieveKB(ctx context.Context, req RetrieveKBRequest, lexical
 	})
 	RecordQueryLatency(time.Since(start))
 	if err != nil {
-		if s.Breaker != nil {
-			s.Breaker.RecordFailure(err)
+		if breaker != nil && ShouldTripBreaker(err) {
+			breaker.RecordFailure(err)
 		}
 		res.Entries = lexicalHits
 		res.LexicalFallback = true
+		res.FallbackReason = ClassifyVectorError(err)
 		return res, nil
 	}
-	if s.Breaker != nil {
-		s.Breaker.RecordSuccess()
+	if breaker != nil {
+		breaker.RecordSuccess()
 	}
 
 	vectorHits = FilterHitsByScore(vectorHits, VectorMinSimilarity)
@@ -116,6 +135,7 @@ func (s *Service) RetrieveKB(ctx context.Context, req RetrieveKBRequest, lexical
 	res.VectorHits = vectorHits
 	res.UsedVector = true
 	res.ShadowOnly = req.Mode == ModeShadow
+	res.ZeroVectorHits = len(vectorHits) == 0
 
 	lists := []RankedList{HitsToRankedList(vectorHits, SourceKB)}
 	if len(lexicalHits) > 0 {
