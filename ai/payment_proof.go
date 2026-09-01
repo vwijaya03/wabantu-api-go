@@ -734,7 +734,7 @@ func sendPaymentProofOutbound(ctx context.Context, ts tenantScopedQuerier, job *
 		return err
 	}
 	meta := metaNoLLM(reasonAIGenerated, PathPaymentProof)
-	return svc.sendAiMessage(ctx, ts, job.TenantID, convo, channel, contact, text, "system", meta)
+	return svc.sendAiMessage(ctx, ts, job.TenantID, convo, channel, contact, text, "system", job.InboundMessageID, meta)
 }
 
 func checkPaymentProofRateLimit(ctx context.Context, tenantSchema, contactID string) bool {

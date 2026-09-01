@@ -232,7 +232,7 @@ func sendImageContextOutbound(ctx context.Context, ts tenantScopedQuerier, job *
 	if err != nil {
 		return err
 	}
-	return svc.sendAiMessage(ctx, ts, job.TenantID, convo, channel, contact, text, "ai", meta)
+	return svc.sendAiMessage(ctx, ts, job.TenantID, convo, channel, contact, text, "ai", job.InboundMessageID, meta)
 }
 
 func checkImageContextVisionRateLimit(ctx context.Context, tenantSchema, contactID string) bool {
