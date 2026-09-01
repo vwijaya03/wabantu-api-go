@@ -1,19 +1,32 @@
 package buyerflow
 
 import (
-	"strings"
+	"sort"
 
 	"encore.app/wabantu/shared/retrieval"
 )
 
-const CatalogSemanticAmbiguityMargin = 0.08
+const (
+	CatalogSemanticAmbiguityMargin  = 0.08
+	CatalogSemanticMinAutoPickScore = 0.55
+)
 
 // CatalogSemanticAmbiguous returns true when top vector hits are too close.
 func CatalogSemanticAmbiguous(hits []retrieval.Hit) bool {
-	if len(hits) < 2 {
+	sorted := sortedHitsByScore(hits)
+	if len(sorted) < 2 {
 		return false
 	}
-	return hits[0].Score-hits[1].Score < CatalogSemanticAmbiguityMargin
+	return sorted[0].Score-sorted[1].Score < CatalogSemanticAmbiguityMargin
+}
+
+func sortedHitsByScore(hits []retrieval.Hit) []retrieval.Hit {
+	if len(hits) == 0 {
+		return nil
+	}
+	out := append([]retrieval.Hit(nil), hits...)
+	sort.Slice(out, func(i, j int) bool { return out[i].Score > out[j].Score })
+	return out
 }
 
 // CatalogVectorContext carries optional vector hits for catalog matching.
@@ -54,11 +67,11 @@ func MatchCatalogItemSemantic(userText string, catalog []CatalogItem, hits []ret
 		byID[catalog[i].ID] = &catalog[i]
 	}
 	type cand struct {
-		item  *CatalogItem
+		item   *CatalogItem
 		vScore float64
 	}
 	var cands []cand
-	for _, h := range hits {
+	for _, h := range sortedHitsByScore(hits) {
 		id := retrieval.EntryIDFromHit(h)
 		if id == "" {
 			continue
@@ -70,12 +83,15 @@ func MatchCatalogItemSemantic(userText string, catalog []CatalogItem, hits []ret
 	if len(cands) == 0 {
 		return matchCatalogItem(userText, catalog)
 	}
+	sort.Slice(cands, func(i, j int) bool { return cands[i].vScore > cands[j].vScore })
+
 	if len(cands) >= 2 {
 		margin := cands[0].vScore - cands[1].vScore
 		if margin < CatalogSemanticAmbiguityMargin {
 			return nil
 		}
 	}
+
 	narrowed := make([]CatalogItem, len(cands))
 	for i, c := range cands {
 		narrowed[i] = *c.item
@@ -83,7 +99,7 @@ func MatchCatalogItemSemantic(userText string, catalog []CatalogItem, hits []ret
 	if m := matchCatalogItem(userText, narrowed); m != nil {
 		return m
 	}
-	if len(cands) == 1 && strings.TrimSpace(userText) != "" {
+	if len(cands) == 1 && cands[0].vScore >= CatalogSemanticMinAutoPickScore {
 		return cands[0].item
 	}
 	return nil
@@ -95,4 +111,14 @@ func CatalogAmbiguityReply(formal bool) string {
 		return "Mohon maaf, bisa sebutkan nama produk atau SKU yang dimaksud agar kami bisa cek dengan tepat?"
 	}
 	return "Kak, bisa sebutin produk/SKU yang dimaksud biar kami cek yang pas ya 🙏"
+}
+
+func shouldAskCatalogClarification(userText string, vctx *CatalogVectorContext) bool {
+	if vctx == nil || len(vctx.Hits) < 2 {
+		return false
+	}
+	if IsCatalogBrowsingIntent(userText) || isGeneralStoreCatalogQuestion(userText) || IsRecommendationRequest(userText) {
+		return false
+	}
+	return CatalogSemanticAmbiguous(vctx.Hits)
 }

@@ -11,6 +11,10 @@ var (
 	productSizeSuffixRe = regexp.MustCompile(`(?i)\s*-\s*(XS|S|M|L|XL|XXL|XXXL|3XL|4XL|5XL|\d{2,3})\s*$`)
 	catalogQtyPrefixRe  = regexp.MustCompile(`(?i)^\d+\s*pcs\s+`)
 	codeSizeSuffixRe    = regexp.MustCompile(`(?i)-(XS|S|M|L|XL|XXL|XXXL|3XL|4XL|5XL|\d{2,3})$`)
+	bracketPackPrefixRe = regexp.MustCompile(`(?i)^\[\s*\d+\s*pcs\s*\]\s*`)
+	weightSuffixRe      = regexp.MustCompile(`(?i)\s+\d+(\.\d+)?\s*(g|kg|gr|gram|ml|l|liter)\s*$`)
+	digitOnlyRe         = regexp.MustCompile(`^\d+$`)
+	sizeListPrefixRe    = regexp.MustCompile(`(?i)^(xs|s|m|l|xl|xxl),`)
 )
 
 func formatCatalogPrice(it *CatalogItem) string {
@@ -32,23 +36,50 @@ func formatMoney(amount float64) string {
 }
 
 func inferProductFamily(it CatalogItem) string {
-	if cat := inferCatalogCategory(it); cat != "" {
-		return cat
-	}
+	// Family = granular product line for dedup (NOT broad category like "Makanan").
 	code := strings.TrimSpace(it.ExternalCode)
-	if code != "" && isValidCategoryLabel(code) {
+	if code != "" {
 		family := codeSizeSuffixRe.ReplaceAllString(code, "")
-		if family != "" && family != code && isValidCategoryLabel(family) {
-			return humanizeFamilyLabel(family)
+		family = strings.TrimSpace(family)
+		if family != "" && family != code {
+			label := humanizeFamilyLabel(family)
+			if isValidCategoryLabel(label) {
+				return label
+			}
 		}
 	}
 	name := catalogQtyPrefixRe.ReplaceAllString(it.Name, "")
+	name = bracketPackPrefixRe.ReplaceAllString(name, "")
 	name = productSizeSuffixRe.ReplaceAllString(name, "")
 	name = strings.TrimSpace(name)
+	if family := extractFamilyFromName(name); isValidCategoryLabel(family) {
+		return family
+	}
 	if isValidCategoryLabel(name) {
 		return name
 	}
 	return ""
+}
+
+func extractFamilyFromName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	name = weightSuffixRe.ReplaceAllString(name, "")
+	name = strings.TrimSpace(name)
+	tokens := strings.Fields(name)
+	if len(tokens) == 0 {
+		return ""
+	}
+	maxTokens := 4
+	if len(tokens) > 6 {
+		maxTokens = 3
+	}
+	if len(tokens) < maxTokens {
+		maxTokens = len(tokens)
+	}
+	return strings.Join(tokens[:maxTokens], " ")
 }
 
 func isValidCategoryLabel(s string) bool {
@@ -56,10 +87,10 @@ func isValidCategoryLabel(s string) bool {
 	if len(s) < 3 {
 		return false
 	}
-	if regexp.MustCompile(`^\d+$`).MatchString(s) {
+	if digitOnlyRe.MatchString(s) {
 		return false
 	}
-	if regexp.MustCompile(`(?i)^(xs|s|m|l|xl|xxl),`).MatchString(s) {
+	if sizeListPrefixRe.MatchString(s) {
 		return false
 	}
 	if strings.Contains(strings.ToLower(s), ",acak") {
@@ -72,6 +103,12 @@ func inferCatalogCategory(it CatalogItem) string {
 	name := strings.ToLower(it.Name)
 	switch {
 	case strings.Contains(name, "abon") || strings.Contains(name, "keripik") || strings.Contains(name, "snack"):
+		return "Makanan"
+	case strings.Contains(name, "maggi") || strings.Contains(name, "magi ") || strings.Contains(name, "bumbu"):
+		return "Makanan"
+	case strings.Contains(name, "oatlife") || strings.Contains(name, "benns") || strings.Contains(name, "biskuit") || strings.Contains(name, "biskit"):
+		return "Makanan"
+	case strings.Contains(name, "cadbury") || strings.Contains(name, "coklat") || strings.Contains(name, "cokelat") || strings.Contains(name, "chocolate"):
 		return "Makanan"
 	case strings.Contains(name, "anak perempuan") || (strings.Contains(name, "perempuan") && strings.Contains(name, "anak")):
 		return "Anak Perempuan"
@@ -87,6 +124,13 @@ func inferCatalogCategory(it CatalogItem) string {
 	return ""
 }
 
+func catalogDisplayCategory(it CatalogItem) string {
+	if cat := inferCatalogCategory(it); cat != "" {
+		return cat
+	}
+	return "Lainnya"
+}
+
 func humanizeFamilyLabel(s string) string {
 	s = strings.ReplaceAll(s, "-", " ")
 	s = strings.ReplaceAll(s, "_", " ")
@@ -97,13 +141,7 @@ func extractCatalogCategories(catalog []CatalogItem) []string {
 	seen := make(map[string]struct{})
 	var cats []string
 	for _, it := range catalog {
-		cat := inferCatalogCategory(it)
-		if cat == "" {
-			cat = inferProductFamily(it)
-		}
-		if cat == "" || !isValidCategoryLabel(cat) {
-			continue
-		}
+		cat := catalogDisplayCategory(it)
 		key := strings.ToLower(cat)
 		if _, ok := seen[key]; ok {
 			continue
@@ -127,10 +165,7 @@ func groupCatalogByCategory(catalog []CatalogItem) map[string][]CatalogItem {
 	out := make(map[string][]CatalogItem)
 	seen := make(map[string]struct{})
 	for _, it := range catalog {
-		cat := inferCatalogCategory(it)
-		if cat == "" {
-			cat = "Lainnya"
-		}
+		cat := catalogDisplayCategory(it)
 		family := strings.ToLower(inferProductFamily(it))
 		if family != "" {
 			key := cat + "|" + family

@@ -599,6 +599,9 @@ func replyFromBusinessCatalog(
 		if isCatalogContextualReference(userText) || IsPricingUnitClarification(userText) {
 			return "", false
 		}
+		if shouldAskCatalogClarification(userText, vctx) {
+			return CatalogAmbiguityReply(formal), true
+		}
 		return buildCatalogNotFoundReply(formal, bizName, catalog, profile), true
 	}
 
@@ -747,7 +750,8 @@ func formatCatalogListBody(catalog []CatalogItem, maxFeatured int) string {
 		shown = len(featured)
 	}
 	if len(catalog) > shown {
-		parts = append(parts, fmt.Sprintf("\nAda produk lain di katalog. Sebut nama produk yang kakak mau ya."))
+		remaining := len(catalog) - shown
+		parts = append(parts, fmt.Sprintf("\nAda %d produk lain di katalog. Sebut nama produk yang kakak mau ya.", remaining))
 	}
 	if len(cats) > 1 {
 		parts = append(parts, "\nMau lihat kategori tertentu? Sebut saja ya kak.")

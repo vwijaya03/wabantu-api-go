@@ -16,6 +16,7 @@ func TestIsAnthropicRetryable(t *testing.T) {
 		{fmt.Errorf("anthropic API error: context deadline exceeded"), true},
 		{fmt.Errorf(`dial tcp: lookup api.anthropic.com: no such host`), true},
 		{fmt.Errorf("429 Too Many Requests"), true},
+		{fmt.Errorf("500 internal server error"), true},
 		{fmt.Errorf("503 service unavailable"), true},
 		{fmt.Errorf("401 authentication_error"), false},
 		{fmt.Errorf("invalid request: bad prompt"), false},

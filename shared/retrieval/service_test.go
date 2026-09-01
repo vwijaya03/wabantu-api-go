@@ -63,3 +63,47 @@ func TestRetrieveKB_CircuitOpenSetsLexicalFallback(t *testing.T) {
 		t.Fatalf("expected LexicalFallback on circuit open, got %+v", res)
 	}
 }
+
+type mockVectorStore struct {
+	hits []Hit
+}
+
+func (m mockVectorStore) Upsert(context.Context, string, []VectorRecord) error { return nil }
+func (m mockVectorStore) Query(context.Context, string, []float32, int, map[string]any) ([]Hit, error) {
+	return m.hits, nil
+}
+func (m mockVectorStore) DeleteIDs(context.Context, string, []string) error { return nil }
+func (m mockVectorStore) DeleteByFilter(context.Context, string, map[string]any) error {
+	return nil
+}
+
+func TestRetrieveKB_VectorFloorFiltersNoise(t *testing.T) {
+	store := mockVectorStore{hits: []Hit{
+		{ID: "kb:good:v1:c0", Score: 0.45, Metadata: map[string]any{"entry_id": "good"}},
+		{ID: "kb:noise:v1:c0", Score: 0.05, Metadata: map[string]any{"entry_id": "noise"}},
+	}}
+	svc := NewService(NewMockEmbedder(), store)
+	res, err := svc.RetrieveKB(context.Background(), RetrieveKBRequest{
+		Tenant: TenantIdentity{TenantID: "t1", TenantSchema: "t_acme"},
+		Query:  "harga produk",
+		TopK:   5,
+		Mode:   ModeVector,
+	}, func(_ context.Context, _ string, _ int) ([]ScoredEntry, error) {
+		return []ScoredEntry{{EntryID: "good", Score: 0.2, Source: SourceKB}}, nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if len(res.VectorHits) != 1 || res.VectorHits[0].Metadata["entry_id"] != "good" {
+		t.Fatalf("expected noise filtered from vector hits, got %+v", res.VectorHits)
+	}
+	foundNoise := false
+	for _, e := range res.Entries {
+		if e.EntryID == "noise" {
+			foundNoise = true
+		}
+	}
+	if foundNoise {
+		t.Fatalf("noise entry should not appear in fused results: %+v", res.Entries)
+	}
+}

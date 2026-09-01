@@ -107,7 +107,7 @@ func (s *Service) RetrieveCatalogCandidates(ctx context.Context, tenant TenantId
 	}
 	var hits []Hit
 	err = WithBudget(ctx, s.Budget, func() error {
-		vecs, e := s.Embedder.Embed(ctx, []string{query})
+		vecs, e := s.Embedder.Embed(ctx, []string{SanitizeForEmbed(query)})
 		if e != nil {
 			return e
 		}
@@ -124,5 +124,5 @@ func (s *Service) RetrieveCatalogCandidates(ctx context.Context, tenant TenantId
 	if s.Breaker != nil {
 		s.Breaker.RecordSuccess()
 	}
-	return hits, nil
+	return FilterHitsByScore(hits, VectorMinSimilarity), nil
 }

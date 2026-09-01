@@ -87,7 +87,7 @@ func (s *Service) RetrieveKB(ctx context.Context, req RetrieveKBRequest, lexical
 	var vectorHits []Hit
 	start := time.Now()
 	err = WithBudget(ctx, s.Budget, func() error {
-		vecs, e := s.Embedder.Embed(ctx, []string{req.Query})
+		vecs, e := s.Embedder.Embed(ctx, []string{SanitizeForEmbed(req.Query)})
 		if e != nil {
 			return e
 		}
@@ -109,6 +109,9 @@ func (s *Service) RetrieveKB(ctx context.Context, req RetrieveKBRequest, lexical
 	if s.Breaker != nil {
 		s.Breaker.RecordSuccess()
 	}
+
+	vectorHits = FilterHitsByScore(vectorHits, VectorMinSimilarity)
+	lexicalHits = FilterScoredEntries(lexicalHits, LexicalMinScore)
 
 	res.VectorHits = vectorHits
 	res.UsedVector = true

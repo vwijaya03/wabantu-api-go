@@ -18,6 +18,25 @@ func TestFormatCatalogListBodyNoSKU(t *testing.T) {
 	if strings.Contains(body, "[HELLO") || strings.Contains(body, "HELLO-KITTY") {
 		t.Fatalf("should not expose SKU in customer list:\n%s", body)
 	}
+	// Hello Kitty L/XL dedup to one family; LOL is a separate family.
+	if strings.Count(body, "BOXER") < 2 {
+		t.Fatalf("expected at least 2 boxer families (Hello Kitty + LOL), got:\n%s", body)
+	}
+}
+
+func TestFormatCatalogListBodyOmahFoodMix(t *testing.T) {
+	catalog := []dbCatalogItem{
+		{Name: "Abon Sapi 125g", SellPrice: 15000, SellUnit: "pcs"},
+		{Name: "Maggi Ayam Berempah", SellPrice: 70000, SellUnit: "pcs"},
+		{Name: "Benns Oatlife Chocolate", SellPrice: 25000, SellUnit: "pcs"},
+		{Name: "Cadbury Dairy Milk", SellPrice: 18000, SellUnit: "pcs"},
+	}
+	body := formatCatalogListBody(catalog, 8)
+	for _, want := range []string{"Abon", "Maggi", "Benns", "Cadbury"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected %q in:\n%s", want, body)
+		}
+	}
 }
 
 func TestFormatOrderSummary(t *testing.T) {
