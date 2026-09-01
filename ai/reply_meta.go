@@ -2,19 +2,33 @@ package ai
 
 import (
 	"context"
-
-	"encore.dev/rlog"
 	"strings"
 
+	"encore.app/wabantu/shared/retrieval"
 	"encore.app/wabantu/shared/strutil"
+	"encore.dev"
+	"encore.dev/rlog"
 )
 
 func previewText(s string, max int) string {
 	s = strings.TrimSpace(s)
+	if shouldRedactCustomerPreview() {
+		s = retrieval.RedactPII(s)
+	}
 	if max <= 0 || len(s) <= max {
 		return s
 	}
 	return strutil.TruncateUTF8Ellipsis(s, max)
+}
+
+func shouldRedactCustomerPreview() bool {
+	meta := encore.Meta()
+	switch meta.Environment.Type {
+	case "production", "prod", "staging":
+		return true
+	default:
+		return meta.Environment.Cloud != encore.CloudLocal
+	}
 }
 
 // Path constants live in buyerflow_bridge.go (sourced from internal/buyerflow).

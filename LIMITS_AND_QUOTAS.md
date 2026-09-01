@@ -139,6 +139,7 @@ Top-up tidak mengubah paket, tidak recurring, dan tidak menambah broadcast/stora
 | CRM / leads | `FeatureCRMLeads` | — |
 | Multi cabang | `FeatureMultiBranch` | — |
 | AI auto-reply | — | `ai_conversation`, `ai_token` via `CheckAICostLimit` |
+| RAG query embed | — | **500 embed/jam/tenant** (`retrieval:embedquota:{tenantID}:{hour}`) — fallback lexical saat habis |
 | Import katalog dari gambar (vision) | — | `ai_token` saat **preview** saja (`PurposeCatalogImport`); commit tanpa AI |
 | Import transaksi dari gambar (vision) | — | `ai_token` saat **preview** saja (`PurposeTransactionImport`); commit tanpa AI |
 | Undang staff | — | `admin_seat` |

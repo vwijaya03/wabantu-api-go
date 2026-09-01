@@ -5,8 +5,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"regexp"
 	"strings"
 )
+
+// tenantNamespaceRE validates Pinecone namespace derived from tenant schema.
+var tenantNamespaceRE = regexp.MustCompile(`^t_[a-z0-9_]{1,60}$`)
 
 // KBVectorID is deterministic: kb:{entry_id}:v{version}:c{chunk_index}.
 func KBVectorID(entryID string, version int64, chunkIndex int) string {
@@ -120,7 +124,7 @@ func Namespace(tenant TenantIdentity) (string, error) {
 	if ns == "" {
 		return "", fmt.Errorf("tenant schema required for retrieval namespace")
 	}
-	if !strings.HasPrefix(ns, "t_") {
+	if !tenantNamespaceRE.MatchString(ns) {
 		return "", fmt.Errorf("invalid tenant schema namespace: %s", ns)
 	}
 	return ns, nil
