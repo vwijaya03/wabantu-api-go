@@ -11,6 +11,7 @@ import (
 
 	appauth "encore.app/wabantu/auth"
 	"encore.app/wabantu/ai"
+	"encore.app/wabantu/kb"
 	apperr "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/usage"
 )
@@ -427,11 +428,6 @@ func PublishSetupInterview(ctx context.Context, sessionId string, req *SetupInte
 		profileUpdated = true
 	}
 
-	ts, err := openTenantScope(ctx, user.TenantSchema)
-	if err != nil {
-		return nil, apperr.Internal("database connection failed")
-	}
-
 	source := "ai_interview"
 	published, skipped := 0, 0
 	for _, item := range req.FAQ {
@@ -444,13 +440,8 @@ func PublishSetupInterview(ctx context.Context, sessionId string, req *SetupInte
 			continue
 		}
 		cat := item.Category
-		_, err := ts.ExecContext(ctx, `
-			INSERT INTO knowledge_base_entry (question, answer, category, source, is_active)
-			VALUES ($1, $2, $3, $4, true)`,
-			strings.TrimSpace(item.Question),
-			strings.TrimSpace(item.Answer),
-			cat, source,
-		)
+		_, err := kb.InsertKBEntryWithIndex(ctx, user.TenantSchema, user.TenantID,
+			strings.TrimSpace(item.Question), strings.TrimSpace(item.Answer), cat, source, true)
 		if err != nil {
 			rlog.Warn("setup interview faq insert failed", "err", err)
 			skipped++

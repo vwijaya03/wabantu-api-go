@@ -39,17 +39,17 @@ sequenceDiagram
 
 | Tahap | Package / file | Fungsi utama |
 |-------|----------------|--------------|
-| HTTP webhook | `webhook/webhook.go` | `handleMetaWebhook`, `receiveWebhook`, `ingestMessage` |
+| HTTP webhook | `webhook/webhook.go` | `handleWhatsAppWebhook`, `receiveWebhook`, `ingestMessage` |
 | Parse payload | `whatsapp/whatsapp.go` | `ParseWebhook`, `VerifyWebhookSignature` |
 | Antrian AI | `ai/inbound_jobs.go` | `PublishInboundJob`, `handleInboundAI` |
 | Orchestrator | `ai/autoreply.go` | `ProcessAutoReply` |
 | Kirim balasan | `ai/autoreply.go` | `sendAiMessage` → `whatsapp.SendText` |
 
-**Endpoint webhook (alias):**
+**Endpoint webhook (kanonik):**
 
-- `POST /api/v1/webhook/whatsapp`
-- `POST /api/v1/whatsapp/webhook/meta`
-- `POST /webhook/whatsapp` (legacy)
+- `GET/POST /api/v1/webhook/whatsapp`
+
+Path legacy (`/api/v1/whatsapp/webhook/meta`, `/webhook/whatsapp`) **dihapus** — update Meta Developer Console ke path di atas saat deploy.
 
 ---
 
@@ -186,6 +186,26 @@ flowchart TD
 9. **History-backed purchase:** `mau beli 2 lusin` + stok? tanpa nama produk di pesan, tapi outbound terakhir menyebut satu produk (mis. Abon) → `order_intent` / `order_flow`, bukan retail policy.
 10. **Sell inquiry:** `jual abon sapi?` → `catalog_db` (`IsProductSellInquiry`), bukan LLM.
 11. **Stock follow-up:** `stoknya ada?` / `ada ga?` pendek → resolve produk dari `matchCatalogFromFocusedHistory` — skip outbound list katalog.
+
+### Retrieval vector (RAG)
+
+> Detail lengkap: [RAG_VECTOR_RETRIEVAL.md](./RAG_VECTOR_RETRIEVAL.md)
+
+| `retrieval_mode` | Perilaku di `ProcessAutoReply` |
+|------------------|--------------------------------|
+| `disabled` (default) | `retrieveHybridKB` lexical — status quo |
+| `shadow` | Vector + lexical dijalankan; log skor; **respons pelanggan tidak berubah** |
+| `vector` | RRF vector+lexical → urutan FAQ di prompt; FAQ direct pakai `DefaultFAQMinScore` + margin |
+
+Implementasi: `ai/retrieval_bridge.go` → `shared/retrieval.Service.RetrieveKB` (singleton `DefaultService()`). Mode per tenant: `disabled` / `shadow` / `vector` (`flag/retrieval_mode.go`).
+
+- **Fallback lexical** saat embed/Pinecone gagal, circuit OPEN, atau secrets belum dikonfigurasi — field `LexicalFallback` + metric `retrieval_fallback_total`.
+- **Shadow mode:** vector dijalankan, respons pelanggan tidak berubah; bandingkan log `retrieval shadow`.
+- **Pinecone metadata:** hanya `entry_id` + `content_hash` — teks FAQ dari PostgreSQL saat runtime.
+
+Detail: [RAG_VECTOR_RETRIEVAL.md](./RAG_VECTOR_RETRIEVAL.md) · shipped hardening: [../docs-development-shipped/20260831_101000_rag-hardening-webhook-cleanup.md](../docs-development-shipped/20260831_101000_rag-hardening-webhook-cleanup.md).
+
+Katalog: `MatchCatalogItemSemantic` (vector top-3 → rules); ambigu → klarifikasi, bukan tebak SKU.
 
 ---
 

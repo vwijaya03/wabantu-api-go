@@ -13,6 +13,7 @@ import (
 
 	appErrs "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/entitlement"
+	"encore.app/wabantu/shared/pii"
 	"encore.app/wabantu/shared/types"
 	"encore.app/wabantu/usage"
 	"encore.app/wabantu/whatsapp"
@@ -303,14 +304,23 @@ func authUser(ctx context.Context) (*types.AuthUser, error) {
 }
 
 func sendToPhone(ctx context.Context, schema, phone, body string) error {
-	var token string
-	var phoneNumberID string
+	var tokenEnc, tokenLegacy, phoneNumberID string
 	err := db.QueryRow(ctx, fmt.Sprintf(`
-		SELECT COALESCE(access_token,''), COALESCE(meta_phone_number_id,'')
+		SELECT COALESCE(access_token_enc,''), COALESCE(access_token,''),
+		       COALESCE(meta_phone_number_id,'')
 		FROM "%s".whatsapp_channel
-		WHERE status = 'connected' AND access_token IS NOT NULL AND access_token <> ''
+		WHERE status = 'connected'
+		  AND (
+		    NULLIF(TRIM(access_token_enc), '') IS NOT NULL
+		    OR (NULLIF(TRIM(access_token), '') IS NOT NULL AND access_token <> $1)
+		  )
 		ORDER BY connected_at DESC NULLS LAST LIMIT 1`, schema),
-	).Scan(&token, &phoneNumberID)
+		pii.Placeholder,
+	).Scan(&tokenEnc, &tokenLegacy, &phoneNumberID)
+	if err != nil {
+		return fmt.Errorf("no connected whatsapp channel")
+	}
+	token, err := pii.DecryptOrLegacy(tokenEnc, tokenLegacy, encKey())
 	if err != nil || token == "" || phoneNumberID == "" {
 		return fmt.Errorf("no connected whatsapp channel")
 	}

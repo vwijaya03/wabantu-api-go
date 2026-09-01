@@ -44,16 +44,19 @@ Satu produk induk + banyak varian (L/XL/XXL) → **beberapa baris** `business_ca
 - `source` = `image_import`
 - `external_code` = kode variasi / SKU
 - `name` = judul + varian
-- `ON CONFLICT (source, external_code) DO UPDATE`
+- `ON CONFLICT (source, external_code) WHERE deleted_at IS NULL DO UPDATE`
 
 ## Kode utama
 
 | File | Peran |
 |------|--------|
 | `ai/vision.go` | Vision + prompt JSON |
-| `business/catalog_image.go` | API commit / limits / batch preview logic |
+| `business/catalog_image.go` | API preview / limits / batch preview logic |
 | `business/catalog_image_http.go` | Raw HTTP handler multipart batch preview |
+| `business/catalog_text.go` | `commitCatalogDraftItems` — helper upsert dipakai image + text import |
 | `ai/catalog_reply.go` | Balasan chat dari DB (bukan IG) — terpisah dari import |
+
+**Import teks (tanpa gambar):** lihat [CATALOG_TEXT_IMPORT.md](./CATALOG_TEXT_IMPORT.md) — reuse parser draft & commit helper yang sama.
 
 ## Frontend
 
@@ -82,6 +85,7 @@ Prompt vision (`ai/vision.go`) menegaskan: **satu objek JSON**, semua varian dal
 | `format gambar: JPG, PNG, atau WEBP` | Ekstensi/MIME tidak dikenali | Rename `.png`/`.jpg` atau pilih format yang didukung |
 | `kuota token AI ... habis` | `ai_token` bulanan 0 | Tunggu periode baru atau upgrade paket |
 | Pesan error generik `Bad Request` di UI | Raw handler memakai `errs.Error.Message` | Pastikan deploy terbaru (`catalogImageErrMessage`) |
+| Commit gagal `42P10` / no matching ON CONFLICT | Index partial `WHERE deleted_at IS NULL` | Deploy `commitCatalogDraftItems` — upsert wajib sama klausa `WHERE` |
 
 ## Uji manual
 

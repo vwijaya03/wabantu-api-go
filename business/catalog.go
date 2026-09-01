@@ -205,6 +205,7 @@ func CreateCatalog(ctx context.Context, req *CreateCatalogRequest) (*CatalogItem
 		}
 		item.Prices = prices
 	}
+	afterCatalogItemWritten(ctx, user.TenantSchema, user.TenantID, item)
 	return &item, nil
 }
 
@@ -303,6 +304,7 @@ func UpdateCatalog(ctx context.Context, id string, req *UpdateCatalogRequest) (*
 		return nil, pErr
 	}
 	item.Prices = prices
+	afterCatalogItemWritten(ctx, user.TenantSchema, user.TenantID, item)
 	return &item, nil
 }
 
@@ -321,6 +323,17 @@ func DeleteCatalog(ctx context.Context, id string) error {
 	}
 
 	uid, _ := auth.UserID()
+	var version int64
+	err = ts.QueryRowContext(ctx, `
+		SELECT embedding_version FROM business_catalog_item
+		WHERE id = $1 AND deleted_at IS NULL`, id).Scan(&version)
+	if err == sql.ErrNoRows {
+		return apperr.NotFound("catalog item not found")
+	}
+	if err != nil {
+		return apperr.Internal("load catalog item failed")
+	}
+
 	res, err := ts.ExecContext(ctx, `
 		UPDATE business_catalog_item
 		SET deleted_at = NOW(), deleted_by = $1, updated_at = NOW()
@@ -332,6 +345,7 @@ func DeleteCatalog(ctx context.Context, id string) error {
 	if n == 0 {
 		return apperr.NotFound("catalog item not found")
 	}
+	afterCatalogItemDeleted(ctx, user.TenantSchema, user.TenantID, id, version)
 	return nil
 }
 

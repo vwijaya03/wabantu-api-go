@@ -1,6 +1,10 @@
 package db
 
-import "testing"
+import (
+	"context"
+	"database/sql"
+	"testing"
+)
 
 func TestQualify(t *testing.T) {
 	got := Qualify("t_demo", "contact")
@@ -35,6 +39,22 @@ func TestQualifySQLOrderTableQuoted(t *testing.T) {
 	}
 }
 
+func TestQualifySQLPreservesStringLiterals(t *testing.T) {
+	sch := SchemaSQL{Schema: "t_omah_apparel"}
+	in := `INSERT INTO message (conversation_id, external_id, direction, author, type, body, metadata, status)
+		 VALUES ($1, $2, 'in', 'contact', $3, $4, $5::jsonb, 'delivered')`
+	out := QualifySQL(sch, in)
+	if contains(out, `"t_omah_apparel"."contact"`) && contains(out, `'contact'`) == false {
+		t.Fatalf("QualifySQL() must not rewrite string literal 'contact': %q", out)
+	}
+	if !contains(out, `'contact'`) {
+		t.Fatalf("QualifySQL() = %q, want author literal 'contact' preserved", out)
+	}
+	if !contains(out, `"t_omah_apparel"."message"`) {
+		t.Fatalf("QualifySQL() = %q, want message table qualified", out)
+	}
+}
+
 func TestQualifySQLOrderTableLeftJoin(t *testing.T) {
 	sch := SchemaSQL{Schema: "t_omah_apparel"}
 	in := `LEFT JOIN "order" o ON o.payment_proof_message_id = m.id AND o.deleted_at IS NULL`
@@ -65,4 +85,25 @@ func indexOf(s, sub string) int {
 		}
 	}
 	return -1
+}
+
+func TestQualifySQLRetrievalOutbox(t *testing.T) {
+	sch := SchemaSQL{Schema: "t_omah_apparel"}
+	in := `INSERT INTO retrieval_outbox (event_type, entity_type, entity_id) VALUES ($1, $2, $3)`
+	out := QualifySQL(sch, in)
+	want := `INSERT INTO "t_omah_apparel"."retrieval_outbox" (event_type, entity_type, entity_id) VALUES ($1, $2, $3)`
+	if out != want {
+		t.Fatalf("QualifySQL() = %q, want %q", out, want)
+	}
+}
+
+func TestTenantScope_BeginTxWithoutPoolFails(t *testing.T) {
+	ts := TenantScope{
+		Q:   stdQuerier{q: &sql.DB{}},
+		Sch: SchemaSQL{Schema: "t_demo"},
+	}
+	_, err := ts.BeginTx(context.Background(), nil)
+	if err == nil {
+		t.Fatal("expected BeginTx error when pool is not set")
+	}
 }

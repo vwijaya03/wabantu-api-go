@@ -78,7 +78,11 @@ func BuildPricingClarificationReply(formal bool, it *CatalogItem) string {
 func BoxerHistory() []Message { return boxerHistory() }
 
 func ReplyFromBusinessCatalog(userText string, profile *BusinessProfile, catalog []CatalogItem, history []Message) (string, bool) {
-	return replyFromBusinessCatalog(userText, profile, catalog, history)
+	return replyFromBusinessCatalog(userText, profile, catalog, history, nil)
+}
+
+func ReplyFromBusinessCatalogVector(userText string, profile *BusinessProfile, catalog []CatalogItem, history []Message, vctx *CatalogVectorContext) (string, bool) {
+	return replyFromBusinessCatalog(userText, profile, catalog, history, vctx)
 }
 
 func TryPaymentFAQAnswer(query string, kb []KBEntry) (string, bool) {

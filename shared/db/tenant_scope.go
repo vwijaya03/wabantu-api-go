@@ -66,6 +66,7 @@ var tenantTableNames = []string{
 	"inv_stock_balance",
 	"inv_sales_return",
 	"knowledge_base_entry",
+	"retrieval_outbox",
 	"payment_transaction",
 	"pur_purchase_order",
 	"inv_invoice_line",
@@ -113,10 +114,16 @@ func init() {
 }
 
 // QualifySQL rewrites unqualified tenant table references to "schema"."table".
+// String literals (single-quoted) are left untouched so values like author='contact'
+// are not mistaken for the contact table.
 func QualifySQL(sch SchemaSQL, sql string) string {
 	if strings.Contains(sql, sch.Schema) {
 		return sql
 	}
+	return qualifySQLOutsideLiterals(sch, sql)
+}
+
+func qualifySQLChunk(sch SchemaSQL, sql string) string {
 	out := sql
 	for i, table := range tenantTableNames {
 		out = tenantTableRE[i].ReplaceAllString(out, sch.T(table))
@@ -131,6 +138,39 @@ func QualifySQL(sch SchemaSQL, sql string) string {
 	out = orderQuotedRE.ReplaceAllStringFunc(out, replaceOrder)
 	out = orderUnquotedRE.ReplaceAllStringFunc(out, replaceOrder)
 	return out
+}
+
+func qualifySQLOutsideLiterals(sch SchemaSQL, sql string) string {
+	var b strings.Builder
+	b.Grow(len(sql) + 32)
+	for i := 0; i < len(sql); {
+		if sql[i] != '\'' {
+			j := i
+			for j < len(sql) && sql[j] != '\'' {
+				j++
+			}
+			b.WriteString(qualifySQLChunk(sch, sql[i:j]))
+			i = j
+			continue
+		}
+		b.WriteByte('\'')
+		i++
+		for i < len(sql) {
+			ch := sql[i]
+			b.WriteByte(ch)
+			if ch == '\'' {
+				if i+1 < len(sql) && sql[i+1] == '\'' {
+					b.WriteByte(sql[i+1])
+					i += 2
+					continue
+				}
+				i++
+				break
+			}
+			i++
+		}
+	}
+	return b.String()
 }
 
 // OpenTenantScope returns a scope for schema-qualified DML on pool (no search_path).
@@ -164,6 +204,9 @@ func (ts TenantScope) QueryRowContext(ctx context.Context, query string, args ..
 }
 
 func (ts TenantScope) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
+	if ts.pool != nil {
+		return ts.pool.BeginTx(ctx, opts)
+	}
 	beginner, ok := ts.Q.(interface {
 		BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
 	})

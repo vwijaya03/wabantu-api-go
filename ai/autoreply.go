@@ -15,10 +15,13 @@ import (
 	"encore.dev/rlog"
 	"encore.dev/storage/sqldb"
 
+	appflag "encore.app/wabantu/flag"
 	"encore.app/wabantu/shared/inboxrealtime"
 	appdb "encore.app/wabantu/shared/db"
+	"encore.app/wabantu/shared/retrieval"
 	"encore.app/wabantu/shared/strutil"
 	"encore.app/wabantu/shared/pii"
+	"encore.app/wabantu/shared/whatsappchannel"
 	"encore.app/wabantu/usage"
 	"encore.app/wabantu/whatsapp"
 	"github.com/redis/go-redis/v9"
@@ -184,7 +187,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		rlog.Warn("AI job: missing contact or channel")
 		return false, nil
 	}
-	if channel.Provider != "meta_cloud" || channel.Status != "tsected" {
+	if channel.Provider != "meta_cloud" || channel.Status != "connected" {
 		rlog.Warn("AI job: unsupported/invalid channel",
 			"provider", channel.Provider,
 			"status", channel.Status,
@@ -409,7 +412,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 
 	// ── Katalog WABantu (business_catalog_item) — prioritas sebelum FAQ/LLM ──
 	if inScope {
-		if catReply, ok := replyFromBusinessCatalog(userText, profile, catalog, history); ok {
+		if catReply, ok := s.replyFromBusinessCatalogHybrid(ctx, payload.TenantID, payload.TenantSchema, userText, profile, catalog, history); ok {
 			if clearedOrderForCorrection {
 				catReply = prependSalesCorrection(strOrEmpty(profile.Tone) == "formal", catReply)
 			}
@@ -458,7 +461,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 
 	// ── Browsing katalog (mis. "mau tanya produk") — jangan redirect generik ──
 	if inScope && IsCatalogBrowsingIntent(userText) {
-		if catReply, ok := replyFromBusinessCatalog(userText, profile, catalog, history); ok {
+		if catReply, ok := s.replyFromBusinessCatalogHybrid(ctx, payload.TenantID, payload.TenantSchema, userText, profile, catalog, history); ok {
 			finalReply := applyOutputPolicy(catReply)
 			out := metaNoLLM(reasonAIGenerated, PathCatalogDB)
 			out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
@@ -529,16 +532,21 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return err == nil, err
 	}
 
-	kbHybrid := retrieveHybridKB(userText, kbEntries)
-	kbTopScore := topKBMatchScore(userText, kbEntries)
+	kbHybrid, kbTopScore, kbRetrieval := s.retrieveKBHybrid(ctx, payload.TenantID, payload.TenantSchema, userText, kbEntries)
 	rlog.Info("AI job: hybrid KB retrieval",
 		"selected", len(kbHybrid),
 		"total", len(kbEntries),
 		"topScore", kbTopScore,
+		"shadow", kbRetrieval != nil && kbRetrieval.ShadowOnly,
 	)
 
 	// FAQ bypass — no LLM call when KB match is strong (cost optimization).
-	if direct, ok := tryFAQDirectAnswer(userText, kbEntries); ok {
+	mode := appflag.RetrievalMode(ctx, payload.TenantID)
+	var rrfScores []retrieval.ScoredEntry
+	if kbRetrieval != nil {
+		rrfScores = kbRetrieval.Entries
+	}
+	if direct, ok := tryFAQDirectAnswerHybrid(userText, kbEntries, rrfScores, mode); ok {
 		finalReply := applyOutputPolicy(direct)
 		s.setCachedAnswer(ctx, payload.TenantID, userText, finalReply)
 		out := metaNoLLM(reasonAIGenerated, PathFAQDirect)
@@ -1192,16 +1200,38 @@ func isMissingPIIColumn(err error) bool {
 
 func loadChannel(ctx context.Context, ts tenantScopedQuerier, id string) (*dbChannel, error) {
 	row := ts.QueryRowContext(ctx, fmt.Sprintf(`
-		SELECT id, provider, status, access_token, meta_phone_number_id,
-		       meta_waba_id, display_name, phone_number
+		SELECT id, provider, status,
+		       COALESCE(access_token_enc, ''), COALESCE(access_token, ''),
+		       meta_phone_number_id, meta_waba_id,
+		       COALESCE(display_name_enc, ''), COALESCE(display_name, ''),
+		       COALESCE(phone_number_enc, ''), COALESCE(phone_number, '')
 		FROM %s WHERE id = $1`, ts.T("whatsapp_channel")), id)
 	ch := &dbChannel{}
-	err := row.Scan(&ch.ID, &ch.Provider, &ch.Status, &ch.AccessToken,
-		&ch.MetaPhoneNumberID, &ch.MetaWabaID, &ch.DisplayName, &ch.PhoneNumber)
+	var tokenEnc, tokenLegacy, displayEnc, displayLegacy, phoneEnc, phoneLegacy string
+	err := row.Scan(&ch.ID, &ch.Provider, &ch.Status, &tokenEnc, &tokenLegacy,
+		&ch.MetaPhoneNumberID, &ch.MetaWabaID,
+		&displayEnc, &displayLegacy, &phoneEnc, &phoneLegacy)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
-	return ch, err
+	if err != nil {
+		return nil, err
+	}
+	key := strings.TrimSpace(secrets.DataEncryptionKey)
+	token, err := pii.DecryptOrLegacy(tokenEnc, tokenLegacy, key)
+	if err != nil {
+		return nil, err
+	}
+	if token != "" {
+		ch.AccessToken = &token
+	}
+	display, err := whatsappchannel.DecryptDisplay(displayEnc, displayLegacy, phoneEnc, phoneLegacy, key)
+	if err != nil {
+		return nil, err
+	}
+	ch.DisplayName = display.DisplayName
+	ch.PhoneNumber = display.PhoneNumber
+	return ch, nil
 }
 
 func loadHistory(ctx context.Context, ts tenantScopedQuerier, convoID string, limit int) ([]dbMessage, error) {
@@ -1277,8 +1307,8 @@ func (s *AutoReplyService) sendAiMessage(
 	if channel.Provider != "meta_cloud" {
 		return fmt.Errorf("unsupported channel provider %q", channel.Provider)
 	}
-	if channel.Status != "tsected" {
-		return fmt.Errorf("whatsapp channel not tsected")
+	if channel.Status != "connected" {
+		return fmt.Errorf("whatsapp channel not connected")
 	}
 	if channel.AccessToken == nil || strings.TrimSpace(*channel.AccessToken) == "" {
 		return fmt.Errorf("whatsapp channel missing access token")

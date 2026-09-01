@@ -1,5 +1,5 @@
 {
-  "count": 336,
+  "count": 346,
   "endpoints": [
     {
       "service": "admin",
@@ -279,7 +279,7 @@
     {
       "service": "auth",
       "file": "auth/auth.go",
-      "line": 278,
+      "line": 280,
       "access": "public",
       "method": "POST",
       "path": "/api/v1/auth/login",
@@ -289,7 +289,7 @@
     {
       "service": "auth",
       "file": "auth/auth.go",
-      "line": 385,
+      "line": 387,
       "access": "public",
       "method": "POST",
       "path": "/api/v1/auth/logout",
@@ -299,7 +299,7 @@
     {
       "service": "auth",
       "file": "auth/auth.go",
-      "line": 410,
+      "line": 412,
       "access": "public",
       "method": "GET",
       "path": "/api/v1/auth/me",
@@ -319,7 +319,7 @@
     {
       "service": "auth",
       "file": "auth/auth.go",
-      "line": 139,
+      "line": 140,
       "access": "public",
       "method": "POST",
       "path": "/api/v1/auth/register",
@@ -441,7 +441,7 @@
     {
       "service": "business",
       "file": "business/catalog.go",
-      "line": 309,
+      "line": 311,
       "access": "auth",
       "method": "DELETE",
       "path": "/api/v1/business/catalog/:id",
@@ -451,7 +451,7 @@
     {
       "service": "business",
       "file": "business/catalog.go",
-      "line": 211,
+      "line": 212,
       "access": "auth",
       "method": "PATCH",
       "path": "/api/v1/business/catalog/:id",
@@ -498,6 +498,36 @@
       "raw": true,
       "tag": "owner",
       "annotation": "auth raw method=POST path=/api/v1/business/catalog/import-image/preview tag:owner"
+    },
+    {
+      "service": "business",
+      "file": "business/catalog_text.go",
+      "line": 122,
+      "access": "auth",
+      "method": "GET",
+      "path": "/api/v1/business/catalog/import-text/draft/:jobId",
+      "tag": "owner",
+      "annotation": "auth method=GET path=/api/v1/business/catalog/import-text/draft/:jobId tag:owner"
+    },
+    {
+      "service": "business",
+      "file": "business/catalog_text.go",
+      "line": 151,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/business/catalog/import-text/draft/:jobId/commit",
+      "tag": "owner",
+      "annotation": "auth method=POST path=/api/v1/business/catalog/import-text/draft/:jobId/commit tag:owner"
+    },
+    {
+      "service": "business",
+      "file": "business/catalog_text.go",
+      "line": 35,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/business/catalog/import-text/preview",
+      "tag": "owner",
+      "annotation": "auth method=POST path=/api/v1/business/catalog/import-text/preview tag:owner"
     },
     {
       "service": "business",
@@ -578,7 +608,7 @@
     {
       "service": "business",
       "file": "business/interview.go",
-      "line": 221,
+      "line": 222,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/business/setup-interview/session/:sessionId",
@@ -588,7 +618,7 @@
     {
       "service": "business",
       "file": "business/interview.go",
-      "line": 238,
+      "line": 239,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/business/setup-interview/session/:sessionId/message",
@@ -598,7 +628,7 @@
     {
       "service": "business",
       "file": "business/interview.go",
-      "line": 400,
+      "line": 401,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/business/setup-interview/session/:sessionId/publish",
@@ -608,7 +638,7 @@
     {
       "service": "business",
       "file": "business/interview.go",
-      "line": 171,
+      "line": 172,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/business/setup-interview/start",
@@ -1741,7 +1771,7 @@
     {
       "service": "flag",
       "file": "flag/flag.go",
-      "line": 158,
+      "line": 161,
       "access": "auth",
       "method": "PATCH",
       "path": "/api/v1/flags/:key",
@@ -1750,11 +1780,83 @@
     {
       "service": "flag",
       "file": "flag/flag.go",
-      "line": 204,
+      "line": 217,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/flags/check/:key",
       "annotation": "auth method=GET path=/api/v1/flags/check/:key"
+    },
+    {
+      "service": "flag",
+      "file": "flag/retrieval_indexing.go",
+      "line": 10,
+      "access": "auth",
+      "method": "GET",
+      "path": "/api/v1/flags/retrieval-indexing/:tenantId",
+      "annotation": "auth method=GET path=/api/v1/flags/retrieval-indexing/:tenantId"
+    },
+    {
+      "service": "flag",
+      "file": "flag/retrieval_rollout.go",
+      "line": 231,
+      "access": "auth",
+      "method": "PUT",
+      "path": "/api/v1/flags/retrieval-mode",
+      "annotation": "auth method=PUT path=/api/v1/flags/retrieval-mode"
+    },
+    {
+      "service": "flag",
+      "file": "flag/retrieval_rollout.go",
+      "line": 220,
+      "access": "auth",
+      "method": "GET",
+      "path": "/api/v1/flags/retrieval-mode/:tenantId",
+      "annotation": "auth method=GET path=/api/v1/flags/retrieval-mode/:tenantId"
+    },
+    {
+      "service": "flag",
+      "file": "flag/retrieval_indexing.go",
+      "line": 26,
+      "access": "auth",
+      "method": "GET",
+      "path": "/api/v1/flags/retrieval-observability",
+      "annotation": "auth method=GET path=/api/v1/flags/retrieval-observability"
+    },
+    {
+      "service": "flag",
+      "file": "flag/rag_rollout_jobs.go",
+      "line": 660,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/flags/retrieval-rollout",
+      "annotation": "auth method=POST path=/api/v1/flags/retrieval-rollout"
+    },
+    {
+      "service": "flag",
+      "file": "flag/rag_rollout_jobs.go",
+      "line": 677,
+      "access": "auth",
+      "method": "GET",
+      "path": "/api/v1/flags/retrieval-rollout/active-jobs",
+      "annotation": "auth method=GET path=/api/v1/flags/retrieval-rollout/active-jobs"
+    },
+    {
+      "service": "flag",
+      "file": "flag/rag_rollout_jobs.go",
+      "line": 669,
+      "access": "auth",
+      "method": "GET",
+      "path": "/api/v1/flags/retrieval-rollout/jobs/:jobId",
+      "annotation": "auth method=GET path=/api/v1/flags/retrieval-rollout/jobs/:jobId"
+    },
+    {
+      "service": "flag",
+      "file": "flag/rag_rollout_jobs.go",
+      "line": 689,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/flags/retrieval-rollout/jobs/:jobId/cancel",
+      "annotation": "auth method=POST path=/api/v1/flags/retrieval-rollout/jobs/:jobId/cancel"
     },
     {
       "service": "health",
@@ -1777,7 +1879,7 @@
     {
       "service": "importcsv",
       "file": "importcsv/import.go",
-      "line": 205,
+      "line": 207,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/import/execute",
@@ -1787,7 +1889,7 @@
     {
       "service": "importcsv",
       "file": "importcsv/import.go",
-      "line": 130,
+      "line": 132,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/import/preview",
@@ -1797,7 +1899,7 @@
     {
       "service": "importcsv",
       "file": "importcsv/import.go",
-      "line": 187,
+      "line": 189,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/import/status/:jobId",
@@ -2608,7 +2710,7 @@
     {
       "service": "kb",
       "file": "kb/kb.go",
-      "line": 134,
+      "line": 138,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/knowledge-base",
@@ -2617,7 +2719,7 @@
     {
       "service": "kb",
       "file": "kb/kb.go",
-      "line": 212,
+      "line": 216,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/knowledge-base",
@@ -2626,7 +2728,7 @@
     {
       "service": "kb",
       "file": "kb/kb.go",
-      "line": 322,
+      "line": 376,
       "access": "auth",
       "method": "DELETE",
       "path": "/api/v1/knowledge-base/:id",
@@ -2635,11 +2737,20 @@
     {
       "service": "kb",
       "file": "kb/kb.go",
-      "line": 250,
+      "line": 278,
       "access": "auth",
       "method": "PATCH",
       "path": "/api/v1/knowledge-base/:id",
       "annotation": "auth method=PATCH path=/api/v1/knowledge-base/:id"
+    },
+    {
+      "service": "kb",
+      "file": "kb/retrieval_worker.go",
+      "line": 148,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/knowledge-base/reindex",
+      "annotation": "auth method=POST path=/api/v1/knowledge-base/reindex"
     },
     {
       "service": "leads",
@@ -3030,7 +3141,7 @@
     {
       "service": "whatsappapi",
       "file": "whatsappapi/whatsappapi.go",
-      "line": 107,
+      "line": 105,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/whatsapp/channels",
@@ -3039,7 +3150,7 @@
     {
       "service": "whatsappapi",
       "file": "whatsappapi/whatsappapi.go",
-      "line": 275,
+      "line": 273,
       "access": "auth",
       "method": "DELETE",
       "path": "/api/v1/whatsapp/channels/:id",
@@ -3048,7 +3159,17 @@
     {
       "service": "whatsappapi",
       "file": "whatsappapi/whatsappapi.go",
-      "line": 525,
+      "line": 321,
+      "access": "auth",
+      "method": "DELETE",
+      "path": "/api/v1/whatsapp/channels/:id/permanent",
+      "tag": "owner",
+      "annotation": "auth method=DELETE path=/api/v1/whatsapp/channels/:id/permanent tag:owner"
+    },
+    {
+      "service": "whatsappapi",
+      "file": "whatsappapi/whatsappapi.go",
+      "line": 610,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/whatsapp/channels/:id/test-message",
@@ -3058,7 +3179,7 @@
     {
       "service": "whatsappapi",
       "file": "whatsappapi/whatsappapi.go",
-      "line": 203,
+      "line": 201,
       "access": "public",
       "method": "POST",
       "path": "/api/v1/whatsapp/meta/connect/callback",
@@ -3067,21 +3188,11 @@
     {
       "service": "whatsappapi",
       "file": "whatsappapi/whatsappapi.go",
-      "line": 149,
+      "line": 147,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/whatsapp/meta/connect/init",
       "annotation": "auth method=POST path=/api/v1/whatsapp/meta/connect/init"
-    },
-    {
-      "service": "webhook",
-      "file": "webhook/webhook.go",
-      "line": 60,
-      "access": "public",
-      "method": "*",
-      "path": "/api/v1/whatsapp/webhook/meta",
-      "raw": true,
-      "annotation": "public raw path=/api/v1/whatsapp/webhook/meta"
     },
     {
       "service": "workflow",
@@ -3130,26 +3241,6 @@
       "method": "GET",
       "path": "/internal/apitest/ping",
       "annotation": "private method=GET path=/internal/apitest/ping"
-    },
-    {
-      "service": "webhook",
-      "file": "webhook/webhook.go",
-      "line": 72,
-      "access": "public",
-      "method": "*",
-      "path": "/webhook/whatsapp",
-      "raw": true,
-      "annotation": "public raw path=/webhook/whatsapp"
-    },
-    {
-      "service": "webhook",
-      "file": "webhook/webhook.go",
-      "line": 67,
-      "access": "public",
-      "method": "*",
-      "path": "/whatsapp/webhook/meta",
-      "raw": true,
-      "annotation": "public raw path=/whatsapp/webhook/meta"
     }
   ]
 }

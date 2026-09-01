@@ -1,6 +1,6 @@
 {
   "total_services": 29,
-  "total_endpoints": 336,
+  "total_endpoints": 346,
   "services": {
     "admin": 24,
     "ai": 3,
@@ -10,16 +10,16 @@
     "billing": 5,
     "branch": 2,
     "broadcast": 3,
-    "business": 20,
+    "business": 23,
     "events": 64,
     "finance": 60,
-    "flag": 4,
+    "flag": 12,
     "health": 2,
     "importcsv": 3,
     "inbox": 21,
     "internal": 1,
     "inventory": 57,
-    "kb": 4,
+    "kb": 5,
     "leads": 3,
     "notification": 2,
     "order": 11,
@@ -28,8 +28,8 @@
     "tenant": 6,
     "tenantaccess": 5,
     "usage": 5,
-    "webhook": 4,
-    "whatsappapi": 5,
+    "webhook": 1,
+    "whatsappapi": 6,
     "workflow": 4
   }
 }

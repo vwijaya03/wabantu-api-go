@@ -4,7 +4,7 @@ Backend WABantu ditulis ulang dengan [Encore.go](https://encore.dev). Kode NestJ
 
 Dokumentasi alur lengkap (mirip `api/APP_FLOW_GUIDE.md`): **[APP_FLOW_GUIDE.md](./APP_FLOW_GUIDE.md)**.
 
-**Routing WhatsApp & AI (webhook → deteksi intent → path metadata):** **[docs/WHATSAPP_AI_ROUTING.md](./docs/WHATSAPP_AI_ROUTING.md)** · **Indeks semua docs:** **[docs/README.md](./docs/README.md)**
+**Routing WhatsApp & AI (webhook → deteksi intent → path metadata):** **[docs/WHATSAPP_AI_ROUTING.md](./docs/WHATSAPP_AI_ROUTING.md)** · **RAG / vector retrieval (Pinecone + embedding):** **[docs/RAG_VECTOR_RETRIEVAL.md](./docs/RAG_VECTOR_RETRIEVAL.md)** · **Indeks semua docs:** **[docs/README.md](./docs/README.md)**
 
 Perbandingan endpoint vs NestJS / kompatibilitas frontend: **[ENDPOINT_COMPATIBILITY.md](./ENDPOINT_COMPATIBILITY.md)**.
 
@@ -27,7 +27,7 @@ Centang semua ini **sebelum** `encore run` atau membuka `web-frontend`. Kalau ad
 | 5 | **Redis** jalan (session, rate limit, import staging, SSE) | `docker compose -f ../infra/docker-compose.yml ps redis` atau `redis-cli ping` → `PONG` |
 | 6 | **Encore login** | `encore auth login` (sekali per laptop) |
 | 7 | **App terdaftar** di Encore Cloud | `encore.app` punya `id` valid; tidak error `app_not_found` saat `encore run` |
-| 8 | **Secrets** ter-set | `encore secret list` → minimal `JWTSecret`, `DataEncryptionKey`, `RedisURL`; untuk platform admin tambah `PlatformAdminBootstrapSecret` ([Bagian 8.1](./DEVELOPER_DOCUMENTATION.md#81-platform-admin-internal-operator-wabantu-owner)) |
+| 8 | **Secrets** ter-set | `encore secret list` → minimal `JWTSecret`, `DataEncryptionKey`, `RedisURL`, `AnthropicAPIKey`; untuk RAG vector tambah `OpenAIApiKey`, `PineconeApiKey`, `PineconeIndexHost` (opsional — default lexical); untuk platform admin tambah `PlatformAdminBootstrapSecret` ([Bagian 8.1](./DEVELOPER_DOCUMENTATION.md#81-platform-admin-internal-operator-wabantu-owner)) |
 | 9 | File **`../api/.env`** ada (sumber secret) | `ls ../api/.env` — copy dari `api/.env.example` bila perlu |
 | 10 | **`encore check`** lulus | `cd api-go && encore check` |
 
@@ -141,9 +141,11 @@ Mapping nama secret (field di kode Go → nilai dari Nest `.env`):
 | `JWTSecret` | `JWT_ACCESS_SECRET` | Ya |
 | `DataEncryptionKey` | `DATA_ENCRYPTION_KEY` | Ya |
 | `RedisURL` | `redis://localhost:6379` | Ya |
-| `AnthropicApiKey` | `ANTHROPIC_API_KEY` | Untuk AI |
-| `AnthropicAPIKey` | sama (juga dipakai `business`, `finance`) | Import katalog/transaksi dari gambar, import website |
+| `AnthropicAPIKey` | `ANTHROPIC_API_KEY` | AI auto-reply, vision, import katalog/transaksi |
 | `AiInternalToken` | `AI_INTERNAL_TOKEN` | Untuk worker AI |
+| `OpenAIApiKey` | `OPENAI_API_KEY` | Embedding FAQ/katalog (RAG) — `text-embedding-3-small` |
+| `PineconeApiKey` | `PINECONE_API_KEY` | Vector index Pinecone (RAG) |
+| `PineconeIndexHost` | `PINECONE_INDEX_HOST` | Host index tanpa `https://` (RAG) |
 | `WebhookVerifyToken` | `META_WEBHOOK_VERIFY_TOKEN` | Untuk webhook Meta |
 | *(per channel)* `meta_app_secret` di DB | disimpan saat OAuth WhatsApp connect | Verifikasi webhook signature |
 | `MidtransServerKey` | env Midtrans | Payment |
@@ -154,6 +156,8 @@ Mapping nama secret (field di kode Go → nilai dari Nest `.env`):
 | `SentryDSN` | `SENTRY_DSN` | Opsional |
 | `PlatformAdminBootstrapSecret` | *(buat manual, min. 32 karakter)* | **Hanya** untuk membuat akun `super_admin` internal (bukan password login) — lihat [Bagian 8.1](./DEVELOPER_DOCUMENTATION.md#81-platform-admin-internal-operator-wabantu-owner) |
 
+Tanpa secrets RAG, FAQ/katalog tetap jalan dengan **lexical fallback**; indexing worker akan retry (bukan silent mock). Detail: [docs/RAG_VECTOR_RETRIEVAL.md](./docs/RAG_VECTOR_RETRIEVAL.md).
+
 Set manual (contoh):
 
 ```bash
@@ -162,7 +166,6 @@ cd api-go
 printf '%s' 'ISI_DARI_JWT_ACCESS_SECRET' | encore secret set --type local JWTSecret
 printf '%s' 'ISI_DARI_DATA_ENCRYPTION_KEY' | encore secret set --type local DataEncryptionKey
 printf '%s' 'redis://localhost:6379' | encore secret set --type local RedisURL
-printf '%s' 'ISI_ANTHROPIC_API_KEY' | encore secret set --type local AnthropicApiKey
 printf '%s' 'ISI_ANTHROPIC_API_KEY' | encore secret set --type local AnthropicAPIKey
 printf '%s' 'change-me-long-random-secret' | encore secret set --type local AiInternalToken
 ```
@@ -261,6 +264,7 @@ Setiap folder di bawah ini adalah **satu Encore service** (package Go terpisah):
 api-go/
   encore.app                 # id app: "wabantu"
   shared/                    # crypto, errors, types, tenant DB helper
+  shared/retrieval/          # RAG: OpenAI embed, Pinecone, RRF, indexing helpers
   auth/                      # register, login, logout, me, JWT, Redis session
   system/                    # DB control-plane (jb_system) + migrasi
   tenant/                    # DB tenant data (jb_tenant) + provisioning schema t_*
@@ -269,15 +273,16 @@ api-go/
   middleware/                # global rate limit
   business/                  # profil bisnis, import website, katalog CRUD + import gambar (vision)
   docs/CATALOG_IMAGE_IMPORT.md  # import screenshot → Haiku → konfirmasi → business_catalog_item
+  docs/CATALOG_TEXT_IMPORT.md   # import teks/caption → Haiku → konfirmasi → business_catalog_item
   docs/UNIT_ECONOMICS_AND_PRICING.md  # biaya Meta + Anthropic, margin paket, rekomendasi harga
   docs/META_WHATSAPP_MESSAGING_AND_BILLING.md  # CSW 24 jam, template, skenario inbox, beda tagihan Meta vs kuota WABantu
   docs/FINANCE_MODULE.md        # modul keuangan — endpoint, schema, arsitektur saldo, approval, cron
   docs/EVENTS_MODULE.md         # modul acara & terapi — roster staf, pasien dari kontak, slot AUTO/MANUAL
   events/                       # event reservation & therapy (Encore package)
-  kb/                        # knowledge base FAQ
+  kb/                        # knowledge base FAQ + retrieval outbox/worker
   whatsapp/                  # library Meta Cloud API (kirim pesan, Graph)
   whatsappapi/               # REST OAuth + channels (/api/v1/whatsapp/*)
-  webhook/                   # GET/POST webhook Meta (+ alias legacy)
+  webhook/                   # GET/POST /api/v1/webhook/whatsapp (kanonik)
   finance/                   # modul keuangan (wallet, transaksi, anggaran, investasi, recurring, checklist, laporan)
   broadcast/                 # broadcast WA (plan Business+)
   inbox/                     # conversations, messages, contacts
@@ -291,7 +296,7 @@ api-go/
   usage/                     # metering, quota, cron reset
   audit/                     # audit log
   admin/                     # super admin, impersonation
-  flag/                      # feature flags
+  flag/                      # feature flags + superadmin RAG rollout (`/flags/retrieval-*`)
   importcsv/                 # import CSV/XLSX
   scripts/
     setup-secrets-from-env.sh
@@ -380,7 +385,12 @@ Ringkas:
 
 Index unik SKU: `(source, external_code) WHERE deleted_at IS NULL` — produk terhapus tidak memblokir SKU yang sama.
 
-UI `/dashboard/catalog` + `/dashboard/catalog/price-types`. List memakai pagination (default 25 item). Jalankan migrasi tenant untuk patch index lama.
+**Import AI (owner, dashboard):**
+
+- Gambar: `GET/POST /api/v1/business/catalog/import-image/*` — lihat [docs/CATALOG_IMAGE_IMPORT.md](./docs/CATALOG_IMAGE_IMPORT.md)
+- Teks: `POST/GET /api/v1/business/catalog/import-text/preview`, `.../draft/:jobId`, `.../draft/:jobId/commit` — lihat [docs/CATALOG_TEXT_IMPORT.md](./docs/CATALOG_TEXT_IMPORT.md)
+
+UI `/dashboard/catalog` + `/dashboard/catalog/price-types` + `/dashboard/catalog/import-image` + `/dashboard/catalog/import-text`. List memakai pagination (default 25 item). Jalankan migrasi tenant untuk patch index lama.
 
 ## Contacts dan pesanan
 
@@ -586,7 +596,7 @@ Handler auth global: `auth.AuthHandler` (`//encore:authhandler`) → `buildAuthU
 
 ## AI auto-reply (ringkas)
 
-1. `POST /webhook/whatsapp` (atau `/whatsapp/webhook/meta`) → simpan pesan masuk.
+1. `POST /api/v1/webhook/whatsapp` → simpan pesan masuk.
 2. `ai.PublishInboundJob` → topic Pub/Sub **`ai-jobs`**.
 3. Subscriber **`ai-auto-reply`** (`ai/inbound_jobs.go`) di proses yang sama dengan API:
    - Retry hingga **4×** (Encore `RetryPolicy` + penghitung Redis per `inboundMessageId`)
@@ -642,6 +652,9 @@ Stack compose contoh: `../infra/docker-compose.yml` (service `api-go`).
 
 | File | Isi |
 |------|-----|
+| [docs/RAG_VECTOR_RETRIEVAL.md](./docs/RAG_VECTOR_RETRIEVAL.md) | RAG: Pinecone, embedding, outbox indexing, mode shadow/vector, rollout superadmin |
+| [docs/API_ENDPOINT_REGISTRY.md](./docs/API_ENDPOINT_REGISTRY.md) | Inventaris endpoint Encore + regression struktural (`internal/apiregistry`) |
+| [internal/apitest/README.md](./internal/apitest/README.md) | HTTP smoke per service (345 endpoint, `encore test ./internal/apitest/`) |
 | [docs/DEPLOY_ENCORE_CLOUD.md](./docs/DEPLOY_ENCORE_CLOUD.md) | Tutorial deploy ke Encore Cloud (secrets, git push, migrasi DB, frontend) + hot-fix dynamic grants |
 | [docs/DEPLOY_REDIS.md](./docs/DEPLOY_REDIS.md) | Setup Redis eksternal (Upstash) untuk session di cloud |
 | [docs/STAGING_ACCESS.md](./docs/STAGING_ACCESS.md) | Test API (Postman/curl) & koneksi DB staging (TablePlus, `db proxy`) |
@@ -664,6 +677,10 @@ Stack compose contoh: `../infra/docker-compose.yml` (service `api-go`).
 | `auth/auth.go` | Register, login, JWT, `AuthHandler` |
 | `tenant/tenant.go` | Provisioning schema tenant |
 | `webhook/webhook.go` | Ingest WhatsApp + enqueue AI |
+| `shared/retrieval/` | RAG: embedder, Pinecone client, RRF, `DefaultService()` singleton |
+| `kb/retrieval_worker.go` | Pub/Sub indexing KB → Pinecone (outbox) |
+| `ai/retrieval_bridge.go` | Wire hybrid KB retrieval ke autoreply |
+| `flag/retrieval_*.go` | Mode per tenant + rollout massal + observability |
 | `ai/inbound_jobs.go` | Pub/Sub `ai-jobs`, retry + fallback |
 | `ai/autoreply.go` | Orchestrator pipeline balasan AI |
 | `ai/order_flow.go` | State machine order + checkout follow-up |

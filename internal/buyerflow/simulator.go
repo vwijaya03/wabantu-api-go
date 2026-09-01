@@ -204,7 +204,7 @@ func (s *Simulator) Turn(userText string) TurnOutcome {
 		}
 	}
 
-	if catReply, ok := replyFromBusinessCatalog(userText, s.Profile, s.Catalog, s.History); ok {
+	if catReply, ok := replyFromBusinessCatalog(userText, s.Profile, s.Catalog, s.History, nil); ok {
 		out.Path = PathCatalogDB
 		out.Reply = catReply
 		s.appendHistory(userText, out.Reply)

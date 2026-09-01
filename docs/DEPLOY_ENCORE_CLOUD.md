@@ -127,7 +127,6 @@ cd api-go
 printf '%s' 'rediss://...' | encore secret set --env=staging RedisURL
 printf '%s' '...' | encore secret set --env=staging JWTSecret
 printf '%s' '...' | encore secret set --env=staging DataEncryptionKey
-printf '%s' '...' | encore secret set --env=staging AnthropicApiKey
 printf '%s' '...' | encore secret set --env=staging AnthropicAPIKey
 printf '%s' '...' | encore secret set --env=staging AiInternalToken
 printf '%s' '...' | encore secret set --env=staging WebhookVerifyToken
@@ -360,11 +359,15 @@ Update URL callback ke domain Encore Cloud:
 
 | Integrasi | Yang diubah |
 |-----------|-------------|
-| **Meta WhatsApp** | Webhook URL → `https://staging-....encr.app/webhook/whatsapp` (atau path yang dipakai) |
+| **Meta WhatsApp** | Webhook URL → `https://staging-....encr.app/api/v1/webhook/whatsapp` (**satu-satunya path kanonik**) |
 | **Midtrans** | Notification URL production/sandbox |
 | **OAuth redirect** | Jika ada callback ke API |
 
 `WebhookVerifyToken` secret harus sama dengan yang didaftarkan di Meta Developer Console.
+
+**Migrasi dari path lama:** jika production masih memakai `/api/v1/whatsapp/webhook/meta` atau `/webhook/whatsapp`, ubah ke path kanonik di atas — handler legacy sudah dihapus dari api-go (lihat [docs-development-shipped/20260831_101000_rag-hardening-webhook-cleanup.md](../docs-development-shipped/20260831_101000_rag-hardening-webhook-cleanup.md)).
+
+**RAG (opsional):** setelah deploy, isi secrets `OpenAIApiKey`, `PineconeApiKey`, `PineconeIndexHost`; jalankan `POST /api/v1/knowledge-base/reindex` per tenant pilot sebelum mengaktifkan mode `shadow`/`vector` via `/api/v1/flags/retrieval-mode`.
 
 ---
 

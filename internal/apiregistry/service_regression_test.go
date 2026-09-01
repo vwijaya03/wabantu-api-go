@@ -159,9 +159,6 @@ func TestCriticalPublicRoutes(t *testing.T) {
 		"POST /api/v1/auth/login":                   false,
 		"POST /api/v1/auth/register":              false,
 		"* /api/v1/webhook/whatsapp":              false,
-		"* /webhook/whatsapp":                       false,
-		"* /api/v1/whatsapp/webhook/meta":           false,
-		"* /whatsapp/webhook/meta":                  false,
 		"POST /api/v1/payment/webhook/midtrans":     false,
 	}
 

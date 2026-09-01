@@ -2,7 +2,7 @@
 
 > **Audience:** Senior full-stack developers from Node.js/TypeScript (Express, NestJS, Prisma/TypeORM) learning **Go** and **Encore**.  
 > **Codebase:** `api-go/` — Encore rewrite of NestJS `api/`.  
-> **Companion docs:** [README.md](./README.md) · [APP_FLOW_GUIDE.md](./APP_FLOW_GUIDE.md) · [ENDPOINT_COMPATIBILITY.md](./ENDPOINT_COMPATIBILITY.md) · **[docs/README.md](./docs/README.md)** (indeks docs) · **[docs/WHATSAPP_AI_ROUTING.md](./docs/WHATSAPP_AI_ROUTING.md)** (webhook → AI routing) · **[docs/WHATSAPP_INBOX_MEDIA_PAYMENT_STOCK.md](./docs/WHATSAPP_INBOX_MEDIA_PAYMENT_STOCK.md)** (roadmap media/bukti/stok) · **[docs-development-shipped/inbox-media-fase1.md](./docs-development-shipped/inbox-media-fase1.md)** (media inbox proxy Meta) · **[docs-development-shipped/inbox-media-s3.md](./docs-development-shipped/inbox-media-s3.md)** (persist media S3) · **[docs-development-shipped/payment-proof-fase2.md](./docs-development-shipped/payment-proof-fase2.md)** (bukti transfer, limit 5x) · **[docs-development-shipped/ai-image-caption.md](./docs-development-shipped/ai-image-caption.md)** (caption gambar → teks) · **[docs-development-shipped/ai-stock-guard-fase4.md](./docs-development-shipped/ai-stock-guard-fase4.md)** (stok per gudang) · **[docs-development-shipped/ai-order-chat-lookup.md](./docs-development-shipped/ai-order-chat-lookup.md)** (order lookup scoped chat) · **[docs-development-shipped/ai-image-context.md](./docs-development-shipped/ai-image-context.md)** (vision katalog, planned) · **[LIMITS_AND_QUOTAS.md](./LIMITS_AND_QUOTAS.md)** (rate limit, trial/paid kuota, billing checkout) · **[docs/FINANCE_MODULE.md](./docs/FINANCE_MODULE.md)** (modul keuangan) · **[docs/ORDER_CUSTOMER_CHAT.md](./docs/ORDER_CUSTOMER_CHAT.md)** (nomor pesanan, cancel & status via chat)
+> **Companion docs:** [README.md](./README.md) · [APP_FLOW_GUIDE.md](./APP_FLOW_GUIDE.md) · [ENDPOINT_COMPATIBILITY.md](./ENDPOINT_COMPATIBILITY.md) · **[docs/README.md](./docs/README.md)** (indeks docs) · **[docs/WHATSAPP_AI_ROUTING.md](./docs/WHATSAPP_AI_ROUTING.md)** (webhook → AI routing) · **[docs/RAG_VECTOR_RETRIEVAL.md](./docs/RAG_VECTOR_RETRIEVAL.md)** (Pinecone + embedding FAQ/katalog) · **[docs/WHATSAPP_INBOX_MEDIA_PAYMENT_STOCK.md](./docs/WHATSAPP_INBOX_MEDIA_PAYMENT_STOCK.md)** (roadmap media/bukti/stok) · **[docs-development-shipped/inbox-media-fase1.md](./docs-development-shipped/inbox-media-fase1.md)** (media inbox proxy Meta) · **[docs-development-shipped/inbox-media-s3.md](./docs-development-shipped/inbox-media-s3.md)** (persist media S3) · **[docs-development-shipped/payment-proof-fase2.md](./docs-development-shipped/payment-proof-fase2.md)** (bukti transfer, limit 5x) · **[docs-development-shipped/ai-image-caption.md](./docs-development-shipped/ai-image-caption.md)** (caption gambar → teks) · **[docs-development-shipped/ai-stock-guard-fase4.md](./docs-development-shipped/ai-stock-guard-fase4.md)** (stok per gudang) · **[docs-development-shipped/ai-order-chat-lookup.md](./docs-development-shipped/ai-order-chat-lookup.md)** (order lookup scoped chat) · **[docs-development-shipped/ai-image-context.md](./docs-development-shipped/ai-image-context.md)** (vision katalog, planned) · **[docs-development-shipped/20260831_101000_rag-hardening-webhook-cleanup.md](./docs-development-shipped/20260831_101000_rag-hardening-webhook-cleanup.md)** (RAG hardening + webhook kanonik) · **[LIMITS_AND_QUOTAS.md](./LIMITS_AND_QUOTAS.md)** (rate limit, trial/paid kuota, billing checkout) · **[docs/FINANCE_MODULE.md](./docs/FINANCE_MODULE.md)** (modul keuangan) · **[docs/ORDER_CUSTOMER_CHAT.md](./docs/ORDER_CUSTOMER_CHAT.md)** (nomor pesanan, cancel & status via chat)
 
 **Baru belajar Go?** Langsung ke **[Bagian 18 Go untuk developer Node.js](#18-go-language-guide-for-nodejs-developers-with-wabantu-examples)** — penjelasan pointer, error, context, interface, dll. dengan contoh nyata dari repo ini.
 
@@ -263,7 +263,7 @@ sequenceDiagram
 | `whatsapp/` | **Library** — parse webhook, send text (no HTTP APIs) |
 | `ai/` | Auto-reply pipeline, Anthropic, Pub/Sub workers, summarization |
 | `business/` | Business profile, catalog, website import |
-| `kb/` | Knowledge base CRUD |
+| `kb/` | Knowledge base CRUD + **retrieval outbox** (`retrieval_outbox`, Pub/Sub indexing) |
 | `leads/` | Lead pipeline + `CaptureFromMessage` (private) |
 | `order/` | Orders |
 | `payment/` | Midtrans QRIS + webhook |
@@ -276,7 +276,8 @@ sequenceDiagram
 | `branch/` | Multi-branch (Pro plan) |
 | `analytics/` | Dashboard metrics |
 | `audit/` | Audit log write (private) + read |
-| `flag/` | Feature flags (system DB) |
+| `flag/` | Feature flags (system DB) + **RAG rollout** (`/flags/retrieval-mode`, indexing, observability) |
+| `shared/retrieval/` | **Library** — OpenAI embeddings, Pinecone, RRF, `DefaultService()` singleton |
 | `health/` | Liveness/readiness |
 | `tenant/` | Internal tenant CRUD, **RunTenantDDL**, schema patches |
 
@@ -402,8 +403,11 @@ Ringkasan cepat:
 | `RedisURL` | `auth` | Ya |
 | `DataEncryptionKey` | `auth` | Ya |
 | `PlatformAdminBootstrapSecret` | `auth` | Hanya untuk bootstrap platform admin ([Bagian 8.1](#81-platform-admin-internal-operator-wabantu-owner)) |
-| `AnthropicApiKey` / `AnthropicAPIKey` | `ai`, `business`, `finance` | Untuk AI, import katalog/transaksi gambar (`AnthropicAPIKey`; struct wajib bernama `secrets`) |
+| `AnthropicAPIKey` | `ai`, `business`, `finance`, `events`, `inventory` | AI auto-reply, vision, import gambar |
 | `AiInternalToken` | `ai` | Untuk internal AI HTTP |
+| `OpenAIApiKey` | `shared/retrieval` | Embedding RAG (`text-embedding-3-small`) — opsional; tanpa ini = lexical |
+| `PineconeApiKey` | `shared/retrieval` | Vector index Pinecone — opsional |
+| `PineconeIndexHost` | `shared/retrieval` | Host index tanpa `https://` — opsional |
 | `WebhookVerifyToken` | `webhook` | Meta webhook GET challenge (`hub.verify_token`) |
 | `Midtrans*` | `payment` | Payment |
 | `RajaOngkir*` | `shipping` | Shipping |
@@ -519,9 +523,11 @@ encore secret list
 | `JWTSecret` | `JWT_ACCESS_SECRET` |
 | `DataEncryptionKey` | `DATA_ENCRYPTION_KEY` |
 | `RedisURL` | `redis://{REDIS_HOST}:{REDIS_PORT}` (default `localhost:6379`) |
-| `AnthropicApiKey` | `ANTHROPIC_API_KEY` |
-| `AnthropicAPIKey` | `ANTHROPIC_API_KEY` (nama duplikat untuk package `business`) |
+| `AnthropicAPIKey` | `ANTHROPIC_API_KEY` |
 | `AiInternalToken` | `AI_INTERNAL_TOKEN` |
+| `OpenAIApiKey` | `OPENAI_API_KEY` |
+| `PineconeApiKey` | `PINECONE_API_KEY` |
+| `PineconeIndexHost` | `PINECONE_INDEX_HOST` (host saja, tanpa `https://`) |
 | `WebhookVerifyToken` | `META_WEBHOOK_VERIFY_TOKEN` |
 | `MidtransServerKey` | `MIDTRANS_SERVER_KEY` |
 | `MidtransClientKey` | `MIDTRANS_CLIENT_KEY` |
@@ -601,9 +607,11 @@ Secret tidak hot-reload. Lupa restart = perilaku aneh (nilai lama/kosong).
 | `DataEncryptionKey` | `auth/auth.go` | Enkripsi field sensitif | Ya |
 | `RedisURL` | `auth/auth.go`, `ai/api.go` | Session, rate limit, SSE, AI retry counter | Ya |
 | `PlatformAdminBootstrapSecret` | `auth/auth.go` | Header bootstrap akun `super_admin` internal | Hanya jika pakai bootstrap |
-| `AnthropicApiKey` | `ai/api.go` | Model AI auto-reply | Untuk fitur AI |
-| `AnthropicAPIKey` | `business/business.go`, `finance/transaction_image.go` | Import website, import katalog/transaksi gambar | Struct wajib `secrets` per service |
+| `AnthropicAPIKey` | `ai/api.go`, `business/business.go`, `finance/transaction_image.go`, … | Model AI + vision import | Untuk fitur AI |
 | `AiInternalToken` | `ai/api.go` | `X-Ai-Internal-Token` pada internal AI HTTP | Jika panggil internal AI |
+| `OpenAIApiKey` | `shared/retrieval/config.go` | Embedding query + batch indexing | Untuk RAG vector (opsional) |
+| `PineconeApiKey` | `shared/retrieval/config.go` | Upsert/query vector Pinecone | Untuk RAG vector (opsional) |
+| `PineconeIndexHost` | `shared/retrieval/config.go` | Host index serverless Pinecone | Untuk RAG vector (opsional) |
 | `WebhookVerifyToken` | `webhook/webhook.go` | Verifikasi GET challenge Meta | Untuk webhook WA |
 | *(per channel)* `meta_app_secret` | `whatsapp_channel` (tenant DB) | `X-Hub-Signature-256` setelah OAuth connect | Disarankan prod |
 | `MidtransServerKey` | `payment/payment.go` | QRIS | Untuk payment |
@@ -618,6 +626,8 @@ Secret tidak hot-reload. Lupa restart = perilaku aneh (nilai lama/kosong).
 | `AWSS3SecretAccessKey` | `shared/mediastorage/s3.go` | IAM secret | Opsional |
 
 Detail persist media: [docs-development-shipped/inbox-media-s3.md](./docs-development-shipped/inbox-media-s3.md).
+
+**RAG / vector retrieval:** `OpenAIApiKey`, `PineconeApiKey`, `PineconeIndexHost` dikonsumsi `shared/retrieval`. Jika kosong, `DefaultService()` = `nil` → autoreply lexical; indexing worker retry (`ErrServiceNotConfigured`). Mode tenant: `disabled` / `shadow` / `vector`. Panduan: [docs/RAG_VECTOR_RETRIEVAL.md](./docs/RAG_VECTOR_RETRIEVAL.md).
 
 ---
 
@@ -707,8 +717,8 @@ encore run
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
 | GET/POST | `/api/v1/webhook/whatsapp` | public raw | Meta verify + ingest |
-| GET/POST | `/api/v1/whatsapp/webhook/meta` | public raw | Nest-compatible alias |
-| * | `/whatsapp/webhook/meta`, `/webhook/whatsapp` | public raw | Legacy paths |
+
+**Migrasi:** Handler/route legacy (`/api/v1/whatsapp/webhook/meta`, `/webhook/whatsapp`) dihapus. Satu path kanonik untuk semua environment.
 
 ## WhatsApp (`whatsappapi/`)
 
@@ -733,7 +743,7 @@ Production path: **Pub/Sub** `ai-jobs`, not HTTP.
 
 | Service | Base path | Auth |
 |---------|-----------|------|
-| business | `/api/v1/business/profile`, `/catalog?q=&page=&pageSize=`, `/catalog/import-image/*` (vision preview + commit); `PATCH profile` termasuk `paymentVerificationMode` | auth; katalog write owner |
+| business | `/api/v1/business/profile`, `/catalog?q=&page=&pageSize=`, `/catalog/import-image/*` (vision preview + commit), `/catalog/import-text/*` (text preview + commit); `PATCH profile` termasuk `paymentVerificationMode` | auth; katalog write owner |
 | kb | `/api/v1/knowledge-base` | auth |
 | inbox contacts | `/api/v1/inbox/contacts?q=&page=&pageSize=` + POST/PATCH/DELETE + batch status/delete | auth |
 | leads | `/api/v1/leads` | auth; internal CRM capture pipeline |
@@ -748,7 +758,7 @@ Production path: **Pub/Sub** `ai-jobs`, not HTTP.
 | branch | `/api/v1/branches` | auth |
 | analytics | `/api/v1/analytics/overview` | auth |
 | admin | `/api/v1/admin/*`, `GET .../tenant/:id/ai-activity` (+ summary), **`/admin/ai-triage/*`** (loop engineering) | super_admin |
-| flag | `/api/v1/flags` | auth |
+| flag | `/api/v1/flags`, **`/flags/retrieval-mode`**, **`/flags/retrieval-indexing/:tenantId`**, **`/flags/retrieval-observability`**, **`/flags/retrieval-rollout`** (+ jobs) | auth; retrieval APIs **super_admin** |
 | health | `/api/v1/health`, `/ready` | public |
 | tenant | `/api/v1/internal/tenant/*` | private |
 
@@ -757,7 +767,7 @@ Production path: **Pub/Sub** `ai-jobs`, not HTTP.
 ```mermaid
 sequenceDiagram
   participant M as Meta
-  participant W as webhook.HandleMetaWebhook
+  participant W as webhook.HandleWhatsAppWebhook
   participant DB as tenant schema
   participant PS as Pub/Sub ai-jobs
   participant AI as ai.handleInboundAI
@@ -863,7 +873,7 @@ erDiagram
 | Table | Purpose |
 |-------|---------|
 | `business_profile` | AI context, tone, timezone |
-| `business_catalog_item` | Products/services (`source`: `manual`, `import`, `image_import`) |
+| `business_catalog_item` | Products/services (`source`: `manual`, `import`, `image_import`, `text_import`) |
 | `knowledge_base_entry` | Q&A for AI |
 | `whatsapp_channel` | Meta connection |
 | `contact` | Customer phone |
@@ -955,11 +965,13 @@ See sequence in Bagian 5. Key branches:
   3. **Katalog DB** (`catalog_reply.go`) — minta list/harga: jawab dari `business_catalog_item` (path `catalog_db`), penanda `[Katalog WABantu: kosong]`; FAQ tidak mengalahkan list katalog
   4. Business scope + keyword classifier (`product_scope.go`, `safety.go`) — off-topic products (e.g. food at apparel shop), purchase intent (`pesen`, `mau` + pcs)
   5. Post-checkout context (`IsActiveCheckoutFromHistory`) — payment/transfer/ongkir after order without re-classifying as out-of-scope
-  6. FAQ cache / KB direct answer / hybrid KB retrieval (`retrieveHybridKB`; skip untuk pertanyaan list katalog)
+  6. FAQ cache / KB direct answer / hybrid KB retrieval (`retrieveKBHybrid` via `ai/retrieval_bridge.go` + `shared/retrieval`; mode `disabled`/`shadow`/`vector` per tenant; skip untuk pertanyaan list katalog) — lihat [docs/RAG_VECTOR_RETRIEVAL.md](./docs/RAG_VECTOR_RETRIEVAL.md)
   7. LLM reply (Haiku/Sonnet per plan) with history + **katalog DB** di konteks + conversation summary (`memory.go`)
   8. Activity logging per tenant (`usage.RecordAIActivity`, paths in `reply_meta.go` incl. `catalog_db`)
 
 **Import katalog dari gambar (dashboard, bukan WA):** `business/catalog_image.go` + `ai/vision.go` — lihat [docs/CATALOG_IMAGE_IMPORT.md](./docs/CATALOG_IMAGE_IMPORT.md).
+
+**Import katalog dari teks (dashboard):** `business/catalog_text.go` + `ai/catalog_text.go` — lihat [docs/CATALOG_TEXT_IMPORT.md](./docs/CATALOG_TEXT_IMPORT.md). Commit image + text memakai `commitCatalogDraftItems` dengan `ON CONFLICT (source, external_code) WHERE deleted_at IS NULL`.
 
 **Import transaksi dari gambar:** `finance/transaction_image.go` + `aivision/vision.go` (hindari import cycle ke package `ai`) — lihat [docs/TRANSACTION_IMAGE_IMPORT.md](./docs/TRANSACTION_IMAGE_IMPORT.md).
 
@@ -1391,7 +1403,6 @@ Secrets per Encore environment name (`staging`, etc.) via `encore secret set --e
 | AI outbound delivery | — | `sendAiMessage` calls `whatsapp.SendText` (Meta Cloud API) before persisting `message` |
 | Webhook tenant routing | — | `system.whatsapp_inbound_map`: satu `meta_phone_number_id` → satu `tenant_schema`; duplikat ditolak saat OAuth connect |
 | Internal AI endpoints `public` | High for prod | Protect with `AiInternalToken` |
-| Duplicate Anthropic secret names | Low | `AnthropicApiKey` vs `AnthropicAPIKey` |
 | Limited automated tests | Medium | Regression risk on schema patches |
 
 **Non-idiomatic Go:** `autoreply.go` remains large; pipeline stages are partially split (`order_flow.go`, `greeting.go`, `product_scope.go`).
@@ -1460,7 +1471,7 @@ Secrets per Encore environment name (`staging`, etc.) via `encore secret set --e
 
 | Step | Location |
 |------|----------|
-| Handler | `webhook.handleMetaWebhook` → `receiveWebhook` |
+| Handler | `webhook.handleWhatsAppWebhook` → `receiveWebhook` |
 | Auth | Signature optional (`MetaAppSecret`) |
 | Parse | `whatsapp.ParseWebhook` |
 | Per message | `ingestMessage` |

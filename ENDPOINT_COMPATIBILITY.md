@@ -92,8 +92,9 @@ Cookie `wabantu_at` + body `accessToken` — selaras Nest.
 | POST | `/api/v1/whatsapp/meta/connect/callback` | ✅ | ✅ |
 | DELETE | `/api/v1/whatsapp/channels/:id` | ✅ | ✅ |
 | POST | `/api/v1/whatsapp/channels/:id/test-message` | — | ⚠️ cek api-go |
-| GET/POST | `/api/v1/whatsapp/webhook/meta` | — | ✅ |
-| GET/POST | `/api/v1/webhook/whatsapp` | — | ✅ (alias) |
+| GET/POST | `/api/v1/webhook/whatsapp` | — | ✅ |
+
+**Catatan:** Path legacy (`/api/v1/whatsapp/webhook/meta`, `/webhook/whatsapp`) **dihapus** — Meta Developer Console wajib pakai path kanonik di atas.
 
 REST OAuth: package **`whatsappapi/`** · Graph send: **`whatsapp/`**.
 
@@ -147,6 +148,9 @@ Plan codes: `starter`, `business`, `pro` (+ alias `basic` → business, tidak di
 | Finance — Laporan | `POST /api/v1/finance/reports/export`, `GET /reports/jobs/:id` | `/dashboard/finance/reports` |
 | Finance — Audit | `GET /api/v1/finance/audit-log` | `/dashboard/finance` (owner) |
 | Leads | `/api/v1/leads` | internal CRM capture; `/dashboard/contacts` now uses `/api/v1/inbox/contacts` |
+| RAG / retrieval (super_admin) | `GET/PUT /api/v1/flags/retrieval-mode`, `GET .../retrieval-indexing/:tenantId`, `GET .../retrieval-observability`, `POST .../retrieval-rollout` (+ jobs) | `/dashboard/admin/ai-retrieval` |
+
+Detail RAG: [docs/RAG_VECTOR_RETRIEVAL.md](./docs/RAG_VECTOR_RETRIEVAL.md) · shipped: [docs-development-shipped/20260831_101000_rag-hardening-webhook-cleanup.md](./docs-development-shipped/20260831_101000_rag-hardening-webhook-cleanup.md).
 
 ---
 

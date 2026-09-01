@@ -120,7 +120,7 @@ func tryProductImageMatch(ctx context.Context, ts tenantScopedQuerier, job *Imag
 		return false, err
 	}
 
-	extract, visUsage, visErr := aivision.ExtractProductMatchFromImage(ctx, secrets.AnthropicApiKey, imageBytes, mime)
+	extract, visUsage, visErr := aivision.ExtractProductMatchFromImage(ctx, secrets.AnthropicAPIKey, imageBytes, mime)
 	_ = usage.RecordAIActivity(ctx, usage.AIActivityParams{
 		TenantSchema:   job.TenantSchema,
 		TenantID:       job.TenantID,

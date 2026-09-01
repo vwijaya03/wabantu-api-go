@@ -52,29 +52,10 @@ var secrets struct {
 //
 //encore:api public raw path=/api/v1/webhook/whatsapp
 func HandleWhatsAppWebhook(w http.ResponseWriter, r *http.Request) {
-	handleMetaWebhook(w, r)
+	handleWhatsAppWebhook(w, r)
 }
 
-// HandleMetaWebhook is the Nest-compatible Meta webhook path (/whatsapp/webhook/meta).
-//
-//encore:api public raw path=/api/v1/whatsapp/webhook/meta
-func HandleMetaWebhook(w http.ResponseWriter, r *http.Request) {
-	handleMetaWebhook(w, r)
-}
-
-// Legacy paths (Meta apps configured before /api/v1 prefix).
-//
-//encore:api public raw path=/whatsapp/webhook/meta
-func HandleMetaWebhookLegacy(w http.ResponseWriter, r *http.Request) {
-	handleMetaWebhook(w, r)
-}
-
-//encore:api public raw path=/webhook/whatsapp
-func HandleWhatsAppWebhookLegacy(w http.ResponseWriter, r *http.Request) {
-	handleMetaWebhook(w, r)
-}
-
-func handleMetaWebhook(w http.ResponseWriter, r *http.Request) {
+func handleWhatsAppWebhook(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		verifyChallenge(w, r)
@@ -402,12 +383,12 @@ type inboundChannel struct {
 // then normalized business phone, and backfill meta_phone_number_id when missing.
 // lookupChannelMetaAppSecret returns meta_app_secret saved during WhatsApp OAuth connect.
 // No Encore global secret — each channel stores credentials at onboarding.
-func lookupChannelMetaAppSecret(ctx context.Context, phoneNumberID string) (string, error) {
+func lookupChannelMetaAppSecret(ctx context.Context, phoneNumberID, displayPhone string) (string, error) {
 	phoneNumberID = strings.TrimSpace(phoneNumberID)
 	if phoneNumberID == "" {
 		return "", fmt.Errorf("empty phone_number_id")
 	}
-	ref, err := tenant.ResolveWhatsAppInbound(ctx, phoneNumberID, "")
+	ref, err := tenant.ResolveWhatsAppInbound(ctx, phoneNumberID, displayPhone)
 	if err != nil {
 		return "", err
 	}
@@ -415,9 +396,9 @@ func lookupChannelMetaAppSecret(ctx context.Context, phoneNumberID string) (stri
 	var secret sql.NullString
 	err = pool.QueryRowContext(ctx,
 		fmt.Sprintf(
-			`SELECT meta_app_secret FROM %s.whatsapp_channel WHERE meta_phone_number_id = $1 LIMIT 1`,
+			`SELECT meta_app_secret FROM %s.whatsapp_channel WHERE id = $1::uuid LIMIT 1`,
 			appdb.QuoteIdent(ref.Schema)),
-		phoneNumberID,
+		ref.ChannelID,
 	).Scan(&secret)
 	if err == sql.ErrNoRows {
 		return "", fmt.Errorf("no channel for phone_number_id=%s", phoneNumberID)

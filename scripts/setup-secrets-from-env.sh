@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 # Import secrets from ../api/.env into Encore local secrets.
 #
+# Key mappings (api/.env → Encore secret):
+#   JWT_ACCESS_SECRET          → JWTSecret
+#   DATA_ENCRYPTION_KEY        → DataEncryptionKey
+#   META_WEBHOOK_VERIFY_TOKEN  → WebhookVerifyToken  (Meta webhook GET verify)
+#   ...
+#
 # Prerequisites (once per machine):
 #   1. encore auth login
 #   2. encore app init    # registers this repo on Encore Cloud (fixes app_not_found)
@@ -35,12 +41,29 @@ env_get() {
 set_secret() {
   local name="$1"
   local value="$2"
+  local attempt
   if [[ -z "${value// }" ]]; then
     echo "skip $name (empty)"
-    return
+    return 0
   fi
-  printf '%s' "$value" | encore secret set --type local "$name"
-  echo "ok $name"
+  for attempt in 1 2 3 4 5; do
+    if printf '%s' "$value" | encore secret set --type local "$name"; then
+      echo "ok $name"
+      return 0
+    fi
+    echo "retry $name ($attempt/5) — encore cloud timeout, waiting..." >&2
+    sleep 3
+  done
+  echo "FAILED $name after 5 attempts (check network / encore auth login)" >&2
+  return 1
+}
+
+normalize_pinecone_host() {
+  local h="$1"
+  h="${h#https://}"
+  h="${h#http://}"
+  h="${h%/}"
+  printf '%s' "$h"
 }
 
 cd "$ROOT"
@@ -52,34 +75,51 @@ REDIS_PORT="$(env_get REDIS_PORT || true)"
 ANTHROPIC_API_KEY="$(env_get ANTHROPIC_API_KEY || true)"
 AI_INTERNAL_TOKEN="$(env_get AI_INTERNAL_TOKEN || true)"
 META_WEBHOOK_VERIFY_TOKEN="$(env_get META_WEBHOOK_VERIFY_TOKEN || true)"
+WEBHOOK_VERIFY_TOKEN="$(env_get WEBHOOK_VERIFY_TOKEN || true)"
 MIDTRANS_SERVER_KEY="$(env_get MIDTRANS_SERVER_KEY || true)"
 MIDTRANS_CLIENT_KEY="$(env_get MIDTRANS_CLIENT_KEY || true)"
 MIDTRANS_IS_PRODUCTION="$(env_get MIDTRANS_IS_PRODUCTION || true)"
 RAJAONGKIR_API_KEY="$(env_get RAJAONGKIR_API_KEY || true)"
 RAJAONGKIR_ACCOUNT_TYPE="$(env_get RAJAONGKIR_ACCOUNT_TYPE || true)"
 SENTRY_DSN="$(env_get SENTRY_DSN || true)"
+OPENAI_API_KEY="$(env_get OPENAI_API_KEY || true)"
+PINECONE_API_KEY="$(env_get PINECONE_API_KEY || true)"
+PINECONE_INDEX_HOST="$(env_get PINECONE_INDEX_HOST || true)"
+REDIS_URL_DIRECT="$(env_get REDIS_URL || true)"
 
 REDIS_HOST="${REDIS_HOST:-localhost}"
 REDIS_PORT="${REDIS_PORT:-6379}"
 
 set_secret JWTSecret "$JWT_ACCESS_SECRET"
 set_secret DataEncryptionKey "$DATA_ENCRYPTION_KEY"
-set_secret RedisURL "redis://${REDIS_HOST}:${REDIS_PORT}"
+if [[ -n "${REDIS_URL_DIRECT// }" ]]; then
+  set_secret RedisURL "$REDIS_URL_DIRECT"
+else
+  set_secret RedisURL "redis://${REDIS_HOST}:${REDIS_PORT}"
+fi
 ANTHROPIC_MODEL="$(env_get ANTHROPIC_MODEL || true)"
 ANTHROPIC_MAX_TOKENS="$(env_get ANTHROPIC_MAX_TOKENS || true)"
 
-set_secret AnthropicApiKey "$ANTHROPIC_API_KEY"
 set_secret AnthropicAPIKey "$ANTHROPIC_API_KEY"
 # Model / max tokens use code defaults (see ai/api.go). Set these only if you add them back to secrets struct.
 # set_secret AnthropicModel "${ANTHROPIC_MODEL:-claude-sonnet-4-5}"
 # set_secret AnthropicMaxToks "${ANTHROPIC_MAX_TOKENS:-1024}"
 set_secret AiInternalToken "$AI_INTERNAL_TOKEN"
-set_secret WebhookVerifyToken "$META_WEBHOOK_VERIFY_TOKEN"
+
+# WhatsApp / Meta webhook (must match Verify token in Meta Developer Console)
+WEBHOOK_VERIFY_VALUE="${META_WEBHOOK_VERIFY_TOKEN:-$WEBHOOK_VERIFY_TOKEN}"
+set_secret WebhookVerifyToken "$WEBHOOK_VERIFY_VALUE"
+
 set_secret MidtransServerKey "$MIDTRANS_SERVER_KEY"
 set_secret MidtransClientKey "$MIDTRANS_CLIENT_KEY"
 set_secret MidtransIsProduction "${MIDTRANS_IS_PRODUCTION:-false}"
 set_secret RajaOngkirAPIKey "$RAJAONGKIR_API_KEY"
 set_secret RajaOngkirAccountType "${RAJAONGKIR_ACCOUNT_TYPE:-starter}"
 set_secret SentryDSN "$SENTRY_DSN"
+
+# RAG (Pinecone + OpenAI embeddings) — used by shared/retrieval (PR1+)
+set_secret OpenAIApiKey "$OPENAI_API_KEY"
+set_secret PineconeApiKey "$PINECONE_API_KEY"
+set_secret PineconeIndexHost "$(normalize_pinecone_host "$PINECONE_INDEX_HOST")"
 
 echo "Done. Run: encore secret list"

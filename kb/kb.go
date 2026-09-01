@@ -12,6 +12,7 @@ import (
 
 	appdb "encore.app/wabantu/shared/db"
 	e "encore.app/wabantu/shared/errs"
+	"encore.app/wabantu/shared/retrieval"
 	"encore.app/wabantu/shared/types"
 	"encore.app/wabantu/tenant"
 )
@@ -23,6 +24,9 @@ func openTenantScope(ctx context.Context, schema string) (appdb.TenantScope, err
 		return appdb.TenantScope{}, e.Internal(err.Error())
 	}
 	if err := tenant.EnsureKnowledgeBaseSchema(ctx, schema); err != nil {
+		return appdb.TenantScope{}, e.Internal(err.Error())
+	}
+	if err := tenant.EnsureRetrievalSchema(ctx, schema); err != nil {
 		return appdb.TenantScope{}, e.Internal(err.Error())
 	}
 	return appdb.OpenTenantScope(db.Stdlib(), schema), nil
@@ -233,17 +237,42 @@ func Create(ctx context.Context, req *CreateRequest) (*CreateResponse, error) {
 	}
 	source := resolveKBEntrySource(req.Source)
 
+	tx, err := ts.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	tTx := txn(ts, tx)
+
 	var entry KBEntry
-	err = ts.QueryRowContext(ctx, `
-		INSERT INTO knowledge_base_entry (question, answer, category, source, is_active)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id, question, answer, category, source, is_active, created_at, updated_at`,
+	var version int64
+	err = tTx.QueryRowContext(ctx, `
+		INSERT INTO knowledge_base_entry (question, answer, category, source, is_active,
+		    embedding_version, embedding_status, embedding_content_hash, embedding_model, embedding_updated_at)
+		VALUES ($1, $2, $3, $4, $5, 1, 'pending', $6, $7, NOW())
+		RETURNING id, question, answer, category, source, is_active, created_at, updated_at, embedding_version`,
 		req.Question, req.Answer, req.Category, source, isActive,
+		kbContentHash(req.Question, req.Answer), retrieval.EmbeddingModel,
 	).Scan(&entry.ID, &entry.Question, &entry.Answer, &entry.Category,
-		&entry.Source, &entry.IsActive, &entry.CreatedAt, &entry.UpdatedAt)
+		&entry.Source, &entry.IsActive, &entry.CreatedAt, &entry.UpdatedAt, &version)
 	if err != nil {
 		return nil, fmt.Errorf("create KB entry: %w", err)
 	}
+
+	var outboxID string
+	err = tTx.QueryRowContext(ctx, `
+		INSERT INTO retrieval_outbox (event_type, entity_type, entity_id, version, content_hash, status)
+		VALUES ($1, $2, $3::uuid, $4, $5, 'pending')
+		RETURNING id::text`,
+		outboxEventIndexKB, entityTypeKB, entry.ID, version, kbContentHash(req.Question, req.Answer),
+	).Scan(&outboxID)
+	if err != nil {
+		return nil, fmt.Errorf("enqueue KB outbox: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	publishKBIndexAfterCommit(ctx, u.TenantSchema, u.TenantID, outboxID, entry.ID, outboxEventIndexKB, version, retrieval.IndexLaneLive)
 	return &CreateResponse{Entry: entry}, nil
 }
 
@@ -299,6 +328,13 @@ func Update(ctx context.Context, id string, req *UpdateRequest) (*UpdateResponse
 	sets = append(sets, "updated_at = NOW()")
 	args = append(args, id)
 
+	tx, err := ts.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	tTx := txn(ts, tx)
+
 	query := fmt.Sprintf(`
 		UPDATE knowledge_base_entry
 		SET %s
@@ -307,7 +343,7 @@ func Update(ctx context.Context, id string, req *UpdateRequest) (*UpdateResponse
 		joinStrings(sets, ", "), argN)
 
 	var entry KBEntry
-	err = ts.QueryRowContext(ctx, query, args...).Scan(
+	err = tTx.QueryRowContext(ctx, query, args...).Scan(
 		&entry.ID, &entry.Question, &entry.Answer, &entry.Category,
 		&entry.Source, &entry.IsActive, &entry.CreatedAt, &entry.UpdatedAt)
 	if err == sql.ErrNoRows {
@@ -316,6 +352,26 @@ func Update(ctx context.Context, id string, req *UpdateRequest) (*UpdateResponse
 	if err != nil {
 		return nil, fmt.Errorf("update KB entry: %w", err)
 	}
+
+	version, err := bumpKBEmbeddingPendingTx(ctx, tTx, entry.ID, entry.Question, entry.Answer)
+	if err != nil {
+		return nil, fmt.Errorf("bump embedding version: %w", err)
+	}
+	hash := kbContentHash(entry.Question, entry.Answer)
+	var outboxID string
+	err = tTx.QueryRowContext(ctx, `
+		INSERT INTO retrieval_outbox (event_type, entity_type, entity_id, version, content_hash, status)
+		VALUES ($1, $2, $3::uuid, $4, $5, 'pending')
+		RETURNING id::text`,
+		outboxEventIndexKB, entityTypeKB, entry.ID, version, hash,
+	).Scan(&outboxID)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	publishKBIndexAfterCommit(ctx, u.TenantSchema, u.TenantID, outboxID, entry.ID, outboxEventIndexKB, version, retrieval.IndexLaneLive)
 	return &UpdateResponse{Entry: entry}, nil
 }
 
@@ -334,18 +390,41 @@ func Delete(ctx context.Context, id string) (*DeleteResponse, error) {
 		return nil, err
 	}
 
-	res, err := ts.ExecContext(ctx, `
+	tx, err := ts.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	tTx := txn(ts, tx)
+
+	var version int64
+	err = tTx.QueryRowContext(ctx, `
 		UPDATE knowledge_base_entry
-		SET deleted_at = NOW(), deleted_by = $1
-		WHERE id = $2 AND deleted_at IS NULL`,
-		u.Email, id)
+		SET deleted_at = NOW(), deleted_by = $1,
+		    embedding_status = 'pending', embedding_updated_at = NOW()
+		WHERE id = $2::uuid AND deleted_at IS NULL
+		RETURNING embedding_version`, u.Email, id).Scan(&version)
+	if err == sql.ErrNoRows {
+		return nil, e.NotFound("FAQ tidak ditemukan")
+	}
 	if err != nil {
 		return nil, fmt.Errorf("soft delete KB entry: %w", err)
 	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
-		return nil, e.NotFound("FAQ tidak ditemukan")
+
+	var outboxID string
+	err = tTx.QueryRowContext(ctx, `
+		INSERT INTO retrieval_outbox (event_type, entity_type, entity_id, version, status)
+		VALUES ($1, $2, $3::uuid, $4, 'pending')
+		RETURNING id::text`,
+		outboxEventDeleteKB, entityTypeKB, id, version,
+	).Scan(&outboxID)
+	if err != nil {
+		return nil, err
 	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	publishKBIndexAfterCommit(ctx, u.TenantSchema, u.TenantID, outboxID, id, outboxEventDeleteKB, version, retrieval.IndexLaneLive)
 	return &DeleteResponse{OK: true}, nil
 }
 

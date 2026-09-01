@@ -160,7 +160,7 @@ func SummarizeConversation(ctx context.Context, tenantSchema, convoID string) er
 		)
 	}
 
-	client := NewAnthropicClient(secrets.AnthropicApiKey, AnthropicConfig{
+	client := NewAnthropicClient(secrets.AnthropicAPIKey, AnthropicConfig{
 		Model:     DefaultHaikuAPIID(),
 		MaxTokens: 300,
 	})

@@ -267,6 +267,9 @@ func TryRun(ctx context.Context, schema, conversationID, messageBody string) (bo
 		WHERE deleted_at IS NULL AND is_active = true
 		ORDER BY priority DESC, created_at ASC`)
 	if err != nil {
+		if isMissingWorkflowTable(err) {
+			return false, nil
+		}
 		return false, err
 	}
 	defer rows.Close()
@@ -340,4 +343,13 @@ func user(ctx context.Context) (*types.AuthUser, error) {
 		return nil, appErrs.Forbidden("tenant context required")
 	}
 	return u, nil
+}
+
+func isMissingWorkflowTable(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "does not exist") &&
+		(strings.Contains(msg, "workflow_rule") || strings.Contains(msg, "relation"))
 }

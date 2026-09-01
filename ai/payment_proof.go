@@ -104,7 +104,7 @@ func processPaymentProofJob(ctx context.Context, job *PaymentProofJob) error {
 		return applyPaymentProofResult(ctx, ts, job, target, "proof_submitted", target.Status, meta, true, "")
 	}
 
-	ocr, ocrUsage, ocrErr := aivision.ExtractPaymentProofFromImage(ctx, secrets.AnthropicApiKey, imageBytes, mime)
+	ocr, ocrUsage, ocrErr := aivision.ExtractPaymentProofFromImage(ctx, secrets.AnthropicAPIKey, imageBytes, mime)
 	_ = usage.RecordAIActivity(ctx, usage.AIActivityParams{
 		TenantSchema:   job.TenantSchema,
 		TenantID:       job.TenantID,

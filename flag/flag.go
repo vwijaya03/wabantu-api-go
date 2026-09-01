@@ -152,6 +152,9 @@ func CreateFlag(ctx context.Context, p *CreateFlagParams) (*FeatureFlag, error) 
 		return nil, err
 	}
 	setCache(f)
+	if p.Key == FlagRetrievalVector || p.Key == FlagRetrievalShadow {
+		triggerBackfillForNewlyEnabled(ctx, p.Key, FeatureFlag{TenantIDs: []string{}}, f)
+	}
 	return &f, nil
 }
 
@@ -193,11 +196,21 @@ func UpdateFlag(ctx context.Context, key string, req *UpdateFlagParams) (*Featur
 		 RETURNING key, enabled_globally, tenant_ids, COALESCE(description,''), created_at, updated_at`,
 		joinStrings(sets, ", "), idx)
 
+	var before FeatureFlag
+	if req.TenantIDs != nil || req.EnabledGlobally != nil {
+		if b, ok, _ := loadFlag(ctx, key); ok {
+			before = b
+		}
+	}
+
 	f, err := scanFlag(db.QueryRow(ctx, q, args...).Scan)
 	if err != nil {
 		return nil, err
 	}
 	setCache(f)
+	if req.TenantIDs != nil || req.EnabledGlobally != nil {
+		triggerBackfillForNewlyEnabled(ctx, key, before, f)
+	}
 	return &f, nil
 }
 

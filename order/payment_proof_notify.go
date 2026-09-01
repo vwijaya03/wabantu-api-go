@@ -8,6 +8,7 @@ import (
 	"encore.dev/rlog"
 
 	appdb "encore.app/wabantu/shared/db"
+	"encore.app/wabantu/shared/pii"
 	"encore.app/wabantu/shared/strutil"
 	"encore.app/wabantu/tenant"
 	"encore.app/wabantu/whatsapp"
@@ -42,15 +43,22 @@ func sendPaymentProofConversationMessage(ctx context.Context, tenantSchema, conv
 		return fmt.Errorf("contact not found: %w", err)
 	}
 
-	var chStatus, chAccessToken, chProvider string
+	var chStatus, chProvider string
+	var tokenEnc, tokenLegacy string
 	var chMetaPhoneNumberID *string
 	err = pool.QueryRowContext(ctx, fmt.Sprintf(`
-		SELECT status, COALESCE(access_token,''), provider, meta_phone_number_id
+		SELECT status,
+		       COALESCE(access_token_enc, ''), COALESCE(access_token, ''),
+		       provider, meta_phone_number_id
 		 FROM %s WHERE id = $1::uuid`, sch.T("whatsapp_channel")),
 		channelID,
-	).Scan(&chStatus, &chAccessToken, &chProvider, &chMetaPhoneNumberID)
+	).Scan(&chStatus, &tokenEnc, &tokenLegacy, &chProvider, &chMetaPhoneNumberID)
 	if err != nil {
 		return fmt.Errorf("channel not found: %w", err)
+	}
+	chAccessToken, err := pii.DecryptOrLegacy(tokenEnc, tokenLegacy, strings.TrimSpace(secrets.DataEncryptionKey))
+	if err != nil {
+		return fmt.Errorf("decrypt channel token: %w", err)
 	}
 	if chStatus != "connected" || chAccessToken == "" || chProvider != "meta_cloud" {
 		return fmt.Errorf("whatsapp channel not ready")

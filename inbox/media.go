@@ -16,6 +16,7 @@ import (
 	apperr "encore.app/wabantu/shared/errs"
 	appdb "encore.app/wabantu/shared/db"
 	"encore.app/wabantu/shared/mediastorage"
+	"encore.app/wabantu/shared/pii"
 	"encore.app/wabantu/whatsapp"
 )
 
@@ -128,16 +129,20 @@ func loadMessageMediaRow(ctx context.Context, q appdb.TenantQuerier, messageID s
 }
 
 func loadChannelAccessToken(ctx context.Context, q appdb.TenantQuerier, channelID string) (string, error) {
-	var status, token, provider string
+	var status, provider, tokenEnc, tokenLegacy string
 	err := q.QueryRowContext(ctx, `
-		SELECT status, COALESCE(access_token,''), provider
+		SELECT status, COALESCE(access_token_enc, ''), COALESCE(access_token, ''), provider
 		FROM whatsapp_channel WHERE id = $1`, channelID).
-		Scan(&status, &token, &provider)
+		Scan(&status, &tokenEnc, &tokenLegacy, &provider)
 	if err == sql.ErrNoRows {
 		return "", apperr.NotFound("Channel tidak ditemukan")
 	}
 	if err != nil {
 		return "", apperr.Internal("gagal memuat channel")
+	}
+	token, err := pii.DecryptOrLegacy(tokenEnc, tokenLegacy, encKey())
+	if err != nil {
+		return "", apperr.Internal("gagal mendekripsi token channel")
 	}
 	if status != "connected" || strings.TrimSpace(token) == "" {
 		return "", apperr.BadRequest("Channel WhatsApp belum terhubung")

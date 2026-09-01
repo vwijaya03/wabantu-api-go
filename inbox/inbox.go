@@ -619,13 +619,20 @@ func SendMessage(ctx context.Context, id string, p *SendMessageParams) (*SendMes
 		return nil, apperr.NotFound("Kontak tidak ditemukan")
 	}
 
-	var chStatus, chAccessToken, chProvider string
+	var chStatus, chProvider string
+	var tokenEnc, tokenLegacy string
 	var chMetaPhoneNumberID *string
 	if err := ts.QueryRowContext(ctx,
-		`SELECT status, COALESCE(access_token,''), provider, meta_phone_number_id
+		`SELECT status,
+		        COALESCE(access_token_enc, ''), COALESCE(access_token, ''),
+		        provider, meta_phone_number_id
 		 FROM whatsapp_channel WHERE id = $1`, convoChannelID,
-	).Scan(&chStatus, &chAccessToken, &chProvider, &chMetaPhoneNumberID); err != nil {
+	).Scan(&chStatus, &tokenEnc, &tokenLegacy, &chProvider, &chMetaPhoneNumberID); err != nil {
 		return nil, apperr.NotFound("Channel tidak ditemukan")
+	}
+	chAccessToken, err := pii.DecryptOrLegacy(tokenEnc, tokenLegacy, encKey())
+	if err != nil {
+		return nil, apperr.Internal("failed to decrypt channel token")
 	}
 	if chStatus != "connected" || chAccessToken == "" {
 		return nil, apperr.BadRequest("Channel WhatsApp belum terhubung. Silakan reconnect.")
