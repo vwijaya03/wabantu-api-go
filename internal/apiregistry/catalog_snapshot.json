@@ -1,6 +1,16 @@
 {
-  "count": 346,
+  "count": 347,
   "endpoints": [
+    {
+      "service": "admin",
+      "file": "admin/ai_regression.go",
+      "line": 32,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/admin/ai-regression/run",
+      "tag": "super_admin",
+      "annotation": "auth method=POST path=/api/v1/admin/ai-regression/run tag:super_admin"
+    },
     {
       "service": "admin",
       "file": "admin/ai_triage.go",
@@ -103,7 +113,7 @@
     {
       "service": "admin",
       "file": "admin/admin.go",
-      "line": 258,
+      "line": 259,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/admin/impersonate/:tenantId",
@@ -113,7 +123,7 @@
     {
       "service": "admin",
       "file": "admin/admin.go",
-      "line": 457,
+      "line": 464,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/admin/migrate-tenant-schemas",
@@ -123,7 +133,7 @@
     {
       "service": "admin",
       "file": "admin/admin.go",
-      "line": 496,
+      "line": 503,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/admin/migrate-tenant-schemas/active-jobs",
@@ -133,7 +143,7 @@
     {
       "service": "admin",
       "file": "admin/admin.go",
-      "line": 475,
+      "line": 482,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/admin/migrate-tenant-schemas/jobs/:jobId",
@@ -143,7 +153,7 @@
     {
       "service": "admin",
       "file": "admin/admin.go",
-      "line": 510,
+      "line": 517,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/admin/migrate-tenant-schemas/jobs/:jobId/cancel",
@@ -153,7 +163,7 @@
     {
       "service": "admin",
       "file": "admin/admin.go",
-      "line": 308,
+      "line": 309,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/admin/stop-impersonation",
@@ -183,7 +193,7 @@
     {
       "service": "admin",
       "file": "admin/admin.go",
-      "line": 407,
+      "line": 408,
       "access": "auth",
       "method": "DELETE",
       "path": "/api/v1/admin/tenant/:id",
@@ -193,7 +203,7 @@
     {
       "service": "admin",
       "file": "admin/admin.go",
-      "line": 209,
+      "line": 210,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/admin/tenant/:id",
@@ -223,7 +233,7 @@
     {
       "service": "admin",
       "file": "admin/admin.go",
-      "line": 351,
+      "line": 352,
       "access": "auth",
       "method": "PUT",
       "path": "/api/v1/admin/tenant/:id/plan",
@@ -233,7 +243,7 @@
     {
       "service": "admin",
       "file": "admin/admin.go",
-      "line": 102,
+      "line": 103,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/admin/tenants",
@@ -393,7 +403,7 @@
     {
       "service": "broadcast",
       "file": "broadcast/broadcast.go",
-      "line": 157,
+      "line": 158,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/broadcast/campaigns",
@@ -402,7 +412,7 @@
     {
       "service": "broadcast",
       "file": "broadcast/broadcast.go",
-      "line": 73,
+      "line": 74,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/broadcast/campaigns",
@@ -412,7 +422,7 @@
     {
       "service": "broadcast",
       "file": "broadcast/broadcast.go",
-      "line": 187,
+      "line": 188,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/broadcast/campaigns/:id/send",
@@ -1798,7 +1808,7 @@
     {
       "service": "flag",
       "file": "flag/retrieval_rollout.go",
-      "line": 231,
+      "line": 236,
       "access": "auth",
       "method": "PUT",
       "path": "/api/v1/flags/retrieval-mode",
@@ -1807,7 +1817,7 @@
     {
       "service": "flag",
       "file": "flag/retrieval_rollout.go",
-      "line": 220,
+      "line": 225,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/flags/retrieval-mode/:tenantId",
@@ -1825,7 +1835,7 @@
     {
       "service": "flag",
       "file": "flag/rag_rollout_jobs.go",
-      "line": 660,
+      "line": 661,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/flags/retrieval-rollout",
@@ -1834,7 +1844,7 @@
     {
       "service": "flag",
       "file": "flag/rag_rollout_jobs.go",
-      "line": 677,
+      "line": 678,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/flags/retrieval-rollout/active-jobs",
@@ -1843,7 +1853,7 @@
     {
       "service": "flag",
       "file": "flag/rag_rollout_jobs.go",
-      "line": 669,
+      "line": 670,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/flags/retrieval-rollout/jobs/:jobId",
@@ -1852,7 +1862,7 @@
     {
       "service": "flag",
       "file": "flag/rag_rollout_jobs.go",
-      "line": 689,
+      "line": 690,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/flags/retrieval-rollout/jobs/:jobId/cancel",
@@ -1909,7 +1919,7 @@
     {
       "service": "inbox",
       "file": "inbox/inbox.go",
-      "line": 950,
+      "line": 957,
       "access": "auth",
       "method": "PATCH",
       "path": "/api/v1/inbox-contact-status/batch",
@@ -1918,7 +1928,7 @@
     {
       "service": "inbox",
       "file": "inbox/inbox.go",
-      "line": 987,
+      "line": 994,
       "access": "auth",
       "method": "PATCH",
       "path": "/api/v1/inbox-contacts/batch-delete",
@@ -1927,7 +1937,7 @@
     {
       "service": "inbox",
       "file": "inbox/inbox.go",
-      "line": 671,
+      "line": 678,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/inbox/contacts",
@@ -1936,7 +1946,7 @@
     {
       "service": "inbox",
       "file": "inbox/inbox.go",
-      "line": 739,
+      "line": 746,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/inbox/contacts",
@@ -1945,7 +1955,7 @@
     {
       "service": "inbox",
       "file": "inbox/inbox.go",
-      "line": 919,
+      "line": 926,
       "access": "auth",
       "method": "DELETE",
       "path": "/api/v1/inbox/contacts/:id",
@@ -1954,7 +1964,7 @@
     {
       "service": "inbox",
       "file": "inbox/inbox.go",
-      "line": 784,
+      "line": 791,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/inbox/contacts/:id",
@@ -1963,7 +1973,7 @@
     {
       "service": "inbox",
       "file": "inbox/inbox.go",
-      "line": 807,
+      "line": 814,
       "access": "auth",
       "method": "PATCH",
       "path": "/api/v1/inbox/contacts/:id",
@@ -2071,7 +2081,7 @@
     {
       "service": "inbox",
       "file": "inbox/media.go",
-      "line": 235,
+      "line": 240,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/inbox/messages/:messageId/media",
@@ -2728,7 +2738,7 @@
     {
       "service": "kb",
       "file": "kb/kb.go",
-      "line": 376,
+      "line": 384,
       "access": "auth",
       "method": "DELETE",
       "path": "/api/v1/knowledge-base/:id",
@@ -2737,7 +2747,7 @@
     {
       "service": "kb",
       "file": "kb/kb.go",
-      "line": 278,
+      "line": 280,
       "access": "auth",
       "method": "PATCH",
       "path": "/api/v1/knowledge-base/:id",
@@ -2746,7 +2756,7 @@
     {
       "service": "kb",
       "file": "kb/retrieval_worker.go",
-      "line": 148,
+      "line": 152,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/knowledge-base/reindex",
@@ -3141,7 +3151,7 @@
     {
       "service": "whatsappapi",
       "file": "whatsappapi/whatsappapi.go",
-      "line": 105,
+      "line": 110,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/whatsapp/channels",
@@ -3150,7 +3160,7 @@
     {
       "service": "whatsappapi",
       "file": "whatsappapi/whatsappapi.go",
-      "line": 273,
+      "line": 295,
       "access": "auth",
       "method": "DELETE",
       "path": "/api/v1/whatsapp/channels/:id",
@@ -3159,7 +3169,7 @@
     {
       "service": "whatsappapi",
       "file": "whatsappapi/whatsappapi.go",
-      "line": 321,
+      "line": 343,
       "access": "auth",
       "method": "DELETE",
       "path": "/api/v1/whatsapp/channels/:id/permanent",
@@ -3169,7 +3179,7 @@
     {
       "service": "whatsappapi",
       "file": "whatsappapi/whatsappapi.go",
-      "line": 610,
+      "line": 602,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/whatsapp/channels/:id/test-message",
@@ -3179,7 +3189,7 @@
     {
       "service": "whatsappapi",
       "file": "whatsappapi/whatsappapi.go",
-      "line": 201,
+      "line": 220,
       "access": "public",
       "method": "POST",
       "path": "/api/v1/whatsapp/meta/connect/callback",
@@ -3188,7 +3198,7 @@
     {
       "service": "whatsappapi",
       "file": "whatsappapi/whatsappapi.go",
-      "line": 147,
+      "line": 166,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/whatsapp/meta/connect/init",
