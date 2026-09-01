@@ -154,7 +154,9 @@ flowchart TD
   orderEarly -->|yes| orderFlow
   orderEarly -->|no| catalogEarly{replyFromBusinessCatalog inScope?}
   catalogEarly -->|yes| catDB[path catalog_db]
-  classifier --> sensitive{sensitive_escalate?}
+  catalogEarly -->|no| shipping{IsShippingFAQQuestion?}
+  shipping -->|yes| shipFAQ[path shipping_faq]
+  shipping -->|no| sensitive{sensitive_escalate?}
   sensitive -->|yes| escalate[path sensitive_escalate]
   classifier --> oos{out_of_scope?}
   oos -->|yes| oosPath[path out_of_scope]
@@ -186,6 +188,8 @@ flowchart TD
 9. **History-backed purchase:** `mau beli 2 lusin` + stok? tanpa nama produk di pesan, tapi outbound terakhir menyebut satu produk (mis. Abon) → `order_intent` / `order_flow`, bukan retail policy.
 10. **Sell inquiry:** `jual abon sapi?` → `catalog_db` (`IsProductSellInquiry`), bukan LLM.
 11. **Stock follow-up:** `stoknya ada?` / `ada ga?` pendek → resolve produk dari `matchCatalogFromFocusedHistory` — skip outbound list katalog.
+12. **Shipping FAQ** (`ai/shipping_reply.go`): ongkir, estimasi kirim, area kirim → path `shipping_faq` **setelah** katalog, **sebelum** FAQ umum/LLM. `catalog_reply.go` early-return `false` untuk `IsShippingFAQQuestion` agar tidak hijack.
+13. **LLM gagal:** langsung `scopeDirectionReply` dengan path `auto_fallback` — tidak menunggu retry Pub/Sub job habis.
 
 ### Retrieval vector (RAG)
 
@@ -222,6 +226,7 @@ Katalog: `MatchCatalogItemSemantic` (vector top-3 → rules); ambigu → klarifi
 | `IsGreetingFeedback` | `ai/greeting.go` | `makasih min` setelah sapaan | `greeting` | Tidak |
 | `IsPromptInjectionLikely` | `ai/safety.go` | Upaya manipulasi sistem | `injection_guard` | Tidak |
 | `replyFromBusinessCatalog` | `ai/catalog_reply.go` | `list produk`, `listkan semua jualan`, `harga kaos L`, caption foto produk | `catalog_db` | Tidak |
+| `tryShippingFAQReply` | `ai/shipping_reply.go` | `berapa ongkir`, `berapa lama pengiriman`, `bisa kirim ke luar kota` | `shipping_faq` | Tidak |
 | `IsProductSellInquiry` | `ai/catalog_reply.go` | `jual abon sapi?`, `kalian jualan abon?` | `catalog_db` | Tidak |
 | `isHistoryBackedPurchaseIntent` | `ai/sales_state.go` | `mau beli 2 lusin` + produk dari outbound terakhir | `order_flow` (via intent) | Tidak |
 | `IsStructuredOrderList` | `ai/order_structured.go` | `mau buat pesanan baru` + baris `1. Produk qty ukuran` | `order_flow` | Tidak |
@@ -229,7 +234,7 @@ Katalog: `MatchCatalogItemSemantic` (vector top-3 → rules); ambigu → klarifi
 | `ResolveSalesIntent` | `ai/sales_intent.go` | Menggabungkan sinyal → `SalesState` / topic | Mempengaruhi classifier label | — |
 | `classifyMessage` | `ai/autoreply.go` | Keyword sensitif, out-of-scope | `sensitive_escalate`, `out_of_scope`, dll. | Tidak |
 | `handleOrderFlow` | `ai/order_flow.go` | Lanjut checkout Redis (qty, alamat, multi-item) | `order_flow` | Sebagian (konsultasi) |
-| `tryFAQDirectAnswer` | `ai/classifier_routing.go` | Match KB kuat; **skip** order lookup | `faq_direct` | Tidak |
+| `tryFAQDirectAnswer` | `internal/buyerflow/classifier_routing.go` (bridge `ai/buyerflow_bridge.go`) | Match KB kuat; **skip** order lookup & browse katalog | `faq_direct` | Tidak |
 | FAQ cache Redis | `ai/autoreply.go` | Pertanyaan pernah dijawab | `faq_cache` | Tidak |
 | Anthropic + routing | `ai/routing.go`, `ai/classifier_routing.go` | Pertanyaan in-scope tanpa jawaban deterministik | `llm`, `llm_tools`, `llm_grounded` | Ya |
 | Kuota habis | `ai/autoreply.go` | Limit token/bulan | `cost_limit` | Tidak |
@@ -258,6 +263,7 @@ Semua konstanta di `ai/reply_meta.go`:
 | `order_status` | Cek status pesanan scoped | false |
 | `order_lookup_denied` | Cari pembeli orang lain ditolak | false |
 | `catalog_db` | Jawaban dari `business_catalog_item` | false |
+| `shipping_faq` | Ongkir / estimasi / area kirim (KB + template) | false |
 | `consulting` | Balasan konsultasi ringan | false |
 | `faq_cache` | Jawaban dari cache Redis | false |
 | `faq_direct` | Jawaban KB tanpa LLM | false |
@@ -265,7 +271,7 @@ Semua konstanta di `ai/reply_meta.go`:
 | `llm_tools` | LLM + tool katalog | true |
 | `llm_grounded` | LLM dengan grounding KB | true |
 | `cost_limit` | Kuota AI habis | false |
-| `auto_fallback` | Fallback setelah retry gagal | false |
+| `auto_fallback` | Fallback LLM gagal atau retry job habis (`scopeDirectionReply`) | false |
 
 \* Order flow mayoritas deterministik; beberapa cabang konsultasi memakai path `consulting`.
 
@@ -342,11 +348,12 @@ encore test ./ai/ -run 'BuyerLookup|OrderStatus|Greeting' -count=1
 | `ai/order_flow.go` | Checkout state machine (Redis), persist multi-item |
 | `ai/order_structured.go` | Parse pesanan multi-baris, stock guard per baris |
 | `ai/catalog_reply.go` | Jawaban katalog DB |
+| `ai/shipping_reply.go` | Ongkir, estimasi kirim, area kirim |
 | `ai/greeting.go` | Sapaan |
 | `ai/safety.go` | Injection & scope sensitif |
 | `ai/sales_intent.go` | `ResolveSalesIntent` |
 | `ai/product_scope.go` | Scope bisnis |
-| `ai/classifier_routing.go` | FAQ direct, model routing |
+| `internal/buyerflow/classifier_routing.go` | FAQ direct guards, model routing (via `ai/buyerflow_bridge.go`) |
 | `ai/routing.go` | Haiku vs Sonnet per plan |
 | `ai/reply_meta.go` | Konstanta path metadata |
 | `ai/inbound_media.go` | Caption media → teks untuk AI |
@@ -363,6 +370,7 @@ encore test ./ai/ -run 'BuyerLookup|OrderStatus|Greeting' -count=1
 | Riset frasa buyer | [ORDER_STATUS_BUYER_RESEARCH.md](./ORDER_STATUS_BUYER_RESEARCH.md) |
 | Roadmap fase WA | [WHATSAPP_INBOX_MEDIA_PAYMENT_STOCK.md](./WHATSAPP_INBOX_MEDIA_PAYMENT_STOCK.md) |
 | Fitur shipped | [docs-development-shipped/](../docs-development-shipped/) |
+| RAG & acceptance | [RAG_VECTOR_RETRIEVAL.md](./RAG_VECTOR_RETRIEVAL.md) · [RAG_CONVERSATION_ACCEPTANCE.md](./RAG_CONVERSATION_ACCEPTANCE.md) |
 | Kuota & model AI | [LIMITS_AND_QUOTAS.md](../LIMITS_AND_QUOTAS.md) |
 
 ---
@@ -371,6 +379,7 @@ encore test ./ai/ -run 'BuyerLookup|OrderStatus|Greeting' -count=1
 
 | Tanggal | Perubahan |
 |---------|-----------|
+| 2026-09-01 | Path `shipping_faq`, per-tenant retrieval breaker, acceptance doc Omah |
 | 2026-06-22 | History-backed purchase: `mau beli N lusin` + produk dari outbound → `order_flow`; `jual [produk]?` → `catalog_db`; follow-up `stoknya ada` |
 | 2026-06-22 | Order flow continuity: jangan clear Redis saat produk disebut; follow-up stok dari history |
 | 2026-06-14 | Structured multi-line order + guard catalog hijack (`best seller` false positive) |

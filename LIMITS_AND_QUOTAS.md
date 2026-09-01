@@ -99,6 +99,17 @@ Top-up tidak mengubah paket, tidak recurring, dan tidak menambah broadcast/stora
 
 `loadSubscriptionPlanCode` di `ai/autoreply.go` mengembalikan `"trial"` bila `is_trial`.
 
+**Matrix path vs LLM** (setelah PR-5/PR-8):
+
+| Path metadata | LLM? | Model (jika LLM) |
+|---------------|------|------------------|
+| `greeting`, `catalog_db`, `shipping_faq`, `faq_direct`, `faq_cache`, `order_*` | Tidak | — |
+| `consulting`, `low_confidence`, `in_scope_non_question` | Tidak | `scopeDirectionReply` |
+| `llm`, `llm_tools`, `llm_grounded` | Ya | Haiku/Sonnet per tabel plan di atas |
+| `auto_fallback` | Tidak | `scopeDirectionReply` saat Anthropic gagal **atau** retry Pub/Sub habis |
+
+Kompleksitas pesan (`MessageComplexity`) menentukan Haiku vs Sonnet pada plan `hybrid` / `hybrid_priority` — lihat `ai/routing.go` → `ResolveRouting`.
+
 ---
 
 ## 3. Billing & invoice
