@@ -66,6 +66,7 @@ func InsertKBEntryWithIndex(
 	if err := tx.Commit(); err != nil {
 		return "", err
 	}
+	invalidateFAQCacheAfterKBChange(ctx, tenantID)
 	publishKBIndexAfterCommit(ctx, tenantSchema, tenantID, outboxID, entryID, outboxEventIndexKB, version, retrieval.IndexLaneLive)
 	return entryID, nil
 }
