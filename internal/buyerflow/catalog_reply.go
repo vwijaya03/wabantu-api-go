@@ -521,10 +521,6 @@ func replyFromBusinessCatalog(
 	if profile == nil {
 		return "", false
 	}
-	if vctx != nil && len(vctx.Hits) > 0 && CatalogSemanticAmbiguous(vctx.Hits) {
-		formal := strOrEmpty(profile.Tone) == "formal"
-		return CatalogAmbiguityReply(formal), true
-	}
 	resolve := resolveCatalogMatch
 	direct := matchCatalogItem
 	if vctx != nil {
@@ -598,6 +594,9 @@ func replyFromBusinessCatalog(
 		}
 		if isCatalogContextualReference(userText) || IsPricingUnitClarification(userText) {
 			return "", false
+		}
+		if shouldAskCatalogClarification(userText, vctx) {
+			return CatalogAmbiguityReply(formal), true
 		}
 		return buildCatalogNotFoundReply(formal, bizName, catalog, profile), true
 	}

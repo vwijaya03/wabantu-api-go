@@ -459,17 +459,6 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return err == nil, err
 	}
 
-	// ── Browsing katalog (mis. "mau tanya produk") — jangan redirect generik ──
-	if inScope && IsCatalogBrowsingIntent(userText) {
-		if catReply, ok := s.replyFromBusinessCatalogHybrid(ctx, payload.TenantID, payload.TenantSchema, userText, profile, catalog, history); ok {
-			finalReply := applyOutputPolicy(catReply)
-			out := metaNoLLM(reasonAIGenerated, PathCatalogDB)
-			out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-			err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, finalReply, "ai", out)
-			return err == nil, err
-		}
-	}
-
 	// ── Handle: in-scope non-question ────────────────────────────────────
 	if classifier.Label == "in_scope_non_question" {
 		c, _ := s.bumpCounter(ctx, payload.TenantID, convo.ID, "nonscope")
