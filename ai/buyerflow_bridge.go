@@ -71,6 +71,7 @@ const (
 	PathAutoFallback      = bf.PathAutoFallback
 	PathPaymentProof      = bf.PathPaymentProof
 	PathPaymentFAQ        = bf.PathPaymentFAQ
+	PathShippingFAQ       = bf.PathShippingFAQ
 	PathProductImageMatch = bf.PathProductImageMatch
 	PathImageFallback     = bf.PathImageFallback
 )
@@ -129,6 +130,7 @@ var (
 	IsRecommendationRequest       = bf.IsRecommendationRequest
 	IsSelfBuyerOrderLookup        = bf.IsSelfBuyerOrderLookup
 	IsShippingQuoteQuestion       = bf.IsShippingQuoteQuestion
+	IsShippingFAQQuestion         = bf.IsShippingFAQQuestion
 	IsSoftCancelRegret            = bf.IsSoftCancelRegret
 	IsStoreLocationQuestion       = bf.IsStoreLocationQuestion
 	IsStructuredOrderList         = bf.IsStructuredOrderList
@@ -175,6 +177,10 @@ func replyFromBusinessCatalog(userText string, profile *dbBusinessProfile, catal
 
 func tryPaymentFAQAnswer(query string, kb []dbKBEntry) (string, bool) {
 	return bf.TryPaymentFAQAnswer(query, kb)
+}
+
+func tryShippingFAQReply(userText string, profile *dbBusinessProfile, kb []dbKBEntry, formal bool) (string, bool) {
+	return bf.TryShippingFAQReply(userText, profile, kb, formal)
 }
 
 func replyRecipientPolicyQuestion(userText string, kb []dbKBEntry, formal bool) string {
