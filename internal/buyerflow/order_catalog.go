@@ -68,9 +68,81 @@ func matchCatalogItem(userText string, catalog []CatalogItem) *CatalogItem {
 		}
 	}
 	if bestScore < 0.12 {
+		return matchCatalogItemFuzzy(userText, catalog)
+	}
+	return best
+}
+
+// matchCatalogItemFuzzy — typo singkat (mis. "cadburi" → Cadbury) bila lexical miss.
+func matchCatalogItemFuzzy(userText string, catalog []CatalogItem) *CatalogItem {
+	text := strings.ToLower(strings.TrimSpace(userText))
+	tokens := tokenize(text)
+	if len(tokens) == 0 {
+		return nil
+	}
+	exclude := catalogExcludeHints(text)
+	var best *CatalogItem
+	var bestScore float64
+	for i := range catalog {
+		it := &catalog[i]
+		nameLower := strings.ToLower(it.Name)
+		if catalogItemExcluded(nameLower, exclude) {
+			continue
+		}
+		score := fuzzyNameTokenScore(tokens, tokenize(nameLower))
+		if score > bestScore {
+			bestScore = score
+			best = it
+		}
+	}
+	if bestScore < 0.18 {
 		return nil
 	}
 	return best
+}
+
+func fuzzyNameTokenScore(userTokens, nameTokens []string) float64 {
+	var score float64
+	for _, ut := range userTokens {
+		if len(ut) < 4 || isFuzzyStopToken(ut) {
+			continue
+		}
+		for _, nt := range nameTokens {
+			if len(nt) < 4 {
+				continue
+			}
+			if fuzzyTokenPrefixMatch(ut, nt) {
+				score += 0.22
+			}
+		}
+	}
+	return score
+}
+
+func isFuzzyStopToken(tok string) bool {
+	switch tok {
+	case "mau", "pesen", "pesan", "beli", "order", "pcs", "paket", "bukan", "woi", "dong", "kak":
+		return true
+	}
+	return false
+}
+
+func fuzzyTokenPrefixMatch(a, b string) bool {
+	if a == b {
+		return true
+	}
+	n := 4
+	if len(a) < n || len(b) < n {
+		return false
+	}
+	return strings.HasPrefix(a, b[:n]) || strings.HasPrefix(b, a[:n])
+}
+
+func resolveOrderProductMatch(userText string, history []Message, catalog []CatalogItem) *CatalogItem {
+	if m := matchCatalogItem(userText, catalog); m != nil {
+		return m
+	}
+	return matchCatalogFromRecentOutbound(history, catalog)
 }
 
 func catalogExcludeHints(text string) []string {
@@ -87,6 +159,21 @@ func catalogExcludeHints(text string) []string {
 		}
 		if strings.Contains(lower, "bukan hello") || strings.Contains(lower, "bukan hellokitty") {
 			out = append(out, "hello kitty")
+		}
+		for _, prefix := range []string{"bukan "} {
+			idx := strings.Index(lower, prefix)
+			if idx < 0 {
+				continue
+			}
+			rest := strings.TrimSpace(lower[idx+len(prefix):])
+			for _, stop := range []string{" wo", " ya", " kak", " dong", " woi", ",", "?", "!", " tapi", " yang"} {
+				if j := strings.Index(rest, stop); j > 0 {
+					rest = strings.TrimSpace(rest[:j])
+				}
+			}
+			if rest != "" && len(rest) >= 3 {
+				out = append(out, rest)
+			}
 		}
 	}
 	for _, prefix := range []string{"selain ", "kecuali "} {

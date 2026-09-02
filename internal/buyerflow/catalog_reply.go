@@ -351,7 +351,11 @@ func matchCatalogFromRecentOutbound(history []Message, catalog []CatalogItem) *C
 			continue
 		}
 		seen++
-		if match := matchCatalogItem(history[i].Body, catalog); match != nil {
+		body := history[i].Body
+		if isCatalogListOutbound(body) || countCatalogMatchesInText(body, catalog) > 1 {
+			continue
+		}
+		if match := matchCatalogItem(body, catalog); match != nil {
 			return match
 		}
 	}
