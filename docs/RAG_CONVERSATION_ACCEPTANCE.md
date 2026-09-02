@@ -40,8 +40,21 @@ encore test ./ai/ -run 'TestConversationRegression' -count=1
 | 11 | `WB-XXXX` (ref valid) | `order_status` | Status pesanan |
 | 12 | `resep nasi goreng enak gimana?` | **bukan** `faq_direct` | Off-topic → consulting/LLM, bukan FAQ sembarangan |
 | 13 | Pelanggan B tanya sama seperti A | **tidak** mengandung PII A | Regresi cache FAQ (lihat `AI_SECURITY_PRIVACY.md`) |
+| 14 | Checkout Maggi + `1 pcs, lalu abon sapi 250g 1pcs` | `order_flow` | Ringkasan 2 item (Maggi + Abon) |
+| 15 | Setelah checkout: `jadikan 1 dengan pesanan sebelumnya` / `abon nutela ga masuk` | `order_flow` (amend) | Draft diperbarui, bukan generic not-found katalog |
+| 16 | `selain abon sapi ada list lainnya?` | `catalog_db` | Daftar produk tanpa Abon |
 
 ---
+
+## Kasus Omah Apparel (thread `b72e2bee-…`)
+
+Replay manual di staging setelah merge PR order-flow:
+
+1. `mau coba maggi percik 1` → order flow Maggi
+2. `1 pcs, lalu abon sapi yang 250 gram 1pcs` → kedua item di ringkasan
+3. `loh abon nutela ga masuk` → amend draft, bukan LLM Abon 125g salah
+4. `selain abon sapi ada list lainnya?` → `catalog_db` dengan filter exclusion
+
 
 ## Multi-turn scripts
 

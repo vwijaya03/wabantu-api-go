@@ -514,6 +514,10 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return err == nil, err
 	}
 
+	if inScope && IsOrderAmendMessage(userText) {
+		return s.handleOrderAmend(ctx, ts, payload, convo, channel, contact, userText, profile, history)
+	}
+
 	// ── In-scope question → LLM path ────────────────────────────────────
 	s.resetScopeCounters(ctx, payload.TenantID, convo.ID)
 

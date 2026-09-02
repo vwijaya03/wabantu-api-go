@@ -111,6 +111,17 @@ var regressionCases = []regressionCase{
 		wantPath: PathOrderFlow,
 	},
 	{
+		name:     "greeting_good_evening",
+		input:    "good evening",
+		wantPath: PathGreeting,
+	},
+	{
+		name:     "catalog_exclusion_list_lainnya",
+		input:    "selain abon sapi ada list lainnya?",
+		wantPath: PathCatalogDB,
+		wantNot:  []string{"belum menemukan data tersebut di katalog"},
+	},
+	{
 		name:     "off_topic_not_faq_direct",
 		input:    "resep nasi goreng enak gimana?",
 		wantPath: PathConsulting,

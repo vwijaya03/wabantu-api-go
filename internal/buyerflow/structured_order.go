@@ -25,6 +25,16 @@ func IsStructuredOrderList(userText string) bool {
 	if countOrderCandidateLines(userText) >= 2 {
 		return true
 	}
+	if IsInlineMultiOrderMessage(userText) {
+		segments := splitInlineOrderSegments(userText)
+		qtySegs := 0
+		for _, seg := range segments {
+			if mentionsOrderQty(seg) {
+				qtySegs++
+			}
+		}
+		return qtySegs >= 2 || (qtySegs >= 1 && len(segments) >= 2)
+	}
 	return false
 }
 

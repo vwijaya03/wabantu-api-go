@@ -63,7 +63,13 @@ func extractStructuredOrderLines(userText string) []string {
 	if numbered := extractNumberedOrderLines(userText); len(numbered) > 0 {
 		return numbered
 	}
-	return extractUnnumberedOrderLines(userText)
+	if unnumbered := extractUnnumberedOrderLines(userText); len(unnumbered) > 0 {
+		return unnumbered
+	}
+	if bf.IsInlineMultiOrderMessage(userText) {
+		return bf.SplitInlineOrderSegments(userText)
+	}
+	return nil
 }
 
 func extractNumberedOrderLines(userText string) []string {
@@ -109,38 +115,19 @@ func parseStructuredOrderLines(userText string, catalog []dbCatalogItem) structu
 }
 
 func parseSingleStructuredLine(raw string, catalog []dbCatalogItem) orderLineState {
-	var line orderLineState
-	text := strings.TrimSpace(raw)
-	if text == "" {
-		return line
-	}
-	if q, ok := parseOrderQty(text); ok {
-		line.Qty = q
-	}
-	sz, cl := parseSizeAndColor(text)
-	if sz != "" {
-		line.Size = sz
-	}
-	if cl != "" {
-		line.Color = cl
-	}
-		match := matchCatalogItem(text, catalog)
-	if match == nil {
-		cleaned := bf.StripOrderSizeTokens(text)
-		cleaned = strings.TrimSpace(strings.TrimRight(cleaned, "ya"))
-		match = matchCatalogItem(cleaned, catalog)
-	}
-	if match != nil {
-		line.CatalogItemID = match.ID
-		line.ExternalCode = match.ExternalCode
-		line.ProductName = match.Name
-		line.UnitPrice = match.SellPrice
-		line.SellUnit = match.SellUnit
-		if line.Qty < 1 {
-			line.Qty = 1
+	line := bf.ParseStructuredOrderLine(raw, toBFCatalog(catalog))
+	return orderLineState(line)
+}
+
+func toBFCatalog(catalog []dbCatalogItem) []bf.CatalogItem {
+	out := make([]bf.CatalogItem, len(catalog))
+	for i, c := range catalog {
+		out[i] = bf.CatalogItem{
+			ID: c.ID, ExternalCode: c.ExternalCode, Name: c.Name,
+			SellPrice: c.SellPrice, SellUnit: c.SellUnit,
 		}
 	}
-	return line
+	return out
 }
 
 func orderStateFromStructuredLines(lines []orderLineState) orderState {
@@ -184,19 +171,8 @@ func structuredOrderUnmatchedReply(formal bool, unmatched []string) string {
 }
 
 func guardStructuredOrderStock(st orderState, catalog []dbCatalogItem, formal bool) (orderState, string, bool) {
-	if !st.HasMultiItems() {
-		return st, "", false
-	}
-	for i := range st.Items {
-		lineSt := orderStateFromLine(st.Items[i])
-		lineSt, reply, blocked := guardOrderQtyStep(lineSt, catalog, formal, "ask_qty")
-		if blocked {
-			prefix := fmt.Sprintf("Baris %d (%s): ", i+1, shortDisplayName(st.Items[i].ProductName))
-			return st, prefix + reply, true
-		}
-		st.Items[i].WarehouseID = lineSt.WarehouseID
-	}
-	return st, "", false
+	out, reply, blocked := bf.GuardStructuredOrderStock(st, toBFCatalog(catalog), formal)
+	return out, reply, blocked
 }
 
 func guardOrderStateQty(st orderState, catalog []dbCatalogItem, formal bool, qtyStep string) (orderState, string, bool) {

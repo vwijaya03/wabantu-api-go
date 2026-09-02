@@ -42,3 +42,22 @@ func TestGroundLLMReply_fallback(t *testing.T) {
 		t.Fatalf("hallucinated price leaked: %s", got)
 	}
 }
+
+func TestGroundLLMReply_exclusionBrowse(t *testing.T) {
+	profile := &dbBusinessProfile{BusinessName: "Omah", Tone: strPtr("casual")}
+	catalog := []dbCatalogItem{
+		{Name: "Abon Sapi 125 Gram", SellPrice: 12500, SellUnit: "pcs"},
+		{Name: "Maggi Bumbu Ayam Goreng - Ayam Percik", SellPrice: 70000, SellUnit: "pcs"},
+	}
+	bad := "Saya belum menemukan data tersebut di katalog."
+	got, grounded, _ := groundLLMReply(bad, "selain abon sapi ada list lainnya?", profile, catalog, nil, nil)
+	if !grounded {
+		t.Fatal("expected exclusion browse fallback")
+	}
+	if strings.Contains(strings.ToLower(got), "abon sapi 125") {
+		t.Fatalf("excluded product leaked: %s", got)
+	}
+	if !strings.Contains(strings.ToLower(got), "maggi") {
+		t.Fatalf("expected maggi in list: %s", got)
+	}
+}

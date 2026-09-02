@@ -211,6 +211,12 @@ func Tokenize(text string) []string { return tokenize(text) }
 
 func OverlapScore(a, b []string) float64 { return overlapScore(a, b) }
 
+func BuildCatalogListReplyFiltered(formal bool, bizName string, catalog []CatalogItem, profile *BusinessProfile, userText string) string {
+	return buildCatalogListReplyFiltered(formal, bizName, catalog, profile, userText)
+}
+
+func IsCatalogExclusionQuestionExported(userText string) bool { return IsCatalogExclusionQuestion(userText) }
+
 func ResolveOrderWarehouse(lines []CatalogStockLine, qty int, preferredWarehouseID string) (string, bool) {
 	return resolveOrderWarehouse(lines, qty, preferredWarehouseID)
 }

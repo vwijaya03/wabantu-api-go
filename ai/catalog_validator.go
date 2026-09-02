@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	bf "encore.app/wabantu/internal/buyerflow"
 )
 
 var idrAmountRe = regexp.MustCompile(`(?i)rp\s*\.?\s*([\d.,]+)`)
@@ -136,6 +138,11 @@ func priceAllowedInCatalog(amount float64, allowed []float64) bool {
 
 type catalogReplyFunc func(userText string, profile *dbBusinessProfile, catalog []dbCatalogItem, history []dbMessage) (string, bool)
 
+func isGenericCatalogNotFound(reply string) bool {
+	lower := strings.ToLower(strings.TrimSpace(reply))
+	return strings.Contains(lower, "belum menemukan data") && strings.Contains(lower, "katalog")
+}
+
 // groundLLMReply — validator + fallback catalog_db jika LLM halu harga/produk.
 // catalogFn may use vector hybrid matching when provided; defaults to lexical catalog_db.
 func groundLLMReply(
@@ -147,17 +154,41 @@ func groundLLMReply(
 	catalogFn catalogReplyFunc,
 ) (final string, grounded bool, reason string) {
 	v := validateReplyAgainstCatalog(reply, catalog)
-	if v.OK {
+	genericMiss := isGenericCatalogNotFound(reply)
+	if v.OK && !genericMiss {
 		return reply, false, ""
+	}
+	reason = v.Reason
+	if genericMiss {
+		reason = "generic_catalog_not_found"
 	}
 	if catalogFn == nil {
 		catalogFn = replyFromBusinessCatalog
 	}
 	if catReply, ok := catalogFn(userText, profile, catalog, history); ok {
-		return catReply, true, v.Reason
+		return catReply, true, reason
+	}
+	if IsCatalogExclusionQuestion(userText) || IsCatalogBrowsingIntent(userText) || isGeneralStoreCatalogQuestion(userText) {
+		formal := profile != nil && strOrEmpty(profile.Tone) == "formal"
+		bizName := ""
+		if profile != nil {
+			bizName = strings.TrimSpace(profile.BusinessName)
+		}
+		bfCatalog := make([]bf.CatalogItem, len(catalog))
+		for i, c := range catalog {
+			bfCatalog[i] = bf.CatalogItem{ID: c.ID, Name: c.Name, SellPrice: c.SellPrice, SellUnit: c.SellUnit, ExternalCode: c.ExternalCode}
+		}
+		var bfProfile *bf.BusinessProfile
+		if profile != nil {
+			bfProfile = &bf.BusinessProfile{BusinessName: profile.BusinessName, Tone: profile.Tone}
+		}
+		filtered := bf.BuildCatalogListReplyFiltered(formal, bizName, bfCatalog, bfProfile, userText)
+		if strings.TrimSpace(filtered) != "" {
+			return filtered, true, reason
+		}
 	}
 	if IsPaymentQuestion(userText) {
 		return "Maaf kak, info rekening pembayaran belum tersedia otomatis. Tim CS akan bantu ya 🙏", true, "payment_no_kb"
 	}
-	return "Saya belum menemukan data tersebut di katalog saat ini.", true, v.Reason
+	return "Saya belum menemukan data tersebut di katalog saat ini.", true, reason
 }
