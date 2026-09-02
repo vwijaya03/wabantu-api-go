@@ -77,6 +77,15 @@ func persistDraftOrder(
 	itemsJSON, _ := json.Marshal([]order.OrderItem{item})
 	addrJSON, _ := json.Marshal(addr)
 
+	if id, updated, uerr := upsertDraftOrderItems(ctx, tq, tenantSchema, convoID, contactID, []order.OrderItem{item}, addrJSON); updated {
+		if uerr != nil {
+			return "", uerr
+		}
+		syncContactDisplayNameFromOrder(ctx, tq, contactID, st.RecipientName)
+		rlog.Info("AI order: draft updated", "orderId", id, "convoId", convoID)
+		return id, nil
+	}
+
 	var convArg, contactArg any
 	if strings.TrimSpace(convoID) != "" {
 		convArg = convoID
@@ -169,6 +178,15 @@ func persistDraftOrderMulti(
 	}
 	itemsJSON, _ := json.Marshal(orderItems)
 	addrJSON, _ := json.Marshal(addr)
+
+	if id, updated, uerr := upsertDraftOrderItems(ctx, tq, tenantSchema, convoID, contactID, orderItems, addrJSON); updated {
+		if uerr != nil {
+			return "", uerr
+		}
+		syncContactDisplayNameFromOrder(ctx, tq, contactID, st.RecipientName)
+		rlog.Info("AI order: multi-item draft updated", "orderId", id, "convoId", convoID, "itemCount", len(orderItems))
+		return id, nil
+	}
 
 	var convArg, contactArg any
 	if strings.TrimSpace(convoID) != "" {

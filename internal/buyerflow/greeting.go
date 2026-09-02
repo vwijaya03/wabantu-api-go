@@ -37,6 +37,10 @@ var periodPatterns = []struct {
 	{"bilang siang", GreetAfternoon},
 	{"selamat pagi", GreetMorning},
 	{"bilang pagi", GreetMorning},
+	{"good morning", GreetMorning},
+	{"good afternoon", GreetAfternoon},
+	{"good evening", GreetEvening},
+	{"good night", GreetNight},
 }
 
 var periodPhrase = map[GreetingPeriod]string{

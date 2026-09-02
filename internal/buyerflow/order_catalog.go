@@ -74,23 +74,35 @@ func matchCatalogItem(userText string, catalog []CatalogItem) *CatalogItem {
 }
 
 func catalogExcludeHints(text string) []string {
-	if !strings.Contains(text, "bukan") {
-		return nil
-	}
+	lower := strings.ToLower(strings.TrimSpace(text))
 	var out []string
-	for _, hint := range []string{"hello kitty", "mono spot", "de wasa", "abon", "boxer"} {
-		if strings.Contains(text, "bukan "+hint) || strings.Contains(text, "bukan "+strings.ReplaceAll(hint, " ", "")) {
-			out = append(out, hint)
-		}
-		if strings.Contains(text, hint) && strings.Contains(text, "bukan") {
-			// "boxer pria mono spot bukan hello kitty"
-			if hint == "hello kitty" && strings.Contains(text, "bukan") && strings.Contains(text, "hello") {
+	if strings.Contains(lower, "bukan") {
+		for _, hint := range []string{"hello kitty", "mono spot", "de wasa", "abon", "boxer"} {
+			if strings.Contains(lower, "bukan "+hint) || strings.Contains(lower, "bukan "+strings.ReplaceAll(hint, " ", "")) {
+				out = append(out, hint)
+			}
+			if hint == "hello kitty" && strings.Contains(lower, "bukan") && strings.Contains(lower, "hello") {
 				out = append(out, hint)
 			}
 		}
+		if strings.Contains(lower, "bukan hello") || strings.Contains(lower, "bukan hellokitty") {
+			out = append(out, "hello kitty")
+		}
 	}
-	if strings.Contains(text, "bukan hello") || strings.Contains(text, "bukan hellokitty") {
-		out = append(out, "hello kitty")
+	for _, prefix := range []string{"selain ", "kecuali "} {
+		idx := strings.Index(lower, prefix)
+		if idx < 0 {
+			continue
+		}
+		rest := strings.TrimSpace(lower[idx+len(prefix):])
+		for _, stop := range []string{" ada ", " list", " produk", " barang", "?", ",", " yang"} {
+			if j := strings.Index(rest, stop); j > 0 {
+				rest = strings.TrimSpace(rest[:j])
+			}
+		}
+		if rest != "" {
+			out = append(out, rest)
+		}
 	}
 	return out
 }

@@ -342,6 +342,9 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 
 	case "ask_qty":
 		st := copyBase(stateNorm)
+		if handled, reply := TryAppendItemsDuringCheckout(&st, userText, catalog, tmpl, formal); handled {
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
+		}
 		qty := 0
 		if hints.HasQty {
 			qty = hints.Qty
@@ -361,6 +364,9 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 
 	case "ask_recipient":
 		st := copyBase(stateNorm)
+		if handled, reply := TryAppendItemsDuringCheckout(&st, userText, catalog, tmpl, formal); handled {
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
+		}
 		if tryApplyQtyRevision(&st, userText) {
 			st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
 				if blocked {
@@ -422,6 +428,9 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 
 	case "ask_address", "ask_address_full":
 		st := copyBase(stateNorm)
+		if handled, reply := TryAppendItemsDuringCheckout(&st, userText, catalog, tmpl, formal); handled {
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
+		}
 		if tryApplyQtyRevision(&st, userText) {
 			st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
 				if blocked {

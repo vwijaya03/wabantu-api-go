@@ -31,7 +31,10 @@ var questionKeywords = []string{
 
 var greetingPrefixes = []string{
 	"selamat pagi", "selamat siang", "selamat sore", "selamat malam",
-	"halo", "hai", "assalamualaikum", "salam", "permisi",
+	"halo", "hai", "hi", "hello",
+	"good morning", "good afternoon", "good evening", "good night",
+	"assalamualaikum", "salam", "permisi",
+	"sugeng enjang", "sugeng enjong", "sugeng rawuh",
 }
 
 // Short Indonesian time-of-day / chat openers (not only "selamat malam").

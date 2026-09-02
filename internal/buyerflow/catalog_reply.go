@@ -65,11 +65,17 @@ func IsCatalogListQuestion(userText string) bool {
 		}
 	}
 	words := strings.Fields(text)
+	hasList := strings.Contains(text, "list") || strings.Contains(text, "daftar")
+	hasCatalog := strings.Contains(text, "katalog") || strings.Contains(text, "catalog")
+	hasProduct := strings.Contains(text, "produk") || strings.Contains(text, "barang")
+	hasLain := strings.Contains(text, "lain")
+	if hasList {
+		if hasProduct || hasCatalog || hasLain || len(words) <= 7 {
+			return true
+		}
+	}
 	if len(words) <= 5 {
-		hasList := strings.Contains(text, "list") || strings.Contains(text, "daftar")
-		hasCatalog := strings.Contains(text, "katalog") || strings.Contains(text, "catalog")
-		hasProduct := strings.Contains(text, "produk") || strings.Contains(text, "barang")
-		if (hasList || hasCatalog) && (hasProduct || hasCatalog || len(words) <= 3) {
+		if hasCatalog && (hasProduct || hasCatalog || len(words) <= 3) {
 			return true
 		}
 	}
@@ -543,7 +549,10 @@ func replyFromBusinessCatalog(
 	}
 
 	if IsCatalogBrowsingIntent(userText) || isGeneralStoreCatalogQuestion(userText) ||
-		IsRecommendationRequest(userText) {
+		IsRecommendationRequest(userText) || IsCatalogExclusionQuestion(userText) {
+		if IsCatalogExclusionQuestion(userText) {
+			return buildCatalogListReplyFiltered(formal, bizName, catalog, profile, userText), true
+		}
 		return buildCatalogListReply(formal, bizName, catalog, profile), true
 	}
 

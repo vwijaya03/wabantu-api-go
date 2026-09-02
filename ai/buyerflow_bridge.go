@@ -97,6 +97,7 @@ var (
 	IsCasualChatOpener            = bf.IsCasualChatOpener
 	IsCasualPraiseLike            = bf.IsCasualPraiseLike
 	IsCatalogBrowsingIntent       = bf.IsCatalogBrowsingIntent
+	IsCatalogExclusionQuestion    = bf.IsCatalogExclusionQuestion
 	IsCatalogListQuestion         = bf.IsCatalogListQuestion
 	IsCatalogProductInquiry       = bf.IsCatalogProductInquiry
 	IsComplaintLike               = bf.IsComplaintLike
@@ -116,6 +117,7 @@ var (
 	IsOrderFollowUpFromHistory    = bf.IsOrderFollowUpFromHistory
 	IsOrderRefStatusLookup        = bf.IsOrderRefStatusLookup
 	IsOrderRevisionMessage        = bf.IsOrderRevisionMessage
+	IsOrderAmendMessage           = bf.IsOrderAmendMessage
 	IsOrderStatusInquiry          = bf.IsOrderStatusInquiry
 	IsOrderTotalRequest           = bf.IsOrderTotalRequest
 	IsPaymentQuestion             = bf.IsPaymentQuestion

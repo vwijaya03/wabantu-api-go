@@ -13,6 +13,8 @@ import (
 const (
 	aiSendDoneKeyPrefix = "ai:send:done:"
 	aiSendDoneTTL       = 7 * 24 * time.Hour
+	amendIdempotencyTTL = time.Hour
+	amendIdempotencyKey = "ai:order-amend:"
 )
 
 type outboundDraft struct {
