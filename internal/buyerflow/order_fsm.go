@@ -128,7 +128,7 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 	}
 
 	if state == nil && (IsOrderRevisionMessage(userText) || mentionsOrderQty(userText)) {
-		if match := matchCatalogFromRecentOutbound(history, catalog); match != nil {
+		if match := resolveOrderProductMatch(userText, history, catalog); match != nil {
 			st := OrderState{Step: "ask_variant"}
 			applyCatalogMatch(&st, match)
 			if q, ok := parseOrderQty(userText); ok {
