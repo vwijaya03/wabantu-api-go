@@ -3,16 +3,14 @@ package ai
 import (
 	"context"
 	"strings"
-	"time"
 
 	"encore.dev/rlog"
 
 	appflag "encore.app/wabantu/flag"
 	bf "encore.app/wabantu/internal/buyerflow"
+	"encore.app/wabantu/shared/reqctx"
 	"encore.app/wabantu/shared/retrieval"
 )
-
-const retrievalBudget = 400 * time.Millisecond
 
 // retrieveKBHybrid runs vector+lexical RRF when retrieval_mode allows; falls back to lexical.
 // Vector hits outside the preloaded window are fetched by ID before ordering.
@@ -41,7 +39,7 @@ func (s *AutoReplyService) retrieveKBHybrid(
 		}
 	}
 
-	qctx, cancel := context.WithTimeout(ctx, retrievalBudget)
+	qctx, cancel := reqctx.WithTimeout(ctx, retrieval.QueryBudget())
 	defer cancel()
 
 	tenant := retrieval.TenantIdentity{TenantID: tenantID, TenantSchema: tenantSchema}
@@ -50,19 +48,30 @@ func (s *AutoReplyService) retrieveKBHybrid(
 	}
 
 	res, err := svc.RetrieveKB(qctx, retrieval.RetrieveKBRequest{
-		Tenant: tenant,
-		Query:  query,
-		TopK:   20,
-		Mode:   mode,
+		Tenant:    tenant,
+		Query:     query,
+		TopK:      20,
+		Mode:      mode,
+		ParentCtx: ctx,
 	}, lexicalRanker)
 
 	if err != nil || res == nil {
 		reason := retrieval.FallbackReasonQueryError
+		var category retrieval.ErrorCategory
+		var provider retrieval.Provider
 		if err != nil {
-			reason = retrieval.ClassifyVectorError(err)
+			re := retrieval.ClassifyProviderError(ctx, err, retrieval.ProviderOpenAI)
+			reason = retrieval.FallbackReasonFromCategory(re)
+			category = re.Category
+			provider = re.Provider
 		}
 		retrieval.LogQueryWithReason(logCtx, "kb", tenantID, modeStr, true, true, reason)
-		recordRetrievalQueryMetrics("kb", modeStr, true, true, retrieval.LatencyP95Ms())
+		recordRetrievalQueryMetrics("kb", modeStr, true, true, retrieval.LatencyP95Ms(), string(category), string(provider))
+		recordRetrievalIncident(ctx, retrievalIncidentInput{
+			TenantID: tenantID, Source: "kb", Provider: provider, Category: category,
+			LatencyMs: int(retrieval.EmbedLatencyP95Ms()), BudgetMs: int(retrieval.QueryBudget().Milliseconds()),
+			Err: err,
+		})
 		rlog.Warn("retrieval KB failed, lexical fallback",
 			"err", err, "tenant", tenantID, "mode", modeStr, "fallback_reason", reason)
 		return lexical, topKBMatchScore(query, kb), res
@@ -72,7 +81,7 @@ func (s *AutoReplyService) retrieveKBHybrid(
 	zero := kbRetrievalZeroResult(res)
 	if fallback {
 		retrieval.LogQueryWithReason(logCtx, "kb", tenantID, modeStr, true, zero, res.FallbackReason)
-		recordRetrievalQueryMetrics("kb", modeStr, true, zero, retrieval.LatencyP95Ms())
+		recordRetrievalQueryMetrics("kb", modeStr, true, zero, retrieval.LatencyP95Ms(), "", "")
 		rlog.Warn("retrieval KB lexical fallback",
 			"tenant", tenantID,
 			"mode", modeStr,
@@ -93,7 +102,7 @@ func (s *AutoReplyService) retrieveKBHybrid(
 		)
 		if !fallback {
 			retrieval.LogQueryWithReason(logCtx, "kb", tenantID, modeStr, false, zero, "")
-			recordRetrievalQueryMetrics("kb", modeStr, false, zero, retrieval.LatencyP95Ms())
+			recordRetrievalQueryMetrics("kb", modeStr, false, zero, retrieval.LatencyP95Ms(), "", "")
 		}
 		return lexical, topKBMatchScore(query, kb), res
 	}
@@ -123,7 +132,7 @@ func (s *AutoReplyService) retrieveKBHybrid(
 		ordered = lexical
 	}
 	retrieval.LogQueryWithReason(logCtx, "kb", tenantID, modeStr, false, zero, "")
-	recordRetrievalQueryMetrics("kb", modeStr, false, zero, retrieval.LatencyP95Ms())
+	recordRetrievalQueryMetrics("kb", modeStr, false, zero, retrieval.LatencyP95Ms(), "", "")
 	return ordered, topScore, res
 }
 
@@ -217,29 +226,39 @@ func (s *AutoReplyService) replyFromBusinessCatalogHybrid(
 		return replyFromBusinessCatalog(userText, profile, catalog, history)
 	}
 	logCtx := ctx
-	qctx, cancel := context.WithTimeout(ctx, retrievalBudget)
+	qctx, cancel := reqctx.WithTimeout(ctx, retrieval.QueryBudget())
 	defer cancel()
 	tenant := retrieval.TenantIdentity{TenantID: tenantID, TenantSchema: tenantSchema}
-	hits, err := svc.RetrieveCatalogCandidates(qctx, tenant, userText, 3)
+	hits, err := svc.RetrieveCatalogCandidates(ctx, qctx, tenant, userText, 3)
 	zero := len(hits) == 0
 	fallback := err != nil || zero
 	if fallback {
 		reason := retrieval.FallbackReasonQueryError
+		var category retrieval.ErrorCategory
+		var provider retrieval.Provider
 		if err != nil {
-			reason = retrieval.ClassifyVectorError(err)
+			re := retrieval.ClassifyProviderError(ctx, err, retrieval.ProviderOpenAI)
+			reason = retrieval.FallbackReasonFromCategory(re)
+			category = re.Category
+			provider = re.Provider
 		} else if zero {
 			reason = retrieval.FallbackReasonQueryError
 		}
 		retrieval.LogQueryWithReason(logCtx, "catalog", tenantID, string(mode), err != nil, zero, reason)
-		recordRetrievalQueryMetrics("catalog", string(mode), err != nil, zero, retrieval.LatencyP95Ms())
+		recordRetrievalQueryMetrics("catalog", string(mode), err != nil, zero, retrieval.LatencyP95Ms(), string(category), string(provider))
 		if err != nil {
+			recordRetrievalIncident(ctx, retrievalIncidentInput{
+				TenantID: tenantID, Source: "catalog", Provider: provider, Category: category,
+				LatencyMs: int(retrieval.EmbedLatencyP95Ms()), BudgetMs: int(retrieval.QueryBudget().Milliseconds()),
+				Err: err,
+			})
 			rlog.Warn("catalog vector retrieval failed, lexical fallback",
 				"err", err, "tenant", tenantID, "fallback_reason", reason)
 		}
 		return replyFromBusinessCatalog(userText, profile, catalog, history)
 	}
 	retrieval.LogQueryWithReason(logCtx, "catalog", tenantID, string(mode), false, false, "")
-	recordRetrievalQueryMetrics("catalog", string(mode), false, false, retrieval.LatencyP95Ms())
+	recordRetrievalQueryMetrics("catalog", string(mode), false, false, retrieval.LatencyP95Ms(), "", "")
 
 	catalogExpanded := catalog
 	if ts != nil {

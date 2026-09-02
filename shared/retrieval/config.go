@@ -7,6 +7,7 @@ var secrets struct {
 	OpenAIApiKey      string
 	PineconeApiKey    string
 	PineconeIndexHost string
+	RetrievalBudgetMs string
 }
 
 var (
@@ -22,7 +23,9 @@ func NewProductionService() *Service {
 	if !OpenAIConfigured(openKey) || !PineconeConfigured(pineHost, pineKey) {
 		return nil
 	}
-	emb := NewCachingEmbedder(NewOpenAIEmbedder(openKey))
+	openEmb := NewOpenAIEmbedder(openKey)
+	WarmupOpenAIConnection(openKey, openEmb.HTTPClient())
+	emb := NewCachingEmbedder(openEmb)
 	store := NewPineconeClient(pineHost, pineKey)
 	return NewService(emb, store)
 }
@@ -33,4 +36,13 @@ func DefaultService() *Service {
 		defaultService = NewProductionService()
 	})
 	return defaultService
+}
+
+// DefaultServiceBreakers returns the breaker pool from the default service, if any.
+func DefaultServiceBreakers() *BreakerPool {
+	svc := DefaultService()
+	if svc == nil {
+		return nil
+	}
+	return svc.Breakers
 }

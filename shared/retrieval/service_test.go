@@ -94,7 +94,35 @@ func TestRetrieveKB_ClientTimeoutDoesNotTripBreaker(t *testing.T) {
 	}
 	cb := svc.Breakers.For("t_timeout")
 	if cb.Open() {
-		t.Fatal("client timeout should not open per-tenant breaker")
+		t.Fatal("caller canceled should not open per-tenant breaker")
+	}
+}
+
+func TestRetrieveKB_BudgetExceededTripsBreakerWhenParentAlive(t *testing.T) {
+	svc := NewService(ctxDeadlineEmbedder{}, noopStore{})
+	svc.Breakers = NewBreakerPool(1, time.Hour)
+	parent := context.Background()
+	child, cancel := context.WithTimeout(parent, 1*time.Nanosecond)
+	defer cancel()
+	time.Sleep(2 * time.Nanosecond)
+
+	res, err := svc.RetrieveKB(child, RetrieveKBRequest{
+		Tenant:    TenantIdentity{TenantID: "t_budget", TenantSchema: "t_acme"},
+		Query:     "harga",
+		Mode:      ModeVector,
+		ParentCtx: parent,
+	}, func(_ context.Context, _ string, _ int) ([]ScoredEntry, error) {
+		return []ScoredEntry{{EntryID: "e1", Score: 1}}, nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected err: %v", err)
+	}
+	if res == nil || !res.LexicalFallback {
+		t.Fatalf("expected lexical fallback, got %+v", res)
+	}
+	cb := svc.Breakers.For("t_budget")
+	if !cb.Open() {
+		t.Fatal("budget_exceeded should open per-tenant breaker when parent alive")
 	}
 }
 

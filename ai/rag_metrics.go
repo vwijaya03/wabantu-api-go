@@ -3,8 +3,10 @@ package ai
 import "encore.dev/metrics"
 
 type retrievalMetricLabels struct {
-	Source string `metric:"source" encore:"source"`
-	Mode   string `metric:"mode" encore:"mode"`
+	Source   string `metric:"source" encore:"source"`
+	Mode     string `metric:"mode" encore:"mode"`
+	Category string `metric:"category" encore:"category"`
+	Provider string `metric:"provider" encore:"provider"`
 }
 
 var (
@@ -34,13 +36,19 @@ var (
 	)
 )
 
-func recordRetrievalQueryMetrics(source, mode string, failed, zeroResult bool, latencyP95Ms uint64) {
-	metricRetrievalRequests.With(retrievalMetricLabels{Source: source, Mode: mode}).Add(1)
+func recordRetrievalQueryMetrics(source, mode string, failed, zeroResult bool, latencyP95Ms uint64, category, provider string) {
+	labels := retrievalMetricLabels{
+		Source:   source,
+		Mode:     mode,
+		Category: category,
+		Provider: provider,
+	}
+	metricRetrievalRequests.With(labels).Add(1)
 	if failed {
-		metricRetrievalFallbacks.With(retrievalMetricLabels{Source: source, Mode: mode}).Add(1)
+		metricRetrievalFallbacks.With(labels).Add(1)
 	}
 	if zeroResult {
-		metricRetrievalZeroHits.With(retrievalMetricLabels{Source: source, Mode: mode}).Add(1)
+		metricRetrievalZeroHits.With(labels).Add(1)
 	}
 	if latencyP95Ms > 0 {
 		metricRetrievalLatencyP95Ms.Set(latencyP95Ms)

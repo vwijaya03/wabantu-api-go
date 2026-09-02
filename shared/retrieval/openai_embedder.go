@@ -3,24 +3,79 @@ package retrieval
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
+	"time"
 
 	openai "github.com/sashabaranov/go-openai"
 )
 
+const openAIHTTPTimeout = 5 * time.Second
+
 // OpenAIEmbedder calls OpenAI embeddings API.
 type OpenAIEmbedder struct {
-	client *openai.Client
-	model  string
-	dims   int
+	client     *openai.Client
+	httpClient *http.Client
+	model      string
+	dims       int
+}
+
+func newOpenAIHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: openAIHTTPTimeout,
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 10,
+			IdleConnTimeout:     90 * time.Second,
+			TLSHandshakeTimeout: 5 * time.Second,
+			ForceAttemptHTTP2:   true,
+		},
+	}
 }
 
 func NewOpenAIEmbedder(apiKey string) *OpenAIEmbedder {
+	httpClient := newOpenAIHTTPClient()
+	cfg := openai.DefaultConfig(apiKey)
+	cfg.HTTPClient = httpClient
 	return &OpenAIEmbedder{
-		client: openai.NewClient(apiKey),
-		model:  EmbeddingModel,
-		dims:   EmbeddingDims,
+		client:     openai.NewClientWithConfig(cfg),
+		httpClient: httpClient,
+		model:      EmbeddingModel,
+		dims:       EmbeddingDims,
 	}
+}
+
+// HTTPClient returns the underlying HTTP client (for connection warm-up).
+func (e *OpenAIEmbedder) HTTPClient() *http.Client {
+	if e == nil || e.httpClient == nil {
+		return newOpenAIHTTPClient()
+	}
+	return e.httpClient
+}
+
+// WarmupOpenAIConnection pre-establishes TLS to OpenAI (GET /v1/models, no embedding cost).
+func WarmupOpenAIConnection(apiKey string, client *http.Client) {
+	apiKey = strings.TrimSpace(apiKey)
+	if apiKey == "" {
+		return
+	}
+	if client == nil {
+		client = newOpenAIHTTPClient()
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.openai.com/v1/models", nil)
+		if err != nil {
+			return
+		}
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+		resp, err := client.Do(req)
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+		_ = err
+	}()
 }
 
 func (e *OpenAIEmbedder) Dimensions() int { return e.dims }

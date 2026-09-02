@@ -29,6 +29,6 @@ func GetRetrievalObservability(ctx context.Context) (*RetrievalObservabilityResp
 		return nil, err
 	}
 	return &RetrievalObservabilityResponse{
-		Metrics: retrieval.SnapshotObservability(),
+		Metrics: retrieval.SnapshotObservabilityWithBreakers(retrieval.DefaultServiceBreakers()),
 	}, nil
 }

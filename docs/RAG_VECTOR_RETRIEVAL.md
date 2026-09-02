@@ -29,10 +29,12 @@ KB CRUD (kb/) ──tx──► PostgreSQL + retrieval_outbox ──► Pub/Sub 
                                                          Pinecone upsert
 
 Autoreply ──► RetrievalOrchestrator (shared/retrieval)
-                 ├─ embed query (budget ~400ms)
+                 ├─ embed query (sub-budget min(sisa parent, QueryBudget()))
                  ├─ Pinecone top-K
                  ├─ lexical top-K
                  └─ RRF → FAQ direct / prompt context
+
+Parent AI job deadline: **25s** (Pub/Sub `ai-auto-reply`). Retrieval sub-budget: **1200ms** staging/production, **2500ms** development local.
 ```
 
 ## Secrets & setup
@@ -44,6 +46,18 @@ Encore secrets (lihat `scripts/setup-secrets-from-env.sh`):
 | `OpenAIApiKey` | Embedding API |
 | `PineconeApiKey` | API key index |
 | `PineconeIndexHost` | Host tanpa `https://`, mis. `wabantu-rag-xxx.svc...pinecone.io` |
+| `RetrievalBudgetMs` | (Opsional) Override sub-budget retrieval query dalam ms, clamp 200–10000 |
+
+### Budget retrieval (sub-budget)
+
+| Environment | Default | Override |
+|-------------|---------|----------|
+| development (local) | 2500ms | `RetrievalBudgetMs` secret |
+| staging | 1200ms | `RetrievalBudgetMs` secret |
+| production | 1200ms | `RetrievalBudgetMs` secret |
+
+Sub-budget = `min(sisa parent deadline AI job, QueryBudget())`. Parent AI job: **25s**.
+Hard timeout HTTP OpenAI: **5s** (plafon absolut, bukan pembatal utama).
 
 Pinecone index: **Manual**, **1536** dim, metric **cosine**, serverless on-demand.
 
@@ -112,14 +126,41 @@ Vector-first fetch: hit Pinecone di luar window preload di-fetch by ID dari Post
 
 | Komponen | Perilaku | Observability |
 |----------|----------|---------------|
-| **Circuit breaker** | **Per-tenant** (`BreakerPool`) — satu tenant down tidak membuka circuit global | `fallback_reason=circuit_open` |
-| **Client timeout** | Budget query ~400ms; `DeadlineExceeded` **tidak** trip breaker | `fallback_reason=client_timeout` |
-| **Embed/Pinecone error** | Fallback lexical; `LexicalFallback=true` | `retrieval_fallback_total`, log `fallback_reason` |
+| **Circuit breaker** | **Per-tenant** (`BreakerPool`, bounded 500 entri + eviction idle 1 jam) | `fallback_reason=circuit_open` |
+| **Budget exceeded** | Sub-budget habis saat parent masih hidup → **trip breaker** | `category=budget_exceeded`, `fallback_reason=client_timeout` |
+| **Caller canceled** | Parent deadline habis → tidak trip breaker | `category=caller_canceled` |
+| **Embed/Pinecone error** | Fallback lexical; `LexicalFallback=true` | `retrieval_fallback_total{category,provider}`, log `fallback_reason` |
 | **Zero vector hit** | `RetrieveKBResult.ZeroVectorHits=true` saat vector jalan tapi 0 hit ≥ floor | `zero_result_total` |
 | **DLQ indexing** | Outbox status `dlq` setelah 6 attempt | `indexingDlq` di observability snapshot |
 | **LLM gagal** | Langsung `scopeDirectionReply` (`PathAutoFallback`), tidak tunggu retry job habis | `ai/autoreply.go` |
 
 Structured log: `retrieval query` dengan field `fallback`, `zero_result`, `fallback_reason`.
+
+### Taksonomi error provider
+
+| Kategori | Trip breaker? | Fallback label |
+|----------|---------------|----------------|
+| `caller_canceled` | Tidak | `client_timeout` |
+| `budget_exceeded` | Ya | `client_timeout` |
+| `provider_timeout` | Ya | `embed_error` / `query_error` |
+| `provider_429` | Ya | `embed_error` |
+| `provider_5xx` | Ya | `embed_error` / `query_error` |
+| `network_error` | Ya | `embed_error` / `query_error` |
+| `invalid_request` | Tidak | `embed_error` |
+| `configuration_error` | Tidak | `not_configured` |
+
+Kunci: `ClassifyProviderError(parentCtx, err, provider)` — jika `DeadlineExceeded` dan **parent masih hidup** → `budget_exceeded` (trip).
+
+### Ambang status UI (per-instance)
+
+| Status | Kondisi |
+|--------|---------|
+| `insufficient_data` | `< 20` sampel latency |
+| `warning` | p95 embed > 80% budget **atau** fallback > 20% |
+| `critical` | fallback > 50% **atau** breaker terbuka dalam 5 menit |
+| `ok` | selain itu |
+
+Alert operasional: konfigurasi Encore Cloud atas `retrieval_fallback_total{category,provider}` dan `retrieval_latency_p95_ms` — UI banner hanya triase.
 
 Keamanan: lihat [AI_SECURITY_PRIVACY.md](./AI_SECURITY_PRIVACY.md).
 
@@ -176,7 +217,8 @@ Acceptance Omah: [RAG_CONVERSATION_ACCEPTANCE.md](./RAG_CONVERSATION_ACCEPTANCE.
 | `GET /api/v1/flags/retrieval-mode/:tenantId` | Mode aktif tenant |
 | `PUT /api/v1/flags/retrieval-mode` | Set `disabled` / `shadow` / `vector` |
 | `GET /api/v1/flags/retrieval-indexing/:tenantId` | Progress embedding per tenant (KB + katalog + outbox) |
-| `GET /api/v1/flags/retrieval-observability` | Snapshot counter/latency in-process + Encore metrics |
+| `GET /api/v1/flags/retrieval-observability` | Snapshot counter/latency in-process + status |
+| `GET /api/v1/admin/ai-retrieval/incidents` | Riwayat insiden retrieval tersanitasi (Redis, 200 entri / 7 hari) |
 | `POST /api/v1/flags/retrieval-rollout` | Rollout massal async per tenant |
 | `GET /api/v1/flags/retrieval-rollout/jobs/:jobId` | Detail job rollout |
 | `GET /api/v1/flags/retrieval-rollout/active-jobs` | Job rollout yang masih berjalan |

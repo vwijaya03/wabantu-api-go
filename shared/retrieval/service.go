@@ -11,11 +11,12 @@ type LexicalRanker func(ctx context.Context, query string, topK int) ([]ScoredEn
 
 // RetrieveKBRequest is input for hybrid KB retrieval.
 type RetrieveKBRequest struct {
-	Tenant   TenantIdentity
-	Query    string
-	TopK     int
-	Mode     RetrievalMode
-	MinScore float64 // minimum RRF score for vector mode FAQ direct
+	Tenant    TenantIdentity
+	Query     string
+	TopK      int
+	Mode      RetrievalMode
+	MinScore  float64 // minimum RRF score for vector mode FAQ direct
+	ParentCtx context.Context
 }
 
 // RetrieveKBResult holds fused hits and diagnostics.
@@ -102,27 +103,38 @@ func (s *Service) RetrieveKB(ctx context.Context, req RetrieveKBRequest, lexical
 		return res, nil
 	}
 
+	parentCtx := req.ParentCtx
+	if parentCtx == nil {
+		parentCtx = ctx
+	}
+
 	var vectorHits []Hit
 	start := time.Now()
 	err = WithBudget(ctx, s.Budget, func() error {
+		embedStart := time.Now()
 		vecs, e := s.Embedder.Embed(ctx, []string{SanitizeForEmbed(req.Query)})
+		RecordEmbedLatency(time.Since(embedStart))
 		if e != nil {
 			return e
 		}
 		if len(vecs) == 0 {
 			return fmt.Errorf("empty query embedding")
 		}
+		storeStart := time.Now()
 		vectorHits, e = s.Store.Query(ctx, ns, vecs[0], req.TopK, PineconeFilterActiveKB())
+		RecordStoreLatency(time.Since(storeStart))
 		return e
 	})
 	RecordQueryLatency(time.Since(start))
 	if err != nil {
-		if breaker != nil && ShouldTripBreaker(err) {
+		re := ClassifyProviderError(parentCtx, err, providerForStep(err))
+		RecordErrorCategory(re.Category, re.Provider)
+		if breaker != nil && re.TripsBreaker {
 			breaker.RecordFailure(err)
 		}
 		res.Entries = lexicalHits
 		res.LexicalFallback = true
-		res.FallbackReason = ClassifyVectorError(err)
+		res.FallbackReason = FallbackReasonFromCategory(re)
 		return res, nil
 	}
 	if breaker != nil {
