@@ -3,6 +3,8 @@ package retrieval
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
 )
 
 // KBIndexInput is the only allowed KB indexing payload (no generic text).
@@ -92,9 +94,12 @@ func IndexCatalogItem(ctx context.Context, svc *Service, in CatalogIndexInput) e
 }
 
 // RetrieveCatalogCandidates returns top semantic catalog hits (rules applied by caller).
-func (s *Service) RetrieveCatalogCandidates(ctx context.Context, tenant TenantIdentity, query string, topK int) ([]Hit, error) {
+func (s *Service) RetrieveCatalogCandidates(parentCtx context.Context, ctx context.Context, tenant TenantIdentity, query string, topK int) ([]Hit, error) {
 	if s == nil || s.Embedder == nil || s.Store == nil {
 		return nil, nil
+	}
+	if parentCtx == nil {
+		parentCtx = ctx
 	}
 	if topK <= 0 {
 		topK = 3
@@ -103,27 +108,47 @@ func (s *Service) RetrieveCatalogCandidates(ctx context.Context, tenant TenantId
 	if err != nil {
 		return nil, err
 	}
-	if s.Breaker != nil && !s.Breaker.Allow() {
-		return nil, nil
+	breaker := s.breakerFor(tenant.TenantID)
+	if breaker != nil && !breaker.Allow() {
+		return nil, ErrCircuitOpen
 	}
 	var hits []Hit
+	start := time.Now()
 	err = WithBudget(ctx, s.Budget, func() error {
+		embedStart := time.Now()
 		vecs, e := s.Embedder.Embed(ctx, []string{SanitizeForEmbed(query)})
+		RecordEmbedLatency(time.Since(embedStart))
 		if e != nil {
 			return e
 		}
+		if len(vecs) == 0 {
+			return fmt.Errorf("empty query embedding")
+		}
+		storeStart := time.Now()
 		filter := PineconeFilterActiveCatalog()
 		hits, e = s.Store.Query(ctx, ns, vecs[0], topK, filter)
+		RecordStoreLatency(time.Since(storeStart))
 		return e
 	})
+	RecordQueryLatency(time.Since(start))
 	if err != nil {
-		if s.Breaker != nil {
-			s.Breaker.RecordFailure(err)
+		re := ClassifyProviderError(parentCtx, err, providerForStep(err))
+		RecordErrorCategory(re.Category, re.Provider)
+		if breaker != nil && re.TripsBreaker {
+			breaker.RecordFailure(err)
 		}
 		return nil, err
 	}
-	if s.Breaker != nil {
-		s.Breaker.RecordSuccess()
+	if breaker != nil {
+		breaker.RecordSuccess()
 	}
 	return FilterHitsByScore(hits, VectorMinSimilarity), nil
+}
+
+func providerForStep(err error) Provider {
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "pinecone") {
+		return ProviderPinecone
+	}
+	return ProviderOpenAI
 }

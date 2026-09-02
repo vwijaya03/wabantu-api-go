@@ -12,6 +12,7 @@ type CircuitBreaker struct {
 	threshold        int
 	cooldown         time.Duration
 	openUntil        time.Time
+	lastOpenedAt     time.Time
 	lastFailure      error
 	halfOpenInFlight bool
 }
@@ -54,8 +55,23 @@ func (cb *CircuitBreaker) RecordFailure(err error) {
 	cb.failures++
 	cb.lastFailure = err
 	if cb.failures >= cb.threshold {
-		cb.openUntil = time.Now().Add(cb.cooldown)
+		now := time.Now()
+		cb.openUntil = now.Add(cb.cooldown)
+		cb.lastOpenedAt = now
 	}
+}
+
+// OpenedWithin reports whether the breaker opened within the given window.
+func (cb *CircuitBreaker) OpenedWithin(now time.Time, within time.Duration) bool {
+	if cb == nil {
+		return false
+	}
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	if cb.lastOpenedAt.IsZero() {
+		return false
+	}
+	return now.Sub(cb.lastOpenedAt) <= within
 }
 
 func (cb *CircuitBreaker) Open() bool {

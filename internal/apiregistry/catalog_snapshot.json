@@ -1,5 +1,5 @@
 {
-  "count": 347,
+  "count": 348,
   "endpoints": [
     {
       "service": "admin",
@@ -10,6 +10,16 @@
       "path": "/api/v1/admin/ai-regression/run",
       "tag": "super_admin",
       "annotation": "auth method=POST path=/api/v1/admin/ai-regression/run tag:super_admin"
+    },
+    {
+      "service": "admin",
+      "file": "admin/ai_retrieval_incidents.go",
+      "line": 13,
+      "access": "auth",
+      "method": "GET",
+      "path": "/api/v1/admin/ai-retrieval/incidents",
+      "tag": "super_admin",
+      "annotation": "auth method=GET path=/api/v1/admin/ai-retrieval/incidents tag:super_admin"
     },
     {
       "service": "admin",

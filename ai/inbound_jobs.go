@@ -9,6 +9,7 @@ import (
 	"encore.dev/pubsub"
 	"encore.dev/rlog"
 
+	"encore.app/wabantu/shared/reqctx"
 	"encore.app/wabantu/tenant"
 )
 
@@ -16,6 +17,7 @@ const (
 	maxInboundAIAttempts = 4
 	aiAttemptKeyPrefix   = "ai:job:attempt:"
 	aiAttemptTTL         = 24 * time.Hour
+	aiJobParentBudget    = 25 * time.Second
 )
 
 // InboundAIJob is published when an inbound WhatsApp message needs AI processing.
@@ -60,7 +62,10 @@ func handleInboundAI(ctx context.Context, job *InboundAIJob) error {
 		"attempt", attempt,
 	)
 
-	sent, procErr := ProcessAutoReplyJob(ctx, tenantID, job.TenantSchema, job.ConversationID, job.InboundMessageID)
+	jobCtx, cancel := reqctx.WithTimeout(ctx, aiJobParentBudget)
+	defer cancel()
+
+	sent, procErr := ProcessAutoReplyJob(jobCtx, tenantID, job.TenantSchema, job.ConversationID, job.InboundMessageID)
 	if procErr == nil {
 		clearAIAttempt(ctx, job.InboundMessageID)
 		rlog.Info("inbound AI job done",
