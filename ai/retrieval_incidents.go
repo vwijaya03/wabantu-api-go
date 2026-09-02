@@ -44,7 +44,7 @@ type retrievalIncidentInput struct {
 	Err       error
 }
 
-// SanitizeRetrievalError strips URLs, query params, and truncates error text for storage.
+// SanitizeRetrievalError strips URLs, query params, redacts PII, and truncates for storage/logs.
 func SanitizeRetrievalError(err error) string {
 	if err == nil {
 		return ""
@@ -52,6 +52,7 @@ func SanitizeRetrievalError(err error) string {
 	msg := err.Error()
 	msg = urlPattern.ReplaceAllString(msg, "[url]")
 	msg = queryParamPat.ReplaceAllString(msg, "")
+	msg = retrieval.RedactPII(msg)
 	msg = strings.TrimSpace(msg)
 	if len(msg) > 256 {
 		msg = msg[:256]

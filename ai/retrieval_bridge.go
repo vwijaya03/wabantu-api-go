@@ -73,7 +73,8 @@ func (s *AutoReplyService) retrieveKBHybrid(
 			Err: err,
 		})
 		rlog.Warn("retrieval KB failed, lexical fallback",
-			"err", err, "tenant", tenantID, "mode", modeStr, "fallback_reason", reason)
+			"safe_error", SanitizeRetrievalError(err),
+			"tenant", tenantID, "mode", modeStr, "fallback_reason", reason)
 		return lexical, topKBMatchScore(query, kb), res
 	}
 
@@ -253,7 +254,8 @@ func (s *AutoReplyService) replyFromBusinessCatalogHybrid(
 				Err: err,
 			})
 			rlog.Warn("catalog vector retrieval failed, lexical fallback",
-				"err", err, "tenant", tenantID, "fallback_reason", reason)
+				"safe_error", SanitizeRetrievalError(err),
+				"tenant", tenantID, "fallback_reason", reason)
 		}
 		return replyFromBusinessCatalog(userText, profile, catalog, history)
 	}
