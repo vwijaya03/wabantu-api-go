@@ -26,3 +26,15 @@ func TestSanitizeRetrievalErrorNil(t *testing.T) {
 		t.Fatal("nil error should return empty string")
 	}
 }
+
+func TestSanitizeRetrievalErrorRedactsPII(t *testing.T) {
+	t.Parallel()
+	raw := `embed failed for query "harga 081234567890 email@test.com": timeout`
+	safe := SanitizeRetrievalError(errors.New(raw))
+	if strings.Contains(safe, "081234567890") {
+		t.Fatal("phone should be redacted")
+	}
+	if strings.Contains(safe, "email@test.com") {
+		t.Fatal("email should be redacted")
+	}
+}
