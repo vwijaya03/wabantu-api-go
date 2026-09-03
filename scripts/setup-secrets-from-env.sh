@@ -14,6 +14,7 @@
 #   OPENAI_API_KEY             → OpenAIApiKey
 #   PINECONE_API_KEY           → PineconeApiKey
 #   PINECONE_INDEX_HOST        → PineconeIndexHost
+#   RETRIEVAL_BUDGET_MS        → RetrievalBudgetMs (opsional, 200–10000)
 #   ...
 #
 # Prerequisites (once per machine):
@@ -132,6 +133,7 @@ SENTRY_DSN="$(env_get SENTRY_DSN || true)"
 OPENAI_API_KEY="$(env_get OPENAI_API_KEY || true)"
 PINECONE_API_KEY="$(env_get PINECONE_API_KEY || true)"
 PINECONE_INDEX_HOST="$(env_get PINECONE_INDEX_HOST || true)"
+RETRIEVAL_BUDGET_MS="$(env_get RETRIEVAL_BUDGET_MS || true)"
 REDIS_URL_DIRECT="$(env_get REDIS_URL || true)"
 
 REDIS_HOST="${REDIS_HOST:-localhost}"
@@ -168,6 +170,7 @@ set_secret SentryDSN "$SENTRY_DSN"
 set_secret OpenAIApiKey "$OPENAI_API_KEY"
 set_secret PineconeApiKey "$PINECONE_API_KEY"
 set_secret PineconeIndexHost "$(normalize_pinecone_host "$PINECONE_INDEX_HOST")"
+set_secret RetrievalBudgetMs "$RETRIEVAL_BUDGET_MS"
 
 if [[ -n "$SECRET_TARGET_ENV" ]]; then
   echo "Done. Run: encore secret list --env=$SECRET_TARGET_ENV"
