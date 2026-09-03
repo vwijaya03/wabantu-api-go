@@ -194,6 +194,9 @@ func TryAppendItemsDuringCheckout(st *OrderState, userText string, catalog []Cat
 	if st == nil {
 		return false, ""
 	}
+	if IsOrderRevisionMessage(userText) {
+		return false, ""
+	}
 	step := normalizeOrderState(*st).Step
 	if !isCheckoutAppendStep(step) {
 		return false, ""
@@ -240,6 +243,26 @@ func TryAppendItemsDuringCheckout(st *OrderState, userText string, catalog []Cat
 		return true, checkoutItemAddedAck(formal) + "\n\n" + buildOrderFlowReply(*st, tmpl.AskVariant, catalog)
 	}
 	return true, checkoutItemAddedAck(formal) + "\n\n" + buildOrderFlowReply(*st, tmpl.AskRecipient, catalog)
+}
+
+// shouldImplicitAppendDifferentSKU — append SKU baru (bukan revisi qty item yang sama).
+func shouldImplicitAppendDifferentSKU(st OrderState, userText string, catalog []CatalogItem) bool {
+	if !isNamedProductWithQtyMessage(userText, catalog) {
+		return false
+	}
+	match := matchCatalogItem(userText, catalog)
+	if match == nil {
+		return false
+	}
+	if match.ID == st.CatalogItemID {
+		return false
+	}
+	for _, ln := range st.Items {
+		if ln.CatalogItemID == match.ID {
+			return false
+		}
+	}
+	return true
 }
 
 func GuardStructuredOrderStock(st OrderState, catalog []CatalogItem, formal bool) (OrderState, string, bool) {
