@@ -49,7 +49,7 @@ func TestTryAppendItemsDuringCheckout(t *testing.T) {
 		SellUnit:      "pcs",
 	}
 	tmpl := orderTemplatesFromKB(nil, false)
-	handled, reply := TryAppendItemsDuringCheckout(&st, "1 pcs, lalu abon sapi yang 250 gram 1pcs", catalog, tmpl, false)
+	handled, reply := TryAppendItemsDuringCheckout(&st, "1 pcs, lalu abon sapi yang 250 gram 1pcs", catalog, tmpl, false, nil)
 	if !handled {
 		t.Fatal("expected handled append")
 	}
@@ -75,7 +75,7 @@ func TestTryAppendSingleLaluItem(t *testing.T) {
 		SellUnit:      "pcs",
 	}
 	tmpl := orderTemplatesFromKB(nil, false)
-	handled, _ := TryAppendItemsDuringCheckout(&st, "lalu nutela biskuit 1 piece", catalog, tmpl, false)
+	handled, _ := TryAppendItemsDuringCheckout(&st, "lalu nutela biskuit 1 piece", catalog, tmpl, false, nil)
 	if !handled {
 		t.Fatal("expected handled")
 	}

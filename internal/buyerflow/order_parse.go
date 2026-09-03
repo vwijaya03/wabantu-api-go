@@ -577,3 +577,28 @@ func orderFlowCancelReply(tone string) string {
 	}
 	return "Oke kak, ordernya dibatalkan dulu ya 😊 Mau tanya produk atau harga, langsung chat aja."
 }
+
+var embedQueryQtyRe = regexp.MustCompile(`(?i)\b\d+\s*(pcs|pc|buah|biji|pack|paket|lusin)\b`)
+
+// ExtractProductQueryForEmbed strips checkout intent noise for catalog embedding queries.
+func ExtractProductQueryForEmbed(userText string) string {
+	text := strings.ToLower(strings.TrimSpace(userText))
+	if text == "" {
+		return ""
+	}
+	text = embedQueryQtyRe.ReplaceAllString(text, " ")
+	stop := map[string]bool{
+		"mau": true, "pesen": true, "pesan": true, "beli": true, "order": true,
+		"checkout": true, "pcs": true, "pc": true, "buah": true, "biji": true,
+		"dong": true, "kak": true, "ya": true, "nih": true, "deh": true,
+		"coba": true, "minta": true, "pengen": true, "pengin": true, "ingin": true,
+	}
+	var kept []string
+	for _, w := range tokenize(text) {
+		if stop[w] {
+			continue
+		}
+		kept = append(kept, w)
+	}
+	return strings.TrimSpace(strings.Join(kept, " "))
+}

@@ -211,6 +211,8 @@ Detail: [RAG_VECTOR_RETRIEVAL.md](./RAG_VECTOR_RETRIEVAL.md) · shipped hardenin
 
 Katalog: `MatchCatalogItemSemantic` (vector top-3 → rules); ambigu → klarifikasi, bukan tebak SKU.
 
+**Order checkout (`order_flow`):** saat `retrieval_mode=vector`, `handleOrderFlow` fetch vector hits (`catalog_order`) dan pass ke FSM — lexical/fuzzy prioritas, semantic narrow saat miss, ambiguous hits → `ask_variant` (bukan history outbound). Stock/qty/payment tetap deterministik.
+
 ---
 
 ## Tabel deteksi intent

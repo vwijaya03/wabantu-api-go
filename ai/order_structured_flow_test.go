@@ -34,7 +34,7 @@ func TestHistoryBackedPurchase_skipsWhenStructuredList(t *testing.T) {
 
 func TestEvaluateStructuredOrder_omahHelloKittyTranscript(t *testing.T) {
 	catalog := helloKittyCatalog()
-	out := evaluateStructuredOrder(omahHelloKittyTranscriptMsg(), catalog, false)
+	out := evaluateStructuredOrder(omahHelloKittyTranscriptMsg(), catalog, false, nil)
 	if !out.Matched || len(out.Lines) != 3 {
 		t.Fatalf("want 3 lines, got matched=%v lines=%d unmatched=%v", out.Matched, len(out.Lines), out.Unmatched)
 	}

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"encore.app/wabantu/shared/retrieval"
 )
 
 func warehouseBuyerLabel(customerLabel, warehouseName string) string {
@@ -138,11 +140,76 @@ func fuzzyTokenPrefixMatch(a, b string) bool {
 	return strings.HasPrefix(a, b[:n]) || strings.HasPrefix(b, a[:n])
 }
 
-func resolveOrderProductMatch(userText string, history []Message, catalog []CatalogItem) *CatalogItem {
+func resolveOrderProductMatch(userText string, history []Message, catalog []CatalogItem, vctx *CatalogVectorContext) *CatalogItem {
 	if m := matchCatalogItem(userText, catalog); m != nil {
 		return m
 	}
+	if vctx != nil && len(vctx.Hits) > 0 {
+		if m := MatchCatalogItemSemantic(userText, catalog, vctx.Hits); m != nil {
+			return m
+		}
+		if orderSemanticAmbiguous(vctx) {
+			return nil
+		}
+	}
 	return matchCatalogFromRecentOutbound(history, catalog)
+}
+
+func orderSemanticAmbiguous(vctx *CatalogVectorContext) bool {
+	return vctx != nil && len(vctx.Hits) >= 2 && CatalogSemanticAmbiguous(vctx.Hits)
+}
+
+func matchCatalogLine(raw string, catalog []CatalogItem, vctx *CatalogVectorContext) *CatalogItem {
+	text := strings.TrimSpace(raw)
+	if text == "" {
+		return nil
+	}
+	if m := resolveOrderProductMatch(text, nil, catalog, vctx); m != nil {
+		return m
+	}
+	cleaned := StripOrderSizeTokens(text)
+	cleaned = strings.TrimSpace(strings.TrimRight(cleaned, "ya"))
+	return resolveOrderProductMatch(cleaned, nil, catalog, vctx)
+}
+
+// orderVectorVariantPickerReply — klarifikasi varian saat vector hits ambiguous di order flow.
+func orderVectorVariantPickerReply(formal bool, userText string, catalog []CatalogItem, vctx *CatalogVectorContext) (string, bool) {
+	if vctx == nil || len(vctx.Hits) == 0 {
+		return "", false
+	}
+	brand := brandTokenFromText(userText, catalog)
+	if brand != "" {
+		ids := catalogVectorHitsEntryIDs(vctx.Hits)
+		if reply := buildBrandVariantListFromVectorHits(formal, brand, catalog, ids, 10); reply != "" {
+			return reply, true
+		}
+	}
+	byID := map[string]CatalogItem{}
+	for _, it := range catalog {
+		byID[it.ID] = it
+	}
+	var items []CatalogItem
+	seen := map[string]struct{}{}
+	for _, h := range sortedHitsByScore(vctx.Hits) {
+		id := retrieval.EntryIDFromHit(h)
+		it, ok := byID[id]
+		if !ok {
+			continue
+		}
+		if _, dup := seen[it.ID]; dup {
+			continue
+		}
+		seen[it.ID] = struct{}{}
+		items = append(items, it)
+	}
+	if len(items) < 2 {
+		return "", false
+	}
+	token := brand
+	if token == "" {
+		token = "produk"
+	}
+	return formatBrandVariantListBody(formal, token, items, 6), true
 }
 
 func catalogExcludeHints(text string) []string {
@@ -215,7 +282,7 @@ func catalogPhraseBoost(text, nameLower string) float64 {
 }
 
 // tryApplyProductRevision — ganti produk saat checkout ("bukan hello kitty", "mono spot bukan ...").
-func tryApplyProductRevision(st *OrderState, userText string, catalog []CatalogItem) bool {
+func tryApplyProductRevision(st *OrderState, userText string, catalog []CatalogItem, vctx *CatalogVectorContext) bool {
 	if st == nil || len(catalog) == 0 {
 		return false
 	}
@@ -229,7 +296,7 @@ func tryApplyProductRevision(st *OrderState, userText string, catalog []CatalogI
 	if !hasSignal {
 		return false
 	}
-	match := matchCatalogItem(userText, catalog)
+	match := resolveOrderProductMatch(userText, nil, catalog, vctx)
 	if match == nil {
 		return false
 	}

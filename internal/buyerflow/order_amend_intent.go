@@ -24,12 +24,12 @@ func IsOrderAmendMessage(userText string) bool {
 }
 
 // ExtractAmendLinesFromText parses catalog lines from amend-related text.
-func ExtractAmendLinesFromText(userText string, catalog []CatalogItem) []OrderLineState {
-	_, fromInline := parseAppendSegments(userText, catalog)
+func ExtractAmendLinesFromText(userText string, catalog []CatalogItem, vctx *CatalogVectorContext) []OrderLineState {
+	_, fromInline := parseAppendSegments(userText, catalog, vctx)
 	if len(fromInline) > 0 {
 		return fromInline
 	}
-	line := ParseStructuredOrderLine(userText, catalog)
+	line := parseStructuredOrderLine(userText, catalog, vctx)
 	if line.CatalogItemID != "" {
 		return []OrderLineState{line}
 	}
@@ -37,7 +37,7 @@ func ExtractAmendLinesFromText(userText string, catalog []CatalogItem) []OrderLi
 }
 
 // ExtractAmendLinesFromHistory finds products mentioned in recent buyer messages not yet in existingIDs.
-func ExtractAmendLinesFromHistory(history []Message, catalog []CatalogItem, existingIDs map[string]bool) []OrderLineState {
+func ExtractAmendLinesFromHistory(history []Message, catalog []CatalogItem, existingIDs map[string]bool, vctx *CatalogVectorContext) []OrderLineState {
 	var out []OrderLineState
 	seen := make(map[string]bool)
 	for i := len(history) - 1; i >= 0; i-- {
@@ -49,10 +49,10 @@ func ExtractAmendLinesFromHistory(history []Message, catalog []CatalogItem, exis
 		if body == "" {
 			continue
 		}
-		_, fromInline := parseAppendSegments(body, catalog)
+		_, fromInline := parseAppendSegments(body, catalog, vctx)
 		candidates := fromInline
 		if len(candidates) == 0 {
-			if line := ParseStructuredOrderLine(body, catalog); line.CatalogItemID != "" {
+			if line := parseStructuredOrderLine(body, catalog, vctx); line.CatalogItemID != "" {
 				candidates = []OrderLineState{line}
 			}
 		}

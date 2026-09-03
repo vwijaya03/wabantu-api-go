@@ -217,6 +217,10 @@ func BuildCatalogListReplyFiltered(formal bool, bizName string, catalog []Catalo
 
 func IsCatalogExclusionQuestionExported(userText string) bool { return IsCatalogExclusionQuestion(userText) }
 
+func ResolveOrderProductMatch(userText string, history []Message, catalog []CatalogItem, vctx *CatalogVectorContext) *CatalogItem {
+	return resolveOrderProductMatch(userText, history, catalog, vctx)
+}
+
 func ResolveOrderWarehouse(lines []CatalogStockLine, qty int, preferredWarehouseID string) (string, bool) {
 	return resolveOrderWarehouse(lines, qty, preferredWarehouseID)
 }

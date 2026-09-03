@@ -8,7 +8,8 @@ Dokumen referensi untuk indexing FAQ (knowledge base) dan katalog produk menggun
 |------|----------|
 | FAQ / KB | Hybrid retrieval: vector + lexical → **RRF** → prompt / FAQ direct |
 | Katalog | Semantic top-3 → **rules deterministik** → stock guard tetap |
-| Order FSM, payment proof, stock guard | **Tetap deterministik** — vector tidak mengotorisasi SKU/qty/bayar |
+| Order FSM product match | Lexical + fuzzy first → vector semantic narrow → ambiguity → `ask_variant` / brand picker |
+| Order FSM stock/qty/payment | **Tetap deterministik** — vector tidak mengotorisasi qty/bayar |
 
 ## Glossary
 
@@ -187,6 +188,17 @@ Lihat `flag/retrieval_mode.go`.
 ## Catalog semantic
 
 `MatchCatalogItemSemantic` — top vector → rules → jika margin ambigu (`< 0.08`) return `nil` → balas klarifikasi, **jangan tebak SKU**.
+
+### Order FSM (`mode=vector`)
+
+`handleOrderFlow` memanggil `fetchCatalogVectorContext` (`ai/retrieval_bridge.go`) sekali per turn:
+
+1. Embed query difokuskan via `ExtractProductQueryForEmbed` (strip intent/qty)
+2. `RetrieveCatalogCandidates` top-3 → `CatalogVectorContext` ke `AdvanceOrderFlow`
+3. `resolveOrderProductMatch`: lexical + fuzzy → `MatchCatalogItemSemantic` → history outbound (skip jika vector ambiguous)
+4. Ambigu → `ask_variant` / brand picker (`orderVectorVariantPickerReply`), bukan history hijack
+
+Metric source: `catalog_order` pada `retrieval_requests_total`. Log: `AI order flow: catalog vector hits`.
 
 ## Testing
 

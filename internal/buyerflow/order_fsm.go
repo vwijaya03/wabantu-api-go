@@ -2,13 +2,22 @@ package buyerflow
 
 // OrderFlowInput — pure order FSM step (no Redis/DB/WA).
 type OrderFlowInput struct {
-	UserText string
-	State    *OrderState
-	Catalog  []CatalogItem
-	History  []Message
-	Profile  *BusinessProfile
-	KB       []KBEntry
-	ScopeKW  []string
+	UserText  string
+	State     *OrderState
+	Catalog   []CatalogItem
+	History   []Message
+	Profile   *BusinessProfile
+	KB        []KBEntry
+	ScopeKW   []string
+	VectorCtx *CatalogVectorContext
+}
+
+func (in OrderFlowInput) resolveProduct() *CatalogItem {
+	return resolveOrderProductMatch(in.UserText, in.History, in.Catalog, in.VectorCtx)
+}
+
+func (in OrderFlowInput) vectorVariantReply(formal bool) (string, bool) {
+	return orderVectorVariantPickerReply(formal, in.UserText, in.Catalog, in.VectorCtx)
 }
 
 // OrderFlowResult — outcome of one FSM advance.
@@ -115,7 +124,7 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 		if !IsCatalogBrowsingIntent(userText) && !isGeneralStoreCatalogQuestion(userText) {
 			return OrderFlowResult{}, false
 		}
-		if catReply, ok := replyFromBusinessCatalog(userText, profile, catalog, history, nil); ok {
+		if catReply, ok := replyFromBusinessCatalog(userText, profile, catalog, history, in.VectorCtx); ok {
 			return OrderFlowResult{Cleared: true, CatalogReply: true, Path: PathCatalogDB, Reply: catReply}, true
 		}
 		return OrderFlowResult{}, false
@@ -128,7 +137,7 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 	}
 
 	if state == nil && (IsOrderRevisionMessage(userText) || mentionsOrderQty(userText)) {
-		if match := resolveOrderProductMatch(userText, history, catalog); match != nil {
+		if match := in.resolveProduct(); match != nil {
 			st := OrderState{Step: "ask_variant"}
 			applyCatalogMatch(&st, match)
 			if q, ok := parseOrderQty(userText); ok {
@@ -158,7 +167,7 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 
 	if state == nil {
 		st := OrderState{Step: "ask_product"}
-		if match := matchCatalogItem(userText, catalog); match != nil {
+		if match := in.resolveProduct(); match != nil {
 			applyCatalogMatch(&st, match)
 			sz, cl := parseSizeAndColor(userText)
 			if sz != "" {
@@ -194,6 +203,10 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 				Reply: buildOrderFlowReply(st, tmpl.AskVariant, catalog),
 			}
 		}
+		if reply, ok := in.vectorVariantReply(formal); ok {
+			st.Step = "ask_variant"
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
+		}
 		msg := tmpl.AskProduct
 		if picker := formatCatalogPicker(catalog, 6); picker != "" {
 			msg += "\n\nContoh produk:\n" + picker
@@ -217,8 +230,12 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 			return OrderFlowResult{Cleared: true, Path: PathOutOfScope, Reply: outOfScopeReply(profile)}
 		}
 		st := copyBase(OrderState{Step: "ask_product"})
-		match := matchCatalogItem(userText, catalog)
+		match := in.resolveProduct()
 		if match == nil {
+			if reply, ok := in.vectorVariantReply(formal); ok {
+				st.Step = "ask_variant"
+				return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
+			}
 			msg := "Maaf kak, produknya belum ketemu di katalog. Sebut nama produk yang ada di katalog ya."
 			if picker := formatCatalogPicker(catalog, 6); picker != "" {
 				msg += "\n\n" + picker
@@ -311,12 +328,12 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 		}
 		if !st.VariantComplete() {
 			if IsCatalogBrowsingIntent(userText) || isGeneralStoreCatalogQuestion(userText) {
-				if catReply, ok := replyFromBusinessCatalog(userText, profile, catalog, history, nil); ok {
+				if catReply, ok := replyFromBusinessCatalog(userText, profile, catalog, history, in.VectorCtx); ok {
 					return OrderFlowResult{Cleared: true, CatalogReply: true, Path: PathCatalogDB, Reply: catReply}
 				}
 			}
 			if wouldRepeatOutbound(history, tmpl.AskVariant) {
-				if catReply, ok := replyFromBusinessCatalog(userText, profile, catalog, history, nil); ok {
+				if catReply, ok := replyFromBusinessCatalog(userText, profile, catalog, history, in.VectorCtx); ok {
 					return OrderFlowResult{Cleared: true, CatalogReply: true, Path: PathCatalogDB, Reply: catReply}
 				}
 				return OrderFlowResult{Cleared: true, Path: PathOrderFlow, Reply: orderFlowLoopBreakReply(formal)}
@@ -342,7 +359,7 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 
 	case "ask_qty":
 		st := copyBase(stateNorm)
-		if handled, reply := TryAppendItemsDuringCheckout(&st, userText, catalog, tmpl, formal); handled {
+		if handled, reply := TryAppendItemsDuringCheckout(&st, userText, catalog, tmpl, formal, in.VectorCtx); handled {
 			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
 		}
 		qty := 0
@@ -364,7 +381,7 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 
 	case "ask_recipient":
 		st := copyBase(stateNorm)
-		if handled, reply := TryAppendItemsDuringCheckout(&st, userText, catalog, tmpl, formal); handled {
+		if handled, reply := TryAppendItemsDuringCheckout(&st, userText, catalog, tmpl, formal, in.VectorCtx); handled {
 			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
 		}
 		if tryApplyQtyRevision(&st, userText) {
@@ -377,7 +394,7 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 				Reply: buildOrderFlowReply(st, tmpl.AskRecipient, catalog),
 			}
 		}
-		if tryApplyProductRevision(&st, userText, catalog) {
+		if tryApplyProductRevision(&st, userText, catalog, in.VectorCtx) {
 			return OrderFlowResult{
 				State: &st, Path: PathOrderFlow,
 				Reply: buildOrderFlowReply(st, tmpl.AskRecipient, catalog),
@@ -428,7 +445,7 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 
 	case "ask_address", "ask_address_full":
 		st := copyBase(stateNorm)
-		if handled, reply := TryAppendItemsDuringCheckout(&st, userText, catalog, tmpl, formal); handled {
+		if handled, reply := TryAppendItemsDuringCheckout(&st, userText, catalog, tmpl, formal, in.VectorCtx); handled {
 			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
 		}
 		if tryApplyQtyRevision(&st, userText) {
