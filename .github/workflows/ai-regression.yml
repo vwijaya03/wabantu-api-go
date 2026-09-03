@@ -74,4 +74,4 @@ jobs:
       - name: Encore smoke (buyerflow autogen + ai package subset)
         run: |
           go test ./internal/buyerflow/ -run TestRegressionAutoGen -count=1
-          encore test ./ai/ -run 'TestConversationRegression|TestBuyerBehaviorScriptHappyAbon' -count=1
+          encore test ./ai/ -run 'Order|Catalog|Greeting|Ground|Structured|Amend|TestConversationRegression|TestBuyerBehaviorScriptHappyAbon' -count=1
