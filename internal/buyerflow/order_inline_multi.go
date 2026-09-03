@@ -195,14 +195,24 @@ func TryAppendItemsDuringCheckout(st *OrderState, userText string, catalog []Cat
 		return false, ""
 	}
 	step := normalizeOrderState(*st).Step
-	if step != "ask_recipient" && step != "ask_qty" && step != "ask_address" && step != "ask_address_full" {
-		return false, ""
-	}
-	if !IsAddItemToOrderMessage(userText) {
+	if !isCheckoutAppendStep(step) {
 		return false, ""
 	}
 
 	qtyOnly, newLines := parseAppendSegments(userText, catalog, vctx)
+	if len(newLines) == 0 && isNamedProductWithQtyMessage(userText, catalog) {
+		line := parseStructuredOrderLine(userText, catalog, vctx)
+		if line.CatalogItemID != "" {
+			newLines = []OrderLineState{line}
+		}
+	}
+	if len(newLines) == 0 && !IsAddItemToOrderMessage(userText) {
+		if qtyOnly != nil {
+			return true, buildOrderFlowReply(*st, tmpl.AskRecipient, catalog)
+		}
+		return false, ""
+	}
+
 	if qtyOnly != nil && !st.HasMultiItems() && strings.TrimSpace(st.CatalogItemID) != "" {
 		st.Qty = *qtyOnly
 	}

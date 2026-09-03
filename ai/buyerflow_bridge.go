@@ -118,6 +118,10 @@ var (
 	IsOrderRefStatusLookup        = bf.IsOrderRefStatusLookup
 	IsOrderRevisionMessage        = bf.IsOrderRevisionMessage
 	IsOrderAmendMessage           = bf.IsOrderAmendMessage
+	IsCartRecapOrComplaint        = bf.IsCartRecapOrComplaint
+	IsAddMoreItemsPolicyQuestion  = bf.IsAddMoreItemsPolicyQuestion
+	CartRecapReply                = bf.CartRecapReply
+	AddMoreItemsPolicyReply       = bf.AddMoreItemsPolicyReply
 	IsOrderStatusInquiry          = bf.IsOrderStatusInquiry
 	IsOrderTotalRequest           = bf.IsOrderTotalRequest
 	IsPaymentQuestion             = bf.IsPaymentQuestion

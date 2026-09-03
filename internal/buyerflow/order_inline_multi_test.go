@@ -64,6 +64,27 @@ func TestTryAppendItemsDuringCheckout(t *testing.T) {
 	}
 }
 
+func TestTryAppendImplicitNoLalu(t *testing.T) {
+	catalog := omahFoodCatalog()
+	catalog = append(catalog, CatalogItem{ID: "cadbury-mini", Name: "Cadbury Dairy Milk Mini", SellPrice: 5000, SellUnit: "pcs"})
+	st := OrderState{
+		Step:          "ask_recipient",
+		CatalogItemID: "maggi-percik",
+		ProductName:   "Maggi Bumbu Ayam Goreng - Ayam Percik",
+		Qty:           1,
+		UnitPrice:     70000,
+		SellUnit:      "pcs",
+	}
+	tmpl := orderTemplatesFromKB(nil, false)
+	handled, _ := TryAppendItemsDuringCheckout(&st, "cadbury mini 1 pcs", catalog, tmpl, false, nil)
+	if !handled {
+		t.Fatal("expected implicit append without lalu keyword")
+	}
+	if len(st.Items) != 2 {
+		t.Fatalf("want 2 items, got %d", len(st.Items))
+	}
+}
+
 func TestTryAppendSingleLaluItem(t *testing.T) {
 	catalog := omahFoodCatalog()
 	st := OrderState{

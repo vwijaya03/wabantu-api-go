@@ -40,6 +40,9 @@ func omahCatalog() []CatalogItem {
 			SellPrice: 42200, SellUnit: "pcs",
 		},
 		{ID: "abon-500g", Name: "Abon Sapi 500G", SellPrice: 35000, SellUnit: "pcs"},
+		{ID: "abon-250g", Name: "Abon Sapi 250 Gram", SellPrice: 20000, SellUnit: "pcs"},
+		{ID: "cadbury-mini", Name: "Cadbury Dairy Milk Mini", SellPrice: 5000, SellUnit: "pcs"},
+		{ID: "durian-biskuit", Name: "Durian Musang King Biskuit 240G", SellPrice: 45000, SellUnit: "pcs"},
 	}
 }
 

@@ -1,8 +1,14 @@
-# RAG Conversation Acceptance — Omah Apparel Fixture
+# RAG Conversation Acceptance — Checkout Continuity (All Tenants)
 
-Skrip penerimaan (acceptance) untuk percakapan smooth catalog-first + RAG. Fixture: `internal/buyerflow/fixtures_omah.go` (`omahCatalog()` — 6 SKU, 3 keluarga produk).
+Skrip penerimaan (acceptance) untuk percakapan smooth catalog-first + checkout multi-item. Berlaku **semua tenant** (`t_<slug>`); fixture archetype di `internal/buyerflow/`:
 
-**Kode test:** `internal/buyerflow/regression_cases.go` · **Simulator:** `internal/buyerflow/simulator.go`
+| Fixture | File | Archetype |
+|---------|------|-----------|
+| Omah (mixed) | `fixtures_omah.go` | apparel + food |
+| Apparel-only | `fixtures_apparel.go` | fashion |
+| Food-only | `fixtures_food.go` | FMCG |
+
+**Kode test:** `internal/buyerflow/regression_cases.go` · `checkout_continuity_test.go` · **Simulator:** `internal/buyerflow/simulator.go`
 
 ---
 
@@ -14,8 +20,8 @@ cd api-go
 # Gate CI (buyerflow + retrieval + apiregistry)
 ./scripts/run-ai-regression-tests.sh
 
-# Hanya golden regression
-go test ./internal/buyerflow/ -run 'TestRegression|TestRegressionShippingScript|TestRegressionOrderRevisionScript' -v -count=1
+# Golden regression + checkout continuity matrix
+go test ./internal/buyerflow/ -run 'TestRegression|CheckoutContinuity|TestRegressionShippingScript|TestRegressionOrderRevisionScript' -v -count=1
 
 # Encore smoke (master push saja)
 encore test ./ai/ -run 'TestConversationRegression' -count=1
@@ -43,18 +49,24 @@ encore test ./ai/ -run 'TestConversationRegression' -count=1
 | 14 | Checkout Maggi + `1 pcs, lalu abon sapi 250g 1pcs` | `order_flow` | Ringkasan 2 item (Maggi + Abon) |
 | 15 | Setelah checkout: `jadikan 1 dengan pesanan sebelumnya` / `abon nutela ga masuk` | `order_flow` (amend) | Draft diperbarui, bukan generic not-found katalog |
 | 16 | `selain abon sapi ada list lainnya?` | `catalog_db` | Daftar produk tanpa Abon |
+| 17 | Abon @ `ask_recipient` + `cadbury mini 1 pcs` (tanpa `lalu`) | `order_flow` | 2 item di keranjang, flow tidak break |
+| 18 | `pesanan saya ada 2 loh ya` (cart aktif) | `order_flow` | Recap keranjang, **bukan** `order_status` |
+| 19 | `masih mau order item yang lain?` | `consulting` | Policy cara tambah item, **bukan** full `catalog_db` |
+| 20 | `durian musang king 1` (food tenant) | `order_flow` | Langsung `ask_recipient`, tanpa `ask_variant` ukuran |
 
 ---
 
-## Kasus Omah Apparel (thread `b72e2bee-…`)
+## Canary: Omah Apparel (thread `b72e2bee-…`)
 
-Replay manual di staging setelah merge PR order-flow:
+Replay manual di staging setelah merge PR checkout continuity:
 
 1. `mau coba maggi percik 1` → order flow Maggi
 2. `1 pcs, lalu abon sapi yang 250 gram 1pcs` → kedua item di ringkasan
-3. `loh abon nutela ga masuk` → amend draft, bukan LLM Abon 125g salah
-4. `selain abon sapi ada list lainnya?` → `catalog_db` dengan filter exclusion
-
+3. `cadbury mini 1 pcs` @ ask_recipient → item ketiga tanpa clear cart
+4. `loh abon nutela ga masuk` → amend/recap draft, bukan LLM Abon 125g salah
+5. `pesanan saya ada 2 loh ya` → recap keranjang, bukan "belum ada pesanan"
+6. `masih mau order item yang lain?` → policy reply, bukan full katalog
+7. `selain abon sapi ada list lainnya?` → `catalog_db` dengan filter exclusion
 
 ## Multi-turn scripts
 
@@ -69,11 +81,15 @@ Replay manual di staging setelah merge PR order-flow:
 1. `mau beli abon sapi 2 pcs` → `order_flow`
 2. `revisi jadi 5 pcs` → `order_flow`
 
+### Checkout continuity matrix (`TestRegressionCheckoutContinuityMatrix`)
+
+Archetype mixed, apparel-only, food-only — lihat `checkout_continuity_test.go`.
+
 ---
 
 ## Menambah skenario baru
 
-1. Tambah entry di `internal/buyerflow/regression_cases.go`
+1. Tambah entry di `internal/buyerflow/regression_cases.go` atau `checkout_continuity_test.go`
 2. Jalankan `go test ./internal/buyerflow/ -run TestRegression -v`
 3. PR wajib hijau: workflow **AI Regression** (`regression-fast`)
 

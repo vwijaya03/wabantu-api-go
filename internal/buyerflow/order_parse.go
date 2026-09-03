@@ -10,7 +10,8 @@ var (
 	// Explicit qty with whitespace before unit (avoids matching "1PCS" in catalog product titles).
 	orderQtyWithUnitRe = regexp.MustCompile(`(?i)(?:^|\s)(\d{1,4})\s+(pcs|pc|biji|buah|item|unit|piece|pieces|paket|pket)\b`)
 	orderQtyLabelRe    = regexp.MustCompile(`(?i)\b(?:qty|jumlah)\s*[:\-]?\s*(\d{1,4})\b`)
-	orderQtyBareLineRe = regexp.MustCompile(`(?i)^\s*(\d{1,4})\s*(?:biji|pcs|pc|buah|piece|pieces|paket)?\s*[!.?]*\s*$`)
+	orderQtyBareLineRe   = regexp.MustCompile(`(?i)^\s*(\d{1,4})\s*(?:biji|pcs|pc|buah|piece|pieces|paket)?\s*[!.?]*\s*$`)
+	orderQtyTrailingRe   = regexp.MustCompile(`(?i)\s(\d{1,4})\s*(?:pcs|pc|biji|buah|piece|pieces)?\s*$`)
 	orderQtyLusinRe    = regexp.MustCompile(`(?i)(?:^|\s)(\d{1,3})\s*lusin\b`)
 	orderQtyOneLusinRe = regexp.MustCompile(`(?i)(?:^|\s)1\s*lusin\b|satu\s*lusin`)
 	orderQtyIndoWordRe = regexp.MustCompile(`(?i)\b(satu|dua|tiga|empat|lima|enam|tujuh|delapan|sembilan|sepuluh)\s*(pcs|pc|biji|buah|piece|pieces|lusin)?\b`)
@@ -192,6 +193,13 @@ func parseOrderQty(text string) (int, bool) {
 		}
 	}
 	if m := orderQtyWithUnitRe.FindStringSubmatch(text); len(m) > 1 {
+		var q int
+		fmt.Sscanf(m[1], "%d", &q)
+		if q > 0 {
+			return q, true
+		}
+	}
+	if m := orderQtyTrailingRe.FindStringSubmatch(text); len(m) > 1 {
 		var q int
 		fmt.Sscanf(m[1], "%d", &q)
 		if q > 0 {
@@ -539,6 +547,12 @@ func ShouldBreakOrderFlow(userText, step string, catalog []CatalogItem) bool {
 			return false
 		}
 		if IsOrderContinuationMessage(userText) && !strings.Contains(text, "berapa") {
+			return false
+		}
+		if isNamedProductWithQtyMessage(userText, catalog) {
+			return false
+		}
+		if IsCartRecapOrComplaint(userText, catalog) {
 			return false
 		}
 		return true

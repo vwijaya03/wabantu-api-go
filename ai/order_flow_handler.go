@@ -131,6 +131,11 @@ func (s *AutoReplyService) handleOrderFlow(
 		s.clearOrderState(ctx, tenantID, convo.ID)
 	} else if res.State != nil {
 		s.setOrderState(ctx, tenantID, convo.ID, *res.State)
+		if res.State.Step == "ask_recipient" && res.State.CartReadyForDraft() {
+			if _, err := persistDraftOrderEarly(ctx, ts, tenantSchema, convo.ID, convo.ContactID, *res.State); err != nil {
+				rlog.Warn("AI order: early draft persist failed", "err", err, "convoId", convo.ID)
+			}
+		}
 	}
 
 	if res.Completed {

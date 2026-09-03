@@ -307,6 +307,16 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	if IsThirdPartyBuyerLookup(userText) {
 		return s.handleThirdPartyBuyerLookupDenied(ctx, ts, payload, convo, channel, contact)
 	}
+	if IsCartRecapOrComplaint(userText, toBFCatalogSlice(catalog)) {
+		if orderSt, _ := s.getOrderState(ctx, payload.TenantID, convo.ID); orderSt != nil {
+			formal := strOrEmpty(profile.Tone) == "formal"
+			reply := CartRecapReply(*orderSt, formal)
+			out := metaNoLLM(reasonNonQuestion, PathOrderFlow)
+			out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
+			err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, reply, "system", payload.InboundMessageID, out)
+			return err == nil, err
+		}
+	}
 	if IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) || IsOrderRefStatusLookup(userText) {
 		return s.handleCustomerOrderStatus(ctx, ts, payload.TenantSchema, payload, convo, channel, contact, userText, history)
 	}
@@ -406,6 +416,16 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		out := metaNoLLM(reasonAIGenerated, PathRecipientPolicy)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, finalReply, "ai", payload.InboundMessageID, out)
+		return err == nil, err
+	}
+
+	if inScope && IsAddMoreItemsPolicyQuestion(userText) {
+		formal := strOrEmpty(profile.Tone) == "formal"
+		orderSt, _ := s.getOrderState(ctx, payload.TenantID, convo.ID)
+		reply := applyOutputPolicy(AddMoreItemsPolicyReply(formal, orderSt))
+		out := metaNoLLM(reasonAIGenerated, PathConsulting)
+		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
+		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, reply, "ai", payload.InboundMessageID, out)
 		return err == nil, err
 	}
 
@@ -856,6 +876,13 @@ func (s *AutoReplyService) handleCustomerOrderStatus(
 	}
 	o := res.Order
 	if o == nil {
+		if orderSt, err := s.getOrderState(ctx, payload.TenantID, convo.ID); err == nil && orderSt != nil && orderSt.ProductComplete() {
+			body := formatOrderSummary(*orderSt)
+			if body != "" {
+				body += "\n\n(Ini draft pesanan dari chat — belum dikonfirmasi ke toko.)"
+				return send(body)
+			}
+		}
 		return send(orderNoneFoundReply())
 	}
 	if contact != nil && !OrderChatAccessAllowed(o, scope, contact.PhoneNumber, contact.PhoneNumber) {

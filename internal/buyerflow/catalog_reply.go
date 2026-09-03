@@ -17,6 +17,9 @@ const catalogEmptyMarker = "[Katalog WABantu: kosong]"
 
 // IsCatalogBrowsingIntent — pelanggan masih browsing katalog (bukan checkout).
 func IsCatalogBrowsingIntent(userText string) bool {
+	if IsAddMoreItemsPolicyQuestion(userText) {
+		return false
+	}
 	if IsCatalogListQuestion(userText) {
 		return true
 	}

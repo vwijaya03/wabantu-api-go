@@ -57,3 +57,12 @@ func (st OrderState) ReadyToPersist() bool {
 	}
 	return st.ShippingComplete()
 }
+
+// CartReadyForDraft returns true when cart lines are complete enough for early draft persist.
+func (st OrderState) CartReadyForDraft() bool {
+	st = normalizeOrderState(st)
+	if st.HasMultiItems() {
+		return st.StructuredLinesReady()
+	}
+	return st.ProductComplete() && strings.TrimSpace(st.CatalogItemID) != "" && st.VariantComplete() && st.Qty > 0
+}

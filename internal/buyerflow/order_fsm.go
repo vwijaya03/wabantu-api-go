@@ -359,6 +359,17 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 
 	case "ask_qty":
 		st := copyBase(stateNorm)
+		if st.Qty > 0 && !mentionsOrderQty(userText) && !hints.HasQty {
+			st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
+			if blocked {
+				return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
+			}
+			st.Step = "ask_recipient"
+			return OrderFlowResult{
+				State: &st, Path: PathOrderFlow,
+				Reply: buildOrderFlowReply(st, tmpl.AskRecipient, catalog),
+			}
+		}
 		if handled, reply := TryAppendItemsDuringCheckout(&st, userText, catalog, tmpl, formal, in.VectorCtx); handled {
 			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
 		}

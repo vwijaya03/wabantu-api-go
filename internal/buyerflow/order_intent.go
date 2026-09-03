@@ -310,6 +310,9 @@ func IsPaymentStatusInquiry(userText string) bool {
 
 // IsOrderStatusInquiry — customer asks about their existing order.
 func IsOrderStatusInquiry(userText string) bool {
+	if IsCartRecapOrComplaint(userText, nil) {
+		return false
+	}
 	if IsPaymentStatusInquiry(userText) {
 		return true
 	}
