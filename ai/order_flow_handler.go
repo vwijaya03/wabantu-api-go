@@ -50,6 +50,30 @@ func (s *AutoReplyService) handleOrderFlow(
 		return err == nil, err
 	}
 
+	scope := orderAccessScope{ConversationID: convo.ID, ContactID: convo.ContactID}
+	if state == nil && !IsExplicitNewOrderStart(userText) && parseOrderRefFromMessage(userText) == "" && hasPurchaseIntent(userText, catalog) {
+		if drafts, derr := loadDraftOrdersForContact(ctx, ts, tenantSchema, scope); derr == nil && len(drafts) > 1 {
+			return send(orderAmendPickDraftReply(drafts), PathOrderFlow)
+		}
+	}
+	if ref := parseOrderRefFromMessage(userText); ref != "" && state == nil {
+		o, denied, _ := loadOrderByRefForContact(ctx, ts, tenantSchema, scope, ref)
+		if denied {
+			return send(orderAccessDeniedReply(), PathOrderFlow)
+		}
+		if o != nil {
+			formattedRef := FormatOrderNumber(o.ID)
+			if isOrderAmendBlockedStatus(o.Status) {
+				return send(orderAmendBlockedStatusReply(formal, o.Status, formattedRef), PathOrderFlow)
+			}
+			if isOrderDraftAmendable(o.Status) {
+				pinned := orderState{PersistedOrderID: o.ID, Step: "ask_recipient"}
+				s.setOrderState(ctx, tenantID, convo.ID, pinned)
+				state = &pinned
+			}
+		}
+	}
+
 	if IsStructuredOrderList(userText) {
 		if state != nil {
 			s.clearOrderState(ctx, tenantID, convo.ID)
@@ -130,12 +154,17 @@ func (s *AutoReplyService) handleOrderFlow(
 	if res.Cleared {
 		s.clearOrderState(ctx, tenantID, convo.ID)
 	} else if res.State != nil {
-		s.setOrderState(ctx, tenantID, convo.ID, *res.State)
+		st := *res.State
 		if res.State.Step == "ask_recipient" && res.State.CartReadyForDraft() {
-			if _, err := persistDraftOrderEarly(ctx, ts, tenantSchema, convo.ID, convo.ContactID, *res.State); err != nil {
+			if orderID, needPick, pickList, err := persistDraftOrderEarly(ctx, ts, tenantSchema, convo.ID, convo.ContactID, st); err != nil {
 				rlog.Warn("AI order: early draft persist failed", "err", err, "convoId", convo.ID)
+			} else if needPick {
+				return send(orderAmendPickDraftReply(pickList), PathOrderFlow)
+			} else if orderID != "" {
+				st.PersistedOrderID = orderID
 			}
 		}
+		s.setOrderState(ctx, tenantID, convo.ID, st)
 	}
 
 	if res.Completed {

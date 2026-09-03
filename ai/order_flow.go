@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -11,6 +12,8 @@ import (
 	"encore.app/wabantu/inventory"
 	"encore.app/wabantu/order"
 )
+
+var errMultiDraftDisambiguation = errors.New("multi draft disambiguation required")
 
 func persistDraftOrder(
 	ctx context.Context,
@@ -77,7 +80,9 @@ func persistDraftOrder(
 	itemsJSON, _ := json.Marshal([]order.OrderItem{item})
 	addrJSON, _ := json.Marshal(addr)
 
-	if id, updated, uerr := upsertDraftOrderItems(ctx, tq, tenantSchema, convoID, contactID, []order.OrderItem{item}, addrJSON); updated {
+	if id, updated, needPick, _, uerr := upsertDraftOrderItems(ctx, tq, tenantSchema, convoID, contactID, st.PersistedOrderID, []order.OrderItem{item}, addrJSON); needPick {
+		return "", errMultiDraftDisambiguation
+	} else if updated {
 		if uerr != nil {
 			return "", uerr
 		}
@@ -179,7 +184,9 @@ func persistDraftOrderMulti(
 	itemsJSON, _ := json.Marshal(orderItems)
 	addrJSON, _ := json.Marshal(addr)
 
-	if id, updated, uerr := upsertDraftOrderItems(ctx, tq, tenantSchema, convoID, contactID, orderItems, addrJSON); updated {
+	if id, updated, needPick, _, uerr := upsertDraftOrderItems(ctx, tq, tenantSchema, convoID, contactID, st.PersistedOrderID, orderItems, addrJSON); needPick {
+		return "", errMultiDraftDisambiguation
+	} else if updated {
 		if uerr != nil {
 			return "", uerr
 		}
@@ -246,33 +253,35 @@ func syncPersistedOrderStock(ctx context.Context, tenantSchema, orderID, status 
 }
 
 // persistDraftOrderEarly saves cart lines as draft without requiring recipient/shipping (mid-checkout).
+// Returns (orderID, needPick, pickList, error).
 func persistDraftOrderEarly(
 	ctx context.Context,
 	tq tenantScopedQuerier,
 	tenantSchema, convoID, contactID string,
 	st orderState,
-) (string, error) {
+) (string, bool, []persistedOrder, error) {
 	st = normalizeOrderState(st)
 	if !st.CartReadyForDraft() {
-		return "", nil
+		return "", false, nil, nil
 	}
 	orderItems, subtotal, err := orderItemsFromCartState(ctx, tq, st)
 	if err != nil {
-		return "", err
+		return "", false, nil, err
 	}
 	if len(orderItems) == 0 {
-		return "", nil
+		return "", false, nil, nil
 	}
 	addr := order.ShippingAddress{Country: "Indonesia"}
 	addrJSON, _ := json.Marshal(addr)
-	itemsJSON, _ := json.Marshal(orderItems)
 
-	if id, updated, uerr := upsertDraftOrderItems(ctx, tq, tenantSchema, convoID, contactID, orderItems, addrJSON); updated {
+	if id, updated, needPick, pickList, uerr := upsertDraftOrderItems(ctx, tq, tenantSchema, convoID, contactID, st.PersistedOrderID, orderItems, addrJSON); needPick {
+		return "", true, pickList, nil
+	} else if updated {
 		if uerr != nil {
-			return "", uerr
+			return "", false, nil, uerr
 		}
 		rlog.Info("AI order: early draft updated", "orderId", id, "convoId", convoID, "itemCount", len(orderItems))
-		return id, nil
+		return id, false, nil, nil
 	}
 
 	var convArg, contactArg any
@@ -282,6 +291,7 @@ func persistDraftOrderEarly(
 	if strings.TrimSpace(contactID) != "" {
 		contactArg = contactID
 	}
+	itemsJSON, _ := json.Marshal(orderItems)
 	var orderID string
 	insertQ := fmt.Sprintf(`
 		INSERT INTO "%s"."order"
@@ -290,11 +300,11 @@ func persistDraftOrderEarly(
 		VALUES ($1, $2, $3, $4, '', 'draft', $5, 0, $5)
 		RETURNING id::text`, tenantSchema)
 	if err := tq.QueryRowContext(ctx, insertQ, convArg, contactArg, itemsJSON, addrJSON, subtotal).Scan(&orderID); err != nil {
-		return "", err
+		return "", false, nil, err
 	}
 	syncPersistedOrderStock(ctx, tenantSchema, orderID, "draft", orderItems)
 	rlog.Info("AI order: early draft persisted", "orderId", orderID, "convoId", convoID, "itemCount", len(orderItems))
-	return orderID, nil
+	return orderID, false, nil, nil
 }
 
 func orderItemsFromCartState(ctx context.Context, tq tenantScopedQuerier, st orderState) ([]order.OrderItem, float64, error) {

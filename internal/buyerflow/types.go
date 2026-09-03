@@ -106,4 +106,7 @@ type OrderState struct {
 	Country        string `json:"country,omitempty"`
 
 	Items []OrderLineState `json:"items,omitempty"`
+
+	// PersistedOrderID — draft row di DB yang terikat ke keranjang checkout ini.
+	PersistedOrderID string `json:"persistedOrderId,omitempty"`
 }
