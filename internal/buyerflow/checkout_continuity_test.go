@@ -165,10 +165,16 @@ func TestRegressionCheckoutContinuityMatrix(t *testing.T) {
 				{input: "mau beli abon sapi 2 pcs", wantPath: PathOrderFlow},
 				{
 					input:    "masih mau order item yang lain?",
-					wantPath: PathConsulting,
-					check: func(t *testing.T, out TurnOutcome, _ *Simulator) {
+					wantPath: PathOrderFlow,
+					check: func(t *testing.T, out TurnOutcome, sim *Simulator) {
+						if out.BrokeFlow || sim.Order == nil {
+							t.Fatal("policy question must not clear active checkout cart")
+						}
 						if out.Path == PathCatalogDB {
 							t.Fatal("policy question must not trigger full catalog")
+						}
+						if !strings.Contains(strings.ToLower(out.Reply), "boleh tambah") {
+							t.Fatalf("expected CS add-more reply: %q", out.Reply)
 						}
 					},
 				},

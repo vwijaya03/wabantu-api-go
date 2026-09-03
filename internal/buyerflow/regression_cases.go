@@ -136,7 +136,8 @@ var regressionCases = []regressionCase{
 		name:     "add_more_policy_not_catalog",
 		input:    "masih mau order item yang lain?",
 		priorInputs: []string{"mau beli abon sapi 2 pcs"},
-		wantPath: PathConsulting,
+		wantPath: PathOrderFlow,
+		wantSubstr: []string{"boleh tambah"},
 		wantNot:  []string{"Pria Dewasa", "Anak Perempuan"},
 	},
 	{

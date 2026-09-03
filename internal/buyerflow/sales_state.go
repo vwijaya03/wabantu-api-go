@@ -70,6 +70,9 @@ func IsConsultingPurchaseQuestion(userText string, catalog []CatalogItem) bool {
 	if IsRecipientPolicyQuestion(userText) {
 		return false
 	}
+	if IsAddMoreItemsPolicyQuestion(userText) {
+		return false
+	}
 	if isNamedProductPurchaseIntent(userText, catalog) {
 		return false
 	}

@@ -104,6 +104,15 @@ func (s *Simulator) Turn(userText string) TurnOutcome {
 
 	if orderActive {
 		step := s.Order.Step
+		if IsAddMoreItemsPolicyQuestion(userText) {
+			formal := strOrEmpty(s.Profile.Tone) == "formal"
+			out.Path = PathOrderFlow
+			out.Intent = SalesIntent{State: SalesStateCheckout, Topic: SalesTopicGeneral, Confidence: 0.9}
+			out.Reply = AddMoreItemsPolicyReply(formal, s.Order)
+			out.Order = s.Order
+			s.appendHistory(userText, out.Reply)
+			return out
+		}
 		if ShouldBreakOrderFlow(userText, step, s.Catalog) {
 			s.Order = nil
 			out.BrokeFlow = true

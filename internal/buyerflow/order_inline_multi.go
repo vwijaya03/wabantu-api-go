@@ -237,9 +237,9 @@ func TryAppendItemsDuringCheckout(st *OrderState, userText string, catalog []Cat
 	}
 	if !st.StructuredLinesReady() {
 		st.Step = "ask_variant"
-		return true, buildOrderFlowReply(*st, tmpl.AskVariant, catalog)
+		return true, checkoutItemAddedAck(formal) + "\n\n" + buildOrderFlowReply(*st, tmpl.AskVariant, catalog)
 	}
-	return true, buildOrderFlowReply(*st, tmpl.AskRecipient, catalog)
+	return true, checkoutItemAddedAck(formal) + "\n\n" + buildOrderFlowReply(*st, tmpl.AskRecipient, catalog)
 }
 
 func GuardStructuredOrderStock(st OrderState, catalog []CatalogItem, formal bool) (OrderState, string, bool) {

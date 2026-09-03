@@ -326,6 +326,14 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	// Active order flow — only when message is really continuing checkout (not greeting/harga/batal).
 	if orderSt, _ := s.getOrderState(ctx, payload.TenantID, convo.ID); orderSt != nil {
 		tone := strOrEmpty(profile.Tone)
+		formal := tone == "formal"
+		if IsAddMoreItemsPolicyQuestion(userText) {
+			reply := applyOutputPolicy(AddMoreItemsPolicyReply(formal, orderSt))
+			out := metaNoLLM(reasonNonQuestion, PathOrderFlow)
+			out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
+			err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, reply, "system", payload.InboundMessageID, out)
+			return err == nil, err
+		}
 		if ShouldBreakOrderFlow(userText, orderSt.Step, catalog) {
 			clearedOrderForCorrection = IsUserSalesCorrection(userText)
 			s.clearOrderState(ctx, payload.TenantID, convo.ID)

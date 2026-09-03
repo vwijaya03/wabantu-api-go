@@ -313,6 +313,9 @@ func IsOrderStatusInquiry(userText string) bool {
 	if IsCartRecapOrComplaint(userText, nil) {
 		return false
 	}
+	if IsAddMoreItemsPolicyQuestion(userText) {
+		return false
+	}
 	if IsPaymentStatusInquiry(userText) {
 		return true
 	}

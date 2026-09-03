@@ -476,6 +476,12 @@ var orderAddrHintRe = regexp.MustCompile(`(?i)(jalan|\bjl\.?\b|rt|rw|kel\.|kec\.
 
 // ShouldBreakOrderFlow — new intent (greeting, harga, tanya produk) while Redis order state is active.
 func ShouldBreakOrderFlow(userText, step string, catalog []CatalogItem) bool {
+	if IsAddMoreItemsPolicyQuestion(userText) {
+		return false
+	}
+	if isCheckoutAppendStep(step) && IsAddItemToOrderMessage(userText) {
+		return false
+	}
 	if IsOrderRevisionMessage(userText) {
 		return false
 	}
