@@ -30,7 +30,7 @@ func TestParseStructuredOrderLines_lusinAndSize(t *testing.T) {
 	catalog := lolBestSellerCatalog()
 	msg := `mau buat pesanan baru
 1. LOL Best Seller 1 lusin ya ukuran L`
-	parsed := parseStructuredOrderLines(msg, catalog)
+	parsed := parseStructuredOrderLines(msg, catalog, nil)
 	if len(parsed.Lines) != 1 {
 		t.Fatalf("want 1 line, got %d unmatched=%v", len(parsed.Lines), parsed.Unmatched)
 	}
@@ -53,7 +53,7 @@ barang yang dibeli
 1. LOL Best Seller 1 lusin ya ukuran L
 2. LOL Best Seller 1 lusin ya ukuran XL
 3. LOL Best Seller 1 lusin ya ukuran XXL`
-	parsed := parseStructuredOrderLines(msg, catalog)
+	parsed := parseStructuredOrderLines(msg, catalog, nil)
 	if len(parsed.Lines) != 3 {
 		t.Fatalf("want 3 lines, got %d unmatched=%v", len(parsed.Lines), parsed.Unmatched)
 	}
@@ -125,7 +125,7 @@ func TestParseStructuredOrderLines_helloKittyUnnumbered(t *testing.T) {
 CELANA DALAM BOXER ANAK PEREMPUAN MOTIF HELLO KITTY BUNGA LEMBUT - L 1 lusin
 CELANA DALAM BOXER ANAK PEREMPUAN MOTIF HELLO KITTY BUNGA LEMBUT - XL 2 lusin
 CELANA DALAM BOXER ANAK PEREMPUAN MOTIF HELLO KITTY BUNGA LEMBUT - XXL 3 lusin`
-	parsed := parseStructuredOrderLines(msg, catalog)
+	parsed := parseStructuredOrderLines(msg, catalog, nil)
 	if len(parsed.Lines) != 3 {
 		t.Fatalf("want 3 lines, got %d unmatched=%v", len(parsed.Lines), parsed.Unmatched)
 	}
@@ -154,7 +154,7 @@ func TestFormatMultiOrderSummary_helloKittyThreeSKUs(t *testing.T) {
 CELANA DALAM BOXER ANAK PEREMPUAN MOTIF HELLO KITTY BUNGA LEMBUT - L 1 lusin
 CELANA DALAM BOXER ANAK PEREMPUAN MOTIF HELLO KITTY BUNGA LEMBUT - XL 2 lusin
 CELANA DALAM BOXER ANAK PEREMPUAN MOTIF HELLO KITTY BUNGA LEMBUT - XXL 3 lusin`
-	parsed := parseStructuredOrderLines(msg, catalog)
+	parsed := parseStructuredOrderLines(msg, catalog, nil)
 	st := orderStateFromStructuredLines(parsed.Lines)
 	summary := formatOrderSummary(st)
 	if !strings.Contains(summary, "1. ") || !strings.Contains(summary, "2. ") || !strings.Contains(summary, "3. ") {

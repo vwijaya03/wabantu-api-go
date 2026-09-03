@@ -25,7 +25,7 @@ func TestExtractAmendLinesFromHistory(t *testing.T) {
 		{Author: "contact", Body: "lalu nutela biskuit 1 piece"},
 	}
 	existing := map[string]bool{"maggi-percik": true}
-	lines := ExtractAmendLinesFromHistory(history, catalog, existing)
+	lines := ExtractAmendLinesFromHistory(history, catalog, existing, nil)
 	if len(lines) != 2 {
 		t.Fatalf("want 2 amend lines, got %d %+v", len(lines), lines)
 	}

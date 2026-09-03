@@ -277,3 +277,86 @@ func (s *AutoReplyService) replyFromBusinessCatalogHybrid(
 	vctx := &bf.CatalogVectorContext{Hits: hits}
 	return bf.ReplyFromBusinessCatalogVector(userText, profile, catalogExpanded, history, vctx)
 }
+
+// fetchCatalogVectorContext retrieves semantic catalog hits for order FSM product resolution.
+func (s *AutoReplyService) fetchCatalogVectorContext(
+	ctx context.Context,
+	tenantID, tenantSchema, userText string,
+	ts tenantScopedQuerier,
+	catalog []dbCatalogItem,
+) (*bf.CatalogVectorContext, []dbCatalogItem) {
+	mode := appflag.EffectiveRetrievalMode(ctx, tenantID, tenantSchema)
+	if mode != retrieval.ModeVector {
+		return nil, catalog
+	}
+	svc := retrieval.DefaultService()
+	if svc == nil {
+		return nil, catalog
+	}
+	if !s.checkTenantEmbedQuota(ctx, tenantID) {
+		retrieval.RecordEmbedQuotaRejected()
+		rlog.Warn("order catalog embed quota exceeded, lexical only", "tenant", tenantID)
+		return nil, catalog
+	}
+	embedQuery := bf.ExtractProductQueryForEmbed(userText)
+	if embedQuery == "" {
+		embedQuery = userText
+	}
+	logCtx := ctx
+	qctx, cancel := reqctx.WithTimeout(ctx, retrieval.QueryBudget())
+	defer cancel()
+	tenant := retrieval.TenantIdentity{TenantID: tenantID, TenantSchema: tenantSchema}
+	hits, err := svc.RetrieveCatalogCandidates(ctx, qctx, tenant, embedQuery, 3)
+	zero := len(hits) == 0
+	if err != nil || zero {
+		reason := retrieval.FallbackReasonQueryError
+		var category retrieval.ErrorCategory
+		var provider retrieval.Provider
+		if err != nil {
+			re := retrieval.ClassifyProviderError(ctx, err, retrieval.ProviderOpenAI)
+			reason = retrieval.FallbackReasonFromCategory(re)
+			category = re.Category
+			provider = re.Provider
+		}
+		retrieval.LogQueryWithReason(logCtx, "catalog_order", tenantID, string(mode), err != nil, zero, reason)
+		recordRetrievalQueryMetrics("catalog_order", string(mode), err != nil, zero, retrieval.LatencyP95Ms(), string(category), string(provider))
+		if err != nil {
+			recordRetrievalIncident(ctx, retrievalIncidentInput{
+				TenantID: tenantID, Source: "catalog_order", Provider: provider, Category: category,
+				LatencyMs: int(retrieval.EmbedLatencyP95Ms()), BudgetMs: int(retrieval.QueryBudget().Milliseconds()),
+				Err: err,
+			})
+			rlog.Warn("order catalog vector retrieval failed, lexical only",
+				"safe_error", SanitizeRetrievalError(err),
+				"tenant", tenantID, "fallback_reason", reason)
+		}
+		return nil, catalog
+	}
+	retrieval.LogQueryWithReason(logCtx, "catalog_order", tenantID, string(mode), false, false, "")
+	recordRetrievalQueryMetrics("catalog_order", string(mode), false, false, retrieval.LatencyP95Ms(), "", "")
+
+	catalogExpanded := catalog
+	if ts != nil {
+		if missing := collectMissingCatalogIDs(catalog, hits); len(missing) > 0 {
+			fetched, fetchErr := loadCatalogItemsByIDs(ctx, ts, missing)
+			if fetchErr != nil {
+				rlog.Warn("order catalog fetch by id failed", "err", fetchErr, "tenant", tenantID, "n", len(missing))
+			} else {
+				catalogExpanded = mergeCatalogItems(catalog, fetched)
+			}
+		}
+	}
+	topScore := hits[0].Score
+	margin := 0.0
+	if len(hits) > 1 {
+		margin = hits[0].Score - hits[1].Score
+	}
+	rlog.Info("AI order flow: catalog vector hits",
+		"tenant", tenantID,
+		"hits", len(hits),
+		"topScore", topScore,
+		"margin", margin,
+		"embedQuery", previewText(embedQuery, 60),
+	)
+	return &bf.CatalogVectorContext{Hits: hits}, catalogExpanded
+}

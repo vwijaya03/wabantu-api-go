@@ -94,7 +94,7 @@ type structuredOrderParseResult struct {
 	Unmatched []string
 }
 
-func parseStructuredOrderLines(userText string, catalog []dbCatalogItem) structuredOrderParseResult {
+func parseStructuredOrderLines(userText string, catalog []dbCatalogItem, vctx *bf.CatalogVectorContext) structuredOrderParseResult {
 	var res structuredOrderParseResult
 	if !IsStructuredOrderList(userText) {
 		return res
@@ -104,7 +104,7 @@ func parseStructuredOrderLines(userText string, catalog []dbCatalogItem) structu
 		return res
 	}
 	for _, raw := range rawLines {
-		line := parseSingleStructuredLine(raw, catalog)
+		line := parseSingleStructuredLine(raw, catalog, vctx)
 		if line.CatalogItemID == "" && line.ProductName == "" {
 			res.Unmatched = append(res.Unmatched, raw)
 			continue
@@ -114,8 +114,8 @@ func parseStructuredOrderLines(userText string, catalog []dbCatalogItem) structu
 	return res
 }
 
-func parseSingleStructuredLine(raw string, catalog []dbCatalogItem) orderLineState {
-	line := bf.ParseStructuredOrderLine(raw, toBFCatalog(catalog))
+func parseSingleStructuredLine(raw string, catalog []dbCatalogItem, vctx *bf.CatalogVectorContext) orderLineState {
+	line := bf.ParseStructuredOrderLineWithVector(raw, toBFCatalog(catalog), vctx)
 	return orderLineState(line)
 }
 
@@ -193,13 +193,13 @@ type structuredOrderFlowOutcome struct {
 	NeedVariant bool
 }
 
-func evaluateStructuredOrder(userText string, catalog []dbCatalogItem, formal bool) structuredOrderFlowOutcome {
+func evaluateStructuredOrder(userText string, catalog []dbCatalogItem, formal bool, vctx *bf.CatalogVectorContext) structuredOrderFlowOutcome {
 	var out structuredOrderFlowOutcome
 	if !IsStructuredOrderList(userText) {
 		return out
 	}
 	out.Matched = true
-	parsed := parseStructuredOrderLines(userText, catalog)
+	parsed := parseStructuredOrderLines(userText, catalog, vctx)
 	out.Unmatched = parsed.Unmatched
 	out.Lines = parsed.Lines
 	if len(parsed.Lines) == 0 {

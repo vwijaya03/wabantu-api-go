@@ -219,6 +219,7 @@ func (s *AutoReplyService) handleOrderAmend(
 	if catErr != nil {
 		rlog.Warn("AI order amend: catalog load failed", "err", catErr)
 	}
+	vctx, catalog := s.fetchCatalogVectorContext(ctx, payload.TenantID, payload.TenantSchema, userText, ts, catalog)
 	existing, err := orderItemsFromJSON(draft.ItemsJSON)
 	if err != nil {
 		return false, err
@@ -240,7 +241,7 @@ func (s *AutoReplyService) handleOrderAmend(
 	}
 
 	var added []bf.OrderLineState
-	if lines := bf.ExtractAmendLinesFromText(userText, toBFCatalogSlice(catalog)); len(lines) > 0 {
+	if lines := bf.ExtractAmendLinesFromText(userText, toBFCatalogSlice(catalog), vctx); len(lines) > 0 {
 		for _, ln := range lines {
 			if !existingIDs[ln.CatalogItemID] {
 				added = append(added, ln)
@@ -248,7 +249,7 @@ func (s *AutoReplyService) handleOrderAmend(
 		}
 	}
 	if len(added) == 0 {
-		histLines := bf.ExtractAmendLinesFromHistory(bfHistory, toBFCatalogSlice(catalog), existingIDs)
+		histLines := bf.ExtractAmendLinesFromHistory(bfHistory, toBFCatalogSlice(catalog), existingIDs, vctx)
 		added = histLines
 	}
 	if len(added) == 0 {

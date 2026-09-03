@@ -51,6 +51,15 @@ func splitInlineOrderSegments(userText string) []string {
 
 // ParseStructuredOrderLine — satu baris order (qty + SKU) untuk structured/inline multi.
 func ParseStructuredOrderLine(raw string, catalog []CatalogItem) OrderLineState {
+	return parseStructuredOrderLine(raw, catalog, nil)
+}
+
+// ParseStructuredOrderLineWithVector — structured line parse with optional vector context.
+func ParseStructuredOrderLineWithVector(raw string, catalog []CatalogItem, vctx *CatalogVectorContext) OrderLineState {
+	return parseStructuredOrderLine(raw, catalog, vctx)
+}
+
+func parseStructuredOrderLine(raw string, catalog []CatalogItem, vctx *CatalogVectorContext) OrderLineState {
 	var line OrderLineState
 	text := strings.TrimSpace(raw)
 	if text == "" {
@@ -66,12 +75,7 @@ func ParseStructuredOrderLine(raw string, catalog []CatalogItem) OrderLineState 
 	if cl != "" {
 		line.Color = cl
 	}
-	match := matchCatalogItem(text, catalog)
-	if match == nil {
-		cleaned := StripOrderSizeTokens(text)
-		cleaned = strings.TrimSpace(strings.TrimRight(cleaned, "ya"))
-		match = matchCatalogItem(cleaned, catalog)
-	}
+	match := matchCatalogLine(text, catalog, vctx)
 	if match != nil {
 		line.CatalogItemID = match.ID
 		line.ExternalCode = match.ExternalCode
@@ -87,13 +91,17 @@ func ParseStructuredOrderLine(raw string, catalog []CatalogItem) OrderLineState 
 
 // ParseInlineMultiOrderLines parses conjunction-split segments into order lines (≥2 matched SKUs).
 func ParseInlineMultiOrderLines(userText string, catalog []CatalogItem) []OrderLineState {
+	return ParseInlineMultiOrderLinesWithVector(userText, catalog, nil)
+}
+
+func ParseInlineMultiOrderLinesWithVector(userText string, catalog []CatalogItem, vctx *CatalogVectorContext) []OrderLineState {
 	segments := splitInlineOrderSegments(userText)
 	if len(segments) < 2 {
 		return nil
 	}
 	var lines []OrderLineState
 	for _, seg := range segments {
-		line := ParseStructuredOrderLine(seg, catalog)
+		line := parseStructuredOrderLine(seg, catalog, vctx)
 		if line.CatalogItemID == "" && line.ProductName == "" {
 			continue
 		}
@@ -158,22 +166,22 @@ func MergeOrderLines(existing, added []OrderLineState) []OrderLineState {
 	return out
 }
 
-func parseAppendSegments(userText string, catalog []CatalogItem) (qtyOnly *int, newLines []OrderLineState) {
+func parseAppendSegments(userText string, catalog []CatalogItem, vctx *CatalogVectorContext) (qtyOnly *int, newLines []OrderLineState) {
 	if IsInlineMultiOrderMessage(userText) {
 		for _, seg := range splitInlineOrderSegments(userText) {
-			line := ParseStructuredOrderLine(seg, catalog)
+			line := parseStructuredOrderLine(seg, catalog, vctx)
 			if line.CatalogItemID != "" {
 				newLines = append(newLines, line)
 				continue
 			}
-			if q, ok := parseOrderQty(seg); ok && matchCatalogItem(seg, catalog) == nil {
+			if q, ok := parseOrderQty(seg); ok && matchCatalogLine(seg, catalog, vctx) == nil {
 				qtyOnly = &q
 			}
 		}
 		return qtyOnly, newLines
 	}
 	if IsAddItemToOrderMessage(userText) {
-		line := ParseStructuredOrderLine(userText, catalog)
+		line := parseStructuredOrderLine(userText, catalog, vctx)
 		if line.CatalogItemID != "" {
 			newLines = []OrderLineState{line}
 		}
@@ -182,7 +190,7 @@ func parseAppendSegments(userText string, catalog []CatalogItem) (qtyOnly *int, 
 }
 
 // TryAppendItemsDuringCheckout appends parsed items to active checkout state.
-func TryAppendItemsDuringCheckout(st *OrderState, userText string, catalog []CatalogItem, tmpl orderFlowTemplates, formal bool) (bool, string) {
+func TryAppendItemsDuringCheckout(st *OrderState, userText string, catalog []CatalogItem, tmpl orderFlowTemplates, formal bool, vctx *CatalogVectorContext) (bool, string) {
 	if st == nil {
 		return false, ""
 	}
@@ -194,7 +202,7 @@ func TryAppendItemsDuringCheckout(st *OrderState, userText string, catalog []Cat
 		return false, ""
 	}
 
-	qtyOnly, newLines := parseAppendSegments(userText, catalog)
+	qtyOnly, newLines := parseAppendSegments(userText, catalog, vctx)
 	if qtyOnly != nil && !st.HasMultiItems() && strings.TrimSpace(st.CatalogItemID) != "" {
 		st.Qty = *qtyOnly
 	}

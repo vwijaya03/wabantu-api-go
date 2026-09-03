@@ -24,7 +24,7 @@ func TestCadburiNotMaggiFromCatalogListHistory(t *testing.T) {
 	}
 	body := "Ini katalog Omah Apparel ya kak:\n\n• Cadbury biscoff bar 130 gram\n• Maggi Bumbu Ayam Goreng - Ayam Berempah"
 	history := []Message{{Direction: "out", Body: body}}
-	m := resolveOrderProductMatch("cadburi mau pesen 1 pcs", history, catalog)
+	m := resolveOrderProductMatch("cadburi mau pesen 1 pcs", history, catalog, nil)
 	if m == nil || !strings.Contains(strings.ToLower(m.Name), "cadbury") {
 		t.Fatalf("expected cadbury from user text, got %v", m)
 	}
@@ -41,7 +41,7 @@ func TestProductRevisionBukanMaggi(t *testing.T) {
 		ProductName:   "Maggi Bumbu Ayam Goreng - Ayam Berempah",
 		Qty:           1,
 	}
-	if !tryApplyProductRevision(&st, "cadburi bukan maggi woi", catalog) {
+	if !tryApplyProductRevision(&st, "cadburi bukan maggi woi", catalog, nil) {
 		t.Fatal("expected product revision")
 	}
 	if strings.Contains(strings.ToLower(st.ProductName), "maggi") {

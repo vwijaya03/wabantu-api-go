@@ -27,6 +27,8 @@ func (s *AutoReplyService) handleOrderFlow(
 	}
 	enrichCatalogStock(ctx, ts, catalog)
 
+	vctx, catalog := s.fetchCatalogVectorContext(ctx, tenantID, tenantSchema, userText, ts, catalog)
+
 	scopeKW := businessScopeKeywords(profile)
 	formal := strOrEmpty(profile.Tone) == "formal"
 	tmpl := orderTemplatesFromKB(kb, formal)
@@ -53,7 +55,7 @@ func (s *AutoReplyService) handleOrderFlow(
 			s.clearOrderState(ctx, tenantID, convo.ID)
 			state = nil
 		}
-		outcome := evaluateStructuredOrder(userText, catalog, formal)
+		outcome := evaluateStructuredOrder(userText, catalog, formal, vctx)
 		if outcome.Matched {
 			if len(outcome.Lines) == 0 {
 				if len(outcome.Unmatched) > 0 {
@@ -92,13 +94,14 @@ func (s *AutoReplyService) handleOrderFlow(
 	}
 
 	res := AdvanceOrderFlow(OrderFlowInput{
-		UserText: userText,
-		State:    state,
-		Catalog:  catalog,
-		History:  history,
-		Profile:  profile,
-		KB:       kb,
-		ScopeKW:  scopeKW,
+		UserText:  userText,
+		State:     state,
+		Catalog:   catalog,
+		History:   history,
+		Profile:   profile,
+		KB:        kb,
+		ScopeKW:   scopeKW,
+		VectorCtx: vctx,
 	}, func(st orderState) (string, error) {
 		if st.HasMultiItems() {
 			var reply string
