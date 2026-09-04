@@ -10,8 +10,8 @@ var (
 	// Explicit qty with whitespace before unit (avoids matching "1PCS" in catalog product titles).
 	orderQtyWithUnitRe = regexp.MustCompile(`(?i)(?:^|\s)(\d{1,4})\s+(pcs|pc|biji|buah|item|unit|piece|pieces|paket|pket)\b`)
 	orderQtyLabelRe    = regexp.MustCompile(`(?i)\b(?:qty|jumlah)\s*[:\-]?\s*(\d{1,4})\b`)
-	orderQtyBareLineRe   = regexp.MustCompile(`(?i)^\s*(\d{1,4})\s*(?:biji|pcs|pc|buah|piece|pieces|paket)?\s*[!.?]*\s*$`)
-	orderQtyTrailingRe   = regexp.MustCompile(`(?i)\s(\d{1,4})\s*(?:pcs|pc|biji|buah|piece|pieces)?\s*$`)
+	orderQtyBareLineRe = regexp.MustCompile(`(?i)^\s*(\d{1,4})\s*(?:biji|pcs|pc|buah|piece|pieces|paket)?\s*[!.?]*\s*$`)
+	orderQtyTrailingRe = regexp.MustCompile(`(?i)\s(\d{1,4})\s*(?:pcs|pc|biji|buah|piece|pieces)?\s*(?:ya+|dong|kak|aja|saja|nih|deh|lah|lagi)?\s*[.!?]*$`)
 	orderQtyLusinRe    = regexp.MustCompile(`(?i)(?:^|\s)(\d{1,3})\s*lusin\b`)
 	orderQtyOneLusinRe = regexp.MustCompile(`(?i)(?:^|\s)1\s*lusin\b|satu\s*lusin`)
 	orderQtyIndoWordRe = regexp.MustCompile(`(?i)\b(satu|dua|tiga|empat|lima|enam|tujuh|delapan|sembilan|sepuluh)\s*(pcs|pc|biji|buah|piece|pieces|lusin)?\b`)
@@ -485,6 +485,12 @@ func ShouldBreakOrderFlow(userText, step string, catalog []CatalogItem) bool {
 	if IsOrderRevisionMessage(userText) {
 		return false
 	}
+	if IsCartRecapOrComplaint(userText, catalog) || IsActiveCheckoutRecapQuestion(userText) {
+		return false
+	}
+	if isFoodSizeConfusionQuestion(userText) {
+		return false
+	}
 	if IsUserSalesCorrection(userText) {
 		return true
 	}
@@ -565,6 +571,20 @@ func ShouldBreakOrderFlow(userText, step string, catalog []CatalogItem) bool {
 	}
 
 	return false
+}
+
+func isFoodSizeConfusionQuestion(userText string) bool {
+	text := strings.ToLower(strings.TrimSpace(userText))
+	if text == "" {
+		return false
+	}
+	if !strings.Contains(text, "ukuran") && !strings.Contains(text, "size") {
+		return false
+	}
+	if strings.Contains(text, "makanan") || strings.Contains(text, "makan") {
+		return true
+	}
+	return strings.Contains(text, "s m l") || strings.Contains(text, "s/m/l")
 }
 
 func normalizeOrderState(st OrderState) OrderState {

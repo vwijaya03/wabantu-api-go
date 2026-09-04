@@ -92,6 +92,7 @@ var (
 	IsAbandonedCartSignal            = bf.IsAbandonedCartSignal
 	IsAcknowledgmentLike             = bf.IsAcknowledgmentLike
 	IsActiveCheckoutFromHistory      = bf.IsActiveCheckoutFromHistory
+	IsActiveCheckoutRecapQuestion    = bf.IsActiveCheckoutRecapQuestion
 	IsAmbiguousPurchaseSignal        = bf.IsAmbiguousPurchaseSignal
 	IsCancelClarificationQuestion    = bf.IsCancelClarificationQuestion
 	IsCasualChatOpener               = bf.IsCasualChatOpener

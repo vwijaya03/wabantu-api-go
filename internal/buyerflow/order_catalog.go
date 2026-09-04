@@ -141,6 +141,12 @@ func fuzzyTokenPrefixMatch(a, b string) bool {
 }
 
 func resolveOrderProductMatch(userText string, history []Message, catalog []CatalogItem, vctx *CatalogVectorContext) *CatalogItem {
+	if unique := uniqueBrandSKUFromText(userText, catalog); unique != nil {
+		return unique
+	}
+	if lexicalBrandAmbiguous(userText, catalog) {
+		return nil
+	}
 	if m := matchCatalogItem(userText, catalog); m != nil {
 		return m
 	}
@@ -634,9 +640,9 @@ func catalogConfirmLine(st OrderState) string {
 		return ""
 	}
 	it := &CatalogItem{
-		Name:       st.ProductName,
-		SellPrice:  st.UnitPrice,
-		SellUnit:   st.SellUnit,
+		Name:         st.ProductName,
+		SellPrice:    st.UnitPrice,
+		SellUnit:     st.SellUnit,
 		ExternalCode: st.ExternalCode,
 	}
 	return strings.TrimSpace("Produk:\n" + st.ProductName + "\n\nHarga:\n" + formatCatalogPrice(it))

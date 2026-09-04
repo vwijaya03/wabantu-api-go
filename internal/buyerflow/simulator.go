@@ -53,7 +53,7 @@ func (s *Simulator) Turn(userText string) TurnOutcome {
 	}
 
 	// Match autoreply.go: status inquiry before greeting and cancel.
-	if IsCartRecapOrComplaint(userText, s.Catalog) && s.Order != nil {
+	if (IsCartRecapOrComplaint(userText, s.Catalog) || IsActiveCheckoutRecapQuestion(userText)) && s.Order != nil {
 		formal := strOrEmpty(s.Profile.Tone) == "formal"
 		out.Path = PathOrderFlow
 		out.Intent = SalesIntent{State: SalesStateCheckout, Topic: SalesTopicGeneral, Confidence: 0.9}

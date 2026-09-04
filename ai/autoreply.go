@@ -313,7 +313,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	if IsThirdPartyBuyerLookup(userText) {
 		return s.handleThirdPartyBuyerLookupDenied(ctx, ts, payload, convo, channel, contact)
 	}
-	if IsCartRecapOrComplaint(userText, toBFCatalogSlice(catalog)) {
+	if IsCartRecapOrComplaint(userText, toBFCatalogSlice(catalog)) || IsActiveCheckoutRecapQuestion(userText) {
 		if orderSt, _ := s.getOrderState(ctx, payload.TenantID, convo.ID); orderSt != nil {
 			formal := strOrEmpty(profile.Tone) == "formal"
 			reply := CartRecapReply(*orderSt, formal)

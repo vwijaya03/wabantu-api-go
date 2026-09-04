@@ -132,6 +132,94 @@ func catalogItemsForBrand(brandToken string, catalog []CatalogItem) []CatalogIte
 	return out
 }
 
+var brandDistinctiveStop = map[string]bool{
+	"bumbu": true, "ayam": true, "goreng": true, "the": true, "and": true,
+	"pcs": true, "gram": true, "sapi": true, "biskuit": true,
+}
+
+func distinctiveNameTokens(name, brand string) []string {
+	brand = normalizeBrandToken(brand)
+	var out []string
+	for _, tok := range tokenize(strings.ToLower(name)) {
+		tok = strings.Trim(tok, "-()")
+		if len(tok) < 4 || tok == brand || brandDistinctiveStop[tok] {
+			continue
+		}
+		out = append(out, tok)
+	}
+	return out
+}
+
+func uniqueBrandSKUFromText(userText string, catalog []CatalogItem) *CatalogItem {
+	brand := brandTokenFromText(userText, catalog)
+	if brand == "" {
+		return nil
+	}
+	items := catalogItemsForBrand(brand, catalog)
+	if len(items) < 2 {
+		return nil
+	}
+	text := strings.ToLower(userText)
+	var hits []CatalogItem
+	for _, it := range items {
+		for _, tok := range distinctiveNameTokens(it.Name, brand) {
+			if strings.Contains(text, tok) {
+				hits = append(hits, it)
+				break
+			}
+		}
+	}
+	if len(hits) == 1 {
+		hit := hits[0]
+		return &hit
+	}
+	return nil
+}
+
+func lexicalBrandAmbiguous(userText string, catalog []CatalogItem) bool {
+	if uniqueBrandSKUFromText(userText, catalog) != nil {
+		return false
+	}
+	brand := brandTokenFromText(userText, catalog)
+	if brand == "" {
+		return false
+	}
+	return len(catalogItemsForBrand(brand, catalog)) >= 2
+}
+
+func orderLexicalBrandPickerReply(formal bool, userText string, catalog []CatalogItem) (string, bool) {
+	if !lexicalBrandAmbiguous(userText, catalog) {
+		return "", false
+	}
+	brand := brandTokenFromText(userText, catalog)
+	if brand == "" {
+		return "", false
+	}
+	reply := buildBrandVariantListReply(formal, brand, catalog, 10)
+	if reply == "" {
+		return "", false
+	}
+	return reply, true
+}
+
+func shouldReviseToSiblingSKU(st OrderState, userText string, catalog []CatalogItem) bool {
+	if strings.TrimSpace(st.CatalogItemID) == "" {
+		return false
+	}
+	if st.HasMultiItems() && len(st.Items) > 1 {
+		return false
+	}
+	match := resolveOrderProductMatch(userText, nil, catalog, nil)
+	if match == nil || match.ID == st.CatalogItemID {
+		return false
+	}
+	brand := brandTokenFromText(st.ProductName, catalog)
+	if brand == "" {
+		return false
+	}
+	return catalogItemMatchesBrand(*match, brand)
+}
+
 func buildBrandVariantListReply(formal bool, brandToken string, catalog []CatalogItem, max int) string {
 	if max <= 0 || max > 10 {
 		max = 10

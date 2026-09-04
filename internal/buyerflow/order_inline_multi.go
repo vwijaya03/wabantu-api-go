@@ -135,6 +135,9 @@ func ensureMultiItemsFromSingle(st *OrderState) {
 	if strings.TrimSpace(st.CatalogItemID) == "" {
 		return
 	}
+	if st.Qty < 1 {
+		st.Qty = 1
+	}
 	st.Items = []OrderLineState{orderLineFromState(*st)}
 }
 
@@ -202,6 +205,29 @@ func TryAppendItemsDuringCheckout(st *OrderState, userText string, catalog []Cat
 		return false, ""
 	}
 
+	if shouldReviseToSiblingSKU(*st, userText, catalog) {
+		match := resolveOrderProductMatch(userText, nil, catalog, vctx)
+		if match != nil {
+			applyCatalogMatch(st, match)
+			st.Items = nil
+			if q, ok := parseOrderQty(userText); ok {
+				st.Qty = q
+			} else if st.Qty < 1 {
+				st.Qty = 1
+			}
+			if !st.VariantComplete() {
+				st.Step = "ask_variant"
+				return true, buildOrderFlowReply(*st, tmpl.AskVariant, catalog)
+			}
+			if st.Qty < 1 {
+				st.Step = "ask_qty"
+				return true, buildOrderFlowReply(*st, tmpl.AskQty, catalog)
+			}
+			st.Step = "ask_recipient"
+			return true, buildOrderFlowReply(*st, tmpl.AskRecipient, catalog)
+		}
+	}
+
 	qtyOnly, newLines := parseAppendSegments(userText, catalog, vctx)
 	if len(newLines) == 0 && isNamedProductWithQtyMessage(userText, catalog) {
 		line := parseStructuredOrderLine(userText, catalog, vctx)
@@ -239,10 +265,26 @@ func TryAppendItemsDuringCheckout(st *OrderState, userText string, catalog []Cat
 		return true, reply
 	}
 	if !st.StructuredLinesReady() {
-		st.Step = "ask_variant"
-		return true, checkoutItemAddedAck(formal) + "\n\n" + buildOrderFlowReply(*st, tmpl.AskVariant, catalog)
+		if checkoutLinesNeedApparelVariant(*st) {
+			st.Step = "ask_variant"
+			return true, checkoutItemAddedAck(formal) + "\n\n" + buildOrderFlowReply(*st, tmpl.AskVariant, catalog)
+		}
+		st.Step = "ask_qty"
+		return true, checkoutItemAddedAck(formal) + "\n\n" + buildOrderFlowReply(*st, tmpl.AskQty, catalog)
 	}
 	return true, checkoutItemAddedAck(formal) + "\n\n" + buildOrderFlowReply(*st, tmpl.AskRecipient, catalog)
+}
+
+func checkoutLinesNeedApparelVariant(st OrderState) bool {
+	if st.HasMultiItems() {
+		for _, ln := range st.Items {
+			if !lineVariantComplete(ln) {
+				return true
+			}
+		}
+		return false
+	}
+	return !st.VariantComplete()
 }
 
 // shouldImplicitAppendDifferentSKU — append SKU baru (bukan revisi qty item yang sama).
