@@ -138,6 +138,111 @@ func TestLiveThread_PesananAktifRecapsRedisCart(t *testing.T) {
 	}
 }
 
+func TestCatalogInquiry_BareMaggiListsFlavors(t *testing.T) {
+	catalog := omahLiveFMCGCatalog()
+	reply, ok := replyFromBusinessCatalog("harga maggi berapa?", foodProfile(), catalog, nil, nil)
+	if !ok {
+		t.Fatal("expected catalog reply")
+	}
+	lower := strings.ToLower(reply)
+	if strings.Count(lower, "maggi") < 2 || !strings.Contains(lower, "tandoori") || !strings.Contains(lower, "berempah") {
+		t.Fatalf("harga maggi must list flavors, not auto-pick one SKU: %q", reply)
+	}
+}
+
+func TestAppendWithoutQtyDuringCheckout(t *testing.T) {
+	catalog := omahLiveFMCGCatalog()
+	st := OrderState{
+		Step:          "ask_recipient",
+		CatalogItemID: "maggi-tandoori",
+		ProductName:   "Maggi Bumbu Ayam Goreng - Tandoori",
+		Qty:           1,
+		UnitPrice:     70000,
+		SellUnit:      "pcs",
+	}
+	res := AdvanceOrderFlow(OrderFlowInput{
+		UserText: "nutella",
+		State:    &st,
+		Catalog:  catalog,
+		Profile:  foodProfile(),
+	}, nil)
+	if res.State == nil || !res.State.HasMultiItems() || len(res.State.Items) != 2 {
+		t.Fatalf("naming another SKU without qty must append, got %+v", res.State)
+	}
+}
+
+func TestQtyRevisionDoesNotStealDifferentSKU(t *testing.T) {
+	catalog := omahLiveFMCGCatalog()
+	st := OrderState{
+		Step:          "ask_recipient",
+		CatalogItemID: "maggi-tandoori",
+		ProductName:   "Maggi Bumbu Ayam Goreng - Tandoori",
+		Qty:           1,
+		UnitPrice:     70000,
+		SellUnit:      "pcs",
+	}
+	res := AdvanceOrderFlow(OrderFlowInput{
+		UserText: "nutella 2 pcs",
+		State:    &st,
+		Catalog:  catalog,
+		Profile:  foodProfile(),
+	}, nil)
+	if res.State == nil || !res.State.HasMultiItems() {
+		t.Fatalf("nutella 2 pcs must append, not revise maggi qty, got %+v reply=%q", res.State, res.Reply)
+	}
+	if res.State.Qty == 2 && res.State.CatalogItemID == "maggi-tandoori" && !res.State.HasMultiItems() {
+		t.Fatal("qty revision stole nutella append")
+	}
+	foundNutella := false
+	for _, ln := range res.State.Items {
+		if ln.CatalogItemID == "nutella" && ln.Qty == 2 {
+			foundNutella = true
+		}
+	}
+	if !foundNutella {
+		t.Fatalf("want nutella qty 2 in cart, items=%+v", res.State.Items)
+	}
+}
+
+func TestAskQtyDoesNotDropNamedSKU(t *testing.T) {
+	catalog := omahLiveFMCGCatalog()
+	st := OrderState{
+		Step:          "ask_qty",
+		CatalogItemID: "maggi-tandoori",
+		ProductName:   "Maggi Bumbu Ayam Goreng - Tandoori",
+		Qty:           1,
+		UnitPrice:     70000,
+		SellUnit:      "pcs",
+	}
+	res := AdvanceOrderFlow(OrderFlowInput{
+		UserText: "nutella",
+		State:    &st,
+		Catalog:  catalog,
+		Profile:  foodProfile(),
+	}, nil)
+	if res.State == nil || !res.State.HasMultiItems() {
+		t.Fatalf("ask_qty with qty already set must still append named SKU, got %+v reply=%q", res.State, res.Reply)
+	}
+}
+
+func TestBareAbonAndCadburyAreAmbiguous(t *testing.T) {
+	catalog := omahLiveFMCGCatalog()
+	catalog = append(catalog,
+		CatalogItem{ID: "cad-bar", Name: "Cadbury biscoff bar 130 gram", SellPrice: 105000, SellUnit: "pcs"},
+		CatalogItem{ID: "cad-mini", Name: "Cadbury biscoff mini bars", SellPrice: 110000, SellUnit: "pcs"},
+		CatalogItem{ID: "abon-500", Name: "Abon Sapi 500 Gram", SellPrice: 25000, SellUnit: "pcs"},
+	)
+	if m := resolveOrderProductMatch("mau abon 1", nil, catalog, nil); m != nil {
+		t.Fatalf("bare abon must not auto-pick, got %s", m.Name)
+	}
+	if m := resolveOrderProductMatch("mau cadbury 1", nil, catalog, nil); m != nil {
+		t.Fatalf("bare cadbury must not auto-pick, got %s", m.Name)
+	}
+	if m := resolveOrderProductMatch("abon 250 gram 1 pcs", nil, catalog, nil); m == nil || m.ID != "abon-250" {
+		t.Fatalf("abon 250 must uniquely match, got %+v", m)
+	}
+}
+
 func TestLiveThread_FoodSizeQuestionDoesNotResetCheckout(t *testing.T) {
 	catalog := omahLiveFMCGCatalog()
 	if ShouldBreakOrderFlow("saya beli makanan lok ada ukuran s m l xl sih ?", "ask_recipient", catalog) {

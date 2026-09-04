@@ -45,6 +45,9 @@ func (c *CatalogVectorContext) resolve(userText string, history []Message, catal
 }
 
 func (c *CatalogVectorContext) directMatch(userText string, catalog []CatalogItem) *CatalogItem {
+	if lexicalBrandAmbiguous(userText, catalog) {
+		return nil
+	}
 	if c != nil && len(c.Hits) > 0 {
 		if m := MatchCatalogItemSemantic(userText, catalog, c.Hits); m != nil {
 			return m
@@ -57,6 +60,9 @@ func (c *CatalogVectorContext) directMatch(userText string, catalog []CatalogIte
 // Returns nil when ambiguous — caller must ask clarifying question (never guess SKU).
 func MatchCatalogItemSemantic(userText string, catalog []CatalogItem, hits []retrieval.Hit) *CatalogItem {
 	if len(catalog) == 0 {
+		return nil
+	}
+	if lexicalBrandAmbiguous(userText, catalog) {
 		return nil
 	}
 	if len(hits) == 0 {

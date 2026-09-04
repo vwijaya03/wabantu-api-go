@@ -9,8 +9,8 @@ import (
 )
 
 var (
-	catalogPackInNameRe    = regexp.MustCompile(`(?i)\[\s*(\d+)\s*pcs\s*\]`)
-	catalogLeadingPackRe   = regexp.MustCompile(`(?i)^(\d+)\s*pcs\b`)
+	catalogPackInNameRe  = regexp.MustCompile(`(?i)\[\s*(\d+)\s*pcs\s*\]`)
+	catalogLeadingPackRe = regexp.MustCompile(`(?i)^(\d+)\s*pcs\b`)
 )
 
 const catalogEmptyMarker = "[Katalog WABantu: kosong]"
@@ -372,6 +372,9 @@ func resolveCatalogMatch(userText string, history []Message, catalog []CatalogIt
 	if IsRecipientPolicyQuestion(userText) {
 		return nil
 	}
+	if lexicalBrandAmbiguous(userText, catalog) {
+		return nil
+	}
 	if match := matchCatalogItem(userText, catalog); match != nil {
 		if !IsConsultingPurchaseQuestion(userText, catalog) || catalogProductExplicitlyNamed(userText, match) {
 			return match
@@ -410,11 +413,11 @@ func bracketPackCount(name string) int {
 }
 
 type CatalogPriceInfo struct {
-	PackCount       int
-	IsPackListing   bool
-	ListPrice       float64
-	UnitLabel       string
-	PerPiecePrice   float64
+	PackCount     int
+	IsPackListing bool
+	ListPrice     float64
+	UnitLabel     string
+	PerPiecePrice float64
 }
 
 func parseCatalogPriceInfo(it *CatalogItem) CatalogPriceInfo {
@@ -564,6 +567,9 @@ func replyFromBusinessCatalog(
 	}
 
 	if reply, ok := tryBrandVariantReply(formal, userText, history, catalog, vctx); ok {
+		return reply, true
+	}
+	if reply, ok := orderLexicalBrandPickerReply(formal, userText, catalog); ok {
 		return reply, true
 	}
 

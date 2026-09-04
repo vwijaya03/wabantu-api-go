@@ -142,12 +142,27 @@ func distinctiveNameTokens(name, brand string) []string {
 	var out []string
 	for _, tok := range tokenize(strings.ToLower(name)) {
 		tok = strings.Trim(tok, "-()")
-		if len(tok) < 4 || tok == brand || brandDistinctiveStop[tok] {
+		if tok == brand || brandDistinctiveStop[tok] {
+			continue
+		}
+		if len(tok) < 4 && !isNumericSizeToken(tok) {
 			continue
 		}
 		out = append(out, tok)
 	}
 	return out
+}
+
+func isNumericSizeToken(tok string) bool {
+	if len(tok) < 2 || len(tok) > 4 {
+		return false
+	}
+	for _, r := range tok {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func uniqueBrandSKUFromText(userText string, catalog []CatalogItem) *CatalogItem {
@@ -173,7 +188,32 @@ func uniqueBrandSKUFromText(userText string, catalog []CatalogItem) *CatalogItem
 		hit := hits[0]
 		return &hit
 	}
+	if sz, _ := parseSizeAndColor(userText); sz != "" {
+		var sized []CatalogItem
+		for _, it := range items {
+			if catalogItemHasSize(it, sz) {
+				sized = append(sized, it)
+			}
+		}
+		if len(sized) == 1 {
+			hit := sized[0]
+			return &hit
+		}
+	}
 	return nil
+}
+
+func catalogItemHasSize(it CatalogItem, size string) bool {
+	sz := strings.ToUpper(strings.TrimSpace(size))
+	if sz == "" {
+		return false
+	}
+	if extractSizeFromProductName(it.Name) == sz {
+		return true
+	}
+	name := strings.ToUpper(it.Name)
+	return strings.Contains(name, " "+sz) || strings.HasSuffix(name, sz) ||
+		strings.Contains(name, "- "+sz) || strings.Contains(name, "-"+sz)
 }
 
 func lexicalBrandAmbiguous(userText string, catalog []CatalogItem) bool {

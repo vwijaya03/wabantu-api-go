@@ -228,10 +228,15 @@ func TryAppendItemsDuringCheckout(st *OrderState, userText string, catalog []Cat
 		}
 	}
 
+	if lexicalBrandAmbiguous(userText, catalog) {
+		if reply, ok := orderLexicalBrandPickerReply(formal, userText, catalog); ok {
+			return true, reply
+		}
+	}
+
 	qtyOnly, newLines := parseAppendSegments(userText, catalog, vctx)
-	if len(newLines) == 0 && isNamedProductWithQtyMessage(userText, catalog) {
-		line := parseStructuredOrderLine(userText, catalog, vctx)
-		if line.CatalogItemID != "" {
+	if len(newLines) == 0 {
+		if line := parseCheckoutAppendLine(*st, userText, catalog, vctx); line.CatalogItemID != "" {
 			newLines = []OrderLineState{line}
 		}
 	}
@@ -287,8 +292,46 @@ func checkoutLinesNeedApparelVariant(st OrderState) bool {
 	return !st.VariantComplete()
 }
 
+func parseCheckoutAppendLine(st OrderState, userText string, catalog []CatalogItem, vctx *CatalogVectorContext) OrderLineState {
+	match := resolveOrderProductMatch(userText, nil, catalog, vctx)
+	if match == nil {
+		return OrderLineState{}
+	}
+	if match.ID == st.CatalogItemID {
+		return OrderLineState{}
+	}
+	for _, ln := range st.Items {
+		if ln.CatalogItemID == match.ID {
+			return OrderLineState{}
+		}
+	}
+	return parseStructuredOrderLine(userText, catalog, vctx)
+}
+
+func namesOtherCheckoutSKU(st OrderState, userText string, catalog []CatalogItem) bool {
+	match := resolveOrderProductMatch(userText, nil, catalog, nil)
+	if match == nil {
+		return lexicalBrandAmbiguous(userText, catalog)
+	}
+	if match.ID == st.CatalogItemID {
+		return false
+	}
+	for _, ln := range st.Items {
+		if ln.CatalogItemID == match.ID {
+			return false
+		}
+	}
+	return true
+}
+
 // shouldImplicitAppendDifferentSKU — append SKU baru (bukan revisi qty item yang sama).
 func shouldImplicitAppendDifferentSKU(st OrderState, userText string, catalog []CatalogItem) bool {
+	if lexicalBrandAmbiguous(userText, catalog) {
+		return true
+	}
+	if parseCheckoutAppendLine(st, userText, catalog, nil).CatalogItemID != "" {
+		return true
+	}
 	if !isNamedProductWithQtyMessage(userText, catalog) {
 		return false
 	}
