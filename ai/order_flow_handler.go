@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"encore.dev/rlog"
 )
@@ -50,6 +51,41 @@ func (s *AutoReplyService) handleOrderFlow(
 		return err == nil, err
 	}
 
+	scope := orderAccessScope{ConversationID: convo.ID, ContactID: convo.ContactID}
+	forceNew := IsExplicitNewOrderStart(userText)
+	if forceNew {
+		if state == nil {
+			fresh := orderState{ForceNewOrder: true, Step: "ask_product"}
+			state = &fresh
+		} else {
+			state.ForceNewOrder = true
+			state.PersistedOrderID = ""
+		}
+	}
+	if state == nil && parseOrderRefFromMessage(userText) == "" && hasPurchaseIntent(userText, catalog) {
+		if drafts, derr := loadDraftOrdersForContact(ctx, ts, tenantSchema, scope); derr == nil && len(drafts) > 1 {
+			return send(orderAmendPickDraftReply(drafts), PathOrderFlow)
+		}
+	}
+	if ref := parseOrderRefFromMessage(userText); ref != "" && (state == nil || forceNew) {
+		o, denied, _ := loadOrderByRefForContact(ctx, ts, tenantSchema, scope, ref)
+		if denied {
+			return send(orderAccessDeniedReply(), PathOrderFlow)
+		}
+		if o != nil {
+			formattedRef := FormatOrderNumber(o.ID)
+			if isOrderAmendBlockedStatus(o.Status) {
+				return send(orderAmendBlockedStatusReply(formal, o.Status, formattedRef), PathOrderFlow)
+			}
+			if isOrderDraftAmendable(o.Status) {
+				pinned := orderStateFromPersistedDraft(o)
+				s.setOrderState(ctx, tenantID, convo.ID, pinned)
+				state = &pinned
+				forceNew = false
+			}
+		}
+	}
+
 	if IsStructuredOrderList(userText) {
 		if state != nil {
 			s.clearOrderState(ctx, tenantID, convo.ID)
@@ -62,6 +98,10 @@ func (s *AutoReplyService) handleOrderFlow(
 					return send(structuredOrderUnmatchedReply(formal, outcome.Unmatched), PathOrderFlow)
 				}
 			} else {
+				if forceNew {
+					outcome.State.ForceNewOrder = true
+					outcome.State.PersistedOrderID = ""
+				}
 				if outcome.NeedVariant {
 					s.setOrderState(ctx, tenantID, convo.ID, outcome.State)
 					reply := catalogConfirmLine(outcome.State)
@@ -130,7 +170,25 @@ func (s *AutoReplyService) handleOrderFlow(
 	if res.Cleared {
 		s.clearOrderState(ctx, tenantID, convo.ID)
 	} else if res.State != nil {
-		s.setOrderState(ctx, tenantID, convo.ID, *res.State)
+		st := *res.State
+		if forceNew {
+			st.ForceNewOrder = true
+			if strings.TrimSpace(st.PersistedOrderID) != "" && IsExplicitNewOrderStart(userText) {
+				st.PersistedOrderID = ""
+			}
+		}
+		if res.State.Step == "ask_recipient" && st.CartReadyForDraft() {
+			if orderID, needPick, pickList, err := persistDraftOrderEarly(ctx, ts, tenantSchema, convo.ID, convo.ContactID, st); err != nil {
+				rlog.Warn("AI order: early draft persist failed", "err", err, "convoId", convo.ID)
+			} else if needPick {
+				s.setOrderState(ctx, tenantID, convo.ID, st)
+				return send(orderAmendPickDraftReply(pickList), PathOrderFlow)
+			} else if orderID != "" {
+				st.PersistedOrderID = orderID
+				st.ForceNewOrder = false
+			}
+		}
+		s.setOrderState(ctx, tenantID, convo.ID, st)
 	}
 
 	if res.Completed {

@@ -122,6 +122,25 @@ var regressionCases = []regressionCase{
 		wantNot:  []string{"belum menemukan data tersebut di katalog"},
 	},
 	{
+		name:     "cart_complaint_not_order_status",
+		input:    "pesanan saya ada 2 loh ya",
+		priorInputs: []string{
+			"mau beli abon sapi 2 pcs",
+			"cadbury mini 1 pcs",
+		},
+		wantPath: PathOrderFlow,
+		wantSubstr: []string{"ringkasan"},
+		wantNot:  []string{"belum ada pesanan"},
+	},
+	{
+		name:     "add_more_policy_not_catalog",
+		input:    "masih mau order item yang lain?",
+		priorInputs: []string{"mau beli abon sapi 2 pcs"},
+		wantPath: PathOrderFlow,
+		wantSubstr: []string{"boleh tambah"},
+		wantNot:  []string{"Pria Dewasa", "Anak Perempuan"},
+	},
+	{
 		name:     "off_topic_not_faq_direct",
 		input:    "resep nasi goreng enak gimana?",
 		wantPath: PathConsulting,

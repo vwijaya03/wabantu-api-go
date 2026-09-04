@@ -359,6 +359,20 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 
 	case "ask_qty":
 		st := copyBase(stateNorm)
+		if reply, ok := checkoutAddItemsPolicyReplyIfNeeded(st, userText, formal); ok {
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
+		}
+		if st.Qty > 0 && !mentionsOrderQty(userText) && !hints.HasQty {
+			st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
+			if blocked {
+				return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
+			}
+			st.Step = "ask_recipient"
+			return OrderFlowResult{
+				State: &st, Path: PathOrderFlow,
+				Reply: buildOrderFlowReply(st, tmpl.AskRecipient, catalog),
+			}
+		}
 		if handled, reply := TryAppendItemsDuringCheckout(&st, userText, catalog, tmpl, formal, in.VectorCtx); handled {
 			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
 		}
@@ -381,8 +395,10 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 
 	case "ask_recipient":
 		st := copyBase(stateNorm)
-		if handled, reply := TryAppendItemsDuringCheckout(&st, userText, catalog, tmpl, formal, in.VectorCtx); handled {
-			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
+		if shouldImplicitAppendDifferentSKU(st, userText, catalog) {
+			if handled, reply := TryAppendItemsDuringCheckout(&st, userText, catalog, tmpl, formal, in.VectorCtx); handled {
+				return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
+			}
 		}
 		if tryApplyQtyRevision(&st, userText) {
 			st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
@@ -399,6 +415,12 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 				State: &st, Path: PathOrderFlow,
 				Reply: buildOrderFlowReply(st, tmpl.AskRecipient, catalog),
 			}
+		}
+		if reply, ok := checkoutAddItemsPolicyReplyIfNeeded(st, userText, formal); ok {
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
+		}
+		if handled, reply := TryAppendItemsDuringCheckout(&st, userText, catalog, tmpl, formal, in.VectorCtx); handled {
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
 		}
 		mergeShippingText(&st, userText)
 		name, phone := parseRecipientLine(userText)
@@ -445,6 +467,9 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 
 	case "ask_address", "ask_address_full":
 		st := copyBase(stateNorm)
+		if reply, ok := checkoutAddItemsPolicyReplyIfNeeded(st, userText, formal); ok {
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
+		}
 		if handled, reply := TryAppendItemsDuringCheckout(&st, userText, catalog, tmpl, formal, in.VectorCtx); handled {
 			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
 		}

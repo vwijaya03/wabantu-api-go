@@ -250,8 +250,19 @@ func formatFeaturedProductsBody(items []CatalogItem) string {
 }
 
 func extractSizeFromProductName(name string) string {
-	if m := productSizeSuffixRe.FindStringSubmatch(name); len(m) > 1 {
-		return strings.ToUpper(strings.TrimSpace(m[1]))
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return ""
+	}
+	if weightSuffixRe.MatchString(trimmed) {
+		trimmed = strings.TrimSpace(weightSuffixRe.ReplaceAllString(trimmed, ""))
+	}
+	if m := productSizeSuffixRe.FindStringSubmatch(trimmed); len(m) > 1 {
+		tok := strings.ToUpper(strings.TrimSpace(m[1]))
+		if digitOnlyRe.MatchString(tok) {
+			return ""
+		}
+		return tok
 	}
 	return ""
 }

@@ -194,15 +194,28 @@ func TryAppendItemsDuringCheckout(st *OrderState, userText string, catalog []Cat
 	if st == nil {
 		return false, ""
 	}
-	step := normalizeOrderState(*st).Step
-	if step != "ask_recipient" && step != "ask_qty" && step != "ask_address" && step != "ask_address_full" {
+	if IsOrderRevisionMessage(userText) {
 		return false, ""
 	}
-	if !IsAddItemToOrderMessage(userText) {
+	step := normalizeOrderState(*st).Step
+	if !isCheckoutAppendStep(step) {
 		return false, ""
 	}
 
 	qtyOnly, newLines := parseAppendSegments(userText, catalog, vctx)
+	if len(newLines) == 0 && isNamedProductWithQtyMessage(userText, catalog) {
+		line := parseStructuredOrderLine(userText, catalog, vctx)
+		if line.CatalogItemID != "" {
+			newLines = []OrderLineState{line}
+		}
+	}
+	if len(newLines) == 0 && !IsAddItemToOrderMessage(userText) {
+		if qtyOnly != nil {
+			return true, buildOrderFlowReply(*st, tmpl.AskRecipient, catalog)
+		}
+		return false, ""
+	}
+
 	if qtyOnly != nil && !st.HasMultiItems() && strings.TrimSpace(st.CatalogItemID) != "" {
 		st.Qty = *qtyOnly
 	}
@@ -227,9 +240,29 @@ func TryAppendItemsDuringCheckout(st *OrderState, userText string, catalog []Cat
 	}
 	if !st.StructuredLinesReady() {
 		st.Step = "ask_variant"
-		return true, buildOrderFlowReply(*st, tmpl.AskVariant, catalog)
+		return true, checkoutItemAddedAck(formal) + "\n\n" + buildOrderFlowReply(*st, tmpl.AskVariant, catalog)
 	}
-	return true, buildOrderFlowReply(*st, tmpl.AskRecipient, catalog)
+	return true, checkoutItemAddedAck(formal) + "\n\n" + buildOrderFlowReply(*st, tmpl.AskRecipient, catalog)
+}
+
+// shouldImplicitAppendDifferentSKU — append SKU baru (bukan revisi qty item yang sama).
+func shouldImplicitAppendDifferentSKU(st OrderState, userText string, catalog []CatalogItem) bool {
+	if !isNamedProductWithQtyMessage(userText, catalog) {
+		return false
+	}
+	match := matchCatalogItem(userText, catalog)
+	if match == nil {
+		return false
+	}
+	if match.ID == st.CatalogItemID {
+		return false
+	}
+	for _, ln := range st.Items {
+		if ln.CatalogItemID == match.ID {
+			return false
+		}
+	}
+	return true
 }
 
 func GuardStructuredOrderStock(st OrderState, catalog []CatalogItem, formal bool) (OrderState, string, bool) {

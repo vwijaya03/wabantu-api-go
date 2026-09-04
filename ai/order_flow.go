@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -11,6 +12,8 @@ import (
 	"encore.app/wabantu/inventory"
 	"encore.app/wabantu/order"
 )
+
+var errMultiDraftDisambiguation = errors.New("multi draft disambiguation required")
 
 func persistDraftOrder(
 	ctx context.Context,
@@ -77,10 +80,14 @@ func persistDraftOrder(
 	itemsJSON, _ := json.Marshal([]order.OrderItem{item})
 	addrJSON, _ := json.Marshal(addr)
 
-	if id, updated, uerr := upsertDraftOrderItems(ctx, tq, tenantSchema, convoID, contactID, []order.OrderItem{item}, addrJSON); updated {
-		if uerr != nil {
-			return "", uerr
-		}
+	id, updated, needPick, _, uerr := upsertDraftOrderItems(ctx, tq, tenantSchema, convoID, contactID, st.PersistedOrderID, []order.OrderItem{item}, addrJSON, st.ForceNewOrder)
+	if uerr != nil {
+		return "", uerr
+	}
+	if needPick {
+		return "", errMultiDraftDisambiguation
+	}
+	if updated {
 		syncContactDisplayNameFromOrder(ctx, tq, contactID, st.RecipientName)
 		rlog.Info("AI order: draft updated", "orderId", id, "convoId", convoID)
 		return id, nil
@@ -179,10 +186,14 @@ func persistDraftOrderMulti(
 	itemsJSON, _ := json.Marshal(orderItems)
 	addrJSON, _ := json.Marshal(addr)
 
-	if id, updated, uerr := upsertDraftOrderItems(ctx, tq, tenantSchema, convoID, contactID, orderItems, addrJSON); updated {
-		if uerr != nil {
-			return "", uerr
-		}
+	id, updated, needPick, _, uerr := upsertDraftOrderItems(ctx, tq, tenantSchema, convoID, contactID, st.PersistedOrderID, orderItems, addrJSON, st.ForceNewOrder)
+	if uerr != nil {
+		return "", uerr
+	}
+	if needPick {
+		return "", errMultiDraftDisambiguation
+	}
+	if updated {
 		syncContactDisplayNameFromOrder(ctx, tq, contactID, st.RecipientName)
 		rlog.Info("AI order: multi-item draft updated", "orderId", id, "convoId", convoID, "itemCount", len(orderItems))
 		return id, nil
@@ -243,4 +254,128 @@ func syncPersistedOrderStock(ctx context.Context, tenantSchema, orderID, status 
 	if err := inventory.SyncOrderStock(ctx, tenantSchema, orderID, status, aiOrderStockItems(items), "system"); err != nil {
 		rlog.Warn("AI order: stock sync failed", "err", err, "orderId", orderID, "status", status)
 	}
+}
+
+// persistDraftOrderEarly saves cart lines as draft without requiring recipient/shipping (mid-checkout).
+// Returns (orderID, needPick, pickList, error).
+func persistDraftOrderEarly(
+	ctx context.Context,
+	tq tenantScopedQuerier,
+	tenantSchema, convoID, contactID string,
+	st orderState,
+) (string, bool, []persistedOrder, error) {
+	st = normalizeOrderState(st)
+	if !st.CartReadyForDraft() {
+		return "", false, nil, nil
+	}
+	orderItems, subtotal, err := orderItemsFromCartState(ctx, tq, st)
+	if err != nil {
+		return "", false, nil, err
+	}
+	if len(orderItems) == 0 {
+		return "", false, nil, nil
+	}
+	addr := order.ShippingAddress{Country: "Indonesia"}
+	addrJSON, _ := json.Marshal(addr)
+
+	id, updated, needPick, pickList, uerr := upsertDraftOrderItems(ctx, tq, tenantSchema, convoID, contactID, st.PersistedOrderID, orderItems, nil, st.ForceNewOrder)
+	if uerr != nil {
+		return "", false, nil, uerr
+	}
+	if needPick {
+		return "", true, pickList, nil
+	}
+	if updated {
+		rlog.Info("AI order: early draft updated", "orderId", id, "convoId", convoID, "itemCount", len(orderItems))
+		return id, false, nil, nil
+	}
+
+	var convArg, contactArg any
+	if strings.TrimSpace(convoID) != "" {
+		convArg = convoID
+	}
+	if strings.TrimSpace(contactID) != "" {
+		contactArg = contactID
+	}
+	itemsJSON, _ := json.Marshal(orderItems)
+	var orderID string
+	insertQ := fmt.Sprintf(`
+		INSERT INTO "%s"."order"
+			(conversation_id, contact_id, items, shipping_address, notes,
+			 status, subtotal, shipping_cost, total)
+		VALUES ($1, $2, $3, $4, '', 'draft', $5, 0, $5)
+		RETURNING id::text`, tenantSchema)
+	if err := tq.QueryRowContext(ctx, insertQ, convArg, contactArg, itemsJSON, addrJSON, subtotal).Scan(&orderID); err != nil {
+		return "", false, nil, err
+	}
+	syncPersistedOrderStock(ctx, tenantSchema, orderID, "draft", orderItems)
+	rlog.Info("AI order: early draft persisted", "orderId", orderID, "convoId", convoID, "itemCount", len(orderItems))
+	return orderID, false, nil, nil
+}
+
+func orderItemsFromCartState(ctx context.Context, tq tenantScopedQuerier, st orderState) ([]order.OrderItem, float64, error) {
+	st = normalizeOrderState(st)
+	var orderItems []order.OrderItem
+	var subtotal float64
+	if st.HasMultiItems() {
+		for i, ln := range st.Items {
+			lineSt := orderStateFromLine(ln)
+			reject, _, whID := ensureDraftOrderStock(ctx, tq, lineSt)
+			if reject {
+				return nil, 0, fmt.Errorf("order qty exceeds available stock for line %d", i+1)
+			}
+			if whID != "" {
+				ln.WarehouseID = whID
+			}
+			qty := ln.Qty
+			if qty < 1 {
+				qty = 1
+			}
+			item := order.OrderItem{
+				CatalogItemID: ln.CatalogItemID,
+				ExternalCode:  ln.ExternalCode,
+				Name:          ln.ProductName,
+				Variant:       buildVariantLabel(ln.Size, ln.Color),
+				Size:          ln.Size,
+				Color:         ln.Color,
+				Qty:           float64(qty),
+				UnitPrice:     ln.UnitPrice,
+				SellUnit:      ln.SellUnit,
+				WarehouseID:   strings.TrimSpace(ln.WarehouseID),
+			}
+			orderItems = append(orderItems, item)
+			subtotal += float64(qty) * ln.UnitPrice
+		}
+		return orderItems, subtotal, nil
+	}
+	reject, _, whID := ensureDraftOrderStock(ctx, tq, st)
+	if reject {
+		return nil, 0, fmt.Errorf("order qty exceeds available stock")
+	}
+	if whID != "" {
+		st.WarehouseID = whID
+	}
+	qty := st.Qty
+	if qty < 1 {
+		qty = 1
+	}
+	variant := buildVariantLabel(st.Size, st.Color)
+	if variant == "" {
+		variant = strings.TrimSpace(st.Variant)
+	}
+	item := order.OrderItem{
+		CatalogItemID: st.CatalogItemID,
+		ExternalCode:  st.ExternalCode,
+		Name:          st.ProductName,
+		Variant:       variant,
+		Size:          st.Size,
+		Color:         st.Color,
+		Qty:           float64(qty),
+		UnitPrice:     st.UnitPrice,
+		SellUnit:      st.SellUnit,
+		WarehouseID:   strings.TrimSpace(st.WarehouseID),
+	}
+	orderItems = append(orderItems, item)
+	subtotal = float64(qty) * st.UnitPrice
+	return orderItems, subtotal, nil
 }

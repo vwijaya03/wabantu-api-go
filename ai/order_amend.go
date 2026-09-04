@@ -14,23 +14,99 @@ import (
 )
 
 func loadLatestDraftOrderForContact(ctx context.Context, q tenantQuerier, tenantSchema string, scope orderAccessScope) (*persistedOrder, error) {
+	drafts, err := loadDraftOrdersForContact(ctx, q, tenantSchema, scope)
+	if err != nil || len(drafts) == 0 {
+		return nil, err
+	}
+	o := drafts[0]
+	return &o, nil
+}
+
+func loadDraftOrdersForContact(ctx context.Context, q tenantQuerier, tenantSchema string, scope orderAccessScope) ([]persistedOrder, error) {
 	if !scope.valid() {
 		return nil, nil
 	}
 	owner := sqlOrderOwnerFilter(1, 2)
-	row := q.QueryRowContext(ctx, fmt.Sprintf(`
+	rows, err := q.QueryContext(ctx, fmt.Sprintf(`
 		SELECT %s
 		FROM "%s"."order"
 		WHERE conversation_id = $1::uuid AND deleted_at IS NULL
 		  AND status = 'draft'%s
-		ORDER BY created_at DESC
-		LIMIT 1`, persistedOrderSelectCols, tenantSchema, owner), scope.ConversationID, scope.ContactID)
+		ORDER BY created_at DESC`, persistedOrderSelectCols, tenantSchema, owner), scope.ConversationID, scope.ContactID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []persistedOrder
+	for rows.Next() {
+		o, err := scanPersistedOrderRow(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *o)
+	}
+	return out, rows.Err()
+}
+
+func loadDraftOrderByIDForContact(ctx context.Context, q tenantQuerier, tenantSchema, orderID string, scope orderAccessScope) (*persistedOrder, error) {
+	if !scope.valid() || strings.TrimSpace(orderID) == "" {
+		return nil, nil
+	}
+	owner := sqlOrderOwnerFilter(2, 3)
+	row := q.QueryRowContext(ctx, fmt.Sprintf(`
+		SELECT %s
+		FROM "%s"."order"
+		WHERE id = $1::uuid AND conversation_id = $2::uuid AND deleted_at IS NULL
+		  AND status = 'draft'%s
+		LIMIT 1`, persistedOrderSelectCols, tenantSchema, owner), orderID, scope.ConversationID, scope.ContactID)
 
 	o, err := scanPersistedOrderRow(row.Scan)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	return o, err
+}
+
+func resolveDraftForAmend(
+	ctx context.Context,
+	q tenantQuerier,
+	tenantSchema string,
+	scope orderAccessScope,
+	userText string,
+) (draft *persistedOrder, needPick bool, list []persistedOrder, blockedStatus string, blockedRef string, err error) {
+	if ref := parseOrderRefFromMessage(userText); ref != "" {
+		o, denied, lerr := loadOrderByRefForContact(ctx, q, tenantSchema, scope, ref)
+		if lerr != nil {
+			return nil, false, nil, "", "", lerr
+		}
+		if denied {
+			return nil, false, nil, "access_denied", "", nil
+		}
+		if o == nil {
+			return nil, false, nil, "", "", nil
+		}
+		formattedRef := FormatOrderNumber(o.ID)
+		if isOrderAmendBlockedStatus(o.Status) {
+			return nil, false, nil, o.Status, formattedRef, nil
+		}
+		if !isOrderDraftAmendable(o.Status) {
+			return nil, false, nil, "non_draft", formattedRef, nil
+		}
+		return o, false, nil, "", "", nil
+	}
+
+	drafts, err := loadDraftOrdersForContact(ctx, q, tenantSchema, scope)
+	if err != nil {
+		return nil, false, nil, "", "", err
+	}
+	switch len(drafts) {
+	case 0:
+		return nil, false, nil, "", "", nil
+	case 1:
+		return &drafts[0], false, nil, "", "", nil
+	default:
+		return nil, true, drafts, "", "", nil
+	}
 }
 
 func orderItemsFromJSON(raw []byte) ([]order.OrderItem, error) {
@@ -100,6 +176,7 @@ func updateDraftOrderItems(
 	tq tenantScopedQuerier,
 	tenantSchema string,
 	orderID string,
+	scope orderAccessScope,
 	items []order.OrderItem,
 ) error {
 	var subtotal float64
@@ -110,11 +187,13 @@ func updateDraftOrderItems(
 	if err != nil {
 		return err
 	}
+	owner := sqlOrderOwnerFilter(4, 5)
 	q := fmt.Sprintf(`
 		UPDATE "%s"."order"
 		SET items = $2, subtotal = $3, total = $3, updated_at = NOW()
-		WHERE id = $1::uuid AND status = 'draft' AND deleted_at IS NULL`, tenantSchema)
-	res, err := tq.ExecContext(ctx, q, orderID, itemsJSON, subtotal)
+		WHERE id = $1::uuid AND status = 'draft' AND deleted_at IS NULL
+		  AND conversation_id = $4::uuid%s`, tenantSchema, owner)
+	res, err := tq.ExecContext(ctx, q, orderID, itemsJSON, subtotal, scope.ConversationID, scope.ContactID)
 	if err != nil {
 		return err
 	}
@@ -126,26 +205,171 @@ func updateDraftOrderItems(
 	return nil
 }
 
+func updateDraftShippingAddress(
+	ctx context.Context,
+	tq tenantScopedQuerier,
+	tenantSchema, orderID string,
+	scope orderAccessScope,
+	addrJSON []byte,
+) error {
+	if !shippingAddressJSONIsComplete(addrJSON) {
+		return nil
+	}
+	owner := sqlOrderOwnerFilter(3, 4)
+	q := fmt.Sprintf(`
+		UPDATE "%s"."order"
+		SET shipping_address = $2, updated_at = NOW()
+		WHERE id = $1::uuid AND status = 'draft' AND deleted_at IS NULL
+		  AND conversation_id = $3::uuid%s`, tenantSchema, owner)
+	_, err := tq.ExecContext(ctx, q, orderID, addrJSON, scope.ConversationID, scope.ContactID)
+	return err
+}
+
+// shippingAddressJSONIsComplete — alamat nyata (nama+HP atau jalan+kota). Placeholder {Country:Indonesia} tidak.
+func shippingAddressJSONIsComplete(addrJSON []byte) bool {
+	if len(addrJSON) == 0 {
+		return false
+	}
+	var addr order.ShippingAddress
+	if err := json.Unmarshal(addrJSON, &addr); err != nil {
+		return false
+	}
+	return shippingAddressIsComplete(addr)
+}
+
+func shippingAddressIsComplete(addr order.ShippingAddress) bool {
+	hasIdentity := strings.TrimSpace(addr.Name) != "" && strings.TrimSpace(addr.Phone) != ""
+	hasStreet := strings.TrimSpace(addr.Street) != ""
+	hasCity := strings.TrimSpace(addr.City) != "" || strings.TrimSpace(addr.PostalCode) != ""
+	return hasIdentity || (hasStreet && hasCity)
+}
+
+func applyShippingJSONToOrderState(st *orderState, raw []byte) {
+	if st == nil || len(raw) == 0 {
+		return
+	}
+	var addr order.ShippingAddress
+	if err := json.Unmarshal(raw, &addr); err != nil {
+		return
+	}
+	if strings.TrimSpace(addr.Name) != "" {
+		st.RecipientName = addr.Name
+	}
+	if strings.TrimSpace(addr.Phone) != "" {
+		st.RecipientPhone = addr.Phone
+	}
+	if strings.TrimSpace(addr.Street) != "" {
+		st.Street = addr.Street
+	}
+	if strings.TrimSpace(addr.RT) != "" {
+		st.RT = addr.RT
+	}
+	if strings.TrimSpace(addr.RW) != "" {
+		st.RW = addr.RW
+	}
+	if strings.TrimSpace(addr.Kelurahan) != "" {
+		st.Kelurahan = addr.Kelurahan
+	}
+	if strings.TrimSpace(addr.Kecamatan) != "" {
+		st.Kecamatan = addr.Kecamatan
+	}
+	if strings.TrimSpace(addr.City) != "" {
+		st.City = addr.City
+	}
+	if strings.TrimSpace(addr.Province) != "" {
+		st.Province = addr.Province
+	}
+	if strings.TrimSpace(addr.PostalCode) != "" {
+		st.PostalCode = addr.PostalCode
+	}
+	if strings.TrimSpace(addr.Country) != "" {
+		st.Country = addr.Country
+	}
+}
+
+// orderStateFromPersistedDraft — hydrate Redis cart dari items + shipping draft DB.
+func orderStateFromPersistedDraft(o *persistedOrder) orderState {
+	st := orderState{Step: "ask_recipient"}
+	if o == nil {
+		return st
+	}
+	st.PersistedOrderID = o.ID
+	items, _ := orderItemsFromJSON(o.ItemsJSON)
+	lines := orderItemsToLines(items)
+	if len(lines) > 0 {
+		st.Items = lines
+		bf.ApplyLineToOrderState(&st, lines[0])
+		if strings.TrimSpace(st.Product) == "" {
+			st.Product = lines[0].ProductName
+		}
+	}
+	applyShippingJSONToOrderState(&st, o.ShippingJSON)
+	return st
+}
+
+type draftWriteKind int
+
+const (
+	draftWriteInsert draftWriteKind = iota
+	draftWriteUpdatePinned
+	draftWriteNeedPick
+)
+
+func decideDraftWrite(forceInsert, pinFound bool, leftoverDraftCount int) draftWriteKind {
+	if forceInsert {
+		return draftWriteInsert
+	}
+	if pinFound {
+		return draftWriteUpdatePinned
+	}
+	if leftoverDraftCount > 0 {
+		return draftWriteNeedPick
+	}
+	return draftWriteInsert
+}
+
 func upsertDraftOrderItems(
 	ctx context.Context,
 	tq tenantScopedQuerier,
-	tenantSchema, convoID, contactID string,
+	tenantSchema, convoID, contactID, preferredOrderID string,
 	items []order.OrderItem,
 	addrJSON []byte,
-) (orderID string, updated bool, err error) {
+	forceInsert bool,
+) (orderID string, updated bool, needPick bool, pickList []persistedOrder, err error) {
 	scope := orderAccessScope{ConversationID: convoID, ContactID: contactID}
-	draft, err := loadLatestDraftOrderForContact(ctx, tq, tenantSchema, scope)
-	if err != nil || draft == nil {
-		return "", false, err
+
+	if forceInsert {
+		return "", false, false, nil, nil
 	}
-	if err := updateDraftOrderItems(ctx, tq, tenantSchema, draft.ID, items); err != nil {
-		return "", false, err
+
+	var pinFound bool
+	if strings.TrimSpace(preferredOrderID) != "" {
+		draft, derr := loadDraftOrderByIDForContact(ctx, tq, tenantSchema, preferredOrderID, scope)
+		if derr != nil {
+			return "", false, false, nil, derr
+		}
+		if draft != nil {
+			pinFound = true
+			if err := updateDraftOrderItems(ctx, tq, tenantSchema, draft.ID, scope, items); err != nil {
+				return "", false, false, nil, err
+			}
+			if err := updateDraftShippingAddress(ctx, tq, tenantSchema, draft.ID, scope, addrJSON); err != nil {
+				rlog.Warn("AI order: draft shipping update skipped", "err", err, "orderId", draft.ID)
+			}
+			return draft.ID, true, false, nil, nil
+		}
 	}
-	if len(addrJSON) > 0 {
-		q := fmt.Sprintf(`UPDATE "%s"."order" SET shipping_address = $2, updated_at = NOW() WHERE id = $1::uuid`, tenantSchema)
-		_, _ = tq.ExecContext(ctx, q, draft.ID, addrJSON)
+
+	drafts, err := loadDraftOrdersForContact(ctx, tq, tenantSchema, scope)
+	if err != nil {
+		return "", false, false, nil, err
 	}
-	return draft.ID, true, nil
+	switch decideDraftWrite(false, pinFound, len(drafts)) {
+	case draftWriteNeedPick:
+		return "", false, true, drafts, nil
+	default:
+		return "", false, false, nil, nil
+	}
 }
 
 func (s *AutoReplyService) amendIdempotent(ctx context.Context, tenantID, inboundID string) bool {
@@ -192,10 +416,6 @@ func (s *AutoReplyService) handleOrderAmend(
 	}
 
 	scope := orderAccessScope{ConversationID: convo.ID, ContactID: contact.ID}
-	draft, err := loadLatestDraftOrderForContact(ctx, ts, payload.TenantSchema, scope)
-	if err != nil {
-		return false, err
-	}
 	formal := strOrEmpty(profile.Tone) == "formal"
 	send := func(text string) (bool, error) {
 		out := metaNoLLM(reasonAIGenerated, PathOrderFlow)
@@ -204,9 +424,28 @@ func (s *AutoReplyService) handleOrderAmend(
 		return err == nil, err
 	}
 
+	draft, needPick, pickList, blockedStatus, blockedRef, err := resolveDraftForAmend(ctx, ts, payload.TenantSchema, scope, userText)
+	if err != nil {
+		return false, err
+	}
+	if blockedStatus != "" {
+		if blockedStatus == "access_denied" {
+			return send(orderAccessDeniedReply())
+		}
+		if blockedStatus == "non_draft" {
+			return send(orderAmendNonDraftReply(formal))
+		}
+		return send(orderAmendBlockedStatusReply(formal, blockedStatus, blockedRef))
+	}
+	if needPick {
+		return send(orderAmendPickDraftReply(pickList))
+	}
 	if draft == nil {
 		latest, _ := loadLatestOrderForContact(ctx, ts, payload.TenantSchema, scope)
-		if latest != nil && latest.Status != "draft" {
+		if latest != nil && !isOrderDraftAmendable(latest.Status) {
+			if isOrderAmendBlockedStatus(latest.Status) {
+				return send(orderAmendBlockedStatusReply(formal, latest.Status, FormatOrderNumber(latest.ID)))
+			}
 			return send(orderAmendNonDraftReply(formal))
 		}
 		return send(orderAmendNoDraftReply(formal))
@@ -260,12 +499,17 @@ func (s *AutoReplyService) handleOrderAmend(
 	}
 
 	merged := mergeOrderItemLines(existing, added)
-	if err := updateDraftOrderItems(ctx, ts, payload.TenantSchema, draft.ID, merged); err != nil {
+	if err := updateDraftOrderItems(ctx, ts, payload.TenantSchema, draft.ID, scope, merged); err != nil {
 		rlog.Warn("AI order amend: update failed", "err", err, "orderId", draft.ID)
 		return send("Maaf kak, gagal memperbarui pesanan. Coba sebut produknya lagi ya 🙏")
 	}
 
-	st := orderState{Items: orderItemsToLines(merged), Step: "ask_recipient"}
+	st := orderStateFromPersistedDraft(draft)
+	st.Items = orderItemsToLines(merged)
+	if len(st.Items) > 0 {
+		bf.ApplyLineToOrderState(&st, st.Items[0])
+	}
+	s.setOrderState(ctx, payload.TenantID, convo.ID, st)
 	summary := formatOrderSummary(st)
 	ref := FormatOrderNumber(draft.ID)
 	reply := fmt.Sprintf("Siap kak, pesanan %s sudah diperbarui:\n\n%s", ref, summary)

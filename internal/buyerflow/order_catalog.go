@@ -590,11 +590,14 @@ func catalogItemNeedsVariant(it *CatalogItem) bool {
 	}
 	for _, kw := range []string{
 		"celana", "boxer", "jeans", "baju", "kaos", "dress", "rok", "kemeja",
-		"jaket", "hoodie", "dalam", "highwaist", "hotpants", "skinny",
+		"jaket", "hoodie", "highwaist", "hotpants", "skinny",
 	} {
 		if strings.Contains(name, kw) {
 			return true
 		}
+	}
+	if strings.Contains(name, "celana dalam") || strings.Contains(name, "boxer anak") {
+		return true
 	}
 	return false
 }

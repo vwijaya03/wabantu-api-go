@@ -53,6 +53,15 @@ func (s *Simulator) Turn(userText string) TurnOutcome {
 	}
 
 	// Match autoreply.go: status inquiry before greeting and cancel.
+	if IsCartRecapOrComplaint(userText, s.Catalog) && s.Order != nil {
+		formal := strOrEmpty(s.Profile.Tone) == "formal"
+		out.Path = PathOrderFlow
+		out.Intent = SalesIntent{State: SalesStateCheckout, Topic: SalesTopicGeneral, Confidence: 0.9}
+		out.Reply = CartRecapReply(*s.Order, formal)
+		out.Order = s.Order
+		s.appendHistory(userText, out.Reply)
+		return out
+	}
 	if IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) || IsOrderRefStatusLookup(userText) {
 		out.Path = PathOrderStatus
 		out.Intent = SalesIntent{State: SalesStateConsulting, Topic: SalesTopicOrderStatus, Confidence: 0.9}
@@ -95,7 +104,16 @@ func (s *Simulator) Turn(userText string) TurnOutcome {
 
 	if orderActive {
 		step := s.Order.Step
-		if ShouldBreakOrderFlow(userText, step, nil) {
+		if IsAddMoreItemsPolicyQuestion(userText) {
+			formal := strOrEmpty(s.Profile.Tone) == "formal"
+			out.Path = PathOrderFlow
+			out.Intent = SalesIntent{State: SalesStateCheckout, Topic: SalesTopicGeneral, Confidence: 0.9}
+			out.Reply = AddMoreItemsPolicyReply(formal, s.Order)
+			out.Order = s.Order
+			s.appendHistory(userText, out.Reply)
+			return out
+		}
+		if ShouldBreakOrderFlow(userText, step, s.Catalog) {
 			s.Order = nil
 			out.BrokeFlow = true
 			orderActive = false
@@ -190,6 +208,15 @@ func (s *Simulator) Turn(userText string) TurnOutcome {
 		formal := strOrEmpty(s.Profile.Tone) == "formal"
 		out.Path = PathRecipientPolicy
 		out.Reply = replyRecipientPolicyQuestion(userText, s.KB, formal)
+		s.appendHistory(userText, out.Reply)
+		return out
+	}
+
+	if inScope && IsAddMoreItemsPolicyQuestion(userText) {
+		formal := strOrEmpty(s.Profile.Tone) == "formal"
+		out.Path = PathConsulting
+		out.Intent = SalesIntent{State: SalesStateConsulting, Topic: SalesTopicGeneral, Confidence: 0.9}
+		out.Reply = AddMoreItemsPolicyReply(formal, s.Order)
 		s.appendHistory(userText, out.Reply)
 		return out
 	}

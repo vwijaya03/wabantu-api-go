@@ -70,6 +70,9 @@ func IsConsultingPurchaseQuestion(userText string, catalog []CatalogItem) bool {
 	if IsRecipientPolicyQuestion(userText) {
 		return false
 	}
+	if IsAddMoreItemsPolicyQuestion(userText) {
+		return false
+	}
 	if isNamedProductPurchaseIntent(userText, catalog) {
 		return false
 	}
@@ -160,7 +163,25 @@ func catalogProductExplicitlyNamed(userText string, it *CatalogItem) bool {
 }
 
 func isOrderProductContinuationStep(step string) bool {
-	return step == "ask_product" || step == "ask_variant" || step == "ask_qty"
+	switch step {
+	case "ask_product", "ask_variant", "ask_qty", "ask_recipient", "ask_address", "ask_address_full":
+		return true
+	default:
+		return false
+	}
+}
+
+func isCheckoutAppendStep(step string) bool {
+	return isOrderProductContinuationStep(step)
+}
+
+// isNamedProductWithQtyMessage — buyer names a catalog SKU with qty during checkout.
+func isNamedProductWithQtyMessage(userText string, catalog []CatalogItem) bool {
+	if len(catalog) == 0 || !messageNamesCatalogProduct(userText, catalog) {
+		return false
+	}
+	_, ok := parseOrderQty(userText)
+	return ok
 }
 
 func messageNamesCatalogProduct(userText string, catalog []CatalogItem) bool {

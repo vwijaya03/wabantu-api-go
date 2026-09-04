@@ -78,72 +78,77 @@ const (
 
 // Exported routing functions — delegate ke buyerflow.
 var (
-	AdvanceOrderFlow              = bf.AdvanceOrderFlow
-	BuildCatalogContext           = bf.BuildCatalogContext
-	CatalogStockLinesForItem      = bf.CatalogStockLinesForItem
-	ClassifyComplexity            = bf.ClassifyComplexity
-	CurrentGreetingPeriodWIB      = bf.CurrentGreetingPeriodWIB
-	DetectGreetingPeriodFromText  = bf.DetectGreetingPeriodFromText
-	ExtractScopeKeywords          = bf.ExtractScopeKeywords
-	FAQDirectGuardsPass             = bf.FAQDirectGuardsPass
-	GreetingFeedbackReply         = bf.GreetingFeedbackReply
-	GreetingReply                 = bf.GreetingReply
-	HasPurchaseIntent             = bf.HasPurchaseIntent
-	IsAbandonedCartSignal         = bf.IsAbandonedCartSignal
-	IsAcknowledgmentLike          = bf.IsAcknowledgmentLike
-	IsActiveCheckoutFromHistory   = bf.IsActiveCheckoutFromHistory
-	IsAmbiguousPurchaseSignal     = bf.IsAmbiguousPurchaseSignal
-	IsCancelClarificationQuestion = bf.IsCancelClarificationQuestion
-	IsCasualChatOpener            = bf.IsCasualChatOpener
-	IsCasualPraiseLike            = bf.IsCasualPraiseLike
-	IsCatalogBrowsingIntent       = bf.IsCatalogBrowsingIntent
-	IsCatalogExclusionQuestion    = bf.IsCatalogExclusionQuestion
-	IsCatalogListQuestion         = bf.IsCatalogListQuestion
-	IsCatalogProductInquiry       = bf.IsCatalogProductInquiry
-	IsComplaintLike               = bf.IsComplaintLike
-	IsConsultingPurchaseQuestion  = bf.IsConsultingPurchaseQuestion
-	IsDraftOrderCancelRequest     = bf.IsDraftOrderCancelRequest
-	IsExplicitNewOrderStart       = bf.IsExplicitNewOrderStart
-	IsExplicitPersistedOrderCancel = bf.IsExplicitPersistedOrderCancel
-	IsGreetingFeedback            = bf.IsGreetingFeedback
-	IsGreetingLike                = bf.IsGreetingLike
-	IsHumanEscalationRequest      = bf.IsHumanEscalationRequest
-	IsMinimumOrderQuestion        = bf.IsMinimumOrderQuestion
-	IsNewPurchaseIntentQuestion   = bf.IsNewPurchaseIntentQuestion
-	IsOffBusinessProductRequest   = bf.IsOffBusinessProductRequest
-	IsOrderCancelRequest          = bf.IsOrderCancelRequest
-	IsOrderContinuationMessage    = bf.IsOrderContinuationMessage
-	IsOrderFlowCancelled          = bf.IsOrderFlowCancelled
-	IsOrderFollowUpFromHistory    = bf.IsOrderFollowUpFromHistory
-	IsOrderRefStatusLookup        = bf.IsOrderRefStatusLookup
-	IsOrderRevisionMessage        = bf.IsOrderRevisionMessage
-	IsOrderAmendMessage           = bf.IsOrderAmendMessage
-	IsOrderStatusInquiry          = bf.IsOrderStatusInquiry
-	IsOrderTotalRequest           = bf.IsOrderTotalRequest
-	IsPaymentQuestion             = bf.IsPaymentQuestion
-	IsPaymentRejectionInquiry     = bf.IsPaymentRejectionInquiry
-	IsPaymentStatusInquiry        = bf.IsPaymentStatusInquiry
-	IsPricingUnitClarification    = bf.IsPricingUnitClarification
-	IsProductComparisonQuestion   = bf.IsProductComparisonQuestion
-	IsProductSellInquiry          = bf.IsProductSellInquiry
-	IsPromptInjectionLikely       = bf.IsPromptInjectionLikely
-	IsQuestionLike                = bf.IsQuestionLike
-	IsRecipientPolicyQuestion     = bf.IsRecipientPolicyQuestion
-	IsRecommendationRequest       = bf.IsRecommendationRequest
-	IsSelfBuyerOrderLookup        = bf.IsSelfBuyerOrderLookup
-	IsShippingQuoteQuestion       = bf.IsShippingQuoteQuestion
-	IsShippingFAQQuestion         = bf.IsShippingFAQQuestion
-	IsSoftCancelRegret            = bf.IsSoftCancelRegret
-	IsStoreLocationQuestion       = bf.IsStoreLocationQuestion
-	IsStructuredOrderList         = bf.IsStructuredOrderList
-	IsThirdPartyBuyerLookup       = bf.IsThirdPartyBuyerLookup
-	IsUserSalesCorrection         = bf.IsUserSalesCorrection
-	IsWithinBusinessScope         = bf.IsWithinBusinessScope
-	ResolveSalesIntent            = bf.ResolveSalesIntent
-	SanitizeForPrompt             = bf.SanitizeForPrompt
-	ShouldBreakOrderFlow          = bf.ShouldBreakOrderFlow
-	ShouldCancelPersistedOrder    = bf.ShouldCancelPersistedOrder
-	WantsActiveOrderOnly          = bf.WantsActiveOrderOnly
+	AdvanceOrderFlow                 = bf.AdvanceOrderFlow
+	BuildCatalogContext              = bf.BuildCatalogContext
+	CatalogStockLinesForItem         = bf.CatalogStockLinesForItem
+	ClassifyComplexity               = bf.ClassifyComplexity
+	CurrentGreetingPeriodWIB         = bf.CurrentGreetingPeriodWIB
+	DetectGreetingPeriodFromText     = bf.DetectGreetingPeriodFromText
+	ExtractScopeKeywords             = bf.ExtractScopeKeywords
+	FAQDirectGuardsPass              = bf.FAQDirectGuardsPass
+	GreetingFeedbackReply            = bf.GreetingFeedbackReply
+	GreetingReply                    = bf.GreetingReply
+	HasPurchaseIntent                = bf.HasPurchaseIntent
+	IsAbandonedCartSignal            = bf.IsAbandonedCartSignal
+	IsAcknowledgmentLike             = bf.IsAcknowledgmentLike
+	IsActiveCheckoutFromHistory      = bf.IsActiveCheckoutFromHistory
+	IsAmbiguousPurchaseSignal        = bf.IsAmbiguousPurchaseSignal
+	IsCancelClarificationQuestion    = bf.IsCancelClarificationQuestion
+	IsCasualChatOpener               = bf.IsCasualChatOpener
+	IsCasualPraiseLike               = bf.IsCasualPraiseLike
+	IsCatalogBrowsingIntent          = bf.IsCatalogBrowsingIntent
+	IsCatalogExclusionQuestion       = bf.IsCatalogExclusionQuestion
+	IsCatalogListQuestion            = bf.IsCatalogListQuestion
+	IsCatalogProductInquiry          = bf.IsCatalogProductInquiry
+	IsComplaintLike                  = bf.IsComplaintLike
+	IsConsultingPurchaseQuestion     = bf.IsConsultingPurchaseQuestion
+	IsDraftOrderCancelRequest        = bf.IsDraftOrderCancelRequest
+	IsExplicitNewOrderStart          = bf.IsExplicitNewOrderStart
+	IsExplicitPersistedOrderCancel   = bf.IsExplicitPersistedOrderCancel
+	IsGreetingFeedback               = bf.IsGreetingFeedback
+	IsGreetingLike                   = bf.IsGreetingLike
+	IsHumanEscalationRequest         = bf.IsHumanEscalationRequest
+	IsMinimumOrderQuestion           = bf.IsMinimumOrderQuestion
+	IsNewPurchaseIntentQuestion      = bf.IsNewPurchaseIntentQuestion
+	IsOffBusinessProductRequest      = bf.IsOffBusinessProductRequest
+	IsOrderCancelRequest             = bf.IsOrderCancelRequest
+	IsOrderContinuationMessage       = bf.IsOrderContinuationMessage
+	IsOrderFlowCancelled             = bf.IsOrderFlowCancelled
+	IsOrderFollowUpFromHistory       = bf.IsOrderFollowUpFromHistory
+	IsOrderRefStatusLookup           = bf.IsOrderRefStatusLookup
+	IsOrderRevisionMessage           = bf.IsOrderRevisionMessage
+	IsOrderAmendMessage              = bf.IsOrderAmendMessage
+	IsCartRecapOrComplaint           = bf.IsCartRecapOrComplaint
+	IsAddMoreItemsPolicyQuestion     = bf.IsAddMoreItemsPolicyQuestion
+	CartRecapReply                   = bf.CartRecapReply
+	AddMoreItemsPolicyReply          = bf.AddMoreItemsPolicyReply
+	IsOrderStatusInquiry             = bf.IsOrderStatusInquiry
+	IsOrderTotalRequest              = bf.IsOrderTotalRequest
+	IsPaymentQuestion                = bf.IsPaymentQuestion
+	IsPaymentRejectionInquiry        = bf.IsPaymentRejectionInquiry
+	IsPaymentStatusInquiry           = bf.IsPaymentStatusInquiry
+	IsPricingUnitClarification       = bf.IsPricingUnitClarification
+	IsProductComparisonQuestion      = bf.IsProductComparisonQuestion
+	IsProductSellInquiry             = bf.IsProductSellInquiry
+	IsPromptInjectionLikely          = bf.IsPromptInjectionLikely
+	IsQuestionLike                   = bf.IsQuestionLike
+	IsRecipientPolicyQuestion        = bf.IsRecipientPolicyQuestion
+	IsRecommendationRequest          = bf.IsRecommendationRequest
+	IsSelfBuyerOrderLookup           = bf.IsSelfBuyerOrderLookup
+	IsShippingQuoteQuestion          = bf.IsShippingQuoteQuestion
+	IsShippingFAQQuestion            = bf.IsShippingFAQQuestion
+	IsSoftCancelRegret               = bf.IsSoftCancelRegret
+	IsStoreLocationQuestion          = bf.IsStoreLocationQuestion
+	IsStructuredOrderList            = bf.IsStructuredOrderList
+	IsThirdPartyBuyerLookup          = bf.IsThirdPartyBuyerLookup
+	IsUserSalesCorrection            = bf.IsUserSalesCorrection
+	IsWithinBusinessScope            = bf.IsWithinBusinessScope
+	ResolveSalesIntent               = bf.ResolveSalesIntent
+	SanitizeForPrompt                = bf.SanitizeForPrompt
+	ShouldBreakOrderFlow             = bf.ShouldBreakOrderFlow
+	ShouldCancelPersistedOrder       = bf.ShouldCancelPersistedOrder
+	ShouldKeepCartOnExplicitNewOrder = bf.ShouldKeepCartOnExplicitNewOrder
+	WantsActiveOrderOnly             = bf.WantsActiveOrderOnly
 )
 
 // FormatOrderNumber — tetap delegasi ke order package (production DB layer).
@@ -155,7 +160,9 @@ func strPtr(s string) *string { return bf.StrPtr(s) }
 
 func outOfScopeReply(profile *dbBusinessProfile) string { return bf.OutOfScopeReply(profile) }
 
-func businessScopeKeywords(profile *dbBusinessProfile) []string { return bf.BusinessScopeKeywords(profile) }
+func businessScopeKeywords(profile *dbBusinessProfile) []string {
+	return bf.BusinessScopeKeywords(profile)
+}
 
 func newOmahSimulator() *ConversationSimulator { return bf.NewOmahSimulator() }
 
@@ -205,9 +212,13 @@ func guardOrderQtyStep(st orderState, catalog []dbCatalogItem, formal bool, qtyS
 	return bf.GuardOrderQtyStep(st, catalog, formal, qtyStep)
 }
 
-func wantsOrderContextFromHistory(userText string) bool { return bf.WantsOrderContextFromHistory(userText) }
+func wantsOrderContextFromHistory(userText string) bool {
+	return bf.WantsOrderContextFromHistory(userText)
+}
 
-func prependSalesCorrection(formal bool, body string) string { return bf.PrependSalesCorrection(formal, body) }
+func prependSalesCorrection(formal bool, body string) string {
+	return bf.PrependSalesCorrection(formal, body)
+}
 
 func salesCorrectionReply(formal bool) string { return bf.SalesCorrectionReply(formal) }
 
@@ -221,13 +232,19 @@ func casualPraiseReply(formal bool) string { return bf.CasualPraiseReply(formal)
 
 func topKBMatchScore(query string, kb []dbKBEntry) float64 { return bf.TopKBMatchScore(query, kb) }
 
-func tryFAQDirectAnswer(query string, kb []dbKBEntry) (string, bool) { return bf.TryFAQDirectAnswer(query, kb) }
+func tryFAQDirectAnswer(query string, kb []dbKBEntry) (string, bool) {
+	return bf.TryFAQDirectAnswer(query, kb)
+}
 
-func isGeneralStoreCatalogQuestion(userText string) bool { return bf.IsGeneralStoreCatalogQuestion(userText) }
+func isGeneralStoreCatalogQuestion(userText string) bool {
+	return bf.IsGeneralStoreCatalogQuestion(userText)
+}
 
 func catalogConfirmLine(st orderState) string { return bf.CatalogConfirmLine(st) }
 
-func formatUpsellBlock(st orderState, catalog []dbCatalogItem) string { return bf.FormatUpsellBlock(st, catalog) }
+func formatUpsellBlock(st orderState, catalog []dbCatalogItem) string {
+	return bf.FormatUpsellBlock(st, catalog)
+}
 
 type parsedOrderHints = bf.ParsedOrderHints
 
@@ -241,7 +258,9 @@ func inferVariantFromProductName(st *orderState) { bf.InferVariantFromProductNam
 
 func parseSizeAndColor(text string) (string, string) { return bf.ParseSizeAndColor(text) }
 
-func formatCatalogPicker(catalog []dbCatalogItem, limit int) string { return bf.FormatCatalogPicker(catalog, limit) }
+func formatCatalogPicker(catalog []dbCatalogItem, limit int) string {
+	return bf.FormatCatalogPicker(catalog, limit)
+}
 
 func formatOrderSummary(st orderState) string { return bf.FormatOrderSummary(st) }
 
@@ -267,7 +286,9 @@ func omahProfile() *dbBusinessProfile { return bf.OmahProfile() }
 
 func omahCatalog() []dbCatalogItem { return bf.OmahCatalog() }
 
-func tryApplyQtyRevision(st *orderState, userText string) bool { return bf.TryApplyQtyRevision(st, userText) }
+func tryApplyQtyRevision(st *orderState, userText string) bool {
+	return bf.TryApplyQtyRevision(st, userText)
+}
 
 func mergeShippingText(st *orderState, userText string) { bf.MergeShippingText(st, userText) }
 
@@ -281,7 +302,9 @@ func buildCatalogItemReply(formal bool, it *dbCatalogItem, qty int) string {
 	return bf.BuildCatalogItemReply(formal, it, qty)
 }
 
-func parseOrderRefFromHistory(history []dbMessage) string { return bf.ParseOrderRefFromHistory(history) }
+func parseOrderRefFromHistory(history []dbMessage) string {
+	return bf.ParseOrderRefFromHistory(history)
+}
 
 func normalizePhoneID(p string) string { return bf.NormalizePhoneID(p) }
 
@@ -296,6 +319,7 @@ func shortDisplayName(name string) string { return bf.ShortDisplayName(name) }
 func formatMoney(amount float64) string { return bf.FormatMoney(amount) }
 
 type catalogPriceInfo = bf.CatalogPriceInfo
+
 func tokenize(text string) []string { return bf.Tokenize(text) }
 
 func overlapScore(a, b []string) float64 { return bf.OverlapScore(a, b) }

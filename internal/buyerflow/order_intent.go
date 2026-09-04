@@ -64,6 +64,18 @@ func IsCancelClarificationQuestion(userText string) bool {
 		(strings.Contains(text, "order") || strings.Contains(text, "pesanan"))
 }
 
+// ShouldKeepCartOnExplicitNewOrder — "pesanan baru" setelah pick leftover: keranjang
+// Redis belum ter-pin, jadi jangan di-clear; persist akan INSERT draft baru.
+func ShouldKeepCartOnExplicitNewOrder(st *OrderState, userText string) bool {
+	if st == nil || !IsExplicitNewOrderStart(userText) {
+		return false
+	}
+	if strings.TrimSpace(st.PersistedOrderID) != "" {
+		return false
+	}
+	return st.CartReadyForDraft()
+}
+
 // IsExplicitNewOrderStart — "mau buat pesanan baru", bukan cek status pesanan lama.
 func IsExplicitNewOrderStart(userText string) bool {
 	text := normalizeBuyerTextForRules(userText)
@@ -310,6 +322,12 @@ func IsPaymentStatusInquiry(userText string) bool {
 
 // IsOrderStatusInquiry — customer asks about their existing order.
 func IsOrderStatusInquiry(userText string) bool {
+	if IsCartRecapOrComplaint(userText, nil) {
+		return false
+	}
+	if IsAddMoreItemsPolicyQuestion(userText) {
+		return false
+	}
 	if IsPaymentStatusInquiry(userText) {
 		return true
 	}

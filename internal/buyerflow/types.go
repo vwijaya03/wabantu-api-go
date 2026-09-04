@@ -54,11 +54,11 @@ type CatalogStockLine struct {
 
 // CatalogItem — product row from business catalog (+ optional stock enrichment).
 type CatalogItem struct {
-	ID           string
-	ExternalCode string
-	Name         string
-	SellPrice    float64
-	SellUnit     string
+	ID               string
+	ExternalCode     string
+	Name             string
+	SellPrice        float64
+	SellUnit         string
 	StockTracked     bool
 	StockAvailable   float64
 	StockByWarehouse []CatalogStockLine
@@ -106,4 +106,10 @@ type OrderState struct {
 	Country        string `json:"country,omitempty"`
 
 	Items []OrderLineState `json:"items,omitempty"`
+
+	// PersistedOrderID — draft row di DB yang terikat ke keranjang checkout ini.
+	PersistedOrderID string `json:"persistedOrderId,omitempty"`
+
+	// ForceNewOrder — "pesanan baru": INSERT draft baru, jangan upsert ke leftover.
+	ForceNewOrder bool `json:"forceNewOrder,omitempty"`
 }
