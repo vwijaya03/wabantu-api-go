@@ -48,6 +48,17 @@ func TestOrderAmendPickDraftReply(t *testing.T) {
 	if !containsFold(reply, "pesanan baru") {
 		t.Fatalf("expected new-order hint: %s", reply)
 	}
+	if !containsFold(reply, "beberapa") {
+		t.Fatalf("expected multi-draft intro: %s", reply)
+	}
+
+	single := orderAmendPickDraftReply(orders[:1])
+	if !containsFold(single, "masih ada pesanan draft") {
+		t.Fatalf("expected single-draft intro: %s", single)
+	}
+	if !containsFold(single, "pesanan baru") {
+		t.Fatalf("expected new-order hint: %s", single)
+	}
 }
 
 func containsFold(s, sub string) bool {

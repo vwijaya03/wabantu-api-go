@@ -25,8 +25,12 @@ func orderAmendBlockedStatusReply(formal bool, status, ref string) string {
 }
 
 func orderAmendPickDraftReply(orders []persistedOrder) string {
+	intro := "Dari chat ini ada beberapa pesanan draft aktif:"
+	if len(orders) == 1 {
+		intro = "Dari chat ini masih ada pesanan draft aktif:"
+	}
 	return formatOrderPickListReply(
-		"Dari chat ini ada beberapa pesanan draft aktif:",
+		intro,
 		orders,
 		"Sebut nomor pesanan yang mau dilanjutkan (contoh WB-A1B2C3D4), atau ketik 'pesanan baru' untuk mulai order baru.",
 	)

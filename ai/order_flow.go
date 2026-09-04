@@ -80,12 +80,14 @@ func persistDraftOrder(
 	itemsJSON, _ := json.Marshal([]order.OrderItem{item})
 	addrJSON, _ := json.Marshal(addr)
 
-	if id, updated, needPick, _, uerr := upsertDraftOrderItems(ctx, tq, tenantSchema, convoID, contactID, st.PersistedOrderID, []order.OrderItem{item}, addrJSON); needPick {
+	id, updated, needPick, _, uerr := upsertDraftOrderItems(ctx, tq, tenantSchema, convoID, contactID, st.PersistedOrderID, []order.OrderItem{item}, addrJSON, st.ForceNewOrder)
+	if uerr != nil {
+		return "", uerr
+	}
+	if needPick {
 		return "", errMultiDraftDisambiguation
-	} else if updated {
-		if uerr != nil {
-			return "", uerr
-		}
+	}
+	if updated {
 		syncContactDisplayNameFromOrder(ctx, tq, contactID, st.RecipientName)
 		rlog.Info("AI order: draft updated", "orderId", id, "convoId", convoID)
 		return id, nil
@@ -184,12 +186,14 @@ func persistDraftOrderMulti(
 	itemsJSON, _ := json.Marshal(orderItems)
 	addrJSON, _ := json.Marshal(addr)
 
-	if id, updated, needPick, _, uerr := upsertDraftOrderItems(ctx, tq, tenantSchema, convoID, contactID, st.PersistedOrderID, orderItems, addrJSON); needPick {
+	id, updated, needPick, _, uerr := upsertDraftOrderItems(ctx, tq, tenantSchema, convoID, contactID, st.PersistedOrderID, orderItems, addrJSON, st.ForceNewOrder)
+	if uerr != nil {
+		return "", uerr
+	}
+	if needPick {
 		return "", errMultiDraftDisambiguation
-	} else if updated {
-		if uerr != nil {
-			return "", uerr
-		}
+	}
+	if updated {
 		syncContactDisplayNameFromOrder(ctx, tq, contactID, st.RecipientName)
 		rlog.Info("AI order: multi-item draft updated", "orderId", id, "convoId", convoID, "itemCount", len(orderItems))
 		return id, nil
@@ -274,12 +278,14 @@ func persistDraftOrderEarly(
 	addr := order.ShippingAddress{Country: "Indonesia"}
 	addrJSON, _ := json.Marshal(addr)
 
-	if id, updated, needPick, pickList, uerr := upsertDraftOrderItems(ctx, tq, tenantSchema, convoID, contactID, st.PersistedOrderID, orderItems, addrJSON); needPick {
+	id, updated, needPick, pickList, uerr := upsertDraftOrderItems(ctx, tq, tenantSchema, convoID, contactID, st.PersistedOrderID, orderItems, nil, st.ForceNewOrder)
+	if uerr != nil {
+		return "", false, nil, uerr
+	}
+	if needPick {
 		return "", true, pickList, nil
-	} else if updated {
-		if uerr != nil {
-			return "", false, nil, uerr
-		}
+	}
+	if updated {
 		rlog.Info("AI order: early draft updated", "orderId", id, "convoId", convoID, "itemCount", len(orderItems))
 		return id, false, nil, nil
 	}

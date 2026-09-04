@@ -17,9 +17,9 @@ import (
 
 	appflag "encore.app/wabantu/flag"
 	appdb "encore.app/wabantu/shared/db"
+	"encore.app/wabantu/shared/pii"
 	"encore.app/wabantu/shared/retrieval"
 	"encore.app/wabantu/shared/strutil"
-	"encore.app/wabantu/shared/pii"
 	"encore.app/wabantu/shared/whatsappchannel"
 	"encore.app/wabantu/usage"
 	"encore.app/wabantu/whatsapp"
@@ -280,6 +280,12 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 
 	if IsOrderCancelRequest(userText) {
 		orderSt, _ := s.getOrderState(ctx, payload.TenantID, convo.ID)
+		if orderSt != nil && strings.TrimSpace(orderSt.PersistedOrderID) != "" {
+			scope := orderAccessScope{ConversationID: convo.ID, ContactID: contact.ID}
+			if cerr := cancelPersistedOrder(ctx, ts, payload.TenantSchema, orderSt.PersistedOrderID, scope); cerr != nil && !errors.Is(cerr, sql.ErrNoRows) {
+				rlog.Warn("AI order cancel: persisted draft", "err", cerr, "orderId", orderSt.PersistedOrderID)
+			}
+		}
 		s.clearOrderState(ctx, payload.TenantID, convo.ID)
 		if orderSt != nil {
 			tone := strOrEmpty(profile.Tone)
@@ -335,6 +341,11 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 			return err == nil, err
 		}
 		if ShouldBreakOrderFlow(userText, orderSt.Step, catalog) {
+			if ShouldKeepCartOnExplicitNewOrder(orderSt, userText) {
+				sent, oErr := s.handleOrderFlow(ctx, ts, payload.TenantSchema, payload.TenantID, convo, channel, contact,
+					userText, profile, kbEntries, history, payload.InboundMessageID)
+				return sent, oErr
+			}
 			clearedOrderForCorrection = IsUserSalesCorrection(userText)
 			s.clearOrderState(ctx, payload.TenantID, convo.ID)
 			rlog.Info("AI job: order flow cleared for new intent", "prevStep", orderSt.Step, "correction", clearedOrderForCorrection)
@@ -435,6 +446,10 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, reply, "ai", payload.InboundMessageID, out)
 		return err == nil, err
+	}
+
+	if inScope && IsOrderAmendMessage(userText) {
+		return s.handleOrderAmend(ctx, ts, payload, convo, channel, contact, userText, profile, history)
 	}
 
 	// ── Katalog WABantu (business_catalog_item) — prioritas sebelum FAQ/LLM ──
@@ -540,10 +555,6 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact,
 			casualPraiseReply(formal), "ai", payload.InboundMessageID, out)
 		return err == nil, err
-	}
-
-	if inScope && IsOrderAmendMessage(userText) {
-		return s.handleOrderAmend(ctx, ts, payload, convo, channel, contact, userText, profile, history)
 	}
 
 	// ── In-scope question → LLM path ────────────────────────────────────
@@ -746,7 +757,6 @@ func (s *AutoReplyService) FallbackAutoReply(ctx context.Context, payload AiRepl
 	}
 	return pauseAI(ctx, ts, convo.ID, "Auto fallback setelah retry AI gagal")
 }
-
 
 func (s *AutoReplyService) handleCustomerOrderCancel(
 	ctx context.Context,

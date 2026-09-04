@@ -176,6 +176,7 @@ func updateDraftOrderItems(
 	tq tenantScopedQuerier,
 	tenantSchema string,
 	orderID string,
+	scope orderAccessScope,
 	items []order.OrderItem,
 ) error {
 	var subtotal float64
@@ -186,11 +187,13 @@ func updateDraftOrderItems(
 	if err != nil {
 		return err
 	}
+	owner := sqlOrderOwnerFilter(4, 5)
 	q := fmt.Sprintf(`
 		UPDATE "%s"."order"
 		SET items = $2, subtotal = $3, total = $3, updated_at = NOW()
-		WHERE id = $1::uuid AND status = 'draft' AND deleted_at IS NULL`, tenantSchema)
-	res, err := tq.ExecContext(ctx, q, orderID, itemsJSON, subtotal)
+		WHERE id = $1::uuid AND status = 'draft' AND deleted_at IS NULL
+		  AND conversation_id = $4::uuid%s`, tenantSchema, owner)
+	res, err := tq.ExecContext(ctx, q, orderID, itemsJSON, subtotal, scope.ConversationID, scope.ContactID)
 	if err != nil {
 		return err
 	}
@@ -202,27 +205,156 @@ func updateDraftOrderItems(
 	return nil
 }
 
+func updateDraftShippingAddress(
+	ctx context.Context,
+	tq tenantScopedQuerier,
+	tenantSchema, orderID string,
+	scope orderAccessScope,
+	addrJSON []byte,
+) error {
+	if !shippingAddressJSONIsComplete(addrJSON) {
+		return nil
+	}
+	owner := sqlOrderOwnerFilter(3, 4)
+	q := fmt.Sprintf(`
+		UPDATE "%s"."order"
+		SET shipping_address = $2, updated_at = NOW()
+		WHERE id = $1::uuid AND status = 'draft' AND deleted_at IS NULL
+		  AND conversation_id = $3::uuid%s`, tenantSchema, owner)
+	_, err := tq.ExecContext(ctx, q, orderID, addrJSON, scope.ConversationID, scope.ContactID)
+	return err
+}
+
+// shippingAddressJSONIsComplete — alamat nyata (nama+HP atau jalan+kota). Placeholder {Country:Indonesia} tidak.
+func shippingAddressJSONIsComplete(addrJSON []byte) bool {
+	if len(addrJSON) == 0 {
+		return false
+	}
+	var addr order.ShippingAddress
+	if err := json.Unmarshal(addrJSON, &addr); err != nil {
+		return false
+	}
+	return shippingAddressIsComplete(addr)
+}
+
+func shippingAddressIsComplete(addr order.ShippingAddress) bool {
+	hasIdentity := strings.TrimSpace(addr.Name) != "" && strings.TrimSpace(addr.Phone) != ""
+	hasStreet := strings.TrimSpace(addr.Street) != ""
+	hasCity := strings.TrimSpace(addr.City) != "" || strings.TrimSpace(addr.PostalCode) != ""
+	return hasIdentity || (hasStreet && hasCity)
+}
+
+func applyShippingJSONToOrderState(st *orderState, raw []byte) {
+	if st == nil || len(raw) == 0 {
+		return
+	}
+	var addr order.ShippingAddress
+	if err := json.Unmarshal(raw, &addr); err != nil {
+		return
+	}
+	if strings.TrimSpace(addr.Name) != "" {
+		st.RecipientName = addr.Name
+	}
+	if strings.TrimSpace(addr.Phone) != "" {
+		st.RecipientPhone = addr.Phone
+	}
+	if strings.TrimSpace(addr.Street) != "" {
+		st.Street = addr.Street
+	}
+	if strings.TrimSpace(addr.RT) != "" {
+		st.RT = addr.RT
+	}
+	if strings.TrimSpace(addr.RW) != "" {
+		st.RW = addr.RW
+	}
+	if strings.TrimSpace(addr.Kelurahan) != "" {
+		st.Kelurahan = addr.Kelurahan
+	}
+	if strings.TrimSpace(addr.Kecamatan) != "" {
+		st.Kecamatan = addr.Kecamatan
+	}
+	if strings.TrimSpace(addr.City) != "" {
+		st.City = addr.City
+	}
+	if strings.TrimSpace(addr.Province) != "" {
+		st.Province = addr.Province
+	}
+	if strings.TrimSpace(addr.PostalCode) != "" {
+		st.PostalCode = addr.PostalCode
+	}
+	if strings.TrimSpace(addr.Country) != "" {
+		st.Country = addr.Country
+	}
+}
+
+// orderStateFromPersistedDraft — hydrate Redis cart dari items + shipping draft DB.
+func orderStateFromPersistedDraft(o *persistedOrder) orderState {
+	st := orderState{Step: "ask_recipient"}
+	if o == nil {
+		return st
+	}
+	st.PersistedOrderID = o.ID
+	items, _ := orderItemsFromJSON(o.ItemsJSON)
+	lines := orderItemsToLines(items)
+	if len(lines) > 0 {
+		st.Items = lines
+		bf.ApplyLineToOrderState(&st, lines[0])
+		if strings.TrimSpace(st.Product) == "" {
+			st.Product = lines[0].ProductName
+		}
+	}
+	applyShippingJSONToOrderState(&st, o.ShippingJSON)
+	return st
+}
+
+type draftWriteKind int
+
+const (
+	draftWriteInsert draftWriteKind = iota
+	draftWriteUpdatePinned
+	draftWriteNeedPick
+)
+
+func decideDraftWrite(forceInsert, pinFound bool, leftoverDraftCount int) draftWriteKind {
+	if forceInsert {
+		return draftWriteInsert
+	}
+	if pinFound {
+		return draftWriteUpdatePinned
+	}
+	if leftoverDraftCount > 0 {
+		return draftWriteNeedPick
+	}
+	return draftWriteInsert
+}
+
 func upsertDraftOrderItems(
 	ctx context.Context,
 	tq tenantScopedQuerier,
 	tenantSchema, convoID, contactID, preferredOrderID string,
 	items []order.OrderItem,
 	addrJSON []byte,
+	forceInsert bool,
 ) (orderID string, updated bool, needPick bool, pickList []persistedOrder, err error) {
 	scope := orderAccessScope{ConversationID: convoID, ContactID: contactID}
 
+	if forceInsert {
+		return "", false, false, nil, nil
+	}
+
+	var pinFound bool
 	if strings.TrimSpace(preferredOrderID) != "" {
 		draft, derr := loadDraftOrderByIDForContact(ctx, tq, tenantSchema, preferredOrderID, scope)
 		if derr != nil {
 			return "", false, false, nil, derr
 		}
 		if draft != nil {
-			if err := updateDraftOrderItems(ctx, tq, tenantSchema, draft.ID, items); err != nil {
+			pinFound = true
+			if err := updateDraftOrderItems(ctx, tq, tenantSchema, draft.ID, scope, items); err != nil {
 				return "", false, false, nil, err
 			}
-			if len(addrJSON) > 0 {
-				q := fmt.Sprintf(`UPDATE "%s"."order" SET shipping_address = $2, updated_at = NOW() WHERE id = $1::uuid`, tenantSchema)
-				_, _ = tq.ExecContext(ctx, q, draft.ID, addrJSON)
+			if err := updateDraftShippingAddress(ctx, tq, tenantSchema, draft.ID, scope, addrJSON); err != nil {
+				rlog.Warn("AI order: draft shipping update skipped", "err", err, "orderId", draft.ID)
 			}
 			return draft.ID, true, false, nil, nil
 		}
@@ -232,21 +364,11 @@ func upsertDraftOrderItems(
 	if err != nil {
 		return "", false, false, nil, err
 	}
-	switch len(drafts) {
-	case 0:
-		return "", false, false, nil, nil
-	case 1:
-		draft := drafts[0]
-		if err := updateDraftOrderItems(ctx, tq, tenantSchema, draft.ID, items); err != nil {
-			return "", false, false, nil, err
-		}
-		if len(addrJSON) > 0 {
-			q := fmt.Sprintf(`UPDATE "%s"."order" SET shipping_address = $2, updated_at = NOW() WHERE id = $1::uuid`, tenantSchema)
-			_, _ = tq.ExecContext(ctx, q, draft.ID, addrJSON)
-		}
-		return draft.ID, true, false, nil, nil
-	default:
+	switch decideDraftWrite(false, pinFound, len(drafts)) {
+	case draftWriteNeedPick:
 		return "", false, true, drafts, nil
+	default:
+		return "", false, false, nil, nil
 	}
 }
 
@@ -377,12 +499,17 @@ func (s *AutoReplyService) handleOrderAmend(
 	}
 
 	merged := mergeOrderItemLines(existing, added)
-	if err := updateDraftOrderItems(ctx, ts, payload.TenantSchema, draft.ID, merged); err != nil {
+	if err := updateDraftOrderItems(ctx, ts, payload.TenantSchema, draft.ID, scope, merged); err != nil {
 		rlog.Warn("AI order amend: update failed", "err", err, "orderId", draft.ID)
 		return send("Maaf kak, gagal memperbarui pesanan. Coba sebut produknya lagi ya 🙏")
 	}
 
-	st := orderState{Items: orderItemsToLines(merged), Step: "ask_recipient"}
+	st := orderStateFromPersistedDraft(draft)
+	st.Items = orderItemsToLines(merged)
+	if len(st.Items) > 0 {
+		bf.ApplyLineToOrderState(&st, st.Items[0])
+	}
+	s.setOrderState(ctx, payload.TenantID, convo.ID, st)
 	summary := formatOrderSummary(st)
 	ref := FormatOrderNumber(draft.ID)
 	reply := fmt.Sprintf("Siap kak, pesanan %s sudah diperbarui:\n\n%s", ref, summary)
