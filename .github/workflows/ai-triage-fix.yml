@@ -125,10 +125,14 @@ jobs:
           BRANCH="fix/ai-triage-${JOB_ID:0:8}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -b "$BRANCH"
-          git add ai/conversation_regression_auto_gen_test.go
-          git commit -m "test(ai-triage): regression cases job $JOB_ID"
-          git push origin "$BRANCH"
+          git checkout -B "$BRANCH"
+          git add internal/buyerflow/regression_autogen_test.go ai/conversation_regression_auto_gen_test.go
+          if git diff --cached --quiet; then
+            echo "::warning::tidak ada file regression untuk di-commit (triage-apply menulis internal/buyerflow/regression_autogen_test.go)"
+          else
+            git commit -m "test(ai-triage): regression cases job $JOB_ID"
+          fi
+          git push -u origin HEAD
 
           if [ -n "${GITHUB_PAT:-}" ]; then
             export GH_TOKEN="$GITHUB_PAT"
@@ -136,22 +140,26 @@ jobs:
             export GH_TOKEN="${{ github.token }}"
           fi
 
-          PR_URL=""
-          if PR_URL=$(gh pr create --draft \
-            --title "test(ai-triage): regression job ${JOB_ID:0:8}" \
-            --body "## AI Triage Loop (auto)
+          PR_URL="$(gh pr list --head "$BRANCH" --json url --jq '.[0].url // empty')"
+          if [ -z "$PR_URL" ]; then
+            if PR_URL=$(gh pr create --draft \
+              --title "test(ai-triage): regression job ${JOB_ID:0:8}" \
+              --body "## AI Triage Loop (auto)
 
           - Job: \`$JOB_ID\`
           - Tenant schema: \`${TENANT_SCHEMA:-}\`
           - Conversation: \`${CONVERSATION_ID:-}\`
           - Inbound: \`${INBOUND_ID:-}\`
 
-          Regression cases di \`conversation_regression_auto_gen_test.go\`.
-          Routing fix: gunakan **Fix dengan AI** di konsol superadmin atau patch manual \`ai/autoreply.go\`."); then
-            echo "Created draft PR: $PR_URL"
+          Regression cases di \`internal/buyerflow/regression_autogen_test.go\`.
+          Routing fix: gunakan **Fix dengan AI** di konsol superadmin atau patch manual \`internal/buyerflow/\`."); then
+              echo "Created draft PR: $PR_URL"
+            else
+              PR_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/master...${BRANCH}?expand=1"
+              echo "::warning::gh pr create diblokir — buka compare URL atau set GITHUB_PAT"
+            fi
           else
-            PR_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/master...${BRANCH}?expand=1"
-            echo "::warning::gh pr create diblokir — buka compare URL atau set GITHUB_PAT"
+            echo "Existing PR: $PR_URL"
           fi
           echo "pr_url=$PR_URL" >> "$GITHUB_OUTPUT"
 
