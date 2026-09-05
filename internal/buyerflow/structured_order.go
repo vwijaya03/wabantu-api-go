@@ -70,3 +70,61 @@ func countOrderCandidateLines(userText string) int {
 	}
 	return n
 }
+
+func extractNumberedOrderLines(userText string) []string {
+	matches := structuredOrderNumberedLineRe.FindAllStringSubmatch(userText, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(matches))
+	for _, m := range matches {
+		if len(m) > 1 {
+			line := strings.TrimSpace(m[1])
+			if line != "" {
+				out = append(out, line)
+			}
+		}
+	}
+	return out
+}
+
+func extractStructuredOrderLines(userText string) []string {
+	if numbered := extractNumberedOrderLines(userText); len(numbered) > 0 {
+		return numbered
+	}
+	var out []string
+	for _, line := range strings.Split(userText, "\n") {
+		line = strings.TrimSpace(line)
+		if isOrderListHeaderLine(line) {
+			continue
+		}
+		if mentionsOrderQty(line) {
+			out = append(out, line)
+		}
+	}
+	if len(out) > 0 {
+		return out
+	}
+	if IsInlineMultiOrderMessage(userText) {
+		return splitInlineOrderSegments(userText)
+	}
+	return nil
+}
+
+// StructuredOrderHasCatalogMatches — multi-baris order hanya ke order_flow bila ≥1 baris cocok katalog.
+func StructuredOrderHasCatalogMatches(userText string, catalog []CatalogItem) bool {
+	if !IsStructuredOrderList(userText) {
+		return false
+	}
+	lines := extractStructuredOrderLines(userText)
+	if len(lines) == 0 {
+		return false
+	}
+	for _, raw := range lines {
+		line := parseStructuredOrderLine(raw, catalog, nil)
+		if line.CatalogItemID != "" {
+			return true
+		}
+	}
+	return false
+}

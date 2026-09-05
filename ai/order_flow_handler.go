@@ -95,7 +95,7 @@ func (s *AutoReplyService) handleOrderFlow(
 		if outcome.Matched {
 			if len(outcome.Lines) == 0 {
 				if len(outcome.Unmatched) > 0 {
-					return send(structuredOrderUnmatchedReply(formal, outcome.Unmatched), PathOrderFlow)
+					return send(structuredOrderUnmatchedReply(formal, outcome.Unmatched), PathConsulting)
 				}
 			} else {
 				if forceNew {

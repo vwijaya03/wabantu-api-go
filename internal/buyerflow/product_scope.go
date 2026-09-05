@@ -50,6 +50,10 @@ func messageReferencesBusinessCatalog(userText string, scopeKeywords []string) b
 
 // IsOffBusinessProductRequest rejects orders/questions about unrelated goods (e.g. nasi goreng at a jeans shop).
 func IsOffBusinessProductRequest(userText string, scopeKeywords []string) bool {
+	// "jual indomie goreng?" → catalog_db (not found), bukan out_of_scope.
+	if looksLikeNamedProductSellInquiry(userText) || IsCatalogProductInquiry(userText) {
+		return false
+	}
 	if !mentionsOffTopicProduct(userText) {
 		return false
 	}

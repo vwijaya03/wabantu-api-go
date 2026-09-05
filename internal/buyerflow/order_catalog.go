@@ -3,6 +3,7 @@ package buyerflow
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"encore.app/wabantu/shared/retrieval"
@@ -19,7 +20,81 @@ var (
 	postalCodeIDRe = regexp.MustCompile(`\b(\d{5})\b`)
 	phoneIDRe      = regexp.MustCompile(`(?:\+62|62|0)8[0-9]{8,11}`)
 	colorHintRe    = regexp.MustCompile(`(?i)(warna|color|colour)\s*[:\-]?\s*([a-z]+)`)
+	explicitWeightInTextRe = regexp.MustCompile(`(?i)(?:^|\s)(\d+(?:[.,]\d+)?)\s*(?:g|gr|gram|kg)(?:\s|$|[,.])`)
 )
+
+func isWeightUnit(tok string) bool {
+	switch tok {
+	case "g", "gr", "gram", "kg":
+		return true
+	}
+	return false
+}
+
+func explicitWeightGramsInText(userText string) []int {
+	text := strings.ToLower(strings.TrimSpace(userText))
+	var out []int
+	seen := map[int]struct{}{}
+	add := func(n int) {
+		if n <= 0 {
+			return
+		}
+		if _, ok := seen[n]; ok {
+			return
+		}
+		seen[n] = struct{}{}
+		out = append(out, n)
+	}
+	for _, m := range explicitWeightInTextRe.FindAllStringSubmatch(text, -1) {
+		if len(m) < 2 {
+			continue
+		}
+		val, err := strconv.ParseFloat(strings.ReplaceAll(m[1], ",", "."), 64)
+		if err != nil || val <= 0 {
+			continue
+		}
+		grams := int(val)
+		if strings.Contains(m[0], "kg") {
+			grams = int(val * 1000)
+		}
+		add(grams)
+	}
+	toks := tokenize(text)
+	for i := 0; i+1 < len(toks); i++ {
+		if !isWeightUnit(toks[i+1]) {
+			continue
+		}
+		if n, err := strconv.Atoi(toks[i]); err == nil {
+			add(n)
+		}
+	}
+	return out
+}
+
+// catalogItemMatchesExplicitWeight — "abon sapi 125 gr" must not bind to Abon Sapi 500G.
+func catalogItemMatchesExplicitWeight(userText string, item *CatalogItem) bool {
+	if item == nil {
+		return true
+	}
+	weights := explicitWeightGramsInText(userText)
+	if len(weights) == 0 {
+		return true
+	}
+	nameLower := strings.ToLower(item.Name)
+	for _, w := range weights {
+		if strings.Contains(nameLower, strconv.Itoa(w)) {
+			return true
+		}
+	}
+	return false
+}
+
+func filterCatalogMatchByExplicitWeight(userText string, match *CatalogItem) *CatalogItem {
+	if match == nil || catalogItemMatchesExplicitWeight(userText, match) {
+		return match
+	}
+	return nil
+}
 
 func matchCatalogItem(userText string, catalog []CatalogItem) *CatalogItem {
 	if len(catalog) == 0 {
@@ -70,9 +145,9 @@ func matchCatalogItem(userText string, catalog []CatalogItem) *CatalogItem {
 		}
 	}
 	if bestScore < 0.12 {
-		return matchCatalogItemFuzzy(userText, catalog)
+		return filterCatalogMatchByExplicitWeight(userText, matchCatalogItemFuzzy(userText, catalog))
 	}
-	return best
+	return filterCatalogMatchByExplicitWeight(userText, best)
 }
 
 // matchCatalogItemFuzzy — typo singkat (mis. "cadburi" → Cadbury) bila lexical miss.
@@ -100,7 +175,7 @@ func matchCatalogItemFuzzy(userText string, catalog []CatalogItem) *CatalogItem 
 	if bestScore < 0.18 {
 		return nil
 	}
-	return best
+	return filterCatalogMatchByExplicitWeight(userText, best)
 }
 
 func fuzzyNameTokenScore(userTokens, nameTokens []string) float64 {
@@ -142,10 +217,10 @@ func fuzzyTokenPrefixMatch(a, b string) bool {
 
 func resolveOrderProductMatch(userText string, history []Message, catalog []CatalogItem, vctx *CatalogVectorContext) *CatalogItem {
 	if unique := uniqueBrandSKUFromText(userText, catalog); unique != nil {
-		return unique
+		return filterCatalogMatchByExplicitWeight(userText, unique)
 	}
 	if unique := uniqueSizedSKUFromText(userText, catalog); unique != nil {
-		return unique
+		return filterCatalogMatchByExplicitWeight(userText, unique)
 	}
 	if lexicalBrandAmbiguous(userText, catalog) {
 		return nil
@@ -155,13 +230,16 @@ func resolveOrderProductMatch(userText string, history []Message, catalog []Cata
 	}
 	if vctx != nil && len(vctx.Hits) > 0 {
 		if m := MatchCatalogItemSemantic(userText, catalog, vctx.Hits); m != nil {
-			return m
+			return filterCatalogMatchByExplicitWeight(userText, m)
 		}
 		if orderSemanticAmbiguous(vctx) {
 			return nil
 		}
 	}
-	return matchCatalogFromRecentOutbound(history, catalog)
+	if m := matchCatalogFromRecentOutbound(history, catalog); m != nil {
+		return filterCatalogMatchByExplicitWeight(userText, m)
+	}
+	return nil
 }
 
 func orderSemanticAmbiguous(vctx *CatalogVectorContext) bool {

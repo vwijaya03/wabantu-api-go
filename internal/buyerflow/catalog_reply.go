@@ -129,6 +129,9 @@ func IsProductSellInquiry(userText string, catalog []CatalogItem) bool {
 	if !hasSell {
 		return false
 	}
+	if looksLikeNamedProductSellInquiry(userText) {
+		return true
+	}
 	return matchCatalogItem(userText, catalog) != nil
 }
 
@@ -590,6 +593,12 @@ func replyFromBusinessCatalog(
 	if IsProductSellInquiry(userText, catalog) {
 		if match := resolve(userText, history, catalog); match != nil {
 			return buildCatalogItemReply(formal, match, 0), true
+		}
+		if looksLikeNamedProductSellInquiry(userText) {
+			if len(catalog) == 0 {
+				return buildCatalogEmptyReply(formal, bizName, profile), true
+			}
+			return buildCatalogNotFoundReply(formal, bizName, catalog, profile), true
 		}
 	}
 

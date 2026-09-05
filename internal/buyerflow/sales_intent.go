@@ -73,7 +73,7 @@ func ResolveSalesIntent(
 	if IsOrderStatusInquiry(userText) {
 		return SalesIntent{State: SalesStateConsulting, Topic: SalesTopicOrderStatus, Confidence: 0.9}
 	}
-	if IsStructuredOrderList(userText) {
+	if IsStructuredOrderList(userText) && StructuredOrderHasCatalogMatches(userText, catalog) {
 		return SalesIntent{State: SalesStateCartReady, Topic: SalesTopicProduct, Confidence: 0.95}
 	}
 	if IsExplicitNewOrderStart(userText) {

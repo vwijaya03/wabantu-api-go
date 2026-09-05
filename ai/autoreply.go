@@ -433,7 +433,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	)
 
 	// ── Order flow — prioritas sebelum katalog statis ─────────────────────
-	if inScope && (classifier.Label == "order_intent" || IsStructuredOrderList(userText)) {
+	if inScope && (classifier.Label == "order_intent" || StructuredOrderHasCatalogMatches(userText, catalog)) {
 		sent, oErr := s.handleOrderFlow(ctx, ts, payload.TenantSchema, payload.TenantID, convo, channel, contact,
 			userText, profile, kbEntries, history, payload.InboundMessageID)
 		return sent, oErr
