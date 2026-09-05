@@ -135,7 +135,8 @@ func IsNewPurchaseIntentQuestion(userText string) bool {
 // IsDraftOrderCancelRequest — batalkan draft Redis (termasuk "batal" / "cancel" saja).
 func IsDraftOrderCancelRequest(userText string) bool {
 	text := strings.ToLower(strings.TrimSpace(userText))
-	if text == "" || isRevisionNotCancel(userText) || IsCancelClarificationQuestion(userText) {
+	if text == "" || isRevisionNotCancel(userText) || IsCancelClarificationQuestion(userText) ||
+		IsCartLineCorrectionIntent(userText) || IsNegatedFullOrderCancel(userText) {
 		return false
 	}
 	if orderCancelWordRe.MatchString(text) {
@@ -166,7 +167,8 @@ func IsSoftCancelRegret(userText string) bool {
 // IsExplicitPersistedOrderCancel — batalkan order DB yang sudah tersimpan.
 func IsExplicitPersistedOrderCancel(userText string) bool {
 	text := strings.ToLower(strings.TrimSpace(userText))
-	if text == "" || isRevisionNotCancel(userText) || IsCancelClarificationQuestion(userText) {
+	if text == "" || isRevisionNotCancel(userText) || IsCancelClarificationQuestion(userText) ||
+		IsCartLineCorrectionIntent(userText) || IsNegatedFullOrderCancel(userText) {
 		return false
 	}
 	for _, p := range explicitPersistedCancelPhrases {
@@ -216,6 +218,9 @@ var orderStatusInquiryPhrases = []string{
 
 // IsOrderRefStatusLookup — buyer sends an order ref (with or without short status/detail phrasing).
 func IsOrderRefStatusLookup(userText string) bool {
+	if IsCartLineCorrectionIntent(userText) || IsNegatedFullOrderCancel(userText) {
+		return false
+	}
 	ref := parseOrderRefFromMessage(userText)
 	if ref == "" {
 		return false
@@ -322,6 +327,9 @@ func IsPaymentStatusInquiry(userText string) bool {
 
 // IsOrderStatusInquiry — customer asks about their existing order.
 func IsOrderStatusInquiry(userText string) bool {
+	if IsCartLineCorrectionIntent(userText) || IsNegatedFullOrderCancel(userText) {
+		return false
+	}
 	if IsCartRecapOrComplaint(userText, nil) {
 		return false
 	}

@@ -47,9 +47,33 @@ func checkoutItemAddedAck(formal bool) string {
 	return "Siap kak, sudah ditambahkan ke pesanan ✅"
 }
 
-func checkoutAddItemsPolicyReplyIfNeeded(st OrderState, userText string, formal bool) (string, bool) {
-	if !IsAddMoreItemsPolicyQuestion(userText) {
+func checkoutAddItemsPolicyReplyIfNeeded(st OrderState, userText string, catalog []CatalogItem, formal bool) (string, bool) {
+	if !IsStandaloneAddMoreItemsPolicyQuestion(userText, catalog) {
 		return "", false
 	}
 	return AddMoreItemsPolicyReply(formal, &st), true
+}
+
+// IsStandaloneAddMoreItemsPolicyQuestion — "boleh nambah?" tanpa menyebut SKU/merek.
+func IsStandaloneAddMoreItemsPolicyQuestion(userText string, catalog []CatalogItem) bool {
+	if !IsAddMoreItemsPolicyQuestion(userText) {
+		return false
+	}
+	return !catalogSKUOrBrandIntent(userText, catalog)
+}
+
+func catalogSKUOrBrandIntent(userText string, catalog []CatalogItem) bool {
+	if strings.TrimSpace(userText) == "" || len(catalog) == 0 {
+		return false
+	}
+	if lexicalBrandAmbiguous(userText, catalog) {
+		return true
+	}
+	if uniqueBrandSKUFromText(userText, catalog) != nil {
+		return true
+	}
+	if resolveOrderProductMatch(userText, nil, catalog, nil) != nil {
+		return true
+	}
+	return brandTokenFromText(userText, catalog) != ""
 }

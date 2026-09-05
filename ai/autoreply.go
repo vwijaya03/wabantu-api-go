@@ -224,7 +224,8 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, reply, "system", payload.InboundMessageID, out)
 		return err == nil, err
 	}
-	if (IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) || IsOrderRefStatusLookup(userText)) && !wantsOrderContextFromHistory(userText) {
+	if (IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) || IsOrderRefStatusLookup(userText)) &&
+		!wantsOrderContextFromHistory(userText) && !IsCartLineCorrectionIntent(userText) {
 		return s.handleCustomerOrderStatus(ctx, ts, payload.TenantSchema, payload, convo, channel, contact, userText, nil)
 	}
 
@@ -287,7 +288,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		}
 	}
 
-	if IsOrderCancelRequest(userText) {
+	if IsOrderCancelRequest(userText) && !IsCartLineCorrectionIntent(userText) && !IsNegatedFullOrderCancel(userText) {
 		orderSt, _ := s.getOrderState(ctx, payload.TenantID, convo.ID)
 		if orderSt != nil && strings.TrimSpace(orderSt.PersistedOrderID) != "" {
 			scope := orderAccessScope{ConversationID: convo.ID, ContactID: contact.ID}
@@ -332,7 +333,8 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 			return err == nil, err
 		}
 	}
-	if IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) || IsOrderRefStatusLookup(userText) {
+	if (IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) || IsOrderRefStatusLookup(userText)) &&
+		!IsCartLineCorrectionIntent(userText) && !IsNegatedFullOrderCancel(userText) {
 		return s.handleCustomerOrderStatus(ctx, ts, payload.TenantSchema, payload, convo, channel, contact, userText, history)
 	}
 
@@ -342,7 +344,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	if orderSt, _ := s.getOrderState(ctx, payload.TenantID, convo.ID); orderSt != nil {
 		tone := strOrEmpty(profile.Tone)
 		formal := tone == "formal"
-		if IsAddMoreItemsPolicyQuestion(userText) {
+		if IsStandaloneAddMoreItemsPolicyQuestion(userText, catalog) {
 			reply := applyOutputPolicy(AddMoreItemsPolicyReply(formal, orderSt))
 			out := metaNoLLM(reasonNonQuestion, PathOrderFlow)
 			out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
@@ -447,7 +449,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return err == nil, err
 	}
 
-	if inScope && IsAddMoreItemsPolicyQuestion(userText) {
+	if inScope && IsStandaloneAddMoreItemsPolicyQuestion(userText, catalog) {
 		formal := strOrEmpty(profile.Tone) == "formal"
 		orderSt, _ := s.getOrderState(ctx, payload.TenantID, convo.ID)
 		reply := applyOutputPolicy(AddMoreItemsPolicyReply(formal, orderSt))
@@ -572,7 +574,8 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	if IsThirdPartyBuyerLookup(userText) {
 		return s.handleThirdPartyBuyerLookupDenied(ctx, ts, payload, convo, channel, contact)
 	}
-	if IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) || IsOrderRefStatusLookup(userText) {
+	if (IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) || IsOrderRefStatusLookup(userText)) &&
+		!IsCartLineCorrectionIntent(userText) && !IsNegatedFullOrderCancel(userText) {
 		return s.handleCustomerOrderStatus(ctx, ts, payload.TenantSchema, payload, convo, channel, contact, userText, history)
 	}
 

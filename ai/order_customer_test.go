@@ -30,6 +30,8 @@ func TestIsOrderCancelRequest(t *testing.T) {
 		{"loh ubah jadi 10 paket", false},
 		{"pesanan yang atas nama saya ada kah ?", false},
 		{"harga berapa", false},
+		{"bukan batal semua pesanan we", false},
+		{"batalkan yang Cadbury biscoff bar", false},
 	}
 	for _, tc := range draftCases {
 		if got := IsDraftOrderCancelRequest(tc.text); got != tc.want {
@@ -172,11 +174,11 @@ func TestParseOrderRefFromMessage(t *testing.T) {
 
 func TestFormatPersistedOrderSummary(t *testing.T) {
 	o := &persistedOrder{
-		ID:     "eb76635c-8439-42f1-9a45-dfa31bc0bbf4",
-		Status: "draft",
-		ItemsJSON: []byte(`[{"name":"Celana Dalam Boxer","qty":5,"unitPrice":21500}]`),
+		ID:           "eb76635c-8439-42f1-9a45-dfa31bc0bbf4",
+		Status:       "draft",
+		ItemsJSON:    []byte(`[{"name":"Celana Dalam Boxer","qty":5,"unitPrice":21500}]`),
 		ShippingJSON: []byte(`{"name":"Antoni","city":"Magelang"}`),
-		Total: 107500,
+		Total:        107500,
 	}
 	summary := formatPersistedOrderSummary(o)
 	if !strings.Contains(summary, "WB-EB76635C") {

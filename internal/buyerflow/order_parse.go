@@ -479,6 +479,9 @@ func ShouldBreakOrderFlow(userText, step string, catalog []CatalogItem) bool {
 	if IsAddMoreItemsPolicyQuestion(userText) {
 		return false
 	}
+	if IsCartLineCorrectionIntent(userText) || IsNegatedFullOrderCancel(userText) {
+		return false
+	}
 	if isCheckoutAppendStep(step) && IsAddItemToOrderMessage(userText) {
 		return false
 	}

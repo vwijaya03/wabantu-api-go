@@ -366,18 +366,35 @@ func formatMultiOrderSummary(st OrderState) string {
 	return strings.TrimSpace(b.String())
 }
 
+func cartCatalogIDs(st OrderState) map[string]struct{} {
+	ids := map[string]struct{}{}
+	if strings.TrimSpace(st.CatalogItemID) != "" {
+		ids[st.CatalogItemID] = struct{}{}
+	}
+	for _, ln := range st.Items {
+		if strings.TrimSpace(ln.CatalogItemID) != "" {
+			ids[ln.CatalogItemID] = struct{}{}
+		}
+	}
+	return ids
+}
+
 func suggestRelatedProducts(st OrderState, catalog []CatalogItem, max int) []CatalogItem {
-	if max < 1 || st.CatalogItemID == "" || len(catalog) == 0 {
+	inCart := cartCatalogIDs(st)
+	if max < 1 || len(inCart) == 0 || len(catalog) == 0 {
 		return nil
 	}
 	baseTokens := tokenize(st.ProductName)
+	for _, ln := range st.Items {
+		baseTokens = append(baseTokens, tokenize(ln.ProductName)...)
+	}
 	type scored struct {
 		it    CatalogItem
 		score float64
 	}
 	var picks []scored
 	for _, it := range catalog {
-		if it.ID == st.CatalogItemID {
+		if _, ok := inCart[it.ID]; ok {
 			continue
 		}
 		score := overlapScore(baseTokens, tokenize(it.Name))
