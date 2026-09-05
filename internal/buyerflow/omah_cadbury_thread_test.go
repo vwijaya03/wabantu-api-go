@@ -19,6 +19,7 @@ func omahCadburyLiveCatalog() []CatalogItem {
 		{ID: "abon-500", Name: "Abon Sapi 500 Gram", SellPrice: 25000, SellUnit: "pcs"},
 		{ID: "cad-bar", Name: "Cadbury biscoff bar 130 gram", SellPrice: 105000, SellUnit: "pcs"},
 		{ID: "cad-mini", Name: "Cadbury biscoff mini bars", SellPrice: 110000, SellUnit: "pcs"},
+		{ID: "oat-white", Name: "Oatlife White Coffee", SellPrice: 200000, SellUnit: "pcs"},
 	}
 }
 
@@ -286,5 +287,109 @@ func TestShouldBreakOrderFlowKeepsLineCorrection(t *testing.T) {
 	}
 	if ShouldBreakOrderFlow("batalkan yang Cadbury biscoff bar", "ask_recipient", catalog) {
 		t.Fatal("line cancel must not clear checkout")
+	}
+}
+
+func TestOatlifeWhiteKopiIsOnCatalogNotOffScope(t *testing.T) {
+	catalog := omahCadburyLiveCatalog()
+	scope := businessScopeKeywords(foodProfile())
+	msg := "mau oatlife white kopi 1 pcs"
+	if IsOffBusinessProductRequest(msg, scope, catalog) {
+		t.Fatal("Oatlife White Coffee is in catalog — kopi must not force off-scope")
+	}
+	if IsOffBusinessProductRequest("mau pesan nasi goreng bisa ?", scope, catalog) {
+		// nasi goreng is not in catalog; still off-business
+	} else {
+		t.Fatal("nasi goreng must stay off-business even when catalog is passed")
+	}
+	sim := newOmahCadburySimulator()
+	out := sim.Turn(msg)
+	if out.Path == PathOutOfScope {
+		t.Fatalf("must start checkout for catalog SKU, path=%s reply=%q", out.Path, out.Reply)
+	}
+	if out.Order == nil || !cartHasSKU(out.Order, "oat-white") {
+		t.Fatalf("must cart Oatlife White Coffee, path=%s cart=%+v reply=%q", out.Path, out.Order, out.Reply)
+	}
+}
+
+func TestDanCommaAppendsTwoAbonSKUs(t *testing.T) {
+	msg := "abon sapi 250gram 1, dan abo sapi 500gr 1"
+	if !IsInlineMultiOrderMessage(msg) {
+		t.Fatal("comma+dan must split two SKU segments")
+	}
+	sim := newOmahCadburySimulator()
+	sim.Turn("mau oatlife white kopi 1 pcs")
+	out := sim.Turn(msg)
+	if strings.Contains(strings.ToLower(out.Reply), "pilih") && !cartHasSKU(out.Order, "abon-250") {
+		t.Fatalf("must not show Abon picker instead of appending both SKUs, reply=%q cart=%+v", out.Reply, out.Order)
+	}
+	if out.Order == nil || !cartHasSKU(out.Order, "oat-white") {
+		t.Fatalf("existing Oatlife must stay, cart=%+v", out.Order)
+	}
+	if !cartHasSKU(out.Order, "abon-250") || !cartHasSKU(out.Order, "abon-500") {
+		t.Fatalf("must append Abon 250 and 500, cart=%+v reply=%q", out.Order, out.Reply)
+	}
+}
+
+func TestNewlineAbonListAppendsNotClearsCart(t *testing.T) {
+	msg := "abon 125\nabon 250\nitu saja tambahannya"
+	catalog := omahCadburyLiveCatalog()
+	if ShouldBreakOrderFlow(msg, "ask_recipient", catalog) {
+		t.Fatal("append list with tambahannya must not clear checkout")
+	}
+	sim := newOmahCadburySimulator()
+	sim.Turn("mau oatlife white kopi 1 pcs")
+	sim.Turn("cadbury biscoff bar 130 gram 1")
+	out := sim.Turn(msg)
+	if out.BrokeFlow {
+		t.Fatalf("must not break checkout, path=%s reply=%q", out.Path, out.Reply)
+	}
+	if out.Order == nil || !cartHasSKU(out.Order, "oat-white") || !cartHasSKU(out.Order, "cad-bar") {
+		t.Fatalf("Oatlife+Cadbury must stay, cart=%+v", out.Order)
+	}
+	if !cartHasSKU(out.Order, "abon-125") || !cartHasSKU(out.Order, "abon-250") {
+		t.Fatalf("must append both Abon lines, cart=%+v reply=%q", out.Order, out.Reply)
+	}
+}
+
+func TestJadikanSatuMergesPastedItemsNotRecapOnly(t *testing.T) {
+	msg := "Abon Sapi 125 Gram\nAbon Sapi 250 Gram\n\njadikan 1 pada WB-C256CBFB"
+	if IsCartRecapOrComplaint(msg, omahCadburyLiveCatalog()) {
+		t.Fatal("jadikan 1 is merge/amend, not recap-only")
+	}
+	if IsOrderStatusInquiry(msg) || IsOrderRefStatusLookup(msg) {
+		t.Fatal("jadikan 1 + WB-ref must not route as DB status")
+	}
+	sim := newOmahCadburySimulator()
+	sim.Turn("mau oatlife white kopi 1 pcs")
+	sim.Turn("cadbury biscoff bar 130 gram 1")
+	out := sim.Turn(msg)
+	if out.Path == PathOrderStatus {
+		t.Fatalf("must stay in checkout, path=%s reply=%q", out.Path, out.Reply)
+	}
+	if out.Order == nil || !cartHasSKU(out.Order, "oat-white") || !cartHasSKU(out.Order, "cad-bar") {
+		t.Fatalf("existing cart must remain, cart=%+v", out.Order)
+	}
+	if !cartHasSKU(out.Order, "abon-125") || !cartHasSKU(out.Order, "abon-250") {
+		t.Fatalf("pasted Abon lines must merge into cart, cart=%+v reply=%q", out.Order, out.Reply)
+	}
+}
+
+func TestPesananHilangIsNotOrderStatus(t *testing.T) {
+	msg := "loh pesanan saya kok hilang?"
+	if IsOrderStatusInquiry(msg) {
+		t.Fatal("missing chat cart is restore/amend, not DB status lookup")
+	}
+	if ShouldBreakOrderFlow(msg, "ask_recipient", omahCadburyLiveCatalog()) {
+		t.Fatal("pesanan hilang must not clear checkout")
+	}
+	sim := newOmahCadburySimulator()
+	sim.Turn("mau oatlife white kopi 1 pcs")
+	out := sim.Turn(msg)
+	if out.Path == PathOrderStatus || out.BrokeFlow {
+		t.Fatalf("must keep checkout, path=%s broke=%v reply=%q", out.Path, out.BrokeFlow, out.Reply)
+	}
+	if out.Order == nil || !cartHasSKU(out.Order, "oat-white") {
+		t.Fatalf("cart must remain, cart=%+v", out.Order)
 	}
 }

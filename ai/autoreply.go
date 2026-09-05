@@ -225,7 +225,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return err == nil, err
 	}
 	if (IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) || IsOrderRefStatusLookup(userText)) &&
-		!wantsOrderContextFromHistory(userText) && !IsCartLineCorrectionIntent(userText) {
+		!wantsOrderContextFromHistory(userText) && !IsCartLineCorrectionIntent(userText) && !IsCheckoutMergeIntent(userText) {
 		return s.handleCustomerOrderStatus(ctx, ts, payload.TenantSchema, payload, convo, channel, contact, userText, nil)
 	}
 
@@ -323,7 +323,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	if IsThirdPartyBuyerLookup(userText) {
 		return s.handleThirdPartyBuyerLookupDenied(ctx, ts, payload, convo, channel, contact)
 	}
-	if IsCartRecapOrComplaint(userText, toBFCatalogSlice(catalog)) || IsActiveCheckoutRecapQuestion(userText) {
+	if !IsCheckoutMergeIntent(userText) && (IsCartRecapOrComplaint(userText, toBFCatalogSlice(catalog)) || IsActiveCheckoutRecapQuestion(userText)) {
 		if orderSt, _ := s.getOrderState(ctx, payload.TenantID, convo.ID); orderSt != nil {
 			formal := strOrEmpty(profile.Tone) == "formal"
 			reply := CartRecapReply(*orderSt, formal)
@@ -334,7 +334,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		}
 	}
 	if (IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) || IsOrderRefStatusLookup(userText)) &&
-		!IsCartLineCorrectionIntent(userText) && !IsNegatedFullOrderCancel(userText) {
+		!IsCartLineCorrectionIntent(userText) && !IsNegatedFullOrderCancel(userText) && !IsCheckoutMergeIntent(userText) {
 		return s.handleCustomerOrderStatus(ctx, ts, payload.TenantSchema, payload, convo, channel, contact, userText, history)
 	}
 
@@ -390,7 +390,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		"harga", "stok", "produk", "order", "pengiriman", "ukuran", "size",
 		"mau", "tanya", "beli", "ada", "celana", "jeans", "baju", "apparel",
 	}
-	inScope := IsWithinBusinessScope(userText, scopeKeywords, fallbackKW)
+	inScope := IsWithinBusinessScope(userText, scopeKeywords, fallbackKW, toBFCatalogSlice(catalog))
 	if !inScope && (IsActiveCheckoutFromHistory(history, userText) || IsAcknowledgmentLike(userText)) {
 		inScope = true
 	}
@@ -400,7 +400,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	classifier := salesIntentToClassifier(intent)
 	// Fallback ke classifier lama untuk edge case intent confidence rendah.
 	if intent.Confidence < 0.72 {
-		legacy := classifyMessage(userText, inScope, profile)
+		legacy := classifyMessage(userText, inScope, profile, catalog)
 		if legacy.Label == "sensitive_escalate" || legacy.Label == "order_intent" || legacy.Label == "out_of_scope" {
 			classifier = legacy
 		}
@@ -575,7 +575,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return s.handleThirdPartyBuyerLookupDenied(ctx, ts, payload, convo, channel, contact)
 	}
 	if (IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) || IsOrderRefStatusLookup(userText)) &&
-		!IsCartLineCorrectionIntent(userText) && !IsNegatedFullOrderCancel(userText) {
+		!IsCartLineCorrectionIntent(userText) && !IsNegatedFullOrderCancel(userText) && !IsCheckoutMergeIntent(userText) {
 		return s.handleCustomerOrderStatus(ctx, ts, payload.TenantSchema, payload, convo, channel, contact, userText, history)
 	}
 
@@ -935,7 +935,7 @@ var sensitiveKeywords = []string{
 	"ancam", "refund gagal", "tagihan salah",
 }
 
-func classifyMessage(userText string, inScope bool, profile *dbBusinessProfile) classifyResult {
+func classifyMessage(userText string, inScope bool, profile *dbBusinessProfile, catalog []dbCatalogItem) classifyResult {
 	text := strings.ToLower(userText)
 
 	for _, kw := range sensitiveKeywords {
@@ -947,7 +947,7 @@ func classifyMessage(userText string, inScope bool, profile *dbBusinessProfile) 
 		return classifyResult{Label: "out_of_scope", Confidence: 0.9}
 	}
 	if HasPurchaseIntent(userText) {
-		if IsOffBusinessProductRequest(userText, businessScopeKeywords(profile)) {
+		if IsOffBusinessProductRequest(userText, businessScopeKeywords(profile), toBFCatalogSlice(catalog)) {
 			return classifyResult{Label: "out_of_scope", Confidence: 0.92}
 		}
 		// "mau pesen jeans bisa?" = tanya dulu, bukan form order.

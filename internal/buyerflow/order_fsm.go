@@ -60,7 +60,7 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 	formal := profile != nil && strOrEmpty(profile.Tone) == "formal"
 	tmpl := orderTemplatesFromKB(in.KB, formal)
 
-	if IsOffBusinessProductRequest(userText, in.ScopeKW) {
+	if IsOffBusinessProductRequest(userText, in.ScopeKW, catalog) {
 		return OrderFlowResult{Cleared: true, Path: PathOutOfScope, Reply: outOfScopeReply(profile)}
 	}
 
@@ -229,7 +229,7 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 
 	switch stateNorm.Step {
 	case "ask_product":
-		if IsOffBusinessProductRequest(userText, in.ScopeKW) {
+		if IsOffBusinessProductRequest(userText, in.ScopeKW, catalog) {
 			return OrderFlowResult{Cleared: true, Path: PathOutOfScope, Reply: outOfScopeReply(profile)}
 		}
 		st := copyBase(OrderState{Step: "ask_product"})

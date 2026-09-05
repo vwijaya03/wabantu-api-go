@@ -48,6 +48,8 @@ func hasBrandVariantSignal(text string) bool {
 func normalizeBrandToken(tok string) string {
 	tok = strings.ToLower(strings.TrimSpace(tok))
 	switch tok {
+	case "abo", "abonn":
+		return "abon"
 	case "magi", "magie":
 		return "maggi"
 	case "cadburry", "cadburi", "cadbure", "cadbery", "cadburri", "cadburie":

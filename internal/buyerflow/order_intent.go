@@ -221,6 +221,9 @@ func IsOrderRefStatusLookup(userText string) bool {
 	if IsCartLineCorrectionIntent(userText) || IsNegatedFullOrderCancel(userText) {
 		return false
 	}
+	if IsCheckoutMergeIntent(userText) {
+		return false
+	}
 	ref := parseOrderRefFromMessage(userText)
 	if ref == "" {
 		return false
@@ -328,6 +331,9 @@ func IsPaymentStatusInquiry(userText string) bool {
 // IsOrderStatusInquiry — customer asks about their existing order.
 func IsOrderStatusInquiry(userText string) bool {
 	if IsCartLineCorrectionIntent(userText) || IsNegatedFullOrderCancel(userText) {
+		return false
+	}
+	if IsCheckoutMergeIntent(userText) {
 		return false
 	}
 	if IsCartRecapOrComplaint(userText, nil) {
