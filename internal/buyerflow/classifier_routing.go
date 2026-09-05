@@ -94,17 +94,42 @@ func FAQDirectGuardsPass(query string) bool {
 	return true
 }
 
-// looksLikeNamedProductSellInquiry — "jual abon sapi?" tanpa catalog match tetap ke catalog_db.
-func looksLikeNamedProductSellInquiry(query string) bool {
-	if isGeneralStoreCatalogQuestion(query) || HasPurchaseIntent(query) {
+// isSellAvailabilityQuestion — "jual abon sapi?" / "jual indomie goreng nggak" (off-catalog SKU).
+func isSellAvailabilityQuestion(query string) bool {
+	if isGeneralStoreCatalogQuestion(query) {
 		return false
 	}
 	text := strings.ToLower(strings.TrimSpace(query))
-	if text == "" || !IsQuestionLike(query) {
+	if text == "" {
 		return false
 	}
 	hasSell := strings.Contains(text, "jual") || strings.Contains(text, "jualan") || strings.Contains(text, "menjual")
-	return hasSell
+	if !hasSell {
+		return false
+	}
+	if IsQuestionLike(query) {
+		return true
+	}
+	for _, neg := range []string{" nggak", " gak", " ga", " tidak", " ngga", " enggak", " gk"} {
+		if strings.Contains(text, neg) {
+			return true
+		}
+	}
+	trimmed := strings.TrimRight(text, "?!. ")
+	for _, suffix := range []string{"nggak", "gak", "ga", "ngga", "enggak", "gk"} {
+		if strings.HasSuffix(trimmed, suffix) {
+			return true
+		}
+	}
+	return false
+}
+
+// looksLikeNamedProductSellInquiry — "jual abon sapi?" tanpa catalog match tetap ke catalog_db.
+func looksLikeNamedProductSellInquiry(query string) bool {
+	if HasPurchaseIntent(query) {
+		return false
+	}
+	return isSellAvailabilityQuestion(query)
 }
 
 func brandVariantFAQGuard(query string) bool {

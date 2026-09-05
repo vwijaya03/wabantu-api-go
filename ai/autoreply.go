@@ -433,8 +433,8 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	)
 
 	// ── Order flow — prioritas sebelum katalog statis ─────────────────────
-	if inScope && (classifier.Label == "order_intent" ||
-		(IsStructuredOrderList(userText) && !isStructuredOrderCheckoutBreak(userText))) {
+	if inScope && !isStructuredOrderCheckoutBreak(userText) &&
+		(classifier.Label == "order_intent" || IsStructuredOrderList(userText)) {
 		sent, oErr := s.handleOrderFlow(ctx, ts, payload.TenantSchema, payload.TenantID, convo, channel, contact,
 			userText, profile, kbEntries, history, payload.InboundMessageID)
 		return sent, oErr
@@ -549,7 +549,8 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	}
 
 	// ── Handle: order intent state machine ───────────────────────────────
-	if classifier.Label == "order_intent" || (IsOrderContinuationMessage(userText) && hasOrderIntentText(userText)) {
+	if !isStructuredOrderCheckoutBreak(userText) &&
+		(classifier.Label == "order_intent" || (IsOrderContinuationMessage(userText) && hasOrderIntentText(userText))) {
 		sent, oErr := s.handleOrderFlow(ctx, ts, payload.TenantSchema, payload.TenantID, convo, channel, contact,
 			userText, profile, kbEntries, history, payload.InboundMessageID)
 		return sent, oErr
