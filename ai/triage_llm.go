@@ -249,7 +249,7 @@ func RunLLMTriageScan(ctx context.Context, p LLMScanParams) (*LLMScanRunResult, 
 		businessName = strings.TrimSpace(profile.BusinessName)
 	}
 
-	catalog, err := loadActiveCatalog(ctx, ts, 40)
+	catalog, err := loadActiveCatalog(ctx, ts, defaultCatalogLoadLimit)
 	if err != nil {
 		catalog = nil
 	}

@@ -5,7 +5,7 @@ import "testing"
 func TestBuyerBehaviorScriptHappyAbon(t *testing.T) {
 	sim := newOmahSimulator()
 	o := sim.RunScript(
-		"saya jadi beli abon sapi 2 pcs",
+		"saya jadi beli abon sapi 500g 2 pcs",
 		recipientBlock("Budi", "081234567890"),
 		fullAddressBlock(),
 	)

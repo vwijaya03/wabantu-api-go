@@ -27,6 +27,8 @@ const (
 	paymentProofRateLimitPerHour = 10
 	paymentProofAmountTolerance  = 1000.0
 	paymentProofRateKeyPrefix    = "payment_proof:rate:"
+	paymentProofDoneKeyPrefix    = "payment_proof:done:"
+	paymentProofDoneTTL          = 24 * time.Hour
 )
 
 type paymentAccount struct {
@@ -38,8 +40,8 @@ type paymentAccount struct {
 type paymentProofMeta = order.PaymentProofMeta
 
 type paymentProfileSettings struct {
-	Mode       string
-	MinConf    float64
+	Mode    string
+	MinConf float64
 }
 
 var accountNumberRe = regexp.MustCompile(`\b\d{8,16}\b`)
@@ -735,6 +737,35 @@ func sendPaymentProofOutbound(ctx context.Context, ts tenantScopedQuerier, job *
 	}
 	meta := metaNoLLM(reasonAIGenerated, PathPaymentProof)
 	return svc.sendAiMessage(ctx, ts, job.TenantID, convo, channel, contact, text, "system", job.InboundMessageID, meta)
+}
+
+func paymentProofDoneKey(inboundID string) string {
+	inboundID = strings.TrimSpace(inboundID)
+	if inboundID == "" {
+		return ""
+	}
+	return paymentProofDoneKeyPrefix + inboundID
+}
+
+func claimPaymentProofInbound(ctx context.Context, inboundID string) bool {
+	key := paymentProofDoneKey(inboundID)
+	if key == "" || svc == nil || svc.rdb == nil {
+		return true
+	}
+	ok, err := svc.rdb.SetNX(ctx, key, "1", paymentProofDoneTTL).Result()
+	if err != nil {
+		rlog.Warn("payment proof idempotency claim failed", "err", err)
+		return true
+	}
+	return ok
+}
+
+func releasePaymentProofInbound(ctx context.Context, inboundID string) {
+	key := paymentProofDoneKey(inboundID)
+	if key == "" || svc == nil || svc.rdb == nil {
+		return
+	}
+	_ = svc.rdb.Del(ctx, key).Err()
 }
 
 func checkPaymentProofRateLimit(ctx context.Context, tenantSchema, contactID string) bool {

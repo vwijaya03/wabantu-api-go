@@ -125,6 +125,18 @@ func TestLiveThread_NutellaAppendAtAskVariant(t *testing.T) {
 	}
 }
 
+func TestPreferCheckoutRecapOverDBStatus(t *testing.T) {
+	if !PreferCheckoutRecapOverDBStatus("apa saya ada pesanan aktif?", true) {
+		t.Fatal("active Redis/DB draft must recap instead of empty order_status")
+	}
+	if PreferCheckoutRecapOverDBStatus("apa saya ada pesanan aktif?", false) {
+		t.Fatal("without checkout state, recap question may fall through to DB status")
+	}
+	if PreferCheckoutRecapOverDBStatus("gimana status pesanan WB-58D662BC", true) {
+		t.Fatal("explicit order ref is DB status, not chat recap")
+	}
+}
+
 func TestLiveThread_PesananAktifRecapsRedisCart(t *testing.T) {
 	sim := newFoodSimulator()
 	sim.Catalog = omahLiveFMCGCatalog()
@@ -222,6 +234,55 @@ func TestAskQtyDoesNotDropNamedSKU(t *testing.T) {
 	}, nil)
 	if res.State == nil || !res.State.HasMultiItems() {
 		t.Fatalf("ask_qty with qty already set must still append named SKU, got %+v reply=%q", res.State, res.Reply)
+	}
+}
+
+func TestApparelSizeDisambiguatesHelloKittySKU(t *testing.T) {
+	catalog := omahCatalog()
+	m := resolveOrderProductMatch("CELANA DALAM BOXER ANAK PEREMPUAN MOTIF HELLO KITTY BUNGA LEMBUT - L 1 lusin", nil, catalog, nil)
+	if m == nil || m.ID != "hello-kitty-l" {
+		t.Fatalf("hello kitty L line must unique-match, got %+v", m)
+	}
+	xl := resolveOrderProductMatch("CELANA DALAM BOXER ANAK PEREMPUAN MOTIF HELLO KITTY BUNGA LEMBUT - XL 2 lusin", nil, catalog, nil)
+	if xl == nil || xl.ID != "hello-kitty-xl" {
+		t.Fatalf("hello kitty XL line must unique-match, got %+v", xl)
+	}
+}
+
+func TestCatalogItemHasSizeDoesNotConfuseSuffixes(t *testing.T) {
+	l := CatalogItem{Name: "1PCS CELANA DALAM BOXER ANAK PEREMPUAN MOTIF HELLO KITTY BUNGA LEMBUT - L"}
+	xl := CatalogItem{Name: "1PCS CELANA DALAM BOXER ANAK PEREMPUAN MOTIF HELLO KITTY BUNGA LEMBUT - XL"}
+	xxl := CatalogItem{Name: "1PCS CELANA DALAM BOXER ANAK PEREMPUAN MOTIF HELLO KITTY BUNGA LEMBUT - XXL"}
+	if catalogItemHasSize(xl, "L") {
+		t.Fatal("LEMBUT / XL must not count as size L")
+	}
+	if catalogItemHasSize(xxl, "XL") {
+		t.Fatal("XXL must not count as XL via HasSuffix")
+	}
+	if !catalogItemHasSize(l, "L") || !catalogItemHasSize(xl, "XL") || !catalogItemHasSize(xxl, "XXL") {
+		t.Fatal("exact apparel suffix must match")
+	}
+}
+
+func TestQtyRevisionIsNotOtherSKU(t *testing.T) {
+	st := OrderState{CatalogItemID: "abon-500g", ProductName: "Abon Sapi 500G", Qty: 1}
+	if namesOtherCheckoutSKU(st, "ga jadi ganti 3 pcs bang", omahCatalog()) {
+		t.Fatal("qty revision must not be treated as a different SKU")
+	}
+}
+
+func TestBoxerAndHelloKittyAreNotSiblingSKUs(t *testing.T) {
+	catalog := apparelCatalog()
+	st := OrderState{
+		CatalogItemID: "boxer-mono-l",
+		ProductName:   catalog[0].Name,
+		Qty:           1,
+	}
+	if shouldReviseToSiblingSKU(st, "hello kitty L 1 pcs", catalog) {
+		t.Fatal("hello kitty must append, not replace boxer as a sibling variant")
+	}
+	if !shouldReviseToSiblingSKU(st, "boxer mono spot M 1 pcs", catalog) {
+		t.Fatal("mono M is a sibling size of mono L")
 	}
 }
 

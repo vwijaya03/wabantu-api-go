@@ -7,10 +7,14 @@ const (
 )
 
 // RRF with k=60 arithmetic (documented for FAQ direct calibration):
-//   rank-1 in one list  → 1/(60+1) ≈ 0.01639
-//   rank-1 in both lists → 2/61     ≈ 0.03279
-//   rank-2 in one list  → 1/62     ≈ 0.01613
-//   margin rank1−rank2 (same list) → ≈ 0.000264
+//
+//	rank-1 in one list  → 1/(60+1) ≈ 0.01639
+//	rank-1 in both lists → 2/61     ≈ 0.03279
+//	rank-2 in one list  → 1/62     ≈ 0.01613
+//	margin rank1−rank2 (same list) → ≈ 0.000264
+//
+// RRF is a fusion rank, not a quality gate. Catalog auto-pick must use cosine
+// (VectorMinSimilarity / CatalogSemanticMinAutoPickScore), never fused RRF.
 const (
 	DefaultFAQMinScore  = 0.014 // minimum fused RRF score (legacy; use with RequireBothLists)
 	DefaultFAQMinMargin = 0.003 // top1−top2 fused margin
@@ -18,10 +22,10 @@ const (
 
 // FAQDirectPolicy configures FAQ direct gating on fused RRF scores.
 type FAQDirectPolicy struct {
-	MinScore             float64
-	MinMargin            float64
-	RequireBothLists     bool    // top entry must appear in vector and lexical lists (post-floor)
-	MinVectorSimilarity  float64 // best cosine for top entry when > 0
+	MinScore            float64
+	MinMargin           float64
+	RequireBothLists    bool    // top entry must appear in vector and lexical lists (post-floor)
+	MinVectorSimilarity float64 // best cosine for top entry when > 0
 }
 
 // DefaultFAQDirectPolicy is the production FAQ direct gate for vector mode.

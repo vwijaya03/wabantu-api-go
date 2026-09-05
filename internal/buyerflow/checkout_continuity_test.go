@@ -10,6 +10,16 @@ func TestShouldBreakOrderFlowImplicitAppend(t *testing.T) {
 	if ShouldBreakOrderFlow("cadbury mini 1 pcs", "ask_recipient", catalog) {
 		t.Fatal("named product+qty at ask_recipient must not break flow")
 	}
+	food := omahFoodCatalog()
+	if ShouldBreakOrderFlow("nutella", "ask_recipient", food) {
+		t.Fatal("bare unique SKU append must not break flow (conjunction not required)")
+	}
+	if ShouldBreakOrderFlow("xiaomi redmi 13 128gb 1 pcs", "ask_recipient", electronicsCatalog()) {
+		t.Fatal("electronics append must not break checkout")
+	}
+	if ShouldBreakOrderFlow("hello kitty L 1 pcs", "ask_recipient", apparelCatalog()) {
+		t.Fatal("apparel second SKU must not break checkout")
+	}
 	if !ShouldBreakOrderFlow("berapa ongkir ke bandung?", "ask_recipient", catalog) {
 		t.Fatal("shipping question should break flow at ask_recipient")
 	}
@@ -83,9 +93,9 @@ func TestRegressionCheckoutContinuityMatrix(t *testing.T) {
 		check    func(t *testing.T, out TurnOutcome, sim *Simulator)
 	}
 	type archetype struct {
-		name  string
+		name   string
 		newSim func() *Simulator
-		steps []step
+		steps  []step
 	}
 	archetypes := []archetype{
 		{
@@ -175,6 +185,58 @@ func TestRegressionCheckoutContinuityMatrix(t *testing.T) {
 						}
 						if !strings.Contains(strings.ToLower(out.Reply), "boleh tambah") {
 							t.Fatalf("expected CS add-more reply: %q", out.Reply)
+						}
+					},
+				},
+			},
+		},
+		{
+			name:   "electronics_append_other_brand",
+			newSim: newElectronicsSimulator,
+			steps: []step{
+				{input: "samsung a14 128gb 1 pcs", wantPath: PathOrderFlow},
+				{
+					input:    "xiaomi redmi 13 128gb 1 pcs",
+					wantPath: PathOrderFlow,
+					check: func(t *testing.T, out TurnOutcome, sim *Simulator) {
+						if sim.Order == nil || !sim.Order.HasMultiItems() || len(sim.Order.Items) != 2 {
+							t.Fatalf("gadget cart must hold two brands, got %+v", sim.Order)
+						}
+					},
+				},
+			},
+		},
+		{
+			name:   "beauty_append_other_line",
+			newSim: newBeautySimulator,
+			steps: []step{
+				{input: "wardah lip cream 01 1 pcs", wantPath: PathOrderFlow},
+				{
+					input:    "wardah crystal secret serum 1 pcs",
+					wantPath: PathOrderFlow,
+					check: func(t *testing.T, out TurnOutcome, sim *Simulator) {
+						if sim.Order == nil || !sim.Order.HasMultiItems() || len(sim.Order.Items) != 2 {
+							t.Fatalf("lip + serum must both stay in cart, got %+v", sim.Order)
+						}
+					},
+				},
+			},
+		},
+		{
+			name:   "apparel_cart_complaint_recap",
+			newSim: newApparelSimulator,
+			steps: []step{
+				{input: "boxer mono spot L 1 pcs", wantPath: PathOrderFlow},
+				{input: "hello kitty L 1 pcs", wantPath: PathOrderFlow},
+				{
+					input:    "pesanan saya ada 2 loh ya",
+					wantPath: PathOrderFlow,
+					check: func(t *testing.T, out TurnOutcome, sim *Simulator) {
+						if out.Path == PathOrderStatus {
+							t.Fatal("apparel cart complaint must recap, not DB status")
+						}
+						if !strings.Contains(strings.ToLower(out.Reply), "ringkasan") {
+							t.Fatalf("expected apparel cart recap: %q", out.Reply)
 						}
 					},
 				},

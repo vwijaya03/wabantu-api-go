@@ -183,6 +183,9 @@ func parseAppendSegments(userText string, catalog []CatalogItem, vctx *CatalogVe
 		}
 		return qtyOnly, newLines
 	}
+	// Conjunction (lalu/plus) is a multi-line splitter, not an append permission.
+	// "lalu maggi percik 1" while percik is already in cart still needs this branch
+	// so MergeOrderLines can bump qty of the same SKU.
 	if IsAddItemToOrderMessage(userText) {
 		line := parseStructuredOrderLine(userText, catalog, vctx)
 		if line.CatalogItemID != "" {
@@ -309,6 +312,9 @@ func parseCheckoutAppendLine(st OrderState, userText string, catalog []CatalogIt
 }
 
 func namesOtherCheckoutSKU(st OrderState, userText string, catalog []CatalogItem) bool {
+	if IsOrderRevisionMessage(userText) {
+		return false
+	}
 	match := resolveOrderProductMatch(userText, nil, catalog, nil)
 	if match == nil {
 		return lexicalBrandAmbiguous(userText, catalog)
@@ -329,25 +335,7 @@ func shouldImplicitAppendDifferentSKU(st OrderState, userText string, catalog []
 	if lexicalBrandAmbiguous(userText, catalog) {
 		return true
 	}
-	if parseCheckoutAppendLine(st, userText, catalog, nil).CatalogItemID != "" {
-		return true
-	}
-	if !isNamedProductWithQtyMessage(userText, catalog) {
-		return false
-	}
-	match := matchCatalogItem(userText, catalog)
-	if match == nil {
-		return false
-	}
-	if match.ID == st.CatalogItemID {
-		return false
-	}
-	for _, ln := range st.Items {
-		if ln.CatalogItemID == match.ID {
-			return false
-		}
-	}
-	return true
+	return parseCheckoutAppendLine(st, userText, catalog, nil).CatalogItemID != ""
 }
 
 func GuardStructuredOrderStock(st OrderState, catalog []CatalogItem, formal bool) (OrderState, string, bool) {

@@ -67,10 +67,26 @@ func enrichCatalogStock(ctx context.Context, ts tenantScopedQuerier, catalog []d
 	}
 }
 
-func loadActiveCatalog(ctx context.Context, ts tenantScopedQuerier, limit int) ([]dbCatalogItem, error) {
-	if limit < 1 || limit > 100 {
-		limit = 40
+const (
+	// defaultCatalogLoadLimit is the SQL window for lexical catalog match.
+	// Do not silently clamp large limits down to 40 — that dropped SKUs
+	// (e.g. Nutella) on bigger tenants. Vector hits are fetched by ID separately.
+	defaultCatalogLoadLimit = 200
+	maxCatalogLoadLimit     = 500
+)
+
+func normalizeCatalogLoadLimit(limit int) int {
+	if limit < 1 {
+		return defaultCatalogLoadLimit
 	}
+	if limit > maxCatalogLoadLimit {
+		return maxCatalogLoadLimit
+	}
+	return limit
+}
+
+func loadActiveCatalog(ctx context.Context, ts tenantScopedQuerier, limit int) ([]dbCatalogItem, error) {
+	limit = normalizeCatalogLoadLimit(limit)
 	rows, err := ts.QueryContext(ctx, fmt.Sprintf(`
 		SELECT id::text, external_code, name,
 		       COALESCE(sell_price, 0), COALESCE(sell_unit, 'pcs')

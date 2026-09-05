@@ -144,6 +144,9 @@ func resolveOrderProductMatch(userText string, history []Message, catalog []Cata
 	if unique := uniqueBrandSKUFromText(userText, catalog); unique != nil {
 		return unique
 	}
+	if unique := uniqueSizedSKUFromText(userText, catalog); unique != nil {
+		return unique
+	}
 	if lexicalBrandAmbiguous(userText, catalog) {
 		return nil
 	}
@@ -582,7 +585,8 @@ func (st OrderState) ProductComplete() bool {
 	return strings.TrimSpace(st.ProductName) != "" || strings.TrimSpace(st.CatalogItemID) != ""
 }
 
-// catalogItemNeedsVariant — apparel/ukuran; makanan & produk tanpa varian dilewati.
+// catalogItemNeedsVariant — apparel/ukuran S-M-L. Makanan, gadget, kosmetik, dan
+// SKU tanpa suffix ukuran tidak masuk ask_variant.
 func catalogItemNeedsVariant(it *CatalogItem) bool {
 	if it == nil {
 		return false

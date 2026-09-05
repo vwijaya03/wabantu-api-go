@@ -46,7 +46,16 @@ func handlePaymentProofJob(ctx context.Context, job *PaymentProofJob) error {
 		"conversationId", job.ConversationID,
 		"messageId", job.MessageID,
 	)
+	inboundID := job.InboundMessageID
+	if inboundID == "" {
+		inboundID = job.MessageID
+	}
+	if !claimPaymentProofInbound(ctx, inboundID) {
+		rlog.Info("payment proof job already processed", "inboundId", inboundID)
+		return nil
+	}
 	if err := processPaymentProofJob(ctx, job); err != nil {
+		releasePaymentProofInbound(ctx, inboundID)
 		rlog.Warn("payment proof job failed",
 			"schema", job.TenantSchema,
 			"messageId", job.MessageID,

@@ -2,6 +2,7 @@ package buyerflow
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -145,12 +146,29 @@ func distinctiveNameTokens(name, brand string) []string {
 		if tok == brand || brandDistinctiveStop[tok] {
 			continue
 		}
-		if len(tok) < 4 && !isNumericSizeToken(tok) {
+		if len(tok) < 4 && !isNumericSizeToken(tok) && !isApparelSizeToken(tok) && !isMultiCharSizeToken(tok) && !isCapacityOrVolumeToken(tok) {
 			continue
 		}
 		out = append(out, tok)
 	}
 	return out
+}
+
+func isCapacityOrVolumeToken(tok string) bool {
+	tok = strings.ToLower(strings.TrimSpace(tok))
+	if tok == "" {
+		return false
+	}
+	return capacityOrVolumeRe.MatchString(tok)
+}
+
+func isMultiCharSizeToken(tok string) bool {
+	switch strings.ToLower(strings.TrimSpace(tok)) {
+	case "xxxl", "3xl", "xxl", "xl", "xs", "4xl", "5xl":
+		return true
+	default:
+		return false
+	}
 }
 
 func isNumericSizeToken(tok string) bool {
@@ -174,19 +192,8 @@ func uniqueBrandSKUFromText(userText string, catalog []CatalogItem) *CatalogItem
 	if len(items) < 2 {
 		return nil
 	}
-	text := strings.ToLower(userText)
-	var hits []CatalogItem
-	for _, it := range items {
-		for _, tok := range distinctiveNameTokens(it.Name, brand) {
-			if strings.Contains(text, tok) {
-				hits = append(hits, it)
-				break
-			}
-		}
-	}
-	if len(hits) == 1 {
-		hit := hits[0]
-		return &hit
+	if hit := uniqueItemByDistinctiveUserTokens(userText, brand, items); hit != nil {
+		return hit
 	}
 	if sz, _ := parseSizeAndColor(userText); sz != "" {
 		var sized []CatalogItem
@@ -203,17 +210,96 @@ func uniqueBrandSKUFromText(userText string, catalog []CatalogItem) *CatalogItem
 	return nil
 }
 
+// uniqueSizedSKUFromText picks a catalog row when the buyer named a size that
+// uniquely identifies one high-overlap SKU (Hello Kitty L vs boxer L).
+func uniqueSizedSKUFromText(userText string, catalog []CatalogItem) *CatalogItem {
+	sz, _ := parseSizeAndColor(userText)
+	if sz == "" || len(catalog) == 0 {
+		return nil
+	}
+	tokens := tokenize(userText)
+	if len(tokens) == 0 {
+		return nil
+	}
+	var best *CatalogItem
+	var bestScore float64
+	tied := false
+	for i := range catalog {
+		it := &catalog[i]
+		if !catalogItemHasSize(*it, sz) {
+			continue
+		}
+		score := overlapScore(tokens, tokenize(it.Name))
+		if score < 0.12 {
+			continue
+		}
+		if best == nil || score > bestScore {
+			best = it
+			bestScore = score
+			tied = false
+			continue
+		}
+		if score == bestScore {
+			tied = true
+		}
+	}
+	if best == nil || tied {
+		return nil
+	}
+	return best
+}
+
+func uniqueItemByDistinctiveUserTokens(userText, brand string, items []CatalogItem) *CatalogItem {
+	userToks := map[string]struct{}{}
+	for _, tok := range tokenize(strings.ToLower(userText)) {
+		userToks[tok] = struct{}{}
+	}
+	owners := map[string][]int{}
+	for i, it := range items {
+		seen := map[string]struct{}{}
+		for _, tok := range distinctiveNameTokens(it.Name, brand) {
+			if _, dup := seen[tok]; dup {
+				continue
+			}
+			seen[tok] = struct{}{}
+			owners[tok] = append(owners[tok], i)
+		}
+	}
+	hitIDs := map[string]struct{}{}
+	var unique []CatalogItem
+	for tok := range userToks {
+		idxs := owners[tok]
+		if len(idxs) != 1 {
+			continue
+		}
+		it := items[idxs[0]]
+		if _, ok := hitIDs[it.ID]; ok {
+			continue
+		}
+		hitIDs[it.ID] = struct{}{}
+		unique = append(unique, it)
+	}
+	if len(unique) != 1 {
+		return nil
+	}
+	hit := unique[0]
+	return &hit
+}
+
 func catalogItemHasSize(it CatalogItem, size string) bool {
 	sz := strings.ToUpper(strings.TrimSpace(size))
 	if sz == "" {
 		return false
 	}
-	if extractSizeFromProductName(it.Name) == sz {
-		return true
+	if got := extractSizeFromProductName(it.Name); got != "" {
+		return got == sz
 	}
-	name := strings.ToUpper(it.Name)
-	return strings.Contains(name, " "+sz) || strings.HasSuffix(name, sz) ||
-		strings.Contains(name, "- "+sz) || strings.Contains(name, "-"+sz)
+	for _, tok := range tokenize(it.Name) {
+		if strings.EqualFold(tok, sz) {
+			return true
+		}
+	}
+	return false
 }
 
 func lexicalBrandAmbiguous(userText string, catalog []CatalogItem) bool {
@@ -253,11 +339,54 @@ func shouldReviseToSiblingSKU(st OrderState, userText string, catalog []CatalogI
 	if match == nil || match.ID == st.CatalogItemID {
 		return false
 	}
-	brand := brandTokenFromText(st.ProductName, catalog)
-	if brand == "" {
+	var current *CatalogItem
+	for i := range catalog {
+		if catalog[i].ID == st.CatalogItemID {
+			current = &catalog[i]
+			break
+		}
+	}
+	if current == nil {
 		return false
 	}
-	return catalogItemMatchesBrand(*match, brand)
+	return sameProductLine(*current, *match)
+}
+
+// capacityOrVolumeRe strips gadget/beauty variant suffixes (128GB, 30ml, 25W)
+// so product-line comparison is domain-agnostic — not F&B-only.
+var capacityOrVolumeRe = regexp.MustCompile(`(?i)\s*\d+(\.\d+)?\s*(gb|tb|mb|ml|mah|w|watt)\b`)
+
+var trailingShadeColorRe = regexp.MustCompile(`(?i)\s+(nude|pink|red|hitam|putih|beige|coral|brown|merah|biru|cream|matte|glossy|rose)$`)
+
+var trailingShadeCodeRe = regexp.MustCompile(`(?i)\s+\d{1,3}$`)
+
+func productLineCore(name string) string {
+	n := strings.ToLower(strings.TrimSpace(name))
+	n = catalogQtyPrefixRe.ReplaceAllString(n, "")
+	n = catalogLeadingPackRe.ReplaceAllString(n, "")
+	n = bracketPackPrefixRe.ReplaceAllString(n, "")
+	n = productSizeSuffixRe.ReplaceAllString(n, "")
+	n = weightSuffixRe.ReplaceAllString(n, "")
+	n = capacityOrVolumeRe.ReplaceAllString(n, " ")
+	n = strings.TrimSpace(n)
+	if i := strings.LastIndex(n, " - "); i >= 8 {
+		left := strings.TrimSpace(n[:i])
+		if len(strings.Fields(left)) >= 3 {
+			n = left
+		}
+	}
+	n = trailingShadeColorRe.ReplaceAllString(n, "")
+	n = trailingShadeCodeRe.ReplaceAllString(n, "")
+	return strings.Join(strings.Fields(n), " ")
+}
+
+func sameProductLine(a, b CatalogItem) bool {
+	ca := productLineCore(a.Name)
+	cb := productLineCore(b.Name)
+	if ca == "" || cb == "" || len(ca) < 6 {
+		return false
+	}
+	return ca == cb
 }
 
 func buildBrandVariantListReply(formal bool, brandToken string, catalog []CatalogItem, max int) string {

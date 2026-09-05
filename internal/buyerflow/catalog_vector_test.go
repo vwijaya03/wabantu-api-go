@@ -52,6 +52,19 @@ func TestMatchCatalogItemSemanticSingleHitLowScoreNoAutoPick(t *testing.T) {
 	}
 }
 
+func TestMatchCatalogItemSemanticDropsRRFScaleHitsThenLexicalFallback(t *testing.T) {
+	catalog := []CatalogItem{
+		{ID: "zebra", Name: "Zebra Cake", SellPrice: 10000},
+		{ID: "nutella", Name: "Nutella Biskuit", SellPrice: 155000},
+	}
+	// RRF k=60 rank-1 ≈ 0.016 — not a cosine quality gate. Must not narrow the catalog.
+	hits := []retrieval.Hit{{Score: 0.016, Metadata: map[string]any{"entry_id": "zebra"}}}
+	m := MatchCatalogItemSemantic("biskuit", catalog, hits)
+	if m == nil || m.ID != "nutella" {
+		t.Fatalf("RRF-scale hits must be dropped; lexical should find nutella, got %+v", m)
+	}
+}
+
 func TestCatalogSemanticAmbiguousSortsHits(t *testing.T) {
 	hits := []retrieval.Hit{
 		{Score: 0.885},

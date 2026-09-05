@@ -22,7 +22,7 @@ func (s *AutoReplyService) handleOrderFlow(
 	history []dbMessage,
 	inboundID string,
 ) (bool, error) {
-	catalog, catErr := loadActiveCatalog(ctx, ts, 40)
+	catalog, catErr := loadActiveCatalog(ctx, ts, defaultCatalogLoadLimit)
 	if catErr != nil {
 		rlog.Warn("AI order: catalog load failed", "err", catErr)
 	}
