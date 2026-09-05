@@ -18,6 +18,18 @@ func TestIsOrderAmendMessage(t *testing.T) {
 	}
 }
 
+func TestIsCheckoutMergeIntent(t *testing.T) {
+	if !IsCheckoutMergeIntent("jadikan 1 pada WB-C256CBFB") {
+		t.Fatal("jadikan 1 is merge")
+	}
+	if !IsCheckoutMergeIntent("loh pesanan saya kok hilang?") {
+		t.Fatal("pesanan hilang is restore/merge")
+	}
+	if IsCheckoutMergeIntent("abon nutela ga masuk") {
+		t.Fatal("ga masuk stays a cart complaint, not merge")
+	}
+}
+
 func TestExtractAmendLinesFromHistory(t *testing.T) {
 	catalog := omahFoodCatalog()
 	history := []Message{

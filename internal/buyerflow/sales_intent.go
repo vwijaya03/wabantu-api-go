@@ -139,7 +139,7 @@ func ResolveSalesIntent(
 		return SalesIntent{State: SalesStateCartReady, Topic: SalesTopicProduct, ProductHint: hint, Confidence: 0.92}
 	}
 	if hasPurchaseIntent(userText, catalog) {
-		if IsOffBusinessProductRequest(userText, businessScopeKeywords(profile)) {
+		if IsOffBusinessProductRequest(userText, businessScopeKeywords(profile), catalog) {
 			return SalesIntent{State: SalesStateOutOfScope, Confidence: 0.92}
 		}
 		hint := productHintFromText(userText, catalog)

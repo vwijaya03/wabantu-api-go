@@ -10,8 +10,8 @@ func IsCartRecapOrComplaint(userText string, catalog []CatalogItem) bool {
 	if text == "" {
 		return false
 	}
-	if IsOrderAmendMessage(userText) {
-		return true
+	if IsCheckoutMergeIntent(userText) {
+		return false
 	}
 	complaintSignals := []string{
 		"ga masuk", "gak masuk", "belum masuk", "tidak masuk", "blm masuk",

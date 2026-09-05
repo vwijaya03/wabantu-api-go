@@ -479,6 +479,9 @@ func ShouldBreakOrderFlow(userText, step string, catalog []CatalogItem) bool {
 	if IsAddMoreItemsPolicyQuestion(userText) {
 		return false
 	}
+	if IsCheckoutMergeIntent(userText) {
+		return false
+	}
 	if IsCartLineCorrectionIntent(userText) || IsNegatedFullOrderCancel(userText) {
 		return false
 	}
@@ -498,6 +501,11 @@ func ShouldBreakOrderFlow(userText, step string, catalog []CatalogItem) bool {
 		return true
 	}
 	if IsStructuredOrderList(userText) || IsExplicitNewOrderStart(userText) {
+		if isCheckoutAppendStep(step) && IsStructuredOrderList(userText) &&
+			!IsExplicitNewOrderStart(userText) &&
+			(IsAddItemToOrderMessage(userText) || IsCheckoutMergeIntent(userText)) {
+			return false
+		}
 		return true
 	}
 	if isOrderProductContinuationStep(step) && messageNamesCatalogProduct(userText, catalog) {

@@ -121,6 +121,7 @@ var (
 	IsOrderRefStatusLookup                 = bf.IsOrderRefStatusLookup
 	IsOrderRevisionMessage                 = bf.IsOrderRevisionMessage
 	IsOrderAmendMessage                    = bf.IsOrderAmendMessage
+	IsCheckoutMergeIntent                  = bf.IsCheckoutMergeIntent
 	IsCartRecapOrComplaint                 = bf.IsCartRecapOrComplaint
 	IsAddMoreItemsPolicyQuestion           = bf.IsAddMoreItemsPolicyQuestion
 	IsStandaloneAddMoreItemsPolicyQuestion = bf.IsStandaloneAddMoreItemsPolicyQuestion

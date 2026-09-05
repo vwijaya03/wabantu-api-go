@@ -6,7 +6,8 @@ import (
 	"strings"
 )
 
-var inlineOrderConjunctionRe = regexp.MustCompile(`(?i)(?:,\s*)?\b(?:lalu|dan juga|plus|sama)\b\s+`)
+var inlineOrderConjunctionRe = regexp.MustCompile(`(?i)(?:,\s*)?\b(?:lalu|dan juga|plus|sama)\b\s+|,\s*\bdan\b\s+`)
+var looseDanConjunctionRe = regexp.MustCompile(`(?i)\s+\bdan\b\s+`)
 
 // IsAddItemToOrderMessage — buyer menambah produk saat checkout aktif.
 func IsAddItemToOrderMessage(userText string) bool {
@@ -14,7 +15,7 @@ func IsAddItemToOrderMessage(userText string) bool {
 	if text == "" {
 		return false
 	}
-	signals := []string{"lalu ", "lalu,", "tambah ", "sekalian ", "plus ", "sama ", "dan juga "}
+	signals := []string{"lalu ", "lalu,", "tambah ", "sekalian ", "plus ", "sama ", "dan juga ", "tambahannya", "itu saja"}
 	for _, s := range signals {
 		if strings.Contains(text, s) {
 			return true
@@ -38,7 +39,17 @@ func splitInlineOrderSegments(userText string) []string {
 	if text == "" {
 		return nil
 	}
-	parts := inlineOrderConjunctionRe.Split(text, -1)
+	parts := trimNonEmpty(inlineOrderConjunctionRe.Split(text, -1))
+	if len(parts) >= 2 {
+		return parts
+	}
+	if loose := splitLooseDanProductSegments(text); len(loose) >= 2 {
+		return loose
+	}
+	return parts
+}
+
+func trimNonEmpty(parts []string) []string {
 	var out []string
 	for _, p := range parts {
 		p = strings.TrimSpace(p)
@@ -47,6 +58,84 @@ func splitInlineOrderSegments(userText string) []string {
 		}
 	}
 	return out
+}
+
+func splitLooseDanProductSegments(text string) []string {
+	parts := trimNonEmpty(looseDanConjunctionRe.Split(text, -1))
+	if len(parts) < 2 {
+		return nil
+	}
+	n := 0
+	for _, p := range parts {
+		if looksLikeOrderSegment(p) {
+			n++
+		}
+	}
+	if n < 2 {
+		return nil
+	}
+	return parts
+}
+
+func looksLikeOrderSegment(seg string) bool {
+	seg = strings.TrimSpace(seg)
+	if seg == "" {
+		return false
+	}
+	if mentionsOrderQty(seg) {
+		return true
+	}
+	lower := strings.ToLower(seg)
+	if strings.Contains(lower, "gram") || strings.Contains(lower, " gr") || strings.HasSuffix(lower, "gr") {
+		return true
+	}
+	for _, tok := range tokenize(lower) {
+		if gluedMeasureRe.MatchString(tok) {
+			return true
+		}
+	}
+	return false
+}
+
+func splitOrderTextSegments(userText string) []string {
+	inline := splitInlineOrderSegments(userText)
+	if len(inline) >= 2 {
+		return inline
+	}
+	var lines []string
+	for _, line := range strings.Split(userText, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || isOrderListHeaderLine(line) || isAppendFooterLine(line) {
+			continue
+		}
+		lines = append(lines, line)
+	}
+	if len(lines) >= 2 {
+		return lines
+	}
+	return inline
+}
+
+func isCheckoutFormFieldMessage(userText string) bool {
+	if hasRecipientHintInMessage(userText) {
+		return true
+	}
+	text := strings.ToLower(strings.TrimSpace(userText))
+	if text == "" {
+		return false
+	}
+	if orderAddrHintRe.MatchString(text) || postalCodeIDRe.MatchString(text) {
+		return true
+	}
+	return false
+}
+
+func isAppendFooterLine(line string) bool {
+	lower := strings.ToLower(strings.TrimSpace(line))
+	if lower == "" {
+		return false
+	}
+	return strings.Contains(lower, "tambahannya") || strings.Contains(lower, "itu saja")
 }
 
 // ParseStructuredOrderLine — satu baris order (qty + SKU) untuk structured/inline multi.
@@ -170,8 +259,9 @@ func MergeOrderLines(existing, added []OrderLineState) []OrderLineState {
 }
 
 func parseAppendSegments(userText string, catalog []CatalogItem, vctx *CatalogVectorContext) (qtyOnly *int, newLines []OrderLineState) {
-	if IsInlineMultiOrderMessage(userText) {
-		for _, seg := range splitInlineOrderSegments(userText) {
+	segments := splitOrderTextSegments(userText)
+	if len(segments) >= 2 {
+		for _, seg := range segments {
 			line := parseStructuredOrderLine(seg, catalog, vctx)
 			if line.CatalogItemID != "" {
 				newLines = append(newLines, line)
@@ -181,18 +271,40 @@ func parseAppendSegments(userText string, catalog []CatalogItem, vctx *CatalogVe
 				qtyOnly = &q
 			}
 		}
+		if len(newLines) == 0 {
+			newLines = appendLinesFromIdentifiedCatalog(userText, catalog, newLines)
+		}
 		return qtyOnly, newLines
 	}
 	// Conjunction (lalu/plus) is a multi-line splitter, not an append permission.
 	// "lalu maggi percik 1" while percik is already in cart still needs this branch
 	// so MergeOrderLines can bump qty of the same SKU.
-	if IsAddItemToOrderMessage(userText) {
+	if IsAddItemToOrderMessage(userText) || IsCheckoutMergeIntent(userText) {
 		line := parseStructuredOrderLine(userText, catalog, vctx)
 		if line.CatalogItemID != "" {
 			newLines = []OrderLineState{line}
 		}
+		newLines = appendLinesFromIdentifiedCatalog(userText, catalog, newLines)
 	}
 	return qtyOnly, newLines
+}
+
+func appendLinesFromIdentifiedCatalog(userText string, catalog []CatalogItem, existing []OrderLineState) []OrderLineState {
+	seen := map[string]struct{}{}
+	for _, ln := range existing {
+		if ln.CatalogItemID != "" {
+			seen[ln.CatalogItemID] = struct{}{}
+		}
+	}
+	out := existing
+	for _, it := range catalogItemsIdentifiedInText(userText, catalog) {
+		if _, ok := seen[it.ID]; ok {
+			continue
+		}
+		seen[it.ID] = struct{}{}
+		out = append(out, orderLineFromCatalogItem(it, 1))
+	}
+	return out
 }
 
 // TryAppendItemsDuringCheckout appends parsed items to active checkout state.
@@ -201,6 +313,9 @@ func TryAppendItemsDuringCheckout(st *OrderState, userText string, catalog []Cat
 		return false, ""
 	}
 	if IsOrderRevisionMessage(userText) || IsCartLineCorrectionIntent(userText) || IsNegatedFullOrderCancel(userText) {
+		return false, ""
+	}
+	if isCheckoutFormFieldMessage(userText) {
 		return false, ""
 	}
 	step := normalizeOrderState(*st).Step
@@ -231,19 +346,18 @@ func TryAppendItemsDuringCheckout(st *OrderState, userText string, catalog []Cat
 		}
 	}
 
-	if lexicalBrandAmbiguous(userText, catalog) {
+	qtyOnly, newLines := parseAppendSegments(userText, catalog, vctx)
+	if len(newLines) < 2 && lexicalBrandAmbiguous(userText, catalog) {
 		if reply, ok := orderLexicalBrandPickerReply(formal, userText, catalog); ok {
 			return true, reply
 		}
 	}
-
-	qtyOnly, newLines := parseAppendSegments(userText, catalog, vctx)
 	if len(newLines) == 0 {
 		if line := parseCheckoutAppendLine(*st, userText, catalog, vctx); line.CatalogItemID != "" {
 			newLines = []OrderLineState{line}
 		}
 	}
-	if len(newLines) == 0 && !IsAddItemToOrderMessage(userText) {
+	if len(newLines) == 0 && !IsAddItemToOrderMessage(userText) && !IsCheckoutMergeIntent(userText) {
 		if qtyOnly != nil {
 			return true, buildOrderFlowReply(*st, tmpl.AskRecipient, catalog)
 		}

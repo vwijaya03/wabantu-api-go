@@ -176,15 +176,23 @@ func ExtractScopeKeywords(scopeText string) []string {
 	return result
 }
 
-func IsWithinBusinessScope(userText string, scopeKW, fallbackKW []string) bool {
+func IsWithinBusinessScope(userText string, scopeKW, fallbackKW []string, catalog ...[]CatalogItem) bool {
 	text := strings.ToLower(strings.TrimSpace(userText))
 	if text == "" {
 		return false
 	}
 
+	var cat []CatalogItem
+	if len(catalog) > 0 {
+		cat = catalog[0]
+	}
+
 	// e.g. "pesan nasi goreng" at Omah Apparel — commerce words alone must not count as in-scope.
-	if IsOffBusinessProductRequest(userText, scopeKW) {
+	if IsOffBusinessProductRequest(userText, scopeKW, cat) {
 		return false
+	}
+	if catalogNamesProduct(userText, cat) {
+		return true
 	}
 
 	// Product / fashion vocabulary (e.g. "celana dalam" even when profile only mentions jeans).

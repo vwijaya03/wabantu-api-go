@@ -25,7 +25,7 @@ func (s *Simulator) inScope(userText string) bool {
 	if s.ScopeKW == nil && s.Profile != nil {
 		s.ScopeKW = businessScopeKeywords(s.Profile)
 	}
-	return IsWithinBusinessScope(userText, s.ScopeKW, nil)
+	return IsWithinBusinessScope(userText, s.ScopeKW, nil, s.Catalog)
 }
 
 func (s *Simulator) InScope(userText string) bool { return s.inScope(userText) }
@@ -53,7 +53,7 @@ func (s *Simulator) Turn(userText string) TurnOutcome {
 	}
 
 	// Match autoreply.go: status inquiry before greeting and cancel.
-	if s.Order != nil && (IsCartRecapOrComplaint(userText, s.Catalog) ||
+	if s.Order != nil && !IsCheckoutMergeIntent(userText) && (IsCartRecapOrComplaint(userText, s.Catalog) ||
 		PreferCheckoutRecapOverDBStatus(userText, CheckoutStateHasRecap(s.Order))) {
 		formal := strOrEmpty(s.Profile.Tone) == "formal"
 		out.Path = PathOrderFlow
@@ -64,7 +64,7 @@ func (s *Simulator) Turn(userText string) TurnOutcome {
 		return out
 	}
 	if IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) || IsOrderRefStatusLookup(userText) {
-		if !IsCartLineCorrectionIntent(userText) && !IsNegatedFullOrderCancel(userText) {
+		if !IsCartLineCorrectionIntent(userText) && !IsNegatedFullOrderCancel(userText) && !IsCheckoutMergeIntent(userText) {
 			out.Path = PathOrderStatus
 			out.Intent = SalesIntent{State: SalesStateConsulting, Topic: SalesTopicOrderStatus, Confidence: 0.9}
 			s.appendHistory(userText, "")

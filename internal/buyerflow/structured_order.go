@@ -49,6 +49,7 @@ func isOrderListHeaderLine(line string) bool {
 	for _, h := range []string{
 		"barang yang dibeli", "detail pesanan", "pesanan saya", "order saya",
 		"alamat pengiriman", "data penerima", "nama penerima",
+		"nama:", "nama :", "hp:", "hp :",
 	} {
 		if strings.Contains(lower, h) {
 			return true

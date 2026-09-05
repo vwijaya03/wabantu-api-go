@@ -49,11 +49,58 @@ func messageReferencesBusinessCatalog(userText string, scopeKeywords []string) b
 }
 
 // IsOffBusinessProductRequest rejects orders/questions about unrelated goods (e.g. nasi goreng at a jeans shop).
-func IsOffBusinessProductRequest(userText string, scopeKeywords []string) bool {
+// Optional catalog: if the buyer named a SKU/brand that exists in the tenant catalog, do not reject
+// (e.g. "oatlife white kopi" when the catalog has "Oatlife White Coffee").
+func IsOffBusinessProductRequest(userText string, scopeKeywords []string, catalog ...[]CatalogItem) bool {
 	if !mentionsOffTopicProduct(userText) {
 		return false
 	}
-	return !messageReferencesBusinessCatalog(userText, scopeKeywords)
+	if messageReferencesBusinessCatalog(userText, scopeKeywords) {
+		return false
+	}
+	var cat []CatalogItem
+	if len(catalog) > 0 {
+		cat = catalog[0]
+	}
+	return !catalogNamesProduct(userText, cat)
+}
+
+func catalogNamesProduct(userText string, catalog []CatalogItem) bool {
+	if strings.TrimSpace(userText) == "" || len(catalog) == 0 {
+		return false
+	}
+	if uniqueBrandSKUFromText(userText, catalog) != nil {
+		return true
+	}
+	brand := brandTokenFromText(userText, catalog)
+	if brand != "" && !brandDistinctiveStop[strings.ToLower(brand)] && isCatalogBrandHead(brand, catalog) {
+		return true
+	}
+	text := strings.ToLower(userText)
+	for _, it := range catalog {
+		name := strings.ToLower(strings.TrimSpace(it.Name))
+		if name != "" && strings.Contains(text, name) {
+			return true
+		}
+	}
+	return false
+}
+
+func isCatalogBrandHead(brand string, catalog []CatalogItem) bool {
+	brand = normalizeBrandToken(brand)
+	if brand == "" {
+		return false
+	}
+	for _, it := range catalog {
+		toks := tokenize(it.Name)
+		if len(toks) == 0 {
+			continue
+		}
+		if normalizeBrandToken(toks[0]) == brand {
+			return true
+		}
+	}
+	return false
 }
 
 // businessScopeKeywords builds scope tokens from the tenant business profile.

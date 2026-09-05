@@ -23,6 +23,29 @@ func IsOrderAmendMessage(userText string) bool {
 	return false
 }
 
+// IsCheckoutMergeIntent — gabungkan/pulihkan item ke keranjang chat, bukan recap-only atau status DB.
+func IsCheckoutMergeIntent(userText string) bool {
+	text := normalizeBuyerTextForRules(userText)
+	if text == "" {
+		return false
+	}
+	for _, s := range []string{
+		"jadikan 1", "jadiin 1", "gabung", "gabungkan", "satu pesanan",
+		"tambah ke pesanan", "tambahin ke pesanan", "masukin ke pesanan",
+		"pesanan sebelumnya", "order sebelumnya", "order td", "pesanan td",
+	} {
+		if strings.Contains(text, s) {
+			return true
+		}
+	}
+	if strings.Contains(text, "hilang") &&
+		(strings.Contains(text, "pesanan") || strings.Contains(text, "order") ||
+			strings.Contains(text, "keranjang")) {
+		return true
+	}
+	return false
+}
+
 // ExtractAmendLinesFromText parses catalog lines from amend-related text.
 func ExtractAmendLinesFromText(userText string, catalog []CatalogItem, vctx *CatalogVectorContext) []OrderLineState {
 	_, fromInline := parseAppendSegments(userText, catalog, vctx)
