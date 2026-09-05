@@ -90,7 +90,7 @@ func JudgeReportTurn(ctx context.Context, tenantSchema string, turn AITriageTurn
 	if profile, err := loadBusinessProfile(ctx, ts); err == nil && profile != nil {
 		businessName = strings.TrimSpace(profile.BusinessName)
 	}
-	catalog, _ := loadActiveCatalog(ctx, ts, 40)
+	catalog, _ := loadActiveCatalog(ctx, ts, defaultCatalogLoadLimit)
 	result, _, err := JudgeTriageTurn(ctx, businessName, catalog, turn)
 	return result, err
 }

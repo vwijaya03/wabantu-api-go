@@ -17,7 +17,10 @@ func (in OrderFlowInput) resolveProduct() *CatalogItem {
 }
 
 func (in OrderFlowInput) vectorVariantReply(formal bool) (string, bool) {
-	return orderVectorVariantPickerReply(formal, in.UserText, in.Catalog, in.VectorCtx)
+	if reply, ok := orderVectorVariantPickerReply(formal, in.UserText, in.Catalog, in.VectorCtx); ok {
+		return reply, true
+	}
+	return orderLexicalBrandPickerReply(formal, in.UserText, in.Catalog)
 }
 
 // OrderFlowResult — outcome of one FSM advance.
@@ -182,7 +185,7 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 			if st.VariantComplete() {
 				if st.Qty > 0 {
 					st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
-				if blocked {
+					if blocked {
 						return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
 					}
 					st.Step = "ask_recipient"
@@ -268,7 +271,7 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 			}
 		}
 		st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
-				if blocked {
+		if blocked {
 			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
 		}
 		st.Step = "ask_recipient"
@@ -279,6 +282,9 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 
 	case "ask_variant":
 		st := copyBase(stateNorm)
+		if handled, reply := TryAppendItemsDuringCheckout(&st, userText, catalog, tmpl, formal, in.VectorCtx); handled {
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
+		}
 		if hints.HasQty {
 			st.Qty = hints.Qty
 		} else if q, ok := parseOrderQty(userText); ok {
@@ -299,7 +305,7 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 				}
 			}
 			st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
-				if blocked {
+			if blocked {
 				return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
 			}
 			st.Step = "ask_recipient"
@@ -317,7 +323,7 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 		}
 		if st.VariantComplete() && st.Qty > 0 {
 			st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
-				if blocked {
+			if blocked {
 				return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
 			}
 			st.Step = "ask_recipient"
@@ -348,7 +354,7 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 			}
 		}
 		st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
-				if blocked {
+		if blocked {
 			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
 		}
 		st.Step = "ask_recipient"
@@ -362,7 +368,8 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 		if reply, ok := checkoutAddItemsPolicyReplyIfNeeded(st, userText, formal); ok {
 			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
 		}
-		if st.Qty > 0 && !mentionsOrderQty(userText) && !hints.HasQty {
+		if st.Qty > 0 && !mentionsOrderQty(userText) && !hints.HasQty &&
+			!shouldImplicitAppendDifferentSKU(st, userText, catalog) {
 			st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
 			if blocked {
 				return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
@@ -387,7 +394,7 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 		}
 		st.Qty = qty
 		st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
-				if blocked {
+		if blocked {
 			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
 		}
 		st.Step = "ask_recipient"
@@ -400,9 +407,9 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 				return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
 			}
 		}
-		if tryApplyQtyRevision(&st, userText) {
+		if !namesOtherCheckoutSKU(st, userText, catalog) && tryApplyQtyRevision(&st, userText) {
 			st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
-				if blocked {
+			if blocked {
 				return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
 			}
 			return OrderFlowResult{
@@ -441,7 +448,7 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 				}
 			}
 			st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
-				if blocked {
+			if blocked {
 				return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
 			}
 			if persist != nil {
@@ -473,9 +480,9 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 		if handled, reply := TryAppendItemsDuringCheckout(&st, userText, catalog, tmpl, formal, in.VectorCtx); handled {
 			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
 		}
-		if tryApplyQtyRevision(&st, userText) {
+		if !namesOtherCheckoutSKU(st, userText, catalog) && tryApplyQtyRevision(&st, userText) {
 			st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
-				if blocked {
+			if blocked {
 				return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
 			}
 			return OrderFlowResult{
@@ -494,7 +501,7 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 			}
 		}
 		st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
-				if blocked {
+		if blocked {
 			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
 		}
 		if persist != nil {

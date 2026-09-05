@@ -26,9 +26,9 @@ func IsAddMoreItemsPolicyQuestion(userText string) bool {
 
 // AddMoreItemsPolicyReply explains how to append items during active checkout.
 func AddMoreItemsPolicyReply(formal bool, st *OrderState) string {
-	base := "Siap kak, boleh tambah item lagi 😊 Cukup sebut nama produk + jumlahnya ya (contoh: cadbury mini 1 pcs, atau lalu abon 250g 1 pcs)."
+	base := "Siap kak, boleh tambah item lagi 😊 Cukup sebut nama produk + jumlahnya ya (contoh: nama SKU 1 pcs)."
 	if formal {
-		base = "Baik kak, silakan tambah item lagi. Sebut nama produk dan jumlahnya (contoh: cadbury mini 1 pcs)."
+		base = "Baik kak, silakan tambah item lagi. Sebut nama produk dan jumlahnya (contoh: nama SKU 1 pcs)."
 	}
 	if st == nil || !st.ProductComplete() {
 		return base

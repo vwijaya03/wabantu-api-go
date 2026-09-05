@@ -85,6 +85,49 @@ func TestTryAppendImplicitNoLalu(t *testing.T) {
 	}
 }
 
+func TestShouldImplicitAppendWithoutQtyOrConjunction(t *testing.T) {
+	catalog := omahFoodCatalog()
+	st := OrderState{
+		Step:          "ask_recipient",
+		CatalogItemID: "maggi-percik",
+		ProductName:   "Maggi Bumbu Ayam Goreng - Ayam Percik",
+		Qty:           1,
+	}
+	if !shouldImplicitAppendDifferentSKU(st, "nutella", catalog) {
+		t.Fatal("unique other SKU must append without qty or lalu/tambah/plus")
+	}
+	if shouldImplicitAppendDifferentSKU(st, "maggi percik", catalog) {
+		t.Fatal("same SKU is a revision, not append")
+	}
+}
+
+func TestConjunctionDoesNotAutoPickAmbiguousMaggi(t *testing.T) {
+	catalog := omahLiveFMCGCatalog()
+	st := OrderState{
+		Step:          "ask_recipient",
+		CatalogItemID: "nutella",
+		ProductName:   "Nutella Biskuit (193g)",
+		Qty:           1,
+		UnitPrice:     155000,
+		SellUnit:      "pcs",
+	}
+	tmpl := orderTemplatesFromKB(nil, false)
+	handled, reply := TryAppendItemsDuringCheckout(&st, "lalu maggi", catalog, tmpl, false, nil)
+	if !handled {
+		t.Fatal("ambiguous maggi after conjunction must still be handled as picker, not ignored")
+	}
+	if st.CatalogItemID != "nutella" {
+		t.Fatalf("conjunction is not write permission; cart must stay nutella, got %s", st.CatalogItemID)
+	}
+	if st.HasMultiItems() && len(st.Items) > 1 {
+		t.Fatalf("must not append a guessed Maggi SKU: %+v", st.Items)
+	}
+	lower := strings.ToLower(reply)
+	if !strings.Contains(lower, "tandoori") {
+		t.Fatalf("expected flavor picker, got %q", reply)
+	}
+}
+
 func TestTryAppendSingleLaluItem(t *testing.T) {
 	catalog := omahFoodCatalog()
 	st := OrderState{

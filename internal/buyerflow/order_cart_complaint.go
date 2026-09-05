@@ -36,6 +36,36 @@ func IsCartRecapOrComplaint(userText string, catalog []CatalogItem) bool {
 	return false
 }
 
+// IsActiveCheckoutRecapQuestion — "apa saya ada pesanan aktif?" merujuk keranjang chat, bukan status DB.
+func IsActiveCheckoutRecapQuestion(userText string) bool {
+	if parseOrderRefFromMessage(userText) != "" {
+		return false
+	}
+	text := normalizeBuyerTextForRules(userText)
+	if text == "" {
+		return false
+	}
+	return strings.Contains(text, "pesanan aktif") || strings.Contains(text, "order aktif")
+}
+
+// PreferCheckoutRecapOverDBStatus — klaim "ada pesanan aktif?" harus baca keranjang chat
+// (Redis/FSM), bukan FAQ/status DB kosong, selama checkout masih hidup.
+func PreferCheckoutRecapOverDBStatus(userText string, hasActiveCheckout bool) bool {
+	if !hasActiveCheckout {
+		return false
+	}
+	return IsActiveCheckoutRecapQuestion(userText)
+}
+
+// CheckoutStateHasRecap — draft chat punya item yang bisa di-recap (bukan state kosong).
+func CheckoutStateHasRecap(st *OrderState) bool {
+	if st == nil {
+		return false
+	}
+	n := normalizeOrderState(*st)
+	return strings.TrimSpace(n.CatalogItemID) != "" || n.HasMultiItems() || strings.TrimSpace(n.ProductName) != ""
+}
+
 // CartRecapReply formats active checkout state for complaint/recap messages.
 func CartRecapReply(st OrderState, formal bool) string {
 	summary := formatOrderSummary(st)

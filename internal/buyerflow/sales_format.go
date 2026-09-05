@@ -330,7 +330,7 @@ func formatOrderSummary(st OrderState) string {
 }
 
 func formatMultiOrderSummary(st OrderState) string {
-	if !st.StructuredLinesReady() {
+	if len(st.Items) == 0 {
 		return ""
 	}
 	var b strings.Builder

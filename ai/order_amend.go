@@ -454,7 +454,7 @@ func (s *AutoReplyService) handleOrderAmend(
 		return send(orderAccessDeniedReply())
 	}
 
-	catalog, catErr := loadActiveCatalog(ctx, ts, 40)
+	catalog, catErr := loadActiveCatalog(ctx, ts, defaultCatalogLoadLimit)
 	if catErr != nil {
 		rlog.Warn("AI order amend: catalog load failed", "err", catErr)
 	}

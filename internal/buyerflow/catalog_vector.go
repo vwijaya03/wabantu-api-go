@@ -45,6 +45,9 @@ func (c *CatalogVectorContext) resolve(userText string, history []Message, catal
 }
 
 func (c *CatalogVectorContext) directMatch(userText string, catalog []CatalogItem) *CatalogItem {
+	if lexicalBrandAmbiguous(userText, catalog) {
+		return nil
+	}
 	if c != nil && len(c.Hits) > 0 {
 		if m := MatchCatalogItemSemantic(userText, catalog, c.Hits); m != nil {
 			return m
@@ -59,6 +62,11 @@ func MatchCatalogItemSemantic(userText string, catalog []CatalogItem, hits []ret
 	if len(catalog) == 0 {
 		return nil
 	}
+	if lexicalBrandAmbiguous(userText, catalog) {
+		return nil
+	}
+	// Cosine floor before any auto-pick. RRF (~0.016) is a fusion rank, not a quality gate.
+	hits = retrieval.FilterHitsByScore(hits, retrieval.VectorMinSimilarity)
 	if len(hits) == 0 {
 		return matchCatalogItem(userText, catalog)
 	}
@@ -114,11 +122,15 @@ func CatalogAmbiguityReply(formal bool) string {
 }
 
 func shouldAskCatalogClarification(userText string, vctx *CatalogVectorContext) bool {
-	if vctx == nil || len(vctx.Hits) < 2 {
+	if vctx == nil {
+		return false
+	}
+	hits := retrieval.FilterHitsByScore(vctx.Hits, retrieval.VectorMinSimilarity)
+	if len(hits) < 2 {
 		return false
 	}
 	if IsCatalogBrowsingIntent(userText) || isGeneralStoreCatalogQuestion(userText) || IsRecommendationRequest(userText) {
 		return false
 	}
-	return CatalogSemanticAmbiguous(vctx.Hits)
+	return CatalogSemanticAmbiguous(hits)
 }

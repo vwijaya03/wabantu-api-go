@@ -215,6 +215,15 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	}
 
 	// Status inquiry sebelum greeting — "halo min punya pesanan aktif?" bukan sapaan murni.
+	// Recap keranjang chat dulu (trace Redis), baru status DB jika checkout kosong.
+	if earlySt, _ := s.getOrderState(ctx, payload.TenantID, convo.ID); PreferCheckoutRecapOverDBStatus(userText, CheckoutStateHasRecap(earlySt)) {
+		formal := strOrEmpty(profile.Tone) == "formal"
+		reply := CartRecapReply(*earlySt, formal)
+		out := metaNoLLM(reasonNonQuestion, PathOrderFlow)
+		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
+		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, reply, "system", payload.InboundMessageID, out)
+		return err == nil, err
+	}
 	if (IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) || IsOrderRefStatusLookup(userText)) && !wantsOrderContextFromHistory(userText) {
 		return s.handleCustomerOrderStatus(ctx, ts, payload.TenantSchema, payload, convo, channel, contact, userText, nil)
 	}
@@ -262,7 +271,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return false, err
 	}
 
-	catalog, catLoadErr := loadActiveCatalog(ctx, ts, 50)
+	catalog, catLoadErr := loadActiveCatalog(ctx, ts, defaultCatalogLoadLimit)
 	if catLoadErr != nil {
 		rlog.Warn("AI job: catalog load failed", "err", catLoadErr)
 	}
@@ -313,7 +322,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	if IsThirdPartyBuyerLookup(userText) {
 		return s.handleThirdPartyBuyerLookupDenied(ctx, ts, payload, convo, channel, contact)
 	}
-	if IsCartRecapOrComplaint(userText, toBFCatalogSlice(catalog)) {
+	if IsCartRecapOrComplaint(userText, toBFCatalogSlice(catalog)) || IsActiveCheckoutRecapQuestion(userText) {
 		if orderSt, _ := s.getOrderState(ctx, payload.TenantID, convo.ID); orderSt != nil {
 			formal := strOrEmpty(profile.Tone) == "formal"
 			reply := CartRecapReply(*orderSt, formal)

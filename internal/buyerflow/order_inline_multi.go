@@ -135,6 +135,9 @@ func ensureMultiItemsFromSingle(st *OrderState) {
 	if strings.TrimSpace(st.CatalogItemID) == "" {
 		return
 	}
+	if st.Qty < 1 {
+		st.Qty = 1
+	}
 	st.Items = []OrderLineState{orderLineFromState(*st)}
 }
 
@@ -180,6 +183,9 @@ func parseAppendSegments(userText string, catalog []CatalogItem, vctx *CatalogVe
 		}
 		return qtyOnly, newLines
 	}
+	// Conjunction (lalu/plus) is a multi-line splitter, not an append permission.
+	// "lalu maggi percik 1" while percik is already in cart still needs this branch
+	// so MergeOrderLines can bump qty of the same SKU.
 	if IsAddItemToOrderMessage(userText) {
 		line := parseStructuredOrderLine(userText, catalog, vctx)
 		if line.CatalogItemID != "" {
@@ -202,10 +208,38 @@ func TryAppendItemsDuringCheckout(st *OrderState, userText string, catalog []Cat
 		return false, ""
 	}
 
+	if shouldReviseToSiblingSKU(*st, userText, catalog) {
+		match := resolveOrderProductMatch(userText, nil, catalog, vctx)
+		if match != nil {
+			applyCatalogMatch(st, match)
+			st.Items = nil
+			if q, ok := parseOrderQty(userText); ok {
+				st.Qty = q
+			} else if st.Qty < 1 {
+				st.Qty = 1
+			}
+			if !st.VariantComplete() {
+				st.Step = "ask_variant"
+				return true, buildOrderFlowReply(*st, tmpl.AskVariant, catalog)
+			}
+			if st.Qty < 1 {
+				st.Step = "ask_qty"
+				return true, buildOrderFlowReply(*st, tmpl.AskQty, catalog)
+			}
+			st.Step = "ask_recipient"
+			return true, buildOrderFlowReply(*st, tmpl.AskRecipient, catalog)
+		}
+	}
+
+	if lexicalBrandAmbiguous(userText, catalog) {
+		if reply, ok := orderLexicalBrandPickerReply(formal, userText, catalog); ok {
+			return true, reply
+		}
+	}
+
 	qtyOnly, newLines := parseAppendSegments(userText, catalog, vctx)
-	if len(newLines) == 0 && isNamedProductWithQtyMessage(userText, catalog) {
-		line := parseStructuredOrderLine(userText, catalog, vctx)
-		if line.CatalogItemID != "" {
+	if len(newLines) == 0 {
+		if line := parseCheckoutAppendLine(*st, userText, catalog, vctx); line.CatalogItemID != "" {
 			newLines = []OrderLineState{line}
 		}
 	}
@@ -239,20 +273,51 @@ func TryAppendItemsDuringCheckout(st *OrderState, userText string, catalog []Cat
 		return true, reply
 	}
 	if !st.StructuredLinesReady() {
-		st.Step = "ask_variant"
-		return true, checkoutItemAddedAck(formal) + "\n\n" + buildOrderFlowReply(*st, tmpl.AskVariant, catalog)
+		if checkoutLinesNeedApparelVariant(*st) {
+			st.Step = "ask_variant"
+			return true, checkoutItemAddedAck(formal) + "\n\n" + buildOrderFlowReply(*st, tmpl.AskVariant, catalog)
+		}
+		st.Step = "ask_qty"
+		return true, checkoutItemAddedAck(formal) + "\n\n" + buildOrderFlowReply(*st, tmpl.AskQty, catalog)
 	}
 	return true, checkoutItemAddedAck(formal) + "\n\n" + buildOrderFlowReply(*st, tmpl.AskRecipient, catalog)
 }
 
-// shouldImplicitAppendDifferentSKU — append SKU baru (bukan revisi qty item yang sama).
-func shouldImplicitAppendDifferentSKU(st OrderState, userText string, catalog []CatalogItem) bool {
-	if !isNamedProductWithQtyMessage(userText, catalog) {
+func checkoutLinesNeedApparelVariant(st OrderState) bool {
+	if st.HasMultiItems() {
+		for _, ln := range st.Items {
+			if !lineVariantComplete(ln) {
+				return true
+			}
+		}
 		return false
 	}
-	match := matchCatalogItem(userText, catalog)
+	return !st.VariantComplete()
+}
+
+func parseCheckoutAppendLine(st OrderState, userText string, catalog []CatalogItem, vctx *CatalogVectorContext) OrderLineState {
+	match := resolveOrderProductMatch(userText, nil, catalog, vctx)
 	if match == nil {
+		return OrderLineState{}
+	}
+	if match.ID == st.CatalogItemID {
+		return OrderLineState{}
+	}
+	for _, ln := range st.Items {
+		if ln.CatalogItemID == match.ID {
+			return OrderLineState{}
+		}
+	}
+	return parseStructuredOrderLine(userText, catalog, vctx)
+}
+
+func namesOtherCheckoutSKU(st OrderState, userText string, catalog []CatalogItem) bool {
+	if IsOrderRevisionMessage(userText) {
 		return false
+	}
+	match := resolveOrderProductMatch(userText, nil, catalog, nil)
+	if match == nil {
+		return lexicalBrandAmbiguous(userText, catalog)
 	}
 	if match.ID == st.CatalogItemID {
 		return false
@@ -263,6 +328,14 @@ func shouldImplicitAppendDifferentSKU(st OrderState, userText string, catalog []
 		}
 	}
 	return true
+}
+
+// shouldImplicitAppendDifferentSKU — append SKU baru (bukan revisi qty item yang sama).
+func shouldImplicitAppendDifferentSKU(st OrderState, userText string, catalog []CatalogItem) bool {
+	if lexicalBrandAmbiguous(userText, catalog) {
+		return true
+	}
+	return parseCheckoutAppendLine(st, userText, catalog, nil).CatalogItemID != ""
 }
 
 func GuardStructuredOrderStock(st OrderState, catalog []CatalogItem, formal bool) (OrderState, string, bool) {

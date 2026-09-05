@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 	"unicode"
-
 )
 
 const (
@@ -63,17 +62,17 @@ type TriageFixHints struct {
 
 // AnalyzeConversationResult summarizes a read-only routing replay.
 type AnalyzeConversationResult struct {
-	TenantSchema         string                    `json:"tenantSchema"`
-	ConversationID       string                    `json:"conversationId"`
-	FocusInboundID       string                    `json:"focusInboundId,omitempty"`
-	MessagesLoaded       int                       `json:"messagesLoaded"`
-	TurnsChecked         int                       `json:"turnsChecked"`
-	TurnsSkipped         int                       `json:"turnsSkipped"`
-	Mismatches           []TriageMismatch          `json:"mismatches"`
-	HasDeterministic     bool                      `json:"hasDeterministicMismatch"`
-	RegressionFailures   []TriageRegressionFailure `json:"regressionFailures,omitempty"`
-	FixHints             *TriageFixHints           `json:"fixHints,omitempty"`
-	SimulatorSnapshot    *TriageSimulatorSnapshot  `json:"simulatorSnapshot,omitempty"`
+	TenantSchema          string                    `json:"tenantSchema"`
+	ConversationID        string                    `json:"conversationId"`
+	FocusInboundID        string                    `json:"focusInboundId,omitempty"`
+	MessagesLoaded        int                       `json:"messagesLoaded"`
+	TurnsChecked          int                       `json:"turnsChecked"`
+	TurnsSkipped          int                       `json:"turnsSkipped"`
+	Mismatches            []TriageMismatch          `json:"mismatches"`
+	HasDeterministic      bool                      `json:"hasDeterministicMismatch"`
+	RegressionFailures    []TriageRegressionFailure `json:"regressionFailures,omitempty"`
+	FixHints              *TriageFixHints           `json:"fixHints,omitempty"`
+	SimulatorSnapshot     *TriageSimulatorSnapshot  `json:"simulatorSnapshot,omitempty"`
 	CursorAgentID         string                    `json:"cursorAgentId,omitempty"`
 	CursorFixGitHubRunURL string                    `json:"cursorFixGithubRunUrl,omitempty"`
 	CursorFixAttempts     int                       `json:"cursorFixAttempts,omitempty"`
@@ -126,7 +125,7 @@ func BuildSimulatorFromTenant(ctx context.Context, ts tenantScopedQuerier) (*Con
 	if profile == nil {
 		return nil, fmt.Errorf("business profile not found")
 	}
-	catalog, err := loadActiveCatalog(ctx, ts, 40)
+	catalog, err := loadActiveCatalog(ctx, ts, defaultCatalogLoadLimit)
 	if err != nil {
 		return nil, err
 	}

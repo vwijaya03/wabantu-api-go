@@ -191,3 +191,12 @@ func TestPaymentStatusLabelID(t *testing.T) {
 		t.Fatalf("unexpected label: %s", paymentStatusLabelID("proof_submitted"))
 	}
 }
+
+func TestPaymentProofDoneKey(t *testing.T) {
+	if got := paymentProofDoneKey("msg-1"); got != paymentProofDoneKeyPrefix+"msg-1" {
+		t.Fatalf("unexpected key %q", got)
+	}
+	if paymentProofDoneKey("") != "" {
+		t.Fatal("empty inbound id must not mint a redis key")
+	}
+}

@@ -141,6 +141,15 @@ func fuzzyTokenPrefixMatch(a, b string) bool {
 }
 
 func resolveOrderProductMatch(userText string, history []Message, catalog []CatalogItem, vctx *CatalogVectorContext) *CatalogItem {
+	if unique := uniqueBrandSKUFromText(userText, catalog); unique != nil {
+		return unique
+	}
+	if unique := uniqueSizedSKUFromText(userText, catalog); unique != nil {
+		return unique
+	}
+	if lexicalBrandAmbiguous(userText, catalog) {
+		return nil
+	}
 	if m := matchCatalogItem(userText, catalog); m != nil {
 		return m
 	}
@@ -576,7 +585,8 @@ func (st OrderState) ProductComplete() bool {
 	return strings.TrimSpace(st.ProductName) != "" || strings.TrimSpace(st.CatalogItemID) != ""
 }
 
-// catalogItemNeedsVariant — apparel/ukuran; makanan & produk tanpa varian dilewati.
+// catalogItemNeedsVariant — apparel/ukuran S-M-L. Makanan, gadget, kosmetik, dan
+// SKU tanpa suffix ukuran tidak masuk ask_variant.
 func catalogItemNeedsVariant(it *CatalogItem) bool {
 	if it == nil {
 		return false
@@ -634,9 +644,9 @@ func catalogConfirmLine(st OrderState) string {
 		return ""
 	}
 	it := &CatalogItem{
-		Name:       st.ProductName,
-		SellPrice:  st.UnitPrice,
-		SellUnit:   st.SellUnit,
+		Name:         st.ProductName,
+		SellPrice:    st.UnitPrice,
+		SellUnit:     st.SellUnit,
 		ExternalCode: st.ExternalCode,
 	}
 	return strings.TrimSpace("Produk:\n" + st.ProductName + "\n\nHarga:\n" + formatCatalogPrice(it))

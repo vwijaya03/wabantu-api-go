@@ -101,7 +101,7 @@ func tryProductImageMatch(ctx context.Context, ts tenantScopedQuerier, job *Imag
 		return false, nil
 	}
 
-	catalog, err := loadActiveCatalog(ctx, ts, 40)
+	catalog, err := loadActiveCatalog(ctx, ts, defaultCatalogLoadLimit)
 	if err != nil {
 		return false, err
 	}
