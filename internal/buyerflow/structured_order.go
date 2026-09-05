@@ -7,8 +7,14 @@ import (
 
 var structuredOrderNumberedLineRe = regexp.MustCompile(`(?m)^\s*\d+\.\s*(.+)$`)
 
+// normalizeOrderListText expands pasted literal "\n" into real newlines for multi-line order lists.
+func normalizeOrderListText(userText string) string {
+	return strings.ReplaceAll(userText, `\n`, "\n")
+}
+
 // IsStructuredOrderList — pesan berisi daftar barang bernomor, multi-baris tanpa nomor, atau header order terstruktur.
 func IsStructuredOrderList(userText string) bool {
+	userText = normalizeOrderListText(userText)
 	text := strings.ToLower(strings.TrimSpace(userText))
 	if text == "" {
 		return false
@@ -60,7 +66,7 @@ func isOrderListHeaderLine(line string) bool {
 
 func countOrderCandidateLines(userText string) int {
 	n := 0
-	for _, line := range strings.Split(userText, "\n") {
+	for _, line := range strings.Split(normalizeOrderListText(userText), "\n") {
 		line = strings.TrimSpace(line)
 		if isOrderListHeaderLine(line) {
 			continue
@@ -70,4 +76,12 @@ func countOrderCandidateLines(userText string) int {
 		}
 	}
 	return n
+}
+
+// IsStructuredOrderCheckoutBreak — multi-line order list pasted mid-checkout (bukan append "lalu/tambah").
+func IsStructuredOrderCheckoutBreak(userText string) bool {
+	if !IsStructuredOrderList(userText) || IsExplicitNewOrderStart(userText) {
+		return false
+	}
+	return !IsAddItemToOrderMessage(userText) && !IsCheckoutMergeIntent(userText)
 }

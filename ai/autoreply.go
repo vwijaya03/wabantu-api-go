@@ -433,7 +433,8 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	)
 
 	// ── Order flow — prioritas sebelum katalog statis ─────────────────────
-	if inScope && (classifier.Label == "order_intent" || IsStructuredOrderList(userText)) {
+	if inScope && (classifier.Label == "order_intent" ||
+		(IsStructuredOrderList(userText) && !isStructuredOrderCheckoutBreak(userText))) {
 		sent, oErr := s.handleOrderFlow(ctx, ts, payload.TenantSchema, payload.TenantID, convo, channel, contact,
 			userText, profile, kbEntries, history, payload.InboundMessageID)
 		return sent, oErr
@@ -554,7 +555,8 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return sent, oErr
 	}
 	if inScope && (IsOrderRevisionMessage(userText) ||
-		(mentionsOrderQty(userText) && IsActiveCheckoutFromHistory(history, userText))) {
+		(mentionsOrderQty(userText) && IsActiveCheckoutFromHistory(history, userText) &&
+			!isStructuredOrderCheckoutBreak(userText))) {
 		sent, oErr := s.handleOrderFlow(ctx, ts, payload.TenantSchema, payload.TenantID, convo, channel, contact,
 			userText, profile, kbEntries, history, payload.InboundMessageID)
 		return sent, oErr
@@ -926,6 +928,20 @@ func (s *AutoReplyService) handleCustomerOrderStatus(
 		body += "\n\nUntuk membatalkan, ketik saja: batalkan pesanan."
 	}
 	return send(body)
+}
+
+// isStructuredOrderCheckoutBreak — multi-line order pasted mid-checkout (bukan append lalu/tambah).
+func isStructuredOrderCheckoutBreak(userText string) bool {
+	if !IsStructuredOrderList(userText) || IsExplicitNewOrderStart(userText) || IsCheckoutMergeIntent(userText) {
+		return false
+	}
+	text := strings.ToLower(strings.TrimSpace(userText))
+	for _, s := range []string{"lalu ", "lalu,", "tambah ", "sekalian ", "plus ", "dan juga ", "tambahannya"} {
+		if strings.Contains(text, s) {
+			return false
+		}
+	}
+	return true
 }
 
 // ─── Message classifier ──────────────────────────────────────────────────────

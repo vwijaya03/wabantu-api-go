@@ -125,6 +125,8 @@ func (s *Simulator) Turn(userText string) TurnOutcome {
 			if IsUserSalesCorrection(userText) {
 				out.Intent = SalesIntent{State: SalesStateCorrection, Topic: SalesTopicGeneral, Confidence: 0.92}
 				out.Reply = orderFlowLoopBreakReply(strOrEmpty(s.Profile.Tone) == "formal")
+			} else if IsStructuredOrderCheckoutBreak(userText) {
+				out.Intent = SalesIntent{State: SalesStateConsulting, Topic: SalesTopicProduct, Confidence: 0.88}
 			} else {
 				out.Intent = ResolveSalesIntent(userText, s.History, false, s.inScope(userText), s.Profile, s.Catalog)
 			}
@@ -161,7 +163,8 @@ func (s *Simulator) Turn(userText string) TurnOutcome {
 	out.Intent = intent
 
 	if inScope && (IsOrderRevisionMessage(userText) ||
-		(mentionsOrderQty(userText) && IsActiveCheckoutFromHistory(s.History, userText))) {
+		(mentionsOrderQty(userText) && IsActiveCheckoutFromHistory(s.History, userText) &&
+			!IsStructuredOrderCheckoutBreak(userText))) {
 		res := AdvanceOrderFlow(OrderFlowInput{
 			UserText: userText,
 			State:    s.Order,
@@ -180,6 +183,14 @@ func (s *Simulator) Turn(userText string) TurnOutcome {
 			s.Order = res.State
 		}
 		out.Order = s.Order
+		s.appendHistory(userText, out.Reply)
+		return out
+	}
+
+	if inScope && IsStructuredOrderCheckoutBreak(userText) &&
+		(s.Order != nil || IsActiveCheckoutFromHistory(s.History, userText)) {
+		out.Path = PathConsulting
+		out.Intent = SalesIntent{State: SalesStateConsulting, Topic: SalesTopicProduct, Confidence: 0.88}
 		s.appendHistory(userText, out.Reply)
 		return out
 	}

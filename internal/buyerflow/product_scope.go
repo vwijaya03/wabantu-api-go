@@ -52,6 +52,10 @@ func messageReferencesBusinessCatalog(userText string, scopeKeywords []string) b
 // Optional catalog: if the buyer named a SKU/brand that exists in the tenant catalog, do not reject
 // (e.g. "oatlife white kopi" when the catalog has "Oatlife White Coffee").
 func IsOffBusinessProductRequest(userText string, scopeKeywords []string, catalog ...[]CatalogItem) bool {
+	// "jual indomie goreng?" — availability question for an off-catalog SKU still routes catalog_db.
+	if looksLikeNamedProductSellInquiry(userText) {
+		return false
+	}
 	if !mentionsOffTopicProduct(userText) {
 		return false
 	}
