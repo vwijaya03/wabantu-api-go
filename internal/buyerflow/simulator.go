@@ -64,10 +64,12 @@ func (s *Simulator) Turn(userText string) TurnOutcome {
 		return out
 	}
 	if IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) || IsOrderRefStatusLookup(userText) {
-		out.Path = PathOrderStatus
-		out.Intent = SalesIntent{State: SalesStateConsulting, Topic: SalesTopicOrderStatus, Confidence: 0.9}
-		s.appendHistory(userText, "")
-		return out
+		if !IsCartLineCorrectionIntent(userText) && !IsNegatedFullOrderCancel(userText) {
+			out.Path = PathOrderStatus
+			out.Intent = SalesIntent{State: SalesStateConsulting, Topic: SalesTopicOrderStatus, Confidence: 0.9}
+			s.appendHistory(userText, "")
+			return out
+		}
 	}
 
 	// Match autoreply.go: greetings always win (clear draft order), tidak perlu in-scope.
@@ -88,7 +90,8 @@ func (s *Simulator) Turn(userText string) TurnOutcome {
 		return out
 	}
 
-	if IsOrderCancelRequest(userText) || IsDraftOrderCancelRequest(userText) {
+	if (IsOrderCancelRequest(userText) || IsDraftOrderCancelRequest(userText)) &&
+		!IsCartLineCorrectionIntent(userText) && !IsNegatedFullOrderCancel(userText) {
 		hadOrder := s.Order != nil
 		s.Order = nil
 		out.Canceled = true
@@ -105,7 +108,7 @@ func (s *Simulator) Turn(userText string) TurnOutcome {
 
 	if orderActive {
 		step := s.Order.Step
-		if IsAddMoreItemsPolicyQuestion(userText) {
+		if IsStandaloneAddMoreItemsPolicyQuestion(userText, s.Catalog) {
 			formal := strOrEmpty(s.Profile.Tone) == "formal"
 			out.Path = PathOrderFlow
 			out.Intent = SalesIntent{State: SalesStateCheckout, Topic: SalesTopicGeneral, Confidence: 0.9}
@@ -213,7 +216,7 @@ func (s *Simulator) Turn(userText string) TurnOutcome {
 		return out
 	}
 
-	if inScope && IsAddMoreItemsPolicyQuestion(userText) {
+	if inScope && IsStandaloneAddMoreItemsPolicyQuestion(userText, s.Catalog) {
 		formal := strOrEmpty(s.Profile.Tone) == "formal"
 		out.Path = PathConsulting
 		out.Intent = SalesIntent{State: SalesStateConsulting, Topic: SalesTopicGeneral, Confidence: 0.9}

@@ -1,8 +1,12 @@
 package buyerflow
 
 import (
+	"regexp"
 	"strings"
 )
+
+// 500gram / 128gb / 193g → pecah jadi angka + satuan supaya SKU unik ketemu.
+var gluedMeasureRe = regexp.MustCompile(`^(\d+(?:[.,]\d+)?)(gram|gr|kg|ml|gb|pcs|g)$`)
 
 // apparelSizeTokens are single-letter size suffixes dropped by the old len>=2 filter.
 var apparelSizeTokens = map[string]struct{}{
@@ -17,14 +21,24 @@ func isApparelSizeToken(w string) bool {
 	return ok
 }
 
+func splitGluedMeasureToken(w string) []string {
+	m := gluedMeasureRe.FindStringSubmatch(strings.ToLower(w))
+	if len(m) != 3 {
+		return []string{w}
+	}
+	return []string{m[1], m[2]}
+}
+
 func tokenize(text string) []string {
 	lower := strings.ToLower(text)
 	cleaned := nonAlphaNum.ReplaceAllString(lower, " ")
 	words := strings.Fields(cleaned)
 	var out []string
 	for _, w := range words {
-		if len(w) >= 2 || isApparelSizeToken(w) {
-			out = append(out, w)
+		for _, part := range splitGluedMeasureToken(w) {
+			if len(part) >= 2 || isApparelSizeToken(part) {
+				out = append(out, part)
+			}
 		}
 	}
 	return out

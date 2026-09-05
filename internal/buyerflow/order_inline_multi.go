@@ -200,7 +200,7 @@ func TryAppendItemsDuringCheckout(st *OrderState, userText string, catalog []Cat
 	if st == nil {
 		return false, ""
 	}
-	if IsOrderRevisionMessage(userText) {
+	if IsOrderRevisionMessage(userText) || IsCartLineCorrectionIntent(userText) || IsNegatedFullOrderCancel(userText) {
 		return false, ""
 	}
 	step := normalizeOrderState(*st).Step

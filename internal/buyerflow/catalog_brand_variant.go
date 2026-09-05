@@ -50,6 +50,8 @@ func normalizeBrandToken(tok string) string {
 	switch tok {
 	case "magi", "magie":
 		return "maggi"
+	case "cadburry", "cadburi", "cadbure", "cadbery", "cadburri", "cadburie":
+		return "cadbury"
 	default:
 		return tok
 	}
@@ -101,7 +103,107 @@ func fuzzyBrandTokenName(tok string, catalog []CatalogItem) string {
 			return tok
 		}
 	}
-	return ""
+	if len(tok) < 5 {
+		return ""
+	}
+	best := ""
+	bestDist := 99
+	seen := map[string]struct{}{}
+	for _, it := range catalog {
+		nameToks := tokenize(it.Name)
+		if len(nameToks) == 0 {
+			continue
+		}
+		cand := normalizeBrandToken(nameToks[0])
+		if len(cand) < 4 {
+			continue
+		}
+		if _, dup := seen[cand]; dup {
+			continue
+		}
+		seen[cand] = struct{}{}
+		if !brandTypoMatch(tok, cand) {
+			continue
+		}
+		d := editDistance(tok, cand)
+		if d < bestDist {
+			bestDist = d
+			best = cand
+		}
+	}
+	return best
+}
+
+func brandTypoMatch(user, brand string) bool {
+	user = normalizeBrandToken(user)
+	brand = normalizeBrandToken(brand)
+	if user == brand {
+		return true
+	}
+	if len(user) < 5 || len(brand) < 4 {
+		return false
+	}
+	if fuzzyTokenPrefixMatch(user, brand) && absInt(len(user)-len(brand)) <= 2 {
+		return true
+	}
+	if minInt(len(user), len(brand)) >= 6 && editDistance(user, brand) <= 2 {
+		return true
+	}
+	return false
+}
+
+func absInt(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func editDistance(a, b string) int {
+	if a == b {
+		return 0
+	}
+	ra := []rune(a)
+	rb := []rune(b)
+	if len(ra) == 0 {
+		return len(rb)
+	}
+	if len(rb) == 0 {
+		return len(ra)
+	}
+	prev := make([]int, len(rb)+1)
+	curr := make([]int, len(rb)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(ra); i++ {
+		curr[0] = i
+		for j := 1; j <= len(rb); j++ {
+			cost := 1
+			if ra[i-1] == rb[j-1] {
+				cost = 0
+			}
+			del := prev[j] + 1
+			ins := curr[j-1] + 1
+			sub := prev[j-1] + cost
+			curr[j] = del
+			if ins < curr[j] {
+				curr[j] = ins
+			}
+			if sub < curr[j] {
+				curr[j] = sub
+			}
+		}
+		prev, curr = curr, prev
+	}
+	return prev[len(rb)]
 }
 
 func catalogItemMatchesBrand(it CatalogItem, brandToken string) bool {
@@ -146,7 +248,7 @@ func distinctiveNameTokens(name, brand string) []string {
 		if tok == brand || brandDistinctiveStop[tok] {
 			continue
 		}
-		if len(tok) < 4 && !isNumericSizeToken(tok) && !isApparelSizeToken(tok) && !isMultiCharSizeToken(tok) && !isCapacityOrVolumeToken(tok) {
+		if len(tok) < 3 && !isNumericSizeToken(tok) && !isApparelSizeToken(tok) && !isMultiCharSizeToken(tok) && !isCapacityOrVolumeToken(tok) {
 			continue
 		}
 		out = append(out, tok)
@@ -249,7 +351,7 @@ func uniqueSizedSKUFromText(userText string, catalog []CatalogItem) *CatalogItem
 	return best
 }
 
-func uniqueItemByDistinctiveUserTokens(userText, brand string, items []CatalogItem) *CatalogItem {
+func itemsHitByUniqueDistinctiveTokens(userText, brand string, items []CatalogItem) []CatalogItem {
 	userToks := map[string]struct{}{}
 	for _, tok := range tokenize(strings.ToLower(userText)) {
 		userToks[tok] = struct{}{}
@@ -279,6 +381,11 @@ func uniqueItemByDistinctiveUserTokens(userText, brand string, items []CatalogIt
 		hitIDs[it.ID] = struct{}{}
 		unique = append(unique, it)
 	}
+	return unique
+}
+
+func uniqueItemByDistinctiveUserTokens(userText, brand string, items []CatalogItem) *CatalogItem {
+	unique := itemsHitByUniqueDistinctiveTokens(userText, brand, items)
 	if len(unique) != 1 {
 		return nil
 	}
