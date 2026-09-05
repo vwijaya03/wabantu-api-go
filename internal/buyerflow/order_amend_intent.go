@@ -2,6 +2,23 @@ package buyerflow
 
 import "strings"
 
+// IsAdditionsCompleteMessage — buyer selesai menambah item ("itu saja tambahannya").
+func IsAdditionsCompleteMessage(userText string) bool {
+	text := normalizeBuyerTextForRules(userText)
+	if text == "" {
+		return false
+	}
+	for _, s := range []string{
+		"itu saja tambahannya", "itu aja tambahannya", "cukup tambahannya",
+		"sudah cukup tambah", "cuma itu tambahannya", "hanya itu tambahannya",
+	} {
+		if strings.Contains(text, s) {
+			return true
+		}
+	}
+	return false
+}
+
 // IsOrderAmendMessage — buyer ingin menambah/menggabungkan item ke draft order.
 func IsOrderAmendMessage(userText string) bool {
 	text := strings.ToLower(strings.TrimSpace(userText))

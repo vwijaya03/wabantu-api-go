@@ -10,6 +10,20 @@ func IsNegatedFullOrderCancel(userText string) bool {
 	if text == "" {
 		return false
 	}
+	for _, p := range []string{
+		"bukan batal semua", "jangan batal semua", "ga usah batal semua",
+		"gak usah batal semua", "nggak usah batal semua", "bukan batal pesanan",
+		"jangan batal pesanan", "bukan batal order", "jangan batal order",
+	} {
+		if strings.Contains(text, p) {
+			return true
+		}
+	}
+	if strings.Contains(text, "bukan batal") || strings.Contains(text, "jangan batal") {
+		if strings.Contains(text, "semua") || strings.Contains(text, "pesanan") || strings.Contains(text, "order") {
+			return true
+		}
+	}
 	hasNeg := strings.Contains(text, "bukan") || strings.Contains(text, "jangan") ||
 		strings.Contains(text, "ga usah") || strings.Contains(text, "gak usah") ||
 		strings.Contains(text, "nggak usah")
@@ -29,6 +43,9 @@ func IsCartLineCorrectionIntent(userText string) bool {
 		return !strings.Contains(text, "semua")
 	}
 	if strings.Contains(text, "bukan yang") {
+		return true
+	}
+	if strings.Contains(text, "pesanan saya") && strings.Contains(text, "tidak mau") {
 		return true
 	}
 	if strings.Contains(text, "tidak mau") || strings.Contains(text, "ga mau") ||

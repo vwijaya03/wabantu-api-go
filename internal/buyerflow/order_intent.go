@@ -218,7 +218,8 @@ var orderStatusInquiryPhrases = []string{
 
 // IsOrderRefStatusLookup — buyer sends an order ref (with or without short status/detail phrasing).
 func IsOrderRefStatusLookup(userText string) bool {
-	if IsCartLineCorrectionIntent(userText) || IsNegatedFullOrderCancel(userText) {
+	if IsCartLineCorrectionIntent(userText) || IsNegatedFullOrderCancel(userText) ||
+		IsPastedOrderConfirmation(userText) {
 		return false
 	}
 	ref := parseOrderRefFromMessage(userText)
@@ -327,7 +328,8 @@ func IsPaymentStatusInquiry(userText string) bool {
 
 // IsOrderStatusInquiry — customer asks about their existing order.
 func IsOrderStatusInquiry(userText string) bool {
-	if IsCartLineCorrectionIntent(userText) || IsNegatedFullOrderCancel(userText) {
+	if IsCartLineCorrectionIntent(userText) || IsNegatedFullOrderCancel(userText) ||
+		IsPastedOrderConfirmation(userText) {
 		return false
 	}
 	if IsCartRecapOrComplaint(userText, nil) {

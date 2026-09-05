@@ -433,6 +433,40 @@ func IsOrderFollowUpFromHistory(history []Message, userText string) bool {
 	return false
 }
 
+// RecentCheckoutInHistory — checkout masih aktif di thread chat walaupun Redis state belum ter-replay.
+func RecentCheckoutInHistory(history []Message) bool {
+	seen := 0
+	for i := len(history) - 1; i >= 0 && seen < 12; i-- {
+		body := strings.TrimSpace(history[i].Body)
+		if body == "" {
+			continue
+		}
+		seen++
+		lower := strings.ToLower(body)
+		if history[i].Direction == "in" {
+			if mentionsOrderQty(lower) || hasOrderIntentText(body) ||
+				IsCartLineCorrectionIntent(body) || IsNegatedFullOrderCancel(body) {
+				return true
+			}
+			continue
+		}
+		if strings.Contains(lower, "penerima") || strings.Contains(lower, "alamat pengiriman") ||
+			strings.Contains(lower, "nomor pesanan") || strings.Contains(lower, "total:") ||
+			strings.Contains(lower, "data pembeli") || strings.Contains(lower, "nama:") && strings.Contains(lower, "hp:") {
+			return true
+		}
+	}
+	return false
+}
+
+func prefersCheckoutFlowOverStatus(userText string, catalog []CatalogItem, history []Message, order *OrderState) bool {
+	if IsCartLineCorrectionIntent(userText) || IsNegatedFullOrderCancel(userText) ||
+		IsCartRecapOrComplaint(userText, catalog) || IsPastedOrderConfirmation(userText) {
+		return order != nil || RecentCheckoutInHistory(history)
+	}
+	return false
+}
+
 // IsActiveCheckoutFromHistory — payment/total follow-up after a recent order or checkout reply.
 func IsActiveCheckoutFromHistory(history []Message, userText string) bool {
 	text := strings.ToLower(strings.TrimSpace(userText))
@@ -478,6 +512,9 @@ var orderAddrHintRe = regexp.MustCompile(`(?i)(jalan|\bjl\.?\b|rt|rw|kel\.|kec\.
 func ShouldBreakOrderFlow(userText, step string, catalog []CatalogItem) bool {
 	if IsAddMoreItemsPolicyQuestion(userText) {
 		return false
+	}
+	if IsAdditionsCompleteMessage(userText) {
+		return true
 	}
 	if IsCartLineCorrectionIntent(userText) || IsNegatedFullOrderCancel(userText) {
 		return false

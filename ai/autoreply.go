@@ -225,7 +225,8 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return err == nil, err
 	}
 	if (IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) || IsOrderRefStatusLookup(userText)) &&
-		!wantsOrderContextFromHistory(userText) && !IsCartLineCorrectionIntent(userText) {
+		!wantsOrderContextFromHistory(userText) && !IsCartLineCorrectionIntent(userText) &&
+		!IsNegatedFullOrderCancel(userText) && !isPastedOrderConfirmation(userText) {
 		return s.handleCustomerOrderStatus(ctx, ts, payload.TenantSchema, payload, convo, channel, contact, userText, nil)
 	}
 
@@ -323,7 +324,8 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	if IsThirdPartyBuyerLookup(userText) {
 		return s.handleThirdPartyBuyerLookupDenied(ctx, ts, payload, convo, channel, contact)
 	}
-	if IsCartRecapOrComplaint(userText, toBFCatalogSlice(catalog)) || IsActiveCheckoutRecapQuestion(userText) {
+	if IsCartRecapOrComplaint(userText, toBFCatalogSlice(catalog)) || IsActiveCheckoutRecapQuestion(userText) ||
+		isPastedOrderConfirmation(userText) {
 		if orderSt, _ := s.getOrderState(ctx, payload.TenantID, convo.ID); orderSt != nil {
 			formal := strOrEmpty(profile.Tone) == "formal"
 			reply := CartRecapReply(*orderSt, formal)
@@ -334,7 +336,8 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		}
 	}
 	if (IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) || IsOrderRefStatusLookup(userText)) &&
-		!IsCartLineCorrectionIntent(userText) && !IsNegatedFullOrderCancel(userText) {
+		!IsCartLineCorrectionIntent(userText) && !IsNegatedFullOrderCancel(userText) &&
+		!isPastedOrderConfirmation(userText) {
 		return s.handleCustomerOrderStatus(ctx, ts, payload.TenantSchema, payload, convo, channel, contact, userText, history)
 	}
 
@@ -575,7 +578,8 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return s.handleThirdPartyBuyerLookupDenied(ctx, ts, payload, convo, channel, contact)
 	}
 	if (IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) || IsOrderRefStatusLookup(userText)) &&
-		!IsCartLineCorrectionIntent(userText) && !IsNegatedFullOrderCancel(userText) {
+		!IsCartLineCorrectionIntent(userText) && !IsNegatedFullOrderCancel(userText) &&
+		!isPastedOrderConfirmation(userText) {
 		return s.handleCustomerOrderStatus(ctx, ts, payload.TenantSchema, payload, convo, channel, contact, userText, history)
 	}
 
@@ -1484,4 +1488,20 @@ func pauseAI(ctx context.Context, ts tenantScopedQuerier, convoID, reason string
 		reason, convoID,
 	)
 	return err
+}
+
+func isPastedOrderConfirmation(userText string) bool {
+	if parseOrderRefFromMessage(userText) == "" {
+		return false
+	}
+	text := strings.ToLower(strings.TrimSpace(userText))
+	if text == "" {
+		return false
+	}
+	hasNomor := strings.Contains(text, "nomor pesanan")
+	hasStatus := strings.Contains(text, "status pesanan")
+	hasProducts := strings.Contains(text, "produk:") || strings.Contains(text, "produk\n") ||
+		strings.Contains(text, "total:") || strings.Contains(text, "×")
+	hasPayment := strings.Contains(text, "pembayaran") || strings.Contains(text, "bukti transfer")
+	return hasNomor && (hasStatus || hasProducts || hasPayment)
 }

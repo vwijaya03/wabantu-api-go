@@ -52,6 +52,33 @@ func (s *Simulator) Turn(userText string) TurnOutcome {
 		return out
 	}
 
+	// Match autoreply.go: checkout edit/recap before DB status when thread still in checkout.
+	if prefersCheckoutFlowOverStatus(userText, s.Catalog, s.History, s.Order) {
+		res := AdvanceOrderFlow(OrderFlowInput{
+			UserText: userText,
+			State:    s.Order,
+			Catalog:  s.Catalog,
+			History:  s.History,
+			Profile:  s.Profile,
+			KB:       s.KB,
+			ScopeKW:  s.ScopeKW,
+		}, func(st OrderState) (string, error) {
+			return "sim-" + st.ProductName, nil
+		})
+		out.Path = res.Path
+		out.Reply = res.Reply
+		out.Completed = res.Completed
+		out.Intent = SalesIntent{State: SalesStateCheckout, Topic: SalesTopicGeneral, Confidence: 0.9}
+		if res.Cleared {
+			s.Order = nil
+		} else if res.State != nil {
+			s.Order = res.State
+		}
+		out.Order = s.Order
+		s.appendHistory(userText, out.Reply)
+		return out
+	}
+
 	// Match autoreply.go: status inquiry before greeting and cancel.
 	if s.Order != nil && (IsCartRecapOrComplaint(userText, s.Catalog) ||
 		PreferCheckoutRecapOverDBStatus(userText, CheckoutStateHasRecap(s.Order))) {

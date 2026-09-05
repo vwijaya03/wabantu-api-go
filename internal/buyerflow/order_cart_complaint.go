@@ -4,11 +4,37 @@ import (
 	"strings"
 )
 
+// IsPastedOrderConfirmation — buyer forwards the bot's order recap (not a DB status lookup).
+func IsPastedOrderConfirmation(userText string) bool {
+	if parseOrderRefFromMessage(userText) == "" {
+		return false
+	}
+	text := normalizeBuyerTextForRules(userText)
+	if text == "" {
+		return false
+	}
+	hasNomor := strings.Contains(text, "nomor pesanan")
+	hasStatus := strings.Contains(text, "status pesanan")
+	hasProducts := strings.Contains(text, "produk:") || strings.Contains(text, "produk\n") ||
+		strings.Contains(text, "total:") || strings.Contains(text, "×")
+	hasPayment := strings.Contains(text, "pembayaran") || strings.Contains(text, "bukti transfer")
+	return hasNomor && (hasStatus || hasProducts || hasPayment)
+}
+
 // IsCartRecapOrComplaint — buyer asserts cart contents or complains items missing (not DB status lookup).
 func IsCartRecapOrComplaint(userText string, catalog []CatalogItem) bool {
 	text := normalizeBuyerTextForRules(userText)
 	if text == "" {
 		return false
+	}
+	if IsPastedOrderConfirmation(userText) {
+		return true
+	}
+	if strings.Contains(text, "pesanan saya") || strings.Contains(text, "pesanan ku") {
+		if strings.Contains(text, "tidak mau") || strings.Contains(text, "bukan") ||
+			strings.Contains(text, "aja") || countCatalogMatchesInText(text, catalog) >= 1 {
+			return true
+		}
 	}
 	if IsOrderAmendMessage(userText) {
 		return true
