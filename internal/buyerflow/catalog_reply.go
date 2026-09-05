@@ -587,10 +587,14 @@ func replyFromBusinessCatalog(
 		return "", false
 	}
 
-	if IsProductSellInquiry(userText, catalog) {
+	if IsProductSellInquiry(userText, catalog) || looksLikeNamedProductSellInquiry(userText) {
 		if match := resolve(userText, history, catalog); match != nil {
 			return buildCatalogItemReply(formal, match, 0), true
 		}
+		if len(catalog) == 0 {
+			return buildCatalogEmptyReply(formal, bizName, profile), true
+		}
+		return buildCatalogNotFoundReply(formal, bizName, catalog, profile), true
 	}
 
 	if IsConsultingPurchaseQuestion(userText, catalog) {

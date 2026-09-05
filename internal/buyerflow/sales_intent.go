@@ -74,6 +74,10 @@ func ResolveSalesIntent(
 		return SalesIntent{State: SalesStateConsulting, Topic: SalesTopicOrderStatus, Confidence: 0.9}
 	}
 	if IsStructuredOrderList(userText) {
+		if IsStructuredOrderCheckoutBreak(userText) &&
+			(orderActive || IsActiveCheckoutFromHistory(history, userText)) {
+			return SalesIntent{State: SalesStateConsulting, Topic: SalesTopicProduct, Confidence: 0.88}
+		}
 		return SalesIntent{State: SalesStateCartReady, Topic: SalesTopicProduct, Confidence: 0.95}
 	}
 	if IsExplicitNewOrderStart(userText) {

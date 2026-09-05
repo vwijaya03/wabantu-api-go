@@ -98,6 +98,7 @@ func looksLikeOrderSegment(seg string) bool {
 }
 
 func splitOrderTextSegments(userText string) []string {
+	userText = normalizeOrderListText(userText)
 	inline := splitInlineOrderSegments(userText)
 	if len(inline) >= 2 {
 		return inline
