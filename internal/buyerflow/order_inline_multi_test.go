@@ -38,6 +38,13 @@ func TestParseInlineMultiOrderLines(t *testing.T) {
 	}
 }
 
+func TestThousandsCommaDoesNotSplitOrderSegments(t *testing.T) {
+	msg := "mau abon sapi 1,250 gram"
+	if IsInlineMultiOrderMessage(msg) {
+		t.Fatalf("thousands comma must not count as two products, segs=%#v", SplitInlineOrderSegments(msg))
+	}
+}
+
 func TestTryAppendItemsDuringCheckout(t *testing.T) {
 	catalog := omahFoodCatalog()
 	st := OrderState{

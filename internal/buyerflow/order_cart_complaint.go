@@ -16,6 +16,8 @@ func IsCartRecapOrComplaint(userText string, catalog []CatalogItem) bool {
 	complaintSignals := []string{
 		"ga masuk", "gak masuk", "belum masuk", "tidak masuk", "blm masuk",
 		"harusnya", "kok cuma", "kok baru", "kok malah", "loh ya",
+		"tidak terbeli", "ga terbeli", "gak terbeli", "tidak kebeli", "ga kebeli", "gak kebeli",
+		"kok langsung", "beberapa varian", "kok tidak terbeli",
 	}
 	for _, s := range complaintSignals {
 		if strings.Contains(text, s) {
