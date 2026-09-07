@@ -130,11 +130,13 @@ function buildPrompt(job, analysis) {
 
 ## Scope (strict)
 - ONLY edit: internal/buyerflow/*.go, ai/autoreply.go, and/or ai/order_flow_handler.go
-- Goal: simulator routing (buyerflow.Simulator.Turn) should match production paths for the cases below
+- Goal: buyerflow.Simulator.Turn must return wantPath / regressionFailures[].wantPath for the cases below
+- Do NOT match production metadata.path (actualPath) unless wantPath equals actualPath
+- Before adding PathConsulting branches, read internal/buyerflow/checkout_continuity_test.go — order lists with qty usually belong on PathOrderFlow
 - Do NOT change LLM reply text generation, webhook hot path, or unrelated files
 - Minimal diff; match existing Go patterns; standard testing package only (no testify)
 - Do NOT run shell commands (no encore test) — CI runs regression after this step
-- Do NOT modify test files or triageAutoGenSnapshotJSON
+- Do NOT modify test files, snapshots, or triageAutoGenSnapshotJSON*
 
 ## Job
 - id: ${job.id || ""}
@@ -146,14 +148,14 @@ function buildPrompt(job, analysis) {
 ## Failing regression cases (fix these first)
 ${JSON.stringify(failingCases, null, 2)}
 
-## Routing mismatches at analyze time
+## Golden mismatches at analyze time (wantPath = expectedPath)
 ${JSON.stringify(mismatchSummary, null, 2)}
 
 ## Hints
 ${JSON.stringify(fixHints, null, 2)}
 
 ## Tasks
-1. Open internal/buyerflow/regression_autogen_test.go — read failing case names above; replay priorInputs before input.
+1. Open internal/buyerflow/regression_autogen_*_test.go — read failing case names above; replay priorInputs before input.
 2. Patch routing in internal/buyerflow/ and/or autoreply.go / order_flow_handler.go only.
 3. Summarize which paths were fixed and why.`;
 }

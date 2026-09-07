@@ -24,6 +24,22 @@ func TestReporterRoleFromAuth(t *testing.T) {
 	}
 }
 
+func TestValidStatuses(t *testing.T) {
+	for _, s := range []string{
+		triagereport.StatusOpen,
+		triagereport.StatusConfirmed,
+		triagereport.StatusDismissed,
+		triagereport.StatusResolved,
+	} {
+		if !triagereport.ValidStatuses[s] {
+			t.Fatalf("status %s should be valid", s)
+		}
+	}
+	if triagereport.ValidStatuses["invalid"] {
+		t.Fatal("invalid status should be rejected")
+	}
+}
+
 func TestValidCategories(t *testing.T) {
 	for _, c := range []string{
 		triagereport.CategoryWrongAnswer,

@@ -24,6 +24,7 @@ type Report struct {
 	ReviewedBy        string     `json:"reviewedBy,omitempty"`
 	ReviewNote        string     `json:"reviewNote,omitempty"`
 	ReviewedAt        *time.Time `json:"reviewedAt,omitempty"`
+	ResolvedByJobID   string     `json:"resolvedByJobId,omitempty"`
 	CreatedAt         time.Time  `json:"createdAt"`
 	UpdatedAt         time.Time  `json:"updatedAt"`
 	TenantName        string     `json:"tenantName,omitempty"`

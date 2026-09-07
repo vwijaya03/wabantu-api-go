@@ -33,7 +33,7 @@ ai/
 2. Lokal: `go test ./internal/buyerflow/ -run TestRegression/nama_case -v`
 3. PR: check **AI Regression** (fast) wajib hijau
 
-Triage loop (`scripts/triage-apply.go`) menulis ke `internal/buyerflow/regression_autogen_test.go`.
+Triage loop (`scripts/triage-apply.go`) menulis `internal/buyerflow/regression_autogen_<8hex>_test.go` (satu file per job, simbol unik). Jangan merge PR `test(ai-triage)` buta jika ada diff routing.
 
 ## CI
 

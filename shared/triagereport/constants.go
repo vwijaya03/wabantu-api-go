@@ -1,12 +1,13 @@
 package triagereport
 
 const (
-	StatusOpen       = "open"
-	StatusConfirmed  = "confirmed"
-	StatusDismissed  = "dismissed"
+	StatusOpen      = "open"
+	StatusConfirmed = "confirmed"
+	StatusDismissed = "dismissed"
+	StatusResolved  = "resolved"
 
-	ReporterRoleTenantUser  = "tenant_user"
-	ReporterRoleSuperAdmin  = "super_admin"
+	ReporterRoleTenantUser = "tenant_user"
+	ReporterRoleSuperAdmin = "super_admin"
 
 	CategoryWrongAnswer = "wrong_answer"
 	CategoryBug         = "bug"
@@ -32,6 +33,7 @@ var ValidStatuses = map[string]bool{
 	StatusOpen:      true,
 	StatusConfirmed: true,
 	StatusDismissed: true,
+	StatusResolved:  true,
 }
 
 func DailyLimitForRole(role string) int {
