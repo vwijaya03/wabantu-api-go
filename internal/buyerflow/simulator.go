@@ -196,7 +196,8 @@ func (s *Simulator) Turn(userText string) TurnOutcome {
 	}
 
 	cr := salesIntentToClassifier(intent)
-	if cr.Label == "order_intent" || hasPurchaseIntent(userText, s.Catalog) {
+	if !IsStructuredOrderCheckoutBreak(userText) &&
+		(cr.Label == "order_intent" || hasPurchaseIntent(userText, s.Catalog)) {
 		res := AdvanceOrderFlow(OrderFlowInput{
 			UserText: userText,
 			State:    s.Order,

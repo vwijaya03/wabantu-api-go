@@ -286,6 +286,9 @@ func HasPurchaseIntent(userText string) bool {
 }
 
 func hasPurchaseIntent(userText string, catalog []CatalogItem) bool {
+	if isSellAvailabilityQuestion(userText) {
+		return false
+	}
 	if IsConsultingPurchaseQuestion(userText, catalog) {
 		return false
 	}
@@ -433,26 +436,9 @@ func IsOrderFollowUpFromHistory(history []Message, userText string) bool {
 	return false
 }
 
-// IsActiveCheckoutFromHistory — payment/total follow-up after a recent order or checkout reply.
-func IsActiveCheckoutFromHistory(history []Message, userText string) bool {
-	text := strings.ToLower(strings.TrimSpace(userText))
-	if text == "" {
-		return false
-	}
-	paymentHint := strings.Contains(text, "transfer") || strings.Contains(text, "trf") ||
-		strings.Contains(text, "bayar") || strings.Contains(text, "pembayaran") ||
-		strings.Contains(text, "cod") || strings.Contains(text, "qris") ||
-		strings.Contains(text, "rekening") || strings.Contains(text, "bukti")
-	if IsShippingQuoteQuestion(userText) || IsStoreLocationQuestion(userText) {
-		return false
-	}
-	totalHint := strings.Contains(text, "total") ||
-		(strings.Contains(text, "berapa") && strings.Contains(text, "semua"))
-	if !paymentHint && !totalHint && !IsQuestionLike(userText) && !IsAcknowledgmentLike(userText) {
-		return false
-	}
+func recentCheckoutOutboundInHistory(history []Message) bool {
 	var lastOut []string
-	for i := len(history) - 1; i >= 0 && len(lastOut) < 4; i-- {
+	for i := len(history) - 1; i >= 0 && len(lastOut) < 6; i-- {
 		if history[i].Direction != "out" {
 			continue
 		}
@@ -465,11 +451,39 @@ func IsActiveCheckoutFromHistory(history []Message, userText string) bool {
 		if strings.Contains(out, "order") || strings.Contains(out, "pesan") ||
 			strings.Contains(out, "ongkir") || strings.Contains(out, "konfirmasi") ||
 			strings.Contains(out, "datanya sudah lengkap") || strings.Contains(out, "alamat pengiriman") ||
-			strings.Contains(out, "total harga") || strings.Contains(out, "biaya pengiriman") {
+			strings.Contains(out, "total harga") || strings.Contains(out, "biaya pengiriman") ||
+			strings.Contains(out, "penerima") || strings.Contains(out, "nama:") ||
+			strings.Contains(out, "no hp") || strings.Contains(out, "nomor hp") ||
+			strings.Contains(out, "kirim alamat") || strings.Contains(out, "ringkasan") {
 			return true
 		}
 	}
 	return false
+}
+
+// IsActiveCheckoutFromHistory — payment/total follow-up after a recent order or checkout reply.
+func IsActiveCheckoutFromHistory(history []Message, userText string) bool {
+	text := strings.ToLower(strings.TrimSpace(userText))
+	if text == "" {
+		return false
+	}
+	if IsShippingQuoteQuestion(userText) || IsStoreLocationQuestion(userText) {
+		return false
+	}
+	// Multi-line order pasted mid-checkout (typo/unmatched SKU → consulting, not order FSM).
+	if IsStructuredOrderCheckoutBreak(userText) && mentionsOrderQty(userText) {
+		return recentCheckoutOutboundInHistory(history)
+	}
+	paymentHint := strings.Contains(text, "transfer") || strings.Contains(text, "trf") ||
+		strings.Contains(text, "bayar") || strings.Contains(text, "pembayaran") ||
+		strings.Contains(text, "cod") || strings.Contains(text, "qris") ||
+		strings.Contains(text, "rekening") || strings.Contains(text, "bukti")
+	totalHint := strings.Contains(text, "total") ||
+		(strings.Contains(text, "berapa") && strings.Contains(text, "semua"))
+	if !paymentHint && !totalHint && !IsQuestionLike(userText) && !IsAcknowledgmentLike(userText) {
+		return false
+	}
+	return recentCheckoutOutboundInHistory(history)
 }
 
 var orderAddrHintRe = regexp.MustCompile(`(?i)(jalan|\bjl\.?\b|rt|rw|kel\.|kec\.|kota|kab\.|kode pos|taman|setiabudi)`)
