@@ -141,6 +141,9 @@ CREATE INDEX IF NOT EXISTS idx_ai_triage_report_tenant ON ai_triage_report(tenan
 CREATE INDEX IF NOT EXISTS idx_ai_triage_report_status ON ai_triage_report(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ai_triage_report_reporter_day ON ai_triage_report(reported_by, created_at DESC);
 
+ALTER TABLE ai_triage_report
+    ADD COLUMN IF NOT EXISTS resolved_by_job_id UUID;
+
 CREATE TABLE IF NOT EXISTS tenant_access_request (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     requester_account_id UUID NOT NULL REFERENCES tenant_account(id),

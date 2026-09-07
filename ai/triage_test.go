@@ -2,6 +2,7 @@ package ai
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -133,6 +134,106 @@ func TestGenerateRegressionCases(t *testing.T) {
 	}
 	if !strings.Contains(code, "triageAutoGenSnapshotJSON") {
 		t.Fatalf("expected catalog snapshot in generated code: %s", code)
+	}
+}
+
+func TestGenerateRegressionCases_newlineNotDoubleEscaped(t *testing.T) {
+	code := GenerateRegressionCases([]TriageMismatch{{
+		InboundID:    "nl",
+		UserText:     "a\nb",
+		ExpectedPath: PathOrderFlow,
+	}}, "t_omah_apparel", nil)
+	quoted := strconv.Quote("a\nb")
+	if !strings.Contains(code, "input: "+quoted) {
+		t.Fatalf("generated input should be Go-quoted newline, got:\n%s", code)
+	}
+	if strings.Contains(code, `input: "a\\nb"`) {
+		t.Fatalf("newline was double-escaped:\n%s", code)
+	}
+}
+
+func TestGenerateRegressionCases_skipsUntrustedConsultingOrderList(t *testing.T) {
+	code := GenerateRegressionCases([]TriageMismatch{{
+		InboundID:    "ord",
+		UserText:     "abon sapi 125 gr 1\nabon sapi 250 gram 1",
+		ExpectedPath: PathConsulting,
+	}}, "t_omah_apparel", nil)
+	if strings.Contains(code, "triage_ord") {
+		t.Fatalf("order list must not emit consulting golden case:\n%s", code)
+	}
+}
+
+func TestCountRegressionMismatches_skipsUntrusted(t *testing.T) {
+	mismatches := []TriageMismatch{
+		{InboundID: "a", UserText: "halo", ExpectedPath: PathGreeting},
+		{InboundID: "b", UserText: "sku 1\nsku 2", ExpectedPath: PathConsulting},
+	}
+	if got := CountRegressionMismatches(mismatches); got != 1 {
+		t.Fatalf("CountRegressionMismatches = %d want 1", got)
+	}
+}
+
+func TestSuggestWantPath_orderListConsultingUntrusted(t *testing.T) {
+	path, untrusted := SuggestWantPath(TriageMismatch{
+		UserText:     "abon 1\nmaggi 2",
+		ExpectedPath: PathConsulting,
+	})
+	if !untrusted || path != "" {
+		t.Fatalf("want untrusted empty path, got path=%q untrusted=%v", path, untrusted)
+	}
+	path, untrusted = SuggestWantPath(TriageMismatch{
+		UserText:     "berapa harga kaosnya?",
+		ExpectedPath: PathConsulting,
+	})
+	if untrusted || path != PathConsulting {
+		t.Fatalf("plain consulting should be trusted, got path=%q untrusted=%v", path, untrusted)
+	}
+}
+
+func TestVerifyGoldenCases_allPassed(t *testing.T) {
+	sim := newOmahSimulator()
+	out := sim.Turn("halo")
+	factory := func() *ConversationSimulator { return newOmahSimulator() }
+	got := VerifyGoldenCases(factory, []TriageMismatch{{
+		InboundID:    "ok",
+		UserText:     "halo",
+		ExpectedPath: out.Path,
+	}})
+	if !got.AllPassed {
+		t.Fatalf("expected all passed, failures=%v checked=%d", got.Failures, got.TurnsChecked)
+	}
+}
+
+func TestVerifyGoldenCases_pathMismatch(t *testing.T) {
+	factory := func() *ConversationSimulator { return newOmahSimulator() }
+	got := VerifyGoldenCases(factory, []TriageMismatch{{
+		InboundID:    "bad",
+		UserText:     "halo",
+		ExpectedPath: PathCatalogDB,
+	}})
+	if got.AllPassed {
+		t.Fatal("expected failure")
+	}
+	if len(got.Failures) != 1 {
+		t.Fatalf("failures = %d want 1", len(got.Failures))
+	}
+	if got.Failures[0].WantPath != PathCatalogDB {
+		t.Fatalf("wantPath = %q", got.Failures[0].WantPath)
+	}
+}
+
+func TestVerifyGoldenCases_skipsUntrustedOrderList(t *testing.T) {
+	factory := func() *ConversationSimulator { return newOmahSimulator() }
+	got := VerifyGoldenCases(factory, []TriageMismatch{{
+		InboundID:    "ord",
+		UserText:     "abon 1\nmaggi 2",
+		ExpectedPath: PathConsulting,
+	}})
+	if got.TurnsChecked != 0 {
+		t.Fatalf("untrusted case should be skipped, checked=%d", got.TurnsChecked)
+	}
+	if got.AllPassed {
+		t.Fatal("zero golden turns is not success")
 	}
 }
 

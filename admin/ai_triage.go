@@ -26,15 +26,16 @@ const (
 	triageJobStatusPRReadyNeedsFix = "pr_ready_needs_fix"
 	triageJobStatusFixRunning      = "fix_running"
 	triageJobStatusFailed          = "failed"
+	triageJobStatusVerified        = "verified"
 
 	triageMaxConcurrentJobs       = 3
 	triageMaxCursorFixAttempts    = 2
 	triageJobStalePendingAfter    = 3 * time.Minute
 	triageJobStaleRunningAfter    = 2 * time.Hour
 	triageJobStaleFixRunningAfter = 30 * time.Minute
-	triageGitHubRepo             = "vwijaya03/wabantu-api-go"
-	triageWorkflowFile           = "ai-triage-fix.yml"
-	triageCursorFixWorkflowFile  = "ai-triage-cursor-fix.yml"
+	triageGitHubRepo              = "vwijaya03/wabantu-api-go"
+	triageWorkflowFile            = "ai-triage-fix.yml"
+	triageCursorFixWorkflowFile   = "ai-triage-cursor-fix.yml"
 )
 
 var secrets struct {
@@ -69,23 +70,25 @@ type CreateAITriageJobParams struct {
 	TenantID       string `json:"tenantId"`
 	ConversationID string `json:"conversationId"`
 	InboundID      string `json:"inboundId,omitempty"`
+	Force          bool   `json:"force,omitempty"`
 }
 
 type AITriageJob struct {
-	ID              string          `json:"id"`
-	TenantID        string          `json:"tenantId"`
-	TenantSchema    string          `json:"tenantSchema"`
-	ConversationID  string          `json:"conversationId"`
-	InboundID       string          `json:"inboundId,omitempty"`
-	Status          string          `json:"status"`
-	Analysis        json.RawMessage `json:"analysis,omitempty"`
-	RegressionCode  string          `json:"regressionCode,omitempty"`
-	GitHubRunURL    string          `json:"githubRunUrl,omitempty"`
-	PRURL           string          `json:"prUrl,omitempty"`
-	ErrorText       string          `json:"errorText,omitempty"`
-	CreatedAt       time.Time       `json:"createdAt"`
-	UpdatedAt       time.Time       `json:"updatedAt"`
-	CompletedAt     *time.Time      `json:"completedAt,omitempty"`
+	ID             string          `json:"id"`
+	TenantID       string          `json:"tenantId"`
+	TenantSchema   string          `json:"tenantSchema"`
+	ConversationID string          `json:"conversationId"`
+	InboundID      string          `json:"inboundId,omitempty"`
+	Status         string          `json:"status"`
+	Analysis       json.RawMessage `json:"analysis,omitempty"`
+	RegressionCode string          `json:"regressionCode,omitempty"`
+	GitHubRunURL   string          `json:"githubRunUrl,omitempty"`
+	PRURL          string          `json:"prUrl,omitempty"`
+	ErrorText      string          `json:"errorText,omitempty"`
+	StartedBy      string          `json:"startedBy,omitempty"`
+	CreatedAt      time.Time       `json:"createdAt"`
+	UpdatedAt      time.Time       `json:"updatedAt"`
+	CompletedAt    *time.Time      `json:"completedAt,omitempty"`
 }
 
 type CreateAITriageJobResponse struct {
@@ -159,6 +162,14 @@ func CreateAITriageJob(ctx context.Context, p *CreateAITriageJobParams) (*Create
 
 	maybeReclaimStaleTriageJobs(ctx)
 
+	if !p.Force {
+		if existing, err := findBlockingForensicJob(ctx, p.TenantID, p.ConversationID); err != nil {
+			return nil, &errs.Error{Code: errs.Internal, Message: "check existing triage job failed"}
+		} else if existing != "" {
+			return nil, &errs.Error{Code: errs.InvalidArgument, Message: forensicDuplicateMessage(existing)}
+		}
+	}
+
 	active, err := countActiveTriageJobs(ctx)
 	if err != nil {
 		return nil, &errs.Error{Code: errs.Internal, Message: "check triage queue failed"}
@@ -177,10 +188,11 @@ func CreateAITriageJob(ctx context.Context, p *CreateAITriageJobParams) (*Create
 		return nil, &errs.Error{Code: errs.Internal, Message: "analyze conversation failed"}
 	}
 	if ai.CountRegressionMismatches(analysis.Mismatches) == 0 {
-		return nil, &errs.Error{
-			Code:    errs.InvalidArgument,
-			Message: "tidak ada routing mismatch deterministik di percakapan ini",
+		msg := "tidak ada routing mismatch deterministik di percakapan ini — itu bukan bukti fix sudah jalan. Sukses = Verifikasi fix (simulator vs golden wantPath)."
+		if analysis.HasDeterministic {
+			msg = "ada mismatch forensic, tapi wantPath tidak dipercaya (daftar order tidak boleh di-lock sebagai consulting). Jangan buat tes. Sukses = Verifikasi fix setelah routing benar."
 		}
+		return nil, &errs.Error{Code: errs.InvalidArgument, Message: msg}
 	}
 	ai.EnrichAnalysisResult(analysis)
 	analysisJSON, _ := json.Marshal(analysis)
@@ -286,6 +298,127 @@ func RequestAITriageJobFix(ctx context.Context, id string) (*RequestAITriageJobF
 		return nil, &errs.Error{Code: errs.Internal, Message: "load triage job failed"}
 	}
 	return &RequestAITriageJobFixResponse{Job: job}, nil
+}
+
+type VerifyAITriageJobResponse struct {
+	Job             AITriageJob                  `json:"job"`
+	Passed          bool                         `json:"passed"`
+	Failures        []ai.TriageRegressionFailure `json:"failures,omitempty"`
+	ReportsResolved int                          `json:"reportsResolved"`
+}
+
+// VerifyAITriageJob replays golden wantPath on the deployed simulator (not WhatsApp history).
+//
+//encore:api auth method=POST path=/api/v1/admin/ai-triage/jobs/:id/verify tag:super_admin
+func VerifyAITriageJob(ctx context.Context, id string) (*VerifyAITriageJobResponse, error) {
+	if _, err := requireSuperAdmin(ctx); err != nil {
+		return nil, err
+	}
+	jobID := strings.TrimSpace(id)
+	if jobID == "" {
+		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "job id required"}
+	}
+	maybeReclaimStaleTriageJobs(ctx)
+	job, err := loadTriageJob(ctx, jobID)
+	if err != nil {
+		return nil, err
+	}
+	if !triageJobCanVerify(job.Status) {
+		return nil, &errs.Error{
+			Code:    errs.FailedPrecondition,
+			Message: "verifikasi hanya untuk job pr_ready, pr_ready_needs_fix, atau verified",
+		}
+	}
+
+	var analysis ai.AnalyzeConversationResult
+	if len(job.Analysis) > 0 {
+		_ = json.Unmarshal(job.Analysis, &analysis)
+	}
+	factory, usedLive, err := ai.NewVerifySimFactory(ctx, job.TenantSchema, analysis.SimulatorSnapshot)
+	if err != nil {
+		return nil, &errs.Error{Code: errs.Internal, Message: "siapkan simulator verifikasi gagal"}
+	}
+	verify := ai.VerifyGoldenCases(factory, analysis.Mismatches)
+	ai.ApplyVerifyResult(&analysis, verify, usedLive)
+	if err := saveTriageJobAnalysis(ctx, jobID, &analysis); err != nil {
+		return nil, &errs.Error{Code: errs.Internal, Message: "simpan hasil verifikasi gagal"}
+	}
+
+	reportsResolved := 0
+	if verify.AllPassed {
+		note := fmt.Sprintf("Otomatis selesai setelah verifikasi job %s", jobID)
+		n, resErr := resolveOpenReportsForConversation(ctx, job.TenantID, job.ConversationID, jobID, job.StartedBy, note)
+		if resErr != nil {
+			rlog.Warn("resolve open triage reports failed", "jobId", jobID, "err", resErr)
+		} else {
+			reportsResolved = n
+		}
+		if err := updateTriageJobStatus(ctx, jobID, triageJobStatusVerified, "", job.GitHubRunURL); err != nil {
+			return nil, &errs.Error{Code: errs.Internal, Message: "update status verified gagal"}
+		}
+	}
+
+	job, err = loadTriageJob(ctx, jobID)
+	if err != nil {
+		return nil, err
+	}
+	return &VerifyAITriageJobResponse{
+		Job:             job,
+		Passed:          verify.AllPassed,
+		Failures:        verify.Failures,
+		ReportsResolved: reportsResolved,
+	}, nil
+}
+
+func triageJobCanVerify(status string) bool {
+	switch status {
+	case triageJobStatusPRReady, triageJobStatusPRReadyNeedsFix, triageJobStatusVerified:
+		return true
+	default:
+		return false
+	}
+}
+
+func forensicDuplicateMessage(jobID string) string {
+	return fmt.Sprintf(
+		"Job forensic untuk percakapan ini sudah ada (%s) dan belum terverifikasi. Gunakan Verifikasi fix, bukan loop baru. Kirim force=true hanya jika ada bug baru di thread yang sama.",
+		strings.TrimSpace(jobID),
+	)
+}
+
+func findBlockingForensicJob(ctx context.Context, tenantID, conversationID string) (string, error) {
+	var id string
+	err := system.DB.QueryRow(ctx, `
+		SELECT id::text
+		FROM ai_triage_job
+		WHERE tenant_id = $1::uuid
+		  AND conversation_id = $2::uuid
+		  AND status IN ($3, $4, $5, $6, $7)
+		ORDER BY created_at DESC
+		LIMIT 1`,
+		tenantID, conversationID,
+		triageJobStatusPending, triageJobStatusRunning, triageJobStatusFixRunning,
+		triageJobStatusPRReady, triageJobStatusPRReadyNeedsFix,
+	).Scan(&id)
+	if isNoRow(err) {
+		return "", nil
+	}
+	return id, err
+}
+
+func saveTriageJobAnalysis(ctx context.Context, jobID string, analysis *ai.AnalyzeConversationResult) error {
+	if analysis == nil {
+		return nil
+	}
+	merged, err := json.Marshal(analysis)
+	if err != nil {
+		return err
+	}
+	_, err = system.DB.Exec(ctx, `
+		UPDATE ai_triage_job
+		SET analysis_json = $2::jsonb, updated_at = now()
+		WHERE id = $1::uuid`, jobID, string(merged))
+	return err
 }
 
 func triageJobCursorFixAttempts(analysisJSON json.RawMessage) int {
@@ -415,10 +548,12 @@ func loadTriageJob(ctx context.Context, jobID string) (AITriageJob, error) {
 	var errText sql.NullString
 	var completed sql.NullTime
 
+	var startedBy string
 	err := system.DB.QueryRow(ctx, `
 		SELECT id::text, tenant_id::text, tenant_schema, conversation_id::text,
 		       inbound_id::text, status,
 		       analysis_json, regression_code, github_run_url, pr_url, error_text,
+		       COALESCE(started_by::text, ''),
 		       created_at, updated_at, completed_at
 		FROM ai_triage_job
 		WHERE id = $1::uuid`, jobID,
@@ -426,6 +561,7 @@ func loadTriageJob(ctx context.Context, jobID string) (AITriageJob, error) {
 		&job.ID, &job.TenantID, &job.TenantSchema, &job.ConversationID,
 		&inbound, &job.Status,
 		&analysis, &regression, &githubRun, &prURL, &errText,
+		&startedBy,
 		&job.CreatedAt, &job.UpdatedAt, &completed,
 	)
 	if isNoRow(err) {
@@ -434,6 +570,7 @@ func loadTriageJob(ctx context.Context, jobID string) (AITriageJob, error) {
 	if err != nil {
 		return job, err
 	}
+	job.StartedBy = startedBy
 	if inbound.Valid {
 		job.InboundID = inbound.String
 	}
@@ -466,7 +603,7 @@ func updateTriageJobStatus(ctx context.Context, jobID, status, errText, githubRu
 		    error_text = NULLIF($3, ''),
 		    github_run_url = NULLIF($4, ''),
 		    updated_at = now(),
-		    completed_at = CASE WHEN $2::varchar IN ('failed', 'pr_ready', 'pr_ready_needs_fix') THEN now() ELSE completed_at END
+		    completed_at = CASE WHEN $2::varchar IN ('failed', 'pr_ready', 'pr_ready_needs_fix', 'verified') THEN now() ELSE completed_at END
 		WHERE id = $1::uuid`,
 		jobID, status, errText, githubRunURL,
 	)

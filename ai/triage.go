@@ -76,6 +76,10 @@ type AnalyzeConversationResult struct {
 	CursorAgentID         string                    `json:"cursorAgentId,omitempty"`
 	CursorFixGitHubRunURL string                    `json:"cursorFixGithubRunUrl,omitempty"`
 	CursorFixAttempts     int                       `json:"cursorFixAttempts,omitempty"`
+	VerifyFailures        []TriageRegressionFailure `json:"verifyFailures,omitempty"`
+	VerifyNote            string                    `json:"verifyNote,omitempty"`
+	VerifyUsedLiveCatalog bool                      `json:"verifyUsedLiveCatalog,omitempty"`
+	VerifyPassed          *bool                     `json:"verifyPassed,omitempty"`
 }
 
 // EnrichAnalysisResult adds fix hints for UI and AI fix workflows.
@@ -374,14 +378,21 @@ func AnalyzeConversation(ctx context.Context, tenantSchema, conversationID, focu
 	return result, nil
 }
 
+func shouldEmitRegressionCase(m TriageMismatch) bool {
+	if m.Skipped || strings.TrimSpace(m.UserText) == "" {
+		return false
+	}
+	_, untrusted := SuggestWantPath(m)
+	return !untrusted
+}
+
 // CountRegressionMismatches returns how many deterministic routing cases would be emitted.
 func CountRegressionMismatches(mismatches []TriageMismatch) int {
 	n := 0
 	for _, m := range mismatches {
-		if m.Skipped || m.ExpectedPath == "" || m.UserText == "" {
-			continue
+		if shouldEmitRegressionCase(m) {
+			n++
 		}
-		n++
 	}
 	return n
 }
@@ -402,23 +413,23 @@ func GenerateRegressionCases(mismatches []TriageMismatch, tenantSchema string, s
 
 	added := 0
 	for _, m := range mismatches {
-		if m.Skipped || m.ExpectedPath == "" || m.UserText == "" {
+		if !shouldEmitRegressionCase(m) {
 			continue
 		}
+		want, _ := SuggestWantPath(m)
 		name := regressionCaseName(m.InboundID, added)
-		input := escapeGoString(m.UserText)
-		b.WriteString(fmt.Sprintf("\t\t{\n\t\t\tname: %q,\n\t\t\tinput: %q,\n", name, input))
+		b.WriteString(fmt.Sprintf("\t\t{\n\t\t\tname: %q,\n\t\t\tinput: %q,\n", name, m.UserText))
 		if len(m.PriorTurns) > 0 {
 			b.WriteString("\t\t\tpriorInputs: []string{")
 			for i, p := range m.PriorTurns {
 				if i > 0 {
 					b.WriteString(", ")
 				}
-				b.WriteString(fmt.Sprintf("%q", escapeGoString(p)))
+				b.WriteString(fmt.Sprintf("%q", p))
 			}
 			b.WriteString("},\n")
 		}
-		b.WriteString(fmt.Sprintf("\t\t\twantPath: %s,\n\t\t},\n", pathConstName(m.ExpectedPath)))
+		b.WriteString(fmt.Sprintf("\t\t\twantPath: %s,\n\t\t},\n", pathConstName(want)))
 		added++
 	}
 	b.WriteString("\t}\n}\n")
@@ -458,10 +469,6 @@ func pathConstName(path string) string {
 	default:
 		return fmt.Sprintf("%q", path)
 	}
-}
-
-func escapeGoString(s string) string {
-	return strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`, "\r", "").Replace(s)
 }
 
 // TriageAnomalyMax returns the API max limit for anomaly listing.

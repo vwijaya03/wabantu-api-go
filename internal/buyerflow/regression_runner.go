@@ -144,9 +144,6 @@ func RunRegressionSuite() RegressionRunResult {
 		runPaymentFAQSuite(),
 		runOrderRefSuite(),
 	}
-	if autogen := runAutoGenRegressionSuite(); len(autogen.Cases) > 0 {
-		suites = append(suites, autogen)
-	}
 	passed := true
 	for _, s := range suites {
 		if !s.Skipped && !s.Passed {
@@ -240,19 +237,4 @@ func runOrderRefSuite() RegressionSuiteResult {
 	}
 	out.DurationMs = time.Since(start).Milliseconds()
 	return out
-}
-
-func runAutoGenRegressionSuite() RegressionSuiteResult {
-	cases := conversationRegressionAutoGenCases()
-	if len(cases) == 0 {
-		return RegressionSuiteResult{Name: "buyerflow_autogen", Skipped: true, SkipReason: "no auto-generated cases", Passed: true}
-	}
-	sim, err := simulatorFromTriageAutoGenSnapshot()
-	if err != nil {
-		return RegressionSuiteResult{
-			Name: "buyerflow_autogen", Passed: false,
-			Cases: []RegressionCaseResult{{Name: "snapshot", Passed: false, Error: err.Error()}},
-		}
-	}
-	return runRegressionCases("buyerflow_autogen", cases, sim)
 }

@@ -130,6 +130,9 @@ LIMIT 200;
 | `pr_ready_needs_fix` | Draft PR ada, regression **merah** — siap **Fix dengan AI** |
 | `fix_running` | Workflow `ai-triage-cursor-fix.yml` (Composer 2.5) berjalan |
 | `failed` | Workflow gagal total (bukan sekadar test merah) |
+| `verified` | Simulator deployed cocok dengan golden `wantPath` — **bukan** history WhatsApp |
+
+**Forensic vs verifikasi:** `CreateAITriageJob` membandingkan `metadata.path` beku vs simulator sekarang (investigasi). Setelah merge+deploy, sukses = `POST /jobs/:id/verify` (simulator vs golden). Jangan jalankan loop forensic lagi untuk percakapan yang sama tanpa `force=true`. Laporan `open` percakapan itu jadi `resolved` saat verifikasi lulus.
 
 Maks **3 job aktif** (`pending` + `running` + `fix_running`). `CreateAITriageJob` ditolak jika tidak ada mismatch routing deterministik.
 

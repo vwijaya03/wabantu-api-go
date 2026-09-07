@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strings"
 
 	"encore.dev/beta/errs"
@@ -51,7 +52,7 @@ func listTriageReports(ctx context.Context, tenantID, status string, limit int) 
 
 func loadTriageReport(ctx context.Context, id string) (triagereport.Report, error) {
 	var r triagereport.Report
-	var inboundID, judgeCat, judgeReason, reviewBy, reviewNote, tenantName string
+	var inboundID, judgeCat, judgeReason, reviewBy, reviewNote, resolvedByJobID, tenantName string
 	var judgeFlagged sql.NullBool
 	var reviewedAt sql.NullTime
 	err := system.DB.QueryRow(ctx, reportSelectSQL+` WHERE r.id = $1::uuid`, id).Scan(
@@ -61,7 +62,7 @@ func loadTriageReport(ctx context.Context, id string) (triagereport.Report, erro
 		&r.Category, &r.ReporterNote, &r.Status,
 		&r.ReportedBy, &r.ReporterRole,
 		&judgeFlagged, &judgeCat, &judgeReason,
-		&reviewBy, &reviewNote, &reviewedAt,
+		&reviewBy, &reviewNote, &reviewedAt, &resolvedByJobID,
 		&r.CreatedAt, &r.UpdatedAt, &tenantName,
 	)
 	if err == sql.ErrNoRows {
@@ -70,12 +71,12 @@ func loadTriageReport(ctx context.Context, id string) (triagereport.Report, erro
 	if err != nil {
 		return triagereport.Report{}, err
 	}
-	fillTriageReportFields(&r, inboundID, judgeFlagged, judgeCat, judgeReason, reviewBy, reviewNote, reviewedAt, tenantName)
+	fillTriageReportFields(&r, inboundID, judgeFlagged, judgeCat, judgeReason, reviewBy, reviewNote, reviewedAt, resolvedByJobID, tenantName)
 	return r, nil
 }
 
 func updateTriageReportReview(ctx context.Context, id, status, reviewNote, reviewedBy string) (triagereport.Report, error) {
-	if !triagereport.ValidStatuses[status] || status == triagereport.StatusOpen {
+	if status != triagereport.StatusConfirmed && status != triagereport.StatusDismissed {
 		return triagereport.Report{}, &errs.Error{Code: errs.InvalidArgument, Message: "status harus confirmed atau dismissed"}
 	}
 	res, err := system.DB.Exec(ctx, `
@@ -96,6 +97,37 @@ func updateTriageReportReview(ctx context.Context, id, status, reviewNote, revie
 		return triagereport.Report{}, &errs.Error{Code: errs.NotFound, Message: "laporan tidak ditemukan atau sudah direview"}
 	}
 	return loadTriageReport(ctx, id)
+}
+
+func resolveOpenReportsForConversation(ctx context.Context, tenantID, conversationID, jobID, reviewedBy, note string) (int, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	conversationID = strings.TrimSpace(conversationID)
+	jobID = strings.TrimSpace(jobID)
+	if tenantID == "" || conversationID == "" || jobID == "" {
+		return 0, nil
+	}
+	if strings.TrimSpace(note) == "" {
+		note = fmt.Sprintf("Otomatis selesai setelah verifikasi job %s", jobID)
+	}
+	res, err := system.DB.Exec(ctx, `
+		UPDATE ai_triage_report
+		SET status = $4,
+		    review_note = $5,
+		    reviewed_by = NULLIF($6, '')::uuid,
+		    reviewed_at = now(),
+		    resolved_by_job_id = $3::uuid,
+		    updated_at = now()
+		WHERE tenant_id = $1::uuid
+		  AND conversation_id = $2::uuid
+		  AND status = $7`,
+		tenantID, conversationID, jobID,
+		triagereport.StatusResolved, note, strings.TrimSpace(reviewedBy),
+		triagereport.StatusOpen,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return int(res.RowsAffected()), nil
 }
 
 func updateTriageReportJudge(ctx context.Context, reportID string, flagged bool, category, reason string) error {
@@ -119,7 +151,8 @@ const reportSelectSQL = `
 	       r.reported_by::text, r.reporter_role,
 	       r.judge_flagged, COALESCE(r.judge_category, ''), COALESCE(r.judge_reason, ''),
 	       COALESCE(r.reviewed_by::text, ''), COALESCE(r.review_note, ''),
-	       r.reviewed_at, r.created_at, r.updated_at,
+	       r.reviewed_at, COALESCE(r.resolved_by_job_id::text, ''),
+	       r.created_at, r.updated_at,
 	       COALESCE(t.name, '')
 	FROM ai_triage_report r
 	LEFT JOIN tenant t ON t.id = r.tenant_id`
@@ -132,7 +165,7 @@ func scanTriageReportRows(rows interface {
 	out := make([]triagereport.Report, 0)
 	for rows.Next() {
 		var r triagereport.Report
-		var inboundID, judgeCat, judgeReason, reviewBy, reviewNote, tenantName string
+		var inboundID, judgeCat, judgeReason, reviewBy, reviewNote, resolvedByJobID, tenantName string
 		var judgeFlagged sql.NullBool
 		var reviewedAt sql.NullTime
 		if err := rows.Scan(
@@ -142,12 +175,12 @@ func scanTriageReportRows(rows interface {
 			&r.Category, &r.ReporterNote, &r.Status,
 			&r.ReportedBy, &r.ReporterRole,
 			&judgeFlagged, &judgeCat, &judgeReason,
-			&reviewBy, &reviewNote, &reviewedAt,
+			&reviewBy, &reviewNote, &reviewedAt, &resolvedByJobID,
 			&r.CreatedAt, &r.UpdatedAt, &tenantName,
 		); err != nil {
 			return nil, err
 		}
-		fillTriageReportFields(&r, inboundID, judgeFlagged, judgeCat, judgeReason, reviewBy, reviewNote, reviewedAt, tenantName)
+		fillTriageReportFields(&r, inboundID, judgeFlagged, judgeCat, judgeReason, reviewBy, reviewNote, reviewedAt, resolvedByJobID, tenantName)
 		out = append(out, r)
 	}
 	return out, rows.Err()
@@ -159,7 +192,7 @@ func fillTriageReportFields(
 	judgeFlagged sql.NullBool,
 	judgeCat, judgeReason, reviewBy, reviewNote string,
 	reviewedAt sql.NullTime,
-	tenantName string,
+	resolvedByJobID, tenantName string,
 ) {
 	r.InboundID = inboundID
 	if judgeFlagged.Valid {
@@ -174,5 +207,6 @@ func fillTriageReportFields(
 		t := reviewedAt.Time
 		r.ReviewedAt = &t
 	}
+	r.ResolvedByJobID = resolvedByJobID
 	r.TenantName = tenantName
 }
