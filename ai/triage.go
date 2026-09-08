@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"encore.app/wabantu/usage"
 )
 
 const (
@@ -496,8 +498,9 @@ func FetchRecentAIActivityAnomalies(ctx context.Context, tenantSchema string, li
 		FROM %s
 		WHERE event_type = $1
 		  AND created_at >= now() - $2::interval
+		  AND COALESCE(metadata->>'purpose', $4) IN ($4, '')
 		ORDER BY created_at DESC
-		LIMIT $3`, ts.T("usage_event")), "ai_activity", formatPGInterval(TriageAnomalyWindow), limit)
+		LIMIT $3`, ts.T("usage_event")), "ai_activity", formatPGInterval(TriageAnomalyWindow), limit, usage.PurposeInboundAutoreply)
 	if err != nil {
 		return nil, err
 	}
@@ -519,15 +522,16 @@ func FetchRecentAIActivityAnomalies(ctx context.Context, tenantSchema string, li
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	if err := enrichAnomalyUserTexts(ctx, ts, out); err != nil {
+	found, err := enrichAnomalyUserTexts(ctx, ts, out)
+	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	return filterLiveAnomalyEntries(out, found), nil
 }
 
-func enrichAnomalyUserTexts(ctx context.Context, ts tenantScopedQuerier, entries []TriageAnomalyEntry) error {
+func enrichAnomalyUserTexts(ctx context.Context, ts tenantScopedQuerier, entries []TriageAnomalyEntry) (map[string]struct{}, error) {
 	if len(entries) == 0 {
-		return nil
+		return map[string]struct{}{}, nil
 	}
 	ids := make([]string, 0, len(entries))
 	seen := make(map[string]struct{}, len(entries))
@@ -543,39 +547,66 @@ func enrichAnomalyUserTexts(ctx context.Context, ts tenantScopedQuerier, entries
 		ids = append(ids, id)
 	}
 	if len(ids) == 0 {
-		return nil
+		return map[string]struct{}{}, nil
 	}
 	rows, err := ts.QueryContext(ctx, fmt.Sprintf(`
 		SELECT id::text, COALESCE(body, '')
 		FROM %s
 		WHERE id = ANY($1::uuid[])`, ts.T("message")), ids)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer rows.Close()
 	bodies := make(map[string]string, len(ids))
 	for rows.Next() {
 		var id, body string
 		if err := rows.Scan(&id, &body); err != nil {
-			return err
+			return nil, err
 		}
 		bodies[id] = body
 	}
 	if err := rows.Err(); err != nil {
-		return err
+		return nil, err
 	}
+	found := make(map[string]struct{}, len(bodies))
 	for i := range entries {
-		if body, ok := bodies[entries[i].InboundID]; ok {
+		id := strings.TrimSpace(entries[i].InboundID)
+		if body, ok := bodies[id]; ok {
 			entries[i].UserText = body
+			found[id] = struct{}{}
 		}
 	}
-	return nil
+	return found, nil
+}
+
+func filterLiveAnomalyEntries(entries []TriageAnomalyEntry, inboundExists map[string]struct{}) []TriageAnomalyEntry {
+	out := make([]TriageAnomalyEntry, 0, len(entries))
+	for _, e := range entries {
+		if keepLiveAnomalyEntry(e, inboundExists) {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+func keepLiveAnomalyEntry(e TriageAnomalyEntry, inboundExists map[string]struct{}) bool {
+	purpose := strings.TrimSpace(e.Purpose)
+	if purpose != "" && purpose != usage.PurposeInboundAutoreply {
+		return false
+	}
+	id := strings.TrimSpace(e.InboundID)
+	if id == "" {
+		return false
+	}
+	_, ok := inboundExists[id]
+	return ok
 }
 
 // TriageAnomalyEntry is one recent AI activity row suggested for review.
 type TriageAnomalyEntry struct {
 	Path            string    `json:"path"`
 	Reason          string    `json:"reason,omitempty"`
+	Purpose         string    `json:"purpose,omitempty"`
 	ConversationID  string    `json:"conversationId,omitempty"`
 	InboundID       string    `json:"inboundId,omitempty"`
 	UserText        string    `json:"userText,omitempty"`
@@ -603,6 +634,9 @@ func parseAnomalyMetadata(metaJSON []byte, createdAt time.Time) TriageAnomalyEnt
 	}
 	if v, ok := meta["inboundId"].(string); ok {
 		entry.InboundID = strings.TrimSpace(v)
+	}
+	if v, ok := meta["purpose"].(string); ok {
+		entry.Purpose = strings.TrimSpace(v)
 	}
 	if IsNonDeterministicTriagePath(entry.Path) {
 		entry.ReviewSuggested = false

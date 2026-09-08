@@ -64,6 +64,12 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 		return OrderFlowResult{Cleared: true, Path: PathOutOfScope, Reply: outOfScopeReply(profile)}
 	}
 
+	if state == nil {
+		if res, ok := tryStartSegmentedCheckout(in, formal, tmpl); ok {
+			return res
+		}
+	}
+
 	hints := parseOrderHints(userText)
 	copyBase := func(st OrderState) OrderState {
 		st = normalizeOrderState(st)

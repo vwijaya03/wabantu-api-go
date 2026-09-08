@@ -121,29 +121,25 @@ func ListAITriageAnomalies(ctx context.Context, p *ListAITriageAnomaliesParams) 
 		limit = ai.TriageAnomalyMax()
 	}
 
-	out, err := listAnomaliesFromSnapshot(ctx, p.TenantID, limit)
+	// Always read live tenant usage_event + message. The hourly ai_triage_anomaly
+	// snapshot copies text and stays after chat rows are deleted.
+	entries, err := ai.FetchRecentAIActivityAnomalies(ctx, schema, limit)
 	if err != nil {
 		return nil, &errs.Error{Code: errs.Internal, Message: "list anomalies failed"}
 	}
-	if len(out) == 0 {
-		entries, err := ai.FetchRecentAIActivityAnomalies(ctx, schema, limit)
-		if err != nil {
-			return nil, &errs.Error{Code: errs.Internal, Message: "list anomalies failed"}
-		}
-		out = make([]AITriageAnomaly, 0, len(entries))
-		for _, e := range entries {
-			out = append(out, AITriageAnomaly{
-				TenantID:        p.TenantID,
-				TenantSchema:    schema,
-				Path:            e.Path,
-				Reason:          e.Reason,
-				ConversationID:  e.ConversationID,
-				InboundID:       e.InboundID,
-				UserText:        e.UserText,
-				CreatedAt:       e.CreatedAt,
-				ReviewSuggested: e.ReviewSuggested,
-			})
-		}
+	out := make([]AITriageAnomaly, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, AITriageAnomaly{
+			TenantID:        p.TenantID,
+			TenantSchema:    schema,
+			Path:            e.Path,
+			Reason:          e.Reason,
+			ConversationID:  e.ConversationID,
+			InboundID:       e.InboundID,
+			UserText:        e.UserText,
+			CreatedAt:       e.CreatedAt,
+			ReviewSuggested: e.ReviewSuggested,
+		})
 	}
 	return &ListAITriageAnomaliesResponse{Anomalies: out}, nil
 }
@@ -188,7 +184,7 @@ func CreateAITriageJob(ctx context.Context, p *CreateAITriageJobParams) (*Create
 		return nil, &errs.Error{Code: errs.Internal, Message: "analyze conversation failed"}
 	}
 	if ai.CountRegressionMismatches(analysis.Mismatches) == 0 {
-		msg := "tidak ada routing mismatch deterministik di percakapan ini — itu bukan bukti fix sudah jalan. Sukses = Verifikasi fix (simulator vs golden wantPath)."
+		msg := "tidak ada mismatch path (WhatsApp metadata.path vs simulator). force=true hanya melewati job duplikat, bukan gerbang ini. Bug isi keranjang/SKU tetap order_flow di kedua sisi — perbaiki parse, jangan Jalankan loop. Sukses routing = Verifikasi fix (simulator vs golden wantPath)."
 		if analysis.HasDeterministic {
 			msg = "ada mismatch forensic, tapi wantPath tidak dipercaya (daftar order tidak boleh di-lock sebagai consulting). Jangan buat tes. Sukses = Verifikasi fix setelah routing benar."
 		}

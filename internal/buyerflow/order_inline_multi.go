@@ -46,7 +46,44 @@ func splitInlineOrderSegments(userText string) []string {
 	if loose := splitLooseDanProductSegments(text); len(loose) >= 2 {
 		return loose
 	}
+	if comma := splitLooseCommaProductSegments(text); len(comma) >= 2 {
+		return comma
+	}
 	return parts
+}
+
+func splitLooseCommaProductSegments(text string) []string {
+	var parts []string
+	start := 0
+	for i := 0; i < len(text); i++ {
+		if text[i] != ',' {
+			continue
+		}
+		if i > 0 && i+1 < len(text) && isASCIIDigit(text[i-1]) && isASCIIDigit(text[i+1]) {
+			continue
+		}
+		parts = append(parts, strings.TrimSpace(text[start:i]))
+		start = i + 1
+	}
+	parts = append(parts, strings.TrimSpace(text[start:]))
+	parts = trimNonEmpty(parts)
+	if len(parts) < 2 {
+		return nil
+	}
+	n := 0
+	for _, p := range parts {
+		if looksLikeOrderSegment(p) {
+			n++
+		}
+	}
+	if n < 2 {
+		return nil
+	}
+	return parts
+}
+
+func isASCIIDigit(b byte) bool {
+	return b >= '0' && b <= '9'
 }
 
 func trimNonEmpty(parts []string) []string {
@@ -451,6 +488,75 @@ func shouldImplicitAppendDifferentSKU(st OrderState, userText string, catalog []
 		return true
 	}
 	return parseCheckoutAppendLine(st, userText, catalog, nil).CatalogItemID != ""
+}
+
+// tryStartSegmentedCheckout starts checkout from a comma/conjunction list:
+// unique SKUs go into the cart; an ambiguous brand segment opens a variant picker
+// instead of auto-picking one SKU from the whole message.
+func tryStartSegmentedCheckout(in OrderFlowInput, formal bool, tmpl orderFlowTemplates) (OrderFlowResult, bool) {
+	if in.State != nil {
+		return OrderFlowResult{}, false
+	}
+	segs := splitInlineOrderSegments(in.UserText)
+	if len(segs) < 2 {
+		return OrderFlowResult{}, false
+	}
+	var lines []OrderLineState
+	pickerFrom := ""
+	for _, seg := range segs {
+		line := parseStructuredOrderLine(seg, in.Catalog, in.VectorCtx)
+		if line.CatalogItemID != "" {
+			if line.Qty < 1 {
+				line.Qty = 1
+			}
+			lines = append(lines, line)
+			continue
+		}
+		if pickerFrom == "" && lexicalBrandAmbiguous(seg, in.Catalog) {
+			pickerFrom = seg
+		}
+	}
+	if len(lines) == 0 {
+		return OrderFlowResult{}, false
+	}
+	if len(lines) == 1 && pickerFrom == "" {
+		return OrderFlowResult{}, false
+	}
+
+	st := OrderState{Step: "ask_recipient", Items: lines}
+	applyLineToOrderState(&st, lines[0])
+
+	if pickerFrom != "" {
+		st.Step = "ask_variant"
+		reply, ok := orderLexicalBrandPickerReply(formal, pickerFrom, in.Catalog)
+		if !ok {
+			reply, ok = orderVectorVariantPickerReply(formal, pickerFrom, in.Catalog, in.VectorCtx)
+		}
+		if !ok {
+			return OrderFlowResult{}, false
+		}
+		summary := formatOrderSummary(st)
+		if summary != "" {
+			reply = "Sudah masuk keranjang:\n\n" + summary + "\n\n" + reply
+		}
+		return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}, true
+	}
+
+	guarded, reply, blocked := GuardStructuredOrderStock(st, in.Catalog, formal)
+	st = guarded
+	if blocked {
+		return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}, true
+	}
+	if !st.StructuredLinesReady() {
+		if checkoutLinesNeedApparelVariant(st) {
+			st.Step = "ask_variant"
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: buildOrderFlowReply(st, tmpl.AskVariant, in.Catalog)}, true
+		}
+		st.Step = "ask_qty"
+		return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: buildOrderFlowReply(st, tmpl.AskQty, in.Catalog)}, true
+	}
+	st.Step = "ask_recipient"
+	return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: buildOrderFlowReply(st, tmpl.AskRecipient, in.Catalog)}, true
 }
 
 func GuardStructuredOrderStock(st OrderState, catalog []CatalogItem, formal bool) (OrderState, string, bool) {
