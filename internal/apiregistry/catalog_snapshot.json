@@ -1,5 +1,5 @@
 {
-  "count": 348,
+  "count": 349,
   "endpoints": [
     {
       "service": "admin",
@@ -14,7 +14,7 @@
     {
       "service": "admin",
       "file": "admin/ai_retrieval_incidents.go",
-      "line": 13,
+      "line": 14,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/admin/ai-retrieval/incidents",
@@ -24,7 +24,7 @@
     {
       "service": "admin",
       "file": "admin/ai_triage.go",
-      "line": 101,
+      "line": 104,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/admin/ai-triage/anomalies",
@@ -34,7 +34,7 @@
     {
       "service": "admin",
       "file": "admin/ai_triage.go",
-      "line": 150,
+      "line": 149,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/admin/ai-triage/jobs",
@@ -44,7 +44,7 @@
     {
       "service": "admin",
       "file": "admin/ai_triage.go",
-      "line": 213,
+      "line": 221,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/admin/ai-triage/jobs/:id",
@@ -54,12 +54,22 @@
     {
       "service": "admin",
       "file": "admin/ai_triage.go",
-      "line": 232,
+      "line": 240,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/admin/ai-triage/jobs/:id/ai-fix",
       "tag": "super_admin",
       "annotation": "auth method=POST path=/api/v1/admin/ai-triage/jobs/:id/ai-fix tag:super_admin"
+    },
+    {
+      "service": "admin",
+      "file": "admin/ai_triage.go",
+      "line": 308,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/admin/ai-triage/jobs/:id/verify",
+      "tag": "super_admin",
+      "annotation": "auth method=POST path=/api/v1/admin/ai-triage/jobs/:id/verify tag:super_admin"
     },
     {
       "service": "admin",
