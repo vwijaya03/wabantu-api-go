@@ -594,6 +594,9 @@ func keepLiveAnomalyEntry(e TriageAnomalyEntry, inboundExists map[string]struct{
 	if purpose != "" && purpose != usage.PurposeInboundAutoreply {
 		return false
 	}
+	if strings.TrimSpace(e.DegradedMode) != "" {
+		return false
+	}
 	id := strings.TrimSpace(e.InboundID)
 	if id == "" {
 		return false
@@ -607,6 +610,8 @@ type TriageAnomalyEntry struct {
 	Path            string    `json:"path"`
 	Reason          string    `json:"reason,omitempty"`
 	Purpose         string    `json:"purpose,omitempty"`
+	Channel         string    `json:"channel,omitempty"`
+	DegradedMode    string    `json:"degradedMode,omitempty"`
 	ConversationID  string    `json:"conversationId,omitempty"`
 	InboundID       string    `json:"inboundId,omitempty"`
 	UserText        string    `json:"userText,omitempty"`
@@ -637,6 +642,15 @@ func parseAnomalyMetadata(metaJSON []byte, createdAt time.Time) TriageAnomalyEnt
 	}
 	if v, ok := meta["purpose"].(string); ok {
 		entry.Purpose = strings.TrimSpace(v)
+	}
+	if v, ok := meta["channel"].(string); ok {
+		entry.Channel = strings.TrimSpace(v)
+	}
+	if v, ok := meta["degradedMode"].(string); ok {
+		entry.DegradedMode = strings.TrimSpace(v)
+	}
+	if aborted, ok := meta["aborted"].(bool); ok && aborted {
+		entry.ReviewSuggested = false
 	}
 	if IsNonDeterministicTriagePath(entry.Path) {
 		entry.ReviewSuggested = false

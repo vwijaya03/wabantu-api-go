@@ -111,7 +111,6 @@ jobs:
         with:
           name: mismatch-report-${{ env.JOB_ID }}
           path: |
-            /tmp/triage_job.json
             /tmp/regression_failures.json
             /tmp/regression.log
           if-no-files-found: ignore

@@ -20,6 +20,26 @@ func handleTriageReportJudgeJob(ctx context.Context, job *inbox.TriageReportJudg
 	if job == nil || strings.TrimSpace(job.ReportID) == "" || strings.TrimSpace(job.TenantSchema) == "" {
 		return nil
 	}
+	rep, loadErr := loadTriageReport(ctx, job.ReportID)
+	if loadErr != nil {
+		rlog.Warn("load report for incident ingest failed", "reportId", job.ReportID, "err", loadErr)
+	} else if err := IngestTriageIncident(ctx, &IngestTriageIncidentParams{
+		TenantID:       rep.TenantID,
+		TenantSchema:   job.TenantSchema,
+		SourceType:     "human_report",
+		SourceID:       job.ReportID,
+		Channel:        "whatsapp",
+		ConversationID: job.ConversationID,
+		InboundID:      job.InboundID,
+		OutboundID:     rep.OutboundMessageID,
+		UserText:       job.UserText,
+		ReplyText:      job.ReplyText,
+		Path:           job.Path,
+		Category:       rep.Category,
+	}); err != nil {
+		rlog.Warn("ingest triage incident from report failed", "reportId", job.ReportID, "err", err)
+		return err
+	}
 	turn := ai.AITriageTurn{
 		ConversationID: job.ConversationID,
 		InboundID:      job.InboundID,

@@ -55,6 +55,8 @@ type AITriageAnomaly struct {
 	TenantSchema    string    `json:"tenantSchema"`
 	Path            string    `json:"path"`
 	Reason          string    `json:"reason,omitempty"`
+	Channel         string    `json:"channel,omitempty"`
+	DegradedMode    string    `json:"degradedMode,omitempty"`
 	ConversationID  string    `json:"conversationId,omitempty"`
 	InboundID       string    `json:"inboundId,omitempty"`
 	UserText        string    `json:"userText,omitempty"`
@@ -134,6 +136,8 @@ func ListAITriageAnomalies(ctx context.Context, p *ListAITriageAnomaliesParams) 
 			TenantSchema:    schema,
 			Path:            e.Path,
 			Reason:          e.Reason,
+			Channel:         e.Channel,
+			DegradedMode:    e.DegradedMode,
 			ConversationID:  e.ConversationID,
 			InboundID:       e.InboundID,
 			UserText:        e.UserText,
@@ -342,13 +346,6 @@ func VerifyAITriageJob(ctx context.Context, id string) (*VerifyAITriageJobRespon
 
 	reportsResolved := 0
 	if verify.AllPassed {
-		note := fmt.Sprintf("Otomatis selesai setelah verifikasi job %s", jobID)
-		n, resErr := resolveOpenReportsForConversation(ctx, job.TenantID, job.ConversationID, jobID, job.StartedBy, note)
-		if resErr != nil {
-			rlog.Warn("resolve open triage reports failed", "jobId", jobID, "err", resErr)
-		} else {
-			reportsResolved = n
-		}
 		if err := updateTriageJobStatus(ctx, jobID, triageJobStatusVerified, "", job.GitHubRunURL); err != nil {
 			return nil, &errs.Error{Code: errs.Internal, Message: "update status verified gagal"}
 		}

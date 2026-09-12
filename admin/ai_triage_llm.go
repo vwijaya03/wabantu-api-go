@@ -32,22 +32,22 @@ type CreateAITriageLLMScanParams struct {
 }
 
 type AITriageLLMScan struct {
-	ID              string     `json:"id"`
-	TenantID        string     `json:"tenantId"`
-	TenantSchema    string     `json:"tenantSchema"`
-	ConversationID  string     `json:"conversationId,omitempty"`
-	From            time.Time  `json:"from"`
-	To              time.Time  `json:"to"`
-	Status          string     `json:"status"`
-	TurnsChecked    int        `json:"turnsChecked"`
-	FindingsCount   int        `json:"findingsCount"`
-	InputTokens     int        `json:"inputTokens"`
-	OutputTokens    int        `json:"outputTokens"`
-	ErrorText       string     `json:"errorText,omitempty"`
-	CreatedAt       time.Time  `json:"createdAt"`
-	UpdatedAt       time.Time  `json:"updatedAt"`
-	CompletedAt     *time.Time `json:"completedAt,omitempty"`
-	Findings        []AITriageLLMFinding `json:"findings,omitempty"`
+	ID             string               `json:"id"`
+	TenantID       string               `json:"tenantId"`
+	TenantSchema   string               `json:"tenantSchema"`
+	ConversationID string               `json:"conversationId,omitempty"`
+	From           time.Time            `json:"from"`
+	To             time.Time            `json:"to"`
+	Status         string               `json:"status"`
+	TurnsChecked   int                  `json:"turnsChecked"`
+	FindingsCount  int                  `json:"findingsCount"`
+	InputTokens    int                  `json:"inputTokens"`
+	OutputTokens   int                  `json:"outputTokens"`
+	ErrorText      string               `json:"errorText,omitempty"`
+	CreatedAt      time.Time            `json:"createdAt"`
+	UpdatedAt      time.Time            `json:"updatedAt"`
+	CompletedAt    *time.Time           `json:"completedAt,omitempty"`
+	Findings       []AITriageLLMFinding `json:"findings,omitempty"`
 }
 
 type AITriageLLMFinding struct {
@@ -355,6 +355,25 @@ func runLLMScanAsync(scanID, tenantID, schema, conversationID string, from, to t
 	for _, f := range result.Findings {
 		if err := insertLLMFinding(ctx, scanID, f); err != nil {
 			rlog.Warn("llm scan insert finding", "scanId", scanID, "err", err)
+			continue
+		}
+		if !f.Flagged {
+			continue
+		}
+		if err := IngestTriageIncident(ctx, &IngestTriageIncidentParams{
+			TenantID:       tenantID,
+			TenantSchema:   schema,
+			SourceType:     "llm_finding",
+			SourceID:       scanID + ":" + f.InboundID,
+			Channel:        "whatsapp",
+			ConversationID: f.ConversationID,
+			InboundID:      f.InboundID,
+			UserText:       f.UserText,
+			ReplyText:      f.ReplyText,
+			Path:           f.Path,
+			Category:       f.Category,
+		}); err != nil {
+			rlog.Warn("ingest incident from llm finding failed", "scanId", scanID, "err", err)
 		}
 	}
 

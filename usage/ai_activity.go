@@ -23,44 +23,53 @@ const (
 	PurposeTransactionImport   = "transaction_import"
 	PurposePaymentProofOCR     = "payment_proof_ocr"
 	PurposeProductImageMatch   = "product_image_match"
-	PurposeTriageLLMJudge     = "triage_llm_judge"
+	PurposeTriageLLMJudge      = "triage_llm_judge"
 )
 
 // AIActivityParams is one auditable AI decision or model call for a tenant.
 type AIActivityParams struct {
-	TenantSchema   string
-	TenantID       string
-	ConversationID string
-	InboundID      string
-	Purpose        string
-	Path           string
-	Reason         string
-	Model          string
-	Tier           string
-	LLMUsed        bool
-	InputTokens    int
-	OutputTokens   int
-	RouteReason    string
-	Classifier     string
+	TenantSchema     string
+	TenantID         string
+	ConversationID   string
+	InboundID        string
+	Purpose          string
+	Path             string
+	Reason           string
+	Model            string
+	Tier             string
+	LLMUsed          bool
+	InputTokens      int
+	OutputTokens     int
+	RouteReason      string
+	Classifier       string
+	Channel          string
+	InteractionRef   string
+	DegradedMode     string
+	EvidenceVersion  int
+	RetrievalSummary string
+	Aborted          bool
 }
 
 // AIActivityEntry is a stored usage_event row for dashboards.
 type AIActivityEntry struct {
-	ID             string          `json:"id"`
-	Purpose        string          `json:"purpose"`
-	Path           string          `json:"path"`
-	Reason         string          `json:"reason"`
-	Model          string          `json:"model,omitempty"`
-	Tier           string          `json:"tier,omitempty"`
-	LLMUsed        bool            `json:"llmUsed"`
-	InputTokens    int             `json:"inputTokens"`
-	OutputTokens   int             `json:"outputTokens"`
-	TotalTokens    int             `json:"totalTokens"`
-	ConversationID string          `json:"conversationId,omitempty"`
-	InboundID      string          `json:"inboundId,omitempty"`
-	RouteReason    string          `json:"routeReason,omitempty"`
-	Classifier     string          `json:"classifier,omitempty"`
-	CreatedAt      time.Time       `json:"createdAt"`
+	ID             string    `json:"id"`
+	Purpose        string    `json:"purpose"`
+	Path           string    `json:"path"`
+	Reason         string    `json:"reason"`
+	Model          string    `json:"model,omitempty"`
+	Tier           string    `json:"tier,omitempty"`
+	LLMUsed        bool      `json:"llmUsed"`
+	InputTokens    int       `json:"inputTokens"`
+	OutputTokens   int       `json:"outputTokens"`
+	TotalTokens    int       `json:"totalTokens"`
+	ConversationID string    `json:"conversationId,omitempty"`
+	InboundID      string    `json:"inboundId,omitempty"`
+	RouteReason    string    `json:"routeReason,omitempty"`
+	Classifier     string    `json:"classifier,omitempty"`
+	Channel        string    `json:"channel,omitempty"`
+	InteractionRef string    `json:"interactionRef,omitempty"`
+	DegradedMode   string    `json:"degradedMode,omitempty"`
+	CreatedAt      time.Time `json:"createdAt"`
 }
 
 // AIActivityByPath aggregates counts per delivery path.
@@ -73,22 +82,22 @@ type AIActivityByPath struct {
 
 // AIActivityByModel aggregates token usage per model id.
 type AIActivityByModel struct {
-	Model          string  `json:"model"`
-	Tier           string  `json:"tier"`
-	Calls          int     `json:"calls"`
-	InputTokens    int     `json:"inputTokens"`
-	OutputTokens   int     `json:"outputTokens"`
-	EstimatedUSD   float64 `json:"estimatedCostUsd"`
+	Model        string  `json:"model"`
+	Tier         string  `json:"tier"`
+	Calls        int     `json:"calls"`
+	InputTokens  int     `json:"inputTokens"`
+	OutputTokens int     `json:"outputTokens"`
+	EstimatedUSD float64 `json:"estimatedCostUsd"`
 }
 
 // AIActivitySummary is a tenant-level rollup for a calendar month.
 type AIActivitySummary struct {
-	Period      string               `json:"period"`
-	TotalEvents int                  `json:"totalEvents"`
-	LLMCalls    int                  `json:"llmCalls"`
-	TotalTokens int                  `json:"totalTokens"`
-	ByPath      []AIActivityByPath   `json:"byPath"`
-	ByModel     []AIActivityByModel  `json:"byModel"`
+	Period      string              `json:"period"`
+	TotalEvents int                 `json:"totalEvents"`
+	LLMCalls    int                 `json:"llmCalls"`
+	TotalTokens int                 `json:"totalTokens"`
+	ByPath      []AIActivityByPath  `json:"byPath"`
+	ByModel     []AIActivityByModel `json:"byModel"`
 }
 
 type ListAIActivityParams struct {
@@ -116,19 +125,25 @@ func RecordAIActivity(ctx context.Context, p AIActivityParams) error {
 	}
 
 	meta := map[string]any{
-		"purpose":        purpose,
-		"path":           p.Path,
-		"reason":         p.Reason,
-		"model":          p.Model,
-		"tier":           p.Tier,
-		"llmUsed":        p.LLMUsed,
-		"inputTokens":    p.InputTokens,
-		"outputTokens":   p.OutputTokens,
-		"conversationId": p.ConversationID,
-		"inboundId":      p.InboundID,
-		"routeReason":    p.RouteReason,
-		"classifier":     p.Classifier,
-		"tenantId":       p.TenantID,
+		"purpose":          purpose,
+		"path":             p.Path,
+		"reason":           p.Reason,
+		"model":            p.Model,
+		"tier":             p.Tier,
+		"llmUsed":          p.LLMUsed,
+		"inputTokens":      p.InputTokens,
+		"outputTokens":     p.OutputTokens,
+		"conversationId":   p.ConversationID,
+		"inboundId":        p.InboundID,
+		"routeReason":      p.RouteReason,
+		"classifier":       p.Classifier,
+		"tenantId":         p.TenantID,
+		"channel":          p.Channel,
+		"interactionRef":   p.InteractionRef,
+		"degradedMode":     p.DegradedMode,
+		"evidenceVersion":  p.EvidenceVersion,
+		"retrievalSummary": p.RetrievalSummary,
+		"aborted":          p.Aborted,
 	}
 	metaJSON, _ := json.Marshal(meta)
 
@@ -267,6 +282,9 @@ func parseAIActivityEntry(id string, qty int, metaRaw []byte, createdAt time.Tim
 		InboundID:      getStr("inboundId"),
 		RouteReason:    getStr("routeReason"),
 		Classifier:     getStr("classifier"),
+		Channel:        getStr("channel"),
+		InteractionRef: getStr("interactionRef"),
+		DegradedMode:   getStr("degradedMode"),
 		CreatedAt:      createdAt,
 	}
 }
