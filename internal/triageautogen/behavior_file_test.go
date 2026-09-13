@@ -27,4 +27,10 @@ func TestBuildBehaviorTestFileEscapesCustomerText(t *testing.T) {
 	if AutoGenRelPath("41191bb5-a79f-4820-bf61-298c8757e85d") == BehaviorRelPath("41191bb5-a79f-4820-bf61-298c8757e85d") {
 		t.Fatal("behavior path must differ from 8-char routing autogen")
 	}
+	if !strings.Contains(src, "func TestBehavior_41191bb5_a79f_4820_bf61_298c8757e85d(") {
+		t.Fatalf("GHA runner must match TestBehavior_, got:\n%s", src)
+	}
+	if strings.Contains(src, "func TestRegressionAutoGen") {
+		t.Fatal("behavior tests must not use TestRegressionAutoGen — that filter would skip them")
+	}
 }

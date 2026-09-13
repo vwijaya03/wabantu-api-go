@@ -85,18 +85,34 @@ func RetryAITriageBehaviorJob(ctx context.Context, id string) (*RetryAITriageBeh
 	if err != nil {
 		return nil, err
 	}
-	if job.AttemptCount >= behaviorMaxAttempts {
-		return nil, &errs.Error{Code: errs.FailedPrecondition, Message: "batas percobaan Composer tercapai"}
-	}
-	if job.Status != behaviorStatusFailed && job.Status != behaviorStatusPRReady {
+	if !canRetryBehaviorJob(job.Status, job.AttemptCount) {
+		if job.AttemptCount >= behaviorMaxAttempts {
+			return nil, &errs.Error{Code: errs.FailedPrecondition, Message: "batas percobaan Composer tercapai"}
+		}
 		return nil, &errs.Error{Code: errs.FailedPrecondition, Message: "retry hanya untuk failed atau pr_ready"}
 	}
-	if err := updateBehaviorJobStatus(ctx, job.ID, behaviorStatusFixRunning, job.GitHubRunID, ""); err != nil {
+	if err := dispatchBehaviorFixWorkflow(ctx, job.ID, job.TenantSchema); err != nil {
+		return nil, &errs.Error{Code: errs.Unavailable, Message: composerDispatchUnavailableMessage(err)}
+	}
+	job, err = loadBehaviorJob(ctx, job.ID)
+	if err != nil {
 		return nil, err
 	}
-	go dispatchBehaviorFixWorkflowAsync(job.ID, job.TenantSchema)
-	job, _ = loadBehaviorJob(ctx, job.ID)
 	return &RetryAITriageBehaviorJobResponse{Job: job}, nil
+}
+
+func canRetryBehaviorJob(status string, attempts int) bool {
+	if attempts >= behaviorMaxAttempts {
+		return false
+	}
+	return status == behaviorStatusFailed || status == behaviorStatusPRReady
+}
+
+func composerDispatchUnavailableMessage(err error) string {
+	if err == nil {
+		return "Gagal men-dispatch Composer ke GitHub Actions"
+	}
+	return "Gagal men-dispatch Composer ke GitHub Actions: " + err.Error()
 }
 
 func createBehaviorJobFromIncident(ctx context.Context, inc triageincident.Incident, contract ai.BehaviorContract, startedBy string) (*AITriageBehaviorJob, error) {
@@ -209,15 +225,28 @@ func laneAllowlist(lane string) []string {
 	}
 }
 
-func dispatchBehaviorFixWorkflowAsync(jobID, tenantSchema string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	_ = updateBehaviorJobStatus(ctx, jobID, behaviorStatusFixRunning, "", "")
+func dispatchBehaviorFixWorkflow(ctx context.Context, jobID, tenantSchema string) error {
+	if err := updateBehaviorJobStatus(ctx, jobID, behaviorStatusFixRunning, "", ""); err != nil {
+		return err
+	}
 	if err := dispatchGitHubWorkflow(ctx, behaviorWorkflowFile, jobID, map[string]string{
 		"job_id":        jobID,
 		"tenant_schema": tenantSchema,
 	}); err != nil {
 		rlog.Error("dispatch behavior workflow failed", "jobId", jobID, "err", err)
-		_ = updateBehaviorJobStatus(ctx, jobID, behaviorStatusFailed, "", err.Error())
+		_ = failBehaviorJobDispatch(ctx, jobID, err.Error())
+		return err
 	}
+	return nil
+}
+
+func failBehaviorJobDispatch(ctx context.Context, id, errText string) error {
+	_, err := system.DB.Exec(ctx, `
+		UPDATE ai_triage_behavior_job
+		SET status = $2,
+		    error_text = NULLIF($3, ''),
+		    attempt_count = attempt_count + 1,
+		    updated_at = now()
+		WHERE id = $1::uuid`, id, behaviorStatusFailed, errText)
+	return err
 }

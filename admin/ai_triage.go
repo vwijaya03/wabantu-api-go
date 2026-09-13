@@ -682,7 +682,15 @@ func dispatchGitHubWorkflow(ctx context.Context, workflowFile, jobID string, inp
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("github workflow_dispatch %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+		return wrapWorkflowDispatchError(workflowFile, "master", resp.StatusCode, string(respBody))
 	}
 	return nil
+}
+
+func wrapWorkflowDispatchError(workflowFile, ref string, status int, body string) error {
+	body = strings.TrimSpace(body)
+	if status == http.StatusNotFound {
+		return fmt.Errorf("github workflow_dispatch 404: %s belum terdaftar di default branch %s. Merge file .github/workflows/%s ke master dulu. GitHub: %s", workflowFile, ref, workflowFile, body)
+	}
+	return fmt.Errorf("github workflow_dispatch %d: %s", status, body)
 }

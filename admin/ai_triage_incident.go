@@ -151,8 +151,23 @@ func ConfirmAITriageIncident(ctx context.Context, id string, p *ConfirmAITriageI
 	if !laneFilesExist(contract.Lane) {
 		return nil, &errs.Error{Code: errs.FailedPrecondition, Message: "lane Composer fail-closed: file allowlist belum ada"}
 	}
-	if strings.TrimSpace(inc.BehaviorJobID) != "" {
-		resp.Incident = inc
+	if existingID := strings.TrimSpace(inc.BehaviorJobID); existingID != "" {
+		existing, loadErr := loadBehaviorJob(ctx, existingID)
+		if loadErr != nil {
+			return nil, loadErr
+		}
+		if canRetryBehaviorJob(existing.Status, existing.AttemptCount) {
+			if err := dispatchBehaviorFixWorkflow(ctx, existing.ID, inc.TenantSchema); err != nil {
+				return nil, &errs.Error{Code: errs.Unavailable, Message: composerDispatchUnavailableMessage(err)}
+			}
+			ready, readyErr := loadBehaviorJob(ctx, existing.ID)
+			if readyErr != nil {
+				return nil, readyErr
+			}
+			resp.BehaviorJob = &ready
+			return resp, nil
+		}
+		resp.BehaviorJob = &existing
 		return resp, nil
 	}
 	job, err := createBehaviorJobFromIncident(ctx, inc, contract, user.AccountID)
@@ -162,9 +177,16 @@ func ConfirmAITriageIncident(ctx context.Context, id string, p *ConfirmAITriageI
 	}
 	_ = setIncidentBehaviorJob(ctx, inc.ID, job.ID)
 	inc.BehaviorJobID = job.ID
-	resp.BehaviorJob = job
 	resp.Incident = inc
-	go dispatchBehaviorFixWorkflowAsync(job.ID, inc.TenantSchema)
+	if err := dispatchBehaviorFixWorkflow(ctx, job.ID, inc.TenantSchema); err != nil {
+		return nil, &errs.Error{Code: errs.Unavailable, Message: composerDispatchUnavailableMessage(err)}
+	}
+	ready, loadErr := loadBehaviorJob(ctx, job.ID)
+	if loadErr != nil {
+		resp.BehaviorJob = job
+		return resp, nil
+	}
+	resp.BehaviorJob = &ready
 	return resp, nil
 }
 
