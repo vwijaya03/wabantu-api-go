@@ -1,3 +1,10 @@
+//go:build ignore
+
+// Command triage-behavior-apply writes the immutable generated behavior test from stdin.
+//
+// Usage:
+//
+//	go run scripts/triage-behavior-apply.go --job-id <uuid> < behavior_test.go
 package main
 
 import (

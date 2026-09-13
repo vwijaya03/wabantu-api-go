@@ -1,5 +1,5 @@
 {
-  "count": 349,
+  "count": 367,
   "endpoints": [
     {
       "service": "admin",
@@ -24,7 +24,7 @@
     {
       "service": "admin",
       "file": "admin/ai_triage.go",
-      "line": 104,
+      "line": 106,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/admin/ai-triage/anomalies",
@@ -33,8 +33,88 @@
     },
     {
       "service": "admin",
+      "file": "admin/ai_triage_behavior_job.go",
+      "line": 61,
+      "access": "auth",
+      "method": "GET",
+      "path": "/api/v1/admin/ai-triage/behavior-jobs/:id",
+      "tag": "super_admin",
+      "annotation": "auth method=GET path=/api/v1/admin/ai-triage/behavior-jobs/:id tag:super_admin"
+    },
+    {
+      "service": "admin",
+      "file": "admin/ai_triage_behavior_job.go",
+      "line": 79,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/admin/ai-triage/behavior-jobs/:id/retry",
+      "tag": "super_admin",
+      "annotation": "auth method=POST path=/api/v1/admin/ai-triage/behavior-jobs/:id/retry tag:super_admin"
+    },
+    {
+      "service": "admin",
+      "file": "admin/ai_triage_behavior_verify.go",
+      "line": 21,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/admin/ai-triage/behavior-jobs/:id/verify",
+      "tag": "super_admin",
+      "annotation": "auth method=POST path=/api/v1/admin/ai-triage/behavior-jobs/:id/verify tag:super_admin"
+    },
+    {
+      "service": "admin",
+      "file": "admin/ai_triage_incident.go",
+      "line": 64,
+      "access": "auth",
+      "method": "GET",
+      "path": "/api/v1/admin/ai-triage/incidents",
+      "tag": "super_admin",
+      "annotation": "auth method=GET path=/api/v1/admin/ai-triage/incidents tag:super_admin"
+    },
+    {
+      "service": "admin",
+      "file": "admin/ai_triage_incident.go",
+      "line": 84,
+      "access": "auth",
+      "method": "GET",
+      "path": "/api/v1/admin/ai-triage/incidents/:id",
+      "tag": "super_admin",
+      "annotation": "auth method=GET path=/api/v1/admin/ai-triage/incidents/:id tag:super_admin"
+    },
+    {
+      "service": "admin",
+      "file": "admin/ai_triage_incident.go",
+      "line": 98,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/admin/ai-triage/incidents/:id/confirm",
+      "tag": "super_admin",
+      "annotation": "auth method=POST path=/api/v1/admin/ai-triage/incidents/:id/confirm tag:super_admin"
+    },
+    {
+      "service": "admin",
+      "file": "admin/ai_triage_incident.go",
+      "line": 159,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/admin/ai-triage/incidents/:id/dismiss",
+      "tag": "super_admin",
+      "annotation": "auth method=POST path=/api/v1/admin/ai-triage/incidents/:id/dismiss tag:super_admin"
+    },
+    {
+      "service": "admin",
+      "file": "admin/ai_triage_repair.go",
+      "line": 64,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/admin/ai-triage/incidents/:id/repair/dry-run",
+      "tag": "super_admin",
+      "annotation": "auth method=POST path=/api/v1/admin/ai-triage/incidents/:id/repair/dry-run tag:super_admin"
+    },
+    {
+      "service": "admin",
       "file": "admin/ai_triage.go",
-      "line": 149,
+      "line": 153,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/admin/ai-triage/jobs",
@@ -44,7 +124,7 @@
     {
       "service": "admin",
       "file": "admin/ai_triage.go",
-      "line": 221,
+      "line": 225,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/admin/ai-triage/jobs/:id",
@@ -54,7 +134,7 @@
     {
       "service": "admin",
       "file": "admin/ai_triage.go",
-      "line": 240,
+      "line": 244,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/admin/ai-triage/jobs/:id/ai-fix",
@@ -64,7 +144,7 @@
     {
       "service": "admin",
       "file": "admin/ai_triage.go",
-      "line": 308,
+      "line": 312,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/admin/ai-triage/jobs/:id/verify",
@@ -90,6 +170,36 @@
       "path": "/api/v1/admin/ai-triage/llm-scans/:id",
       "tag": "super_admin",
       "annotation": "auth method=GET path=/api/v1/admin/ai-triage/llm-scans/:id tag:super_admin"
+    },
+    {
+      "service": "admin",
+      "file": "admin/ai_triage_repair.go",
+      "line": 90,
+      "access": "auth",
+      "method": "GET",
+      "path": "/api/v1/admin/ai-triage/repair-plans/:id",
+      "tag": "super_admin",
+      "annotation": "auth method=GET path=/api/v1/admin/ai-triage/repair-plans/:id tag:super_admin"
+    },
+    {
+      "service": "admin",
+      "file": "admin/ai_triage_repair.go",
+      "line": 136,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/admin/ai-triage/repair-plans/:id/apply",
+      "tag": "super_admin",
+      "annotation": "auth method=POST path=/api/v1/admin/ai-triage/repair-plans/:id/apply tag:super_admin"
+    },
+    {
+      "service": "admin",
+      "file": "admin/ai_triage_repair.go",
+      "line": 104,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/admin/ai-triage/repair-plans/:id/approve",
+      "tag": "super_admin",
+      "annotation": "auth method=POST path=/api/v1/admin/ai-triage/repair-plans/:id/approve tag:super_admin"
     },
     {
       "service": "admin",
@@ -2083,7 +2193,7 @@
     {
       "service": "inbox",
       "file": "inbox/report.go",
-      "line": 153,
+      "line": 156,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/inbox/messages/:id/report",
@@ -2129,6 +2239,35 @@
     },
     {
       "service": "admin",
+      "file": "admin/ai_triage_behavior_internal.go",
+      "line": 28,
+      "access": "public",
+      "method": "GET",
+      "path": "/api/v1/internal/ai-triage/behavior-jobs/:id",
+      "raw": true,
+      "annotation": "public raw method=GET path=/api/v1/internal/ai-triage/behavior-jobs/:id"
+    },
+    {
+      "service": "admin",
+      "file": "admin/ai_triage_behavior_internal.go",
+      "line": 82,
+      "access": "public",
+      "method": "POST",
+      "path": "/api/v1/internal/ai-triage/behavior-jobs/:id/complete",
+      "raw": true,
+      "annotation": "public raw method=POST path=/api/v1/internal/ai-triage/behavior-jobs/:id/complete"
+    },
+    {
+      "service": "admin",
+      "file": "admin/ai_triage_incident.go",
+      "line": 175,
+      "access": "private",
+      "method": "POST",
+      "path": "/api/v1/internal/ai-triage/ingest",
+      "annotation": "private method=POST path=/api/v1/internal/ai-triage/ingest"
+    },
+    {
+      "service": "admin",
       "file": "admin/ai_triage_internal.go",
       "line": 40,
       "access": "public",
@@ -2164,6 +2303,42 @@
       "method": "POST",
       "path": "/api/v1/internal/ai/auto-reply/fallback",
       "annotation": "public method=POST path=/api/v1/internal/ai/auto-reply/fallback"
+    },
+    {
+      "service": "business",
+      "file": "business/triage_repair.go",
+      "line": 33,
+      "access": "private",
+      "method": "POST",
+      "path": "/api/v1/internal/business/triage-catalog-patch",
+      "annotation": "private method=POST path=/api/v1/internal/business/triage-catalog-patch"
+    },
+    {
+      "service": "kb",
+      "file": "kb/triage_repair.go",
+      "line": 35,
+      "access": "private",
+      "method": "POST",
+      "path": "/api/v1/internal/kb/triage-patch",
+      "annotation": "private method=POST path=/api/v1/internal/kb/triage-patch"
+    },
+    {
+      "service": "order",
+      "file": "order/triage_repair.go",
+      "line": 61,
+      "access": "private",
+      "method": "POST",
+      "path": "/api/v1/internal/order/triage-draft-repair/apply",
+      "annotation": "private method=POST path=/api/v1/internal/order/triage-draft-repair/apply"
+    },
+    {
+      "service": "order",
+      "file": "order/triage_repair.go",
+      "line": 54,
+      "access": "private",
+      "method": "POST",
+      "path": "/api/v1/internal/order/triage-draft-repair/dry-run",
+      "annotation": "private method=POST path=/api/v1/internal/order/triage-draft-repair/dry-run"
     },
     {
       "service": "auth",
@@ -3116,7 +3291,7 @@
     {
       "service": "usage",
       "file": "usage/ai_activity.go",
-      "line": 185,
+      "line": 200,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/usage/ai-activity",
@@ -3125,7 +3300,7 @@
     {
       "service": "usage",
       "file": "usage/ai_activity.go",
-      "line": 194,
+      "line": 209,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/usage/ai-activity/summary",
