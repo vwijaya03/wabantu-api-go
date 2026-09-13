@@ -26,8 +26,8 @@ func GetTenantReadiness(ctx context.Context) (*TenantReadinessResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := ValidateTenantSchemaName(u.TenantSchema); err != nil {
-		return &TenantReadinessResponse{}, nil
+	if resp, ok := readinessIfNoTenant(u.TenantSchema); ok {
+		return resp, nil
 	}
 
 	pool := DataDB.Stdlib()
@@ -57,6 +57,16 @@ func GetTenantReadiness(ctx context.Context) (*TenantReadinessResponse, error) {
 		PatchCurrent:    CurrentSchemaPatchVersion,
 		Migrating:       migrating,
 	}, nil
+}
+
+// readinessIfNoTenant is the fast path when the session has no tenant schema
+// (platform super_admin after stop impersonation). Polling clients treat ready=false
+// as "keep waiting"; an empty schema must not look like a migration in progress.
+func readinessIfNoTenant(schema string) (*TenantReadinessResponse, bool) {
+	if err := ValidateTenantSchemaName(schema); err != nil {
+		return &TenantReadinessResponse{Ready: true}, true
+	}
+	return nil, false
 }
 
 func readinessUser() (*types.AuthUser, error) {
