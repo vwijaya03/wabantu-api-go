@@ -12,6 +12,7 @@ import (
 	"encore.app/wabantu/ai"
 	"encore.app/wabantu/internal/triageautogen"
 	"encore.app/wabantu/shared/pii"
+	"encore.app/wabantu/shared/triageincident"
 )
 
 type InternalGetBehaviorJobResponse struct {
@@ -44,15 +45,23 @@ func GetInternalAITriageBehaviorJob(w http.ResponseWriter, req *http.Request) {
 	var contract ai.BehaviorContract
 	_ = json.Unmarshal(job.Contract, &contract)
 	userText := ""
-	include := ""
-	qty := 1
-	if len(contract.Assertions.CartInclude) > 0 {
-		include = contract.Assertions.CartInclude[0].NameContains
-		if contract.Assertions.CartInclude[0].Qty > 0 {
-			qty = contract.Assertions.CartInclude[0].Qty
+	if inc, err := loadIncident(ctx, job.IncidentID); err == nil {
+		if ev, evErr := triageincident.EvidenceFromJSON(inc.Evidence); evErr == nil {
+			userText = ev.UserText
 		}
 	}
-	gen := triageautogen.BuildBehaviorTestFile(job.ID, userText, contract.Assertions.WantPath, include, qty, contract.Assertions.CartExclude, contract.Assertions.ReplyContains, contract.Assertions.ReplyExcludes)
+	includes := make([]triageautogen.CartInclude, 0, len(contract.Assertions.CartInclude))
+	for _, line := range contract.Assertions.CartInclude {
+		if strings.TrimSpace(line.NameContains) == "" {
+			continue
+		}
+		qty := line.Qty
+		if qty < 1 {
+			qty = 1
+		}
+		includes = append(includes, triageautogen.CartInclude{Name: line.NameContains, Qty: qty})
+	}
+	gen := triageautogen.BuildBehaviorTestFile(job.ID, userText, contract.Assertions.WantPath, includes, contract.Assertions.CartExclude, contract.Assertions.ReplyContains, contract.Assertions.ReplyExcludes)
 	hint, _ := json.Marshal(map[string]any{
 		"lane":    job.Lane,
 		"channel": job.Channel,

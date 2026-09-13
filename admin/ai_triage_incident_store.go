@@ -38,7 +38,24 @@ func insertOrLinkIncident(ctx context.Context, in triageincident.Incident, sourc
 		WHERE s.source_type = $1 AND s.source_id = $2
 		LIMIT 1`, sourceType, sourceID).Scan(&existingID)
 	if err == nil && existingID != "" {
-		return loadIncident(ctx, existingID)
+		inc, loadErr := loadIncident(ctx, existingID)
+		if loadErr != nil {
+			return inc, loadErr
+		}
+		if strings.TrimSpace(inc.BehaviorJobID) == "" && inc.ReviewStatus != triageincident.ReviewDismissed && len(in.Evidence) > 0 {
+			_, _ = system.DB.Exec(ctx, `
+				UPDATE ai_triage_incident
+				SET evidence_json = $2::jsonb,
+				    draft_contract_json = COALESCE($3::jsonb, draft_contract_json),
+				    lane = COALESCE(NULLIF($4, ''), lane),
+				    updated_at = NOW()
+				WHERE id = $1::uuid
+				  AND behavior_job_id IS NULL
+				  AND review_status NOT IN ('dismissed')`,
+				existingID, string(in.Evidence), nullJSON(in.DraftContract), in.Lane)
+			return loadIncident(ctx, existingID)
+		}
+		return inc, nil
 	}
 	if err != nil && !isNoRows(err) {
 		return triageincident.Incident{}, err
@@ -84,7 +101,8 @@ func insertOrLinkIncident(ctx context.Context, in triageincident.Incident, sourc
 			    draft_contract_json = COALESCE($3::jsonb, draft_contract_json),
 			    updated_at = NOW()
 			WHERE id = $1::uuid
-			  AND review_status IN ('open', 'needs_human_input')`,
+			  AND review_status NOT IN ('dismissed')
+			  AND behavior_job_id IS NULL`,
 			openID, string(in.Evidence), nullJSON(in.DraftContract),
 		)
 	}
@@ -237,7 +255,7 @@ func updateIncidentReview(ctx context.Context, id, status string, contract json.
 		SET review_status = $2,
 		    confirmed_contract_json = COALESCE($3::jsonb, confirmed_contract_json),
 		    updated_at = now()
-		WHERE id = $1::uuid AND review_status IN ('open', 'needs_human_input')`,
+		WHERE id = $1::uuid AND review_status IN ('open', 'needs_human_input', 'confirmed')`,
 		id, status, nullJSON(contract))
 	if err != nil {
 		return triageincident.Incident{}, err

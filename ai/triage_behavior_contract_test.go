@@ -26,4 +26,7 @@ func TestHasDeterministicInvariant(t *testing.T) {
 	if HasDeterministicInvariant(BehaviorContract{Lane: "buyerflow", Assertions: BehaviorAssertions{NeedCustomerInput: true, WantPath: "order_flow"}}) {
 		t.Fatal("needs customer input must not run Composer")
 	}
+	if !HasDeterministicInvariant(BehaviorContract{Lane: "grounded_content", Assertions: BehaviorAssertions{ReplyExcludes: []string{"belum menemukan"}}}) {
+		t.Fatal("grounded replyExcludes must be dispatchable")
+	}
 }

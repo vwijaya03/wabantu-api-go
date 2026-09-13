@@ -84,7 +84,8 @@ func HasDeterministicInvariant(c BehaviorContract) bool {
 	case triageincident.LaneBuyerflow, triageincident.LaneDraftOrder:
 		return a.WantPath != "" || len(a.CartInclude) > 0 || len(a.CartExclude) > 0
 	case triageincident.LaneGroundedContent:
-		return len(a.RequiredFacts) > 0 || len(a.ForbiddenClaims) > 0 || len(a.ProductCardIDs) > 0
+		return len(a.RequiredFacts) > 0 || len(a.ForbiddenClaims) > 0 || len(a.ProductCardIDs) > 0 ||
+			len(a.ReplyContains) > 0 || len(a.ReplyExcludes) > 0
 	case triageincident.LaneRetrieval:
 		return len(a.RetrievalKBIDs) > 0 || len(a.RetrievalCatalogIDs) > 0
 	case triageincident.LaneStorefrontSearch:

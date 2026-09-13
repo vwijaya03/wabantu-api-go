@@ -104,9 +104,19 @@ func ConfirmAITriageIncident(ctx context.Context, id string, p *ConfirmAITriageI
 	if p == nil || len(p.Contract) == 0 {
 		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "contract required"}
 	}
+	inc, err := loadIncident(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return nil, err
+	}
+	if inc.ReviewStatus == triageincident.ReviewDismissed {
+		return nil, &errs.Error{Code: errs.FailedPrecondition, Message: "insiden sudah diabaikan"}
+	}
 	var contract ai.BehaviorContract
 	if err := json.Unmarshal(p.Contract, &contract); err != nil {
 		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "contract JSON tidak valid"}
+	}
+	if rebuilt := rebuildContractFromIncident(inc); ai.HasDeterministicInvariant(rebuilt) {
+		contract = rebuilt
 	}
 	if err := ai.ValidateBehaviorContract(contract); err != nil {
 		return nil, &errs.Error{Code: errs.InvalidArgument, Message: err.Error()}
@@ -115,13 +125,13 @@ func ConfirmAITriageIncident(ctx context.Context, id string, p *ConfirmAITriageI
 	if err != nil {
 		return nil, &errs.Error{Code: errs.InvalidArgument, Message: err.Error()}
 	}
-	inc, err := updateIncidentReview(ctx, strings.TrimSpace(id), triageincident.ReviewConfirmed, raw, user.AccountID)
+	inc, err = updateIncidentReview(ctx, inc.ID, triageincident.ReviewConfirmed, raw, user.AccountID)
 	if err != nil {
 		return nil, err
 	}
 	resp := &ConfirmAITriageIncidentResponse{Incident: inc}
 	if contract.Assertions.NeedCustomerInput {
-		_, _ = systemExecIncidentStatus(ctx, inc.ID, triageincident.ReviewNeedsHuman)
+		_, _ = updateIncidentReview(ctx, inc.ID, triageincident.ReviewNeedsHuman, raw, user.AccountID)
 		inc.ReviewStatus = triageincident.ReviewNeedsHuman
 		inc.ResolutionStatus = triageincident.ResolutionNeedsCust
 		resp.Incident = inc
@@ -141,6 +151,10 @@ func ConfirmAITriageIncident(ctx context.Context, id string, p *ConfirmAITriageI
 	if !laneFilesExist(contract.Lane) {
 		return nil, &errs.Error{Code: errs.FailedPrecondition, Message: "lane Composer fail-closed: file allowlist belum ada"}
 	}
+	if strings.TrimSpace(inc.BehaviorJobID) != "" {
+		resp.Incident = inc
+		return resp, nil
+	}
 	job, err := createBehaviorJobFromIncident(ctx, inc, contract, user.AccountID)
 	if err != nil {
 		rlog.Warn("create behavior job failed", "incidentId", inc.ID, "err", err)
@@ -152,6 +166,11 @@ func ConfirmAITriageIncident(ctx context.Context, id string, p *ConfirmAITriageI
 	resp.Incident = inc
 	go dispatchBehaviorFixWorkflowAsync(job.ID, inc.TenantSchema)
 	return resp, nil
+}
+
+func rebuildContractFromIncident(inc triageincident.Incident) ai.BehaviorContract {
+	ev, _ := triageincident.EvidenceFromJSON(inc.Evidence)
+	return buildDraftContract(inc.Channel, ev.Path, "", ev.UserText, ev.FinalText)
 }
 
 // DismissAITriageIncident ignores an open incident.
@@ -204,9 +223,16 @@ func upsertIncidentFromParams(ctx context.Context, p *IngestTriageIncidentParams
 		return triageincident.Incident{}, nil
 	}
 	raw, _ := json.Marshal(ev)
+	c := buildDraftContract(channel, p.Path, p.Category, p.UserText, p.ReplyText)
 	lane := strings.TrimSpace(p.Lane)
 	if lane == "" {
-		lane = inferLane(p.Path, p.Category)
+		lane = c.Lane
+	} else {
+		c.Lane = lane
+	}
+	draft, err := ai.MarshalBehaviorContract(c)
+	if err != nil {
+		draft = nil
 	}
 	fp := triageincident.Compute(triageincident.FingerprintInput{
 		TenantID:    p.TenantID,
@@ -224,41 +250,8 @@ func upsertIncidentFromParams(ctx context.Context, p *IngestTriageIncidentParams
 		Lane:            lane,
 		EvidenceVersion: interactionevidence.CaptureVersion,
 		Evidence:        raw,
-		DraftContract:   draftContractJSON(channel, lane, p.Path, p.UserText),
+		DraftContract:   draft,
 	}, p.SourceType, p.SourceID, channel)
-}
-
-func draftContractJSON(channel, lane, path, userText string) json.RawMessage {
-	c := ai.BehaviorContract{
-		Version: 1,
-		Lane:    lane,
-		Channel: channel,
-		Assertions: ai.BehaviorAssertions{
-			WantPath: path,
-		},
-	}
-	low := strings.ToLower(userText)
-	if strings.Contains(low, "oatlife") && !strings.Contains(low, "white") {
-		c.Assertions.NeedCustomerInput = true
-		c.Clarification = "Jangan menebak varian; tanya pelanggan jika SKU ambigu."
-	}
-	raw, err := json.Marshal(c)
-	if err != nil {
-		return nil
-	}
-	return raw
-}
-
-func inferLane(path, category string) string {
-	switch path {
-	case "order_flow", "order_status", "consulting":
-		if category == "wrong_answer" {
-			return triageincident.LaneBuyerflow
-		}
-		return triageincident.LaneBuyerflow
-	default:
-		return triageincident.LaneGroundedContent
-	}
 }
 
 func systemExecIncidentStatus(ctx context.Context, id, status string) (triageincident.Incident, error) {
