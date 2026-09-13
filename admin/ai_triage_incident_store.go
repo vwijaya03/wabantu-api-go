@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"strconv"
 	"strings"
 
@@ -12,6 +13,10 @@ import (
 	"encore.app/wabantu/shared/triageincident"
 	"encore.app/wabantu/system"
 )
+
+func isNoRows(err error) bool {
+	return errors.Is(err, sql.ErrNoRows)
+}
 
 func insertOrLinkIncident(ctx context.Context, in triageincident.Incident, sourceType, sourceID, channel string) (triageincident.Incident, error) {
 	in.TenantID = strings.TrimSpace(in.TenantID)
@@ -35,7 +40,7 @@ func insertOrLinkIncident(ctx context.Context, in triageincident.Incident, sourc
 	if err == nil && existingID != "" {
 		return loadIncident(ctx, existingID)
 	}
-	if err != nil && err != sql.ErrNoRows {
+	if err != nil && !isNoRows(err) {
 		return triageincident.Incident{}, err
 	}
 
@@ -45,7 +50,7 @@ func insertOrLinkIncident(ctx context.Context, in triageincident.Incident, sourc
 		WHERE tenant_id = $1::uuid AND fingerprint = $2
 		  AND review_status IN ('open', 'needs_human_input')
 		ORDER BY created_at DESC LIMIT 1`, in.TenantID, in.Fingerprint).Scan(&openID)
-	if err != nil && err != sql.ErrNoRows {
+	if err != nil && !isNoRows(err) {
 		return triageincident.Incident{}, err
 	}
 
@@ -101,7 +106,7 @@ func loadIncidentBySource(ctx context.Context, sourceType, sourceID string) (tri
 		SELECT incident_id::text FROM ai_triage_incident_source
 		WHERE source_type = $1 AND source_id = $2
 		LIMIT 1`, sourceType, sourceID).Scan(&id)
-	if err == sql.ErrNoRows {
+	if isNoRows(err) {
 		return triageincident.Incident{}, &errs.Error{Code: errs.NotFound, Message: "insiden belum ada untuk sumber ini"}
 	}
 	if err != nil {
@@ -132,7 +137,7 @@ func loadIncident(ctx context.Context, id string) (triageincident.Incident, erro
 		&inc.Evidence, &draft, &confirmed,
 		&jobID, &repairID, &inc.CreatedAt, &inc.UpdatedAt,
 	)
-	if err == sql.ErrNoRows {
+	if isNoRows(err) {
 		return triageincident.Incident{}, &errs.Error{Code: errs.NotFound, Message: "insiden tidak ditemukan"}
 	}
 	if err != nil {

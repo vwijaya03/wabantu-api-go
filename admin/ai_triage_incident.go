@@ -174,8 +174,13 @@ func DismissAITriageIncident(ctx context.Context, id string, p *DismissAITriageI
 //
 //encore:api private method=POST path=/api/v1/internal/ai-triage/ingest
 func IngestTriageIncident(ctx context.Context, p *IngestTriageIncidentParams) error {
+	_, err := upsertIncidentFromParams(ctx, p)
+	return err
+}
+
+func upsertIncidentFromParams(ctx context.Context, p *IngestTriageIncidentParams) (triageincident.Incident, error) {
 	if p == nil {
-		return nil
+		return triageincident.Incident{}, nil
 	}
 	channel := strings.TrimSpace(p.Channel)
 	if channel == "" {
@@ -196,7 +201,7 @@ func IngestTriageIncident(ctx context.Context, p *IngestTriageIncidentParams) er
 		DegradedMode:   kbcontext.DegradedNone,
 	})
 	if !ev.Valid() {
-		return nil
+		return triageincident.Incident{}, nil
 	}
 	raw, _ := json.Marshal(ev)
 	lane := strings.TrimSpace(p.Lane)
@@ -210,7 +215,7 @@ func IngestTriageIncident(ctx context.Context, p *IngestTriageIncidentParams) er
 		FailureKind: strings.TrimSpace(p.Category),
 		Path:        p.Path,
 	})
-	_, err := insertOrLinkIncident(ctx, triageincident.Incident{
+	return insertOrLinkIncident(ctx, triageincident.Incident{
 		TenantID:        p.TenantID,
 		TenantSchema:    p.TenantSchema,
 		Channel:         channel,
@@ -221,7 +226,6 @@ func IngestTriageIncident(ctx context.Context, p *IngestTriageIncidentParams) er
 		Evidence:        raw,
 		DraftContract:   draftContractJSON(channel, lane, p.Path, p.UserText),
 	}, p.SourceType, p.SourceID, channel)
-	return err
 }
 
 func draftContractJSON(channel, lane, path, userText string) json.RawMessage {

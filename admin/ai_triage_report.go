@@ -105,18 +105,23 @@ func OpenAITriageIncidentFromReport(ctx context.Context, id string) (*OpenAITria
 	if err != nil {
 		return nil, err
 	}
-	if err := ingestIncidentFromReport(ctx, rep); err != nil {
+	inc, err := upsertIncidentFromReport(ctx, rep)
+	if err != nil {
 		return nil, &errs.Error{Code: errs.Internal, Message: "gagal membuka insiden dari laporan"}
 	}
-	inc, err := loadIncidentBySource(ctx, triageincident.SourceHumanReport, rep.ID)
-	if err != nil {
+	if strings.TrimSpace(inc.ID) == "" {
 		return nil, &errs.Error{Code: errs.FailedPrecondition, Message: "laporan tidak bisa jadi insiden (conversation kosong atau evidence tidak valid)"}
 	}
 	return &OpenAITriageIncidentFromReportResponse{Incident: inc}, nil
 }
 
 func ingestIncidentFromReport(ctx context.Context, rep triagereport.Report) error {
-	return IngestTriageIncident(ctx, &IngestTriageIncidentParams{
+	_, err := upsertIncidentFromReport(ctx, rep)
+	return err
+}
+
+func upsertIncidentFromReport(ctx context.Context, rep triagereport.Report) (triageincident.Incident, error) {
+	return upsertIncidentFromParams(ctx, &IngestTriageIncidentParams{
 		TenantID:       rep.TenantID,
 		TenantSchema:   rep.TenantSchema,
 		SourceType:     triageincident.SourceHumanReport,
