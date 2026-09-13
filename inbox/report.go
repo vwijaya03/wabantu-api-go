@@ -9,8 +9,8 @@ import (
 	"encore.dev/beta/errs"
 	"encore.dev/rlog"
 
-	apperr "encore.app/wabantu/shared/errs"
 	appdb "encore.app/wabantu/shared/db"
+	apperr "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/triagereport"
 )
 
@@ -129,7 +129,7 @@ func ReportMessage(ctx context.Context, id string, p *ReportMessageParams) (*Rep
 		return nil, apperr.Internal("gagal menyimpan laporan")
 	}
 
-	_ = publishTriageReportJudgeJob(ctx, &TriageReportJudgeJob{
+	if err := publishTriageReportJudgeJob(ctx, &TriageReportJudgeJob{
 		ReportID:       reportID,
 		TenantSchema:   user.TenantSchema,
 		ConversationID: msg.ConversationID,
@@ -138,7 +138,10 @@ func ReportMessage(ctx context.Context, id string, p *ReportMessageParams) (*Rep
 		ReplyText:      msg.Body,
 		Path:           msg.Path,
 		InboundAt:      msg.CreatedAt,
-	})
+	}); err != nil {
+		rlog.Error("publish triage report judge failed", "err", err, "reportId", reportID)
+		return nil, apperr.Internal("laporan tersimpan tetapi gagal mengantri penilaian")
+	}
 
 	report, err := loadTriageReportByID(ctx, reportID)
 	if err != nil {

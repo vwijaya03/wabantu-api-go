@@ -6,6 +6,7 @@ import (
 
 	"encore.dev/beta/errs"
 
+	"encore.app/wabantu/shared/triageincident"
 	"encore.app/wabantu/shared/triagereport"
 )
 
@@ -82,5 +83,56 @@ func UpdateAITriageReport(ctx context.Context, id string, p *UpdateAITriageRepor
 	if err != nil {
 		return nil, err
 	}
+	if report.Status == triagereport.StatusConfirmed {
+		_ = ingestIncidentFromReport(ctx, report)
+	}
 	return &UpdateAITriageReportResponse{Report: report}, nil
+}
+
+type OpenAITriageIncidentFromReportResponse struct {
+	Incident triageincident.Incident `json:"incident"`
+}
+
+// OpenAITriageIncidentFromReport upserts an incident from a human report so tab
+// Insiden shows THIS inbound/outbound pair (does not run the routing loop).
+//
+//encore:api auth method=POST path=/api/v1/admin/ai-triage/reports/:id/incident tag:super_admin
+func OpenAITriageIncidentFromReport(ctx context.Context, id string) (*OpenAITriageIncidentFromReportResponse, error) {
+	if _, err := requireSuperAdmin(ctx); err != nil {
+		return nil, err
+	}
+	rep, err := loadTriageReport(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return nil, err
+	}
+	inc, err := upsertIncidentFromReport(ctx, rep)
+	if err != nil {
+		return nil, &errs.Error{Code: errs.Internal, Message: "gagal membuka insiden dari laporan"}
+	}
+	if strings.TrimSpace(inc.ID) == "" {
+		return nil, &errs.Error{Code: errs.FailedPrecondition, Message: "laporan tidak bisa jadi insiden (conversation kosong atau evidence tidak valid)"}
+	}
+	return &OpenAITriageIncidentFromReportResponse{Incident: inc}, nil
+}
+
+func ingestIncidentFromReport(ctx context.Context, rep triagereport.Report) error {
+	_, err := upsertIncidentFromReport(ctx, rep)
+	return err
+}
+
+func upsertIncidentFromReport(ctx context.Context, rep triagereport.Report) (triageincident.Incident, error) {
+	return upsertIncidentFromParams(ctx, &IngestTriageIncidentParams{
+		TenantID:       rep.TenantID,
+		TenantSchema:   rep.TenantSchema,
+		SourceType:     triageincident.SourceHumanReport,
+		SourceID:       rep.ID,
+		Channel:        "whatsapp",
+		ConversationID: rep.ConversationID,
+		InboundID:      rep.InboundID,
+		OutboundID:     rep.OutboundMessageID,
+		UserText:       rep.UserText,
+		ReplyText:      rep.ReplyText,
+		Path:           rep.Path,
+		Category:       rep.Category,
+	})
 }

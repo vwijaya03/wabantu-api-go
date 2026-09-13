@@ -226,4 +226,90 @@ CREATE TABLE IF NOT EXISTS rag_rollout_job_item (
 );
 CREATE INDEX IF NOT EXISTS idx_rag_rollout_item_job_status ON rag_rollout_job_item(job_id, status);
 CREATE INDEX IF NOT EXISTS idx_rag_rollout_item_tenant ON rag_rollout_job_item(tenant_id);
+
+CREATE TABLE IF NOT EXISTS ai_triage_incident (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL,
+    tenant_schema VARCHAR(128) NOT NULL,
+    channel VARCHAR(32) NOT NULL,
+    fingerprint VARCHAR(64) NOT NULL,
+    cross_channel_key VARCHAR(64) NOT NULL DEFAULT '',
+    review_status VARCHAR(32) NOT NULL DEFAULT 'open',
+    resolution_status VARCHAR(32) NOT NULL DEFAULT 'none',
+    lane VARCHAR(32),
+    degraded_mode VARCHAR(32),
+    evidence_version INT NOT NULL DEFAULT 1,
+    evidence_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    draft_contract_json JSONB,
+    confirmed_contract_json JSONB,
+    behavior_job_id UUID,
+    repair_plan_id UUID,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ai_triage_incident_tenant ON ai_triage_incident(tenant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ai_triage_incident_review ON ai_triage_incident(review_status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ai_triage_incident_fp ON ai_triage_incident(tenant_id, fingerprint);
+
+CREATE TABLE IF NOT EXISTS ai_triage_incident_source (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    incident_id UUID NOT NULL REFERENCES ai_triage_incident(id) ON DELETE CASCADE,
+    source_type VARCHAR(64) NOT NULL,
+    source_id VARCHAR(128) NOT NULL,
+    channel VARCHAR(32) NOT NULL DEFAULT 'whatsapp',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT ai_triage_incident_source_uniq UNIQUE (source_type, source_id)
+);
+CREATE INDEX IF NOT EXISTS idx_ai_triage_incident_source_incident ON ai_triage_incident_source(incident_id);
+
+CREATE TABLE IF NOT EXISTS ai_triage_behavior_job (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    incident_id UUID NOT NULL REFERENCES ai_triage_incident(id),
+    tenant_id UUID NOT NULL,
+    tenant_schema VARCHAR(128) NOT NULL,
+    channel VARCHAR(32) NOT NULL,
+    lane VARCHAR(32) NOT NULL,
+    target_repo VARCHAR(32) NOT NULL DEFAULT 'api-go',
+    status VARCHAR(32) NOT NULL DEFAULT 'planning',
+    contract_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    generated_test_hash VARCHAR(64),
+    github_run_id VARCHAR(64),
+    github_run_url TEXT,
+    pr_url TEXT,
+    expected_revision VARCHAR(64),
+    error_text TEXT,
+    attempt_count INT NOT NULL DEFAULT 0,
+    started_by UUID,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    completed_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_ai_triage_behavior_job_status ON ai_triage_behavior_job(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ai_triage_behavior_job_incident ON ai_triage_behavior_job(incident_id);
+
+CREATE TABLE IF NOT EXISTS ai_triage_repair_plan (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    incident_id UUID NOT NULL REFERENCES ai_triage_incident(id),
+    tenant_id UUID NOT NULL,
+    tenant_schema VARCHAR(128) NOT NULL,
+    operation VARCHAR(64) NOT NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'draft',
+    target_order_id UUID,
+    block_reasons TEXT[] NOT NULL DEFAULT '{}',
+    before_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    after_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    before_hash VARCHAR(64) NOT NULL DEFAULT '',
+    after_hash VARCHAR(64) NOT NULL DEFAULT '',
+    base_updated_at TIMESTAMPTZ,
+    approved_by UUID,
+    approved_at TIMESTAMPTZ,
+    applied_by UUID,
+    applied_at TIMESTAMPTZ,
+    apply_result TEXT,
+    error_text TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ai_triage_repair_plan_incident ON ai_triage_repair_plan(incident_id);
+CREATE INDEX IF NOT EXISTS idx_ai_triage_repair_plan_status ON ai_triage_repair_plan(status, created_at DESC);
 `

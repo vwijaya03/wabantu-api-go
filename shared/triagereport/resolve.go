@@ -8,7 +8,7 @@ import (
 	appdb "encore.app/wabantu/shared/db"
 )
 
-// ResolveInboundBeforeOutbound finds the latest inbound message before an outbound reply.
+// ResolveInboundBeforeOutbound prefers metadata.inboundReplyTo, then latest inbound before outbound.
 func ResolveInboundBeforeOutbound(ctx context.Context, q interface {
 	QueryRowContext(context.Context, string, ...any) appdb.Scannable
 }, conversationID, outboundMessageID string) (inboundID, userText string, err error) {
@@ -16,6 +16,23 @@ func ResolveInboundBeforeOutbound(ctx context.Context, q interface {
 	outboundMessageID = strings.TrimSpace(outboundMessageID)
 	if conversationID == "" || outboundMessageID == "" {
 		return "", "", sql.ErrNoRows
+	}
+	err = q.QueryRowContext(ctx, `
+		SELECT inbound.id::text, COALESCE(inbound.body, '')
+		FROM message outb
+		JOIN message inbound
+		  ON inbound.id::text = outb.metadata->>'inboundReplyTo'
+		 AND inbound.conversation_id = outb.conversation_id
+		WHERE outb.id = $1::uuid
+		  AND inbound.direction = 'in'
+		LIMIT 1`,
+		outboundMessageID,
+	).Scan(&inboundID, &userText)
+	if err == nil {
+		return inboundID, userText, nil
+	}
+	if err != sql.ErrNoRows {
+		return "", "", err
 	}
 	err = q.QueryRowContext(ctx, `
 		SELECT m.id::text, COALESCE(m.body, '')

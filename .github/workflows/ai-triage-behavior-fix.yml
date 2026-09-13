@@ -1,0 +1,198 @@
+name: AI Triage Behavior Fix
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: ai_triage_behavior_job UUID
+        required: true
+        type: string
+      tenant_schema:
+        description: Tenant schema
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: ai-triage-behavior-${{ github.event.inputs.job_id }}
+  cancel-in-progress: false
+
+jobs:
+  behavior-fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      JOB_ID: ${{ github.event.inputs.job_id }}
+      ENCORE_API_URL: ${{ secrets.ENCORE_STAGING_API_URL }}
+      AI_INTERNAL_TOKEN: ${{ secrets.AI_INTERNAL_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: tools/ai-triage-runner/package-lock.json
+
+      - name: Require Encore staging URL
+        run: |
+          set -euo pipefail
+          if [ -z "${ENCORE_API_URL:-}" ]; then
+            echo "Secret ENCORE_STAGING_API_URL kosong. GHA harus memanggil Encore staging yang sudah deploy PR ini." >&2
+            exit 1
+          fi
+          if [ -z "${AI_INTERNAL_TOKEN:-}" ]; then
+            echo "Secret AI_INTERNAL_TOKEN kosong." >&2
+            exit 1
+          fi
+
+      - name: Fetch behavior job
+        run: |
+          set -euo pipefail
+          curl -fsS -H "X-Ai-Internal-Token: $AI_INTERNAL_TOKEN" \
+            "$ENCORE_API_URL/api/v1/internal/ai-triage/behavior-jobs/$JOB_ID" \
+            -o /tmp/behavior_job.json
+          python3 - <<'PY'
+          import json,sys
+          p=json.load(open("/tmp/behavior_job.json"))
+          gen=p.get("generatedFile") or ""
+          if not gen:
+              sys.exit("generatedFile empty — Encore staging belum punya endpoint behavior job?")
+          open("/tmp/behavior_test.go","w").write(gen)
+          open("/tmp/generated_hash.txt","w").write(p.get("generatedHash") or "")
+          PY
+
+      - name: Apply immutable generated test
+        run: go run scripts/triage-behavior-apply.go --job-id "$JOB_ID" < /tmp/behavior_test.go
+
+      - name: Prove RED
+        id: red
+        continue-on-error: true
+        run: |
+          chmod +x scripts/run-triage-behavior-tests.sh
+          ./scripts/run-triage-behavior-tests.sh 2>&1 | tee /tmp/behavior_red.log
+
+      - name: Install Cursor SDK
+        if: steps.red.outcome == 'failure'
+        working-directory: tools/ai-triage-runner
+        run: npm ci
+
+      - name: Install ripgrep for Cursor SDK
+        if: steps.red.outcome == 'failure'
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+
+      - name: Composer fix
+        if: steps.red.outcome == 'failure'
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          TRIAGE_JOB_JSON: /tmp/behavior_job.json
+        run: |
+          set -euo pipefail
+          if [ -z "${CURSOR_API_KEY:-}" ]; then
+            echo "Secret CURSOR_API_KEY kosong." >&2
+            exit 1
+          fi
+          node tools/ai-triage-runner/triage-behavior-cursor-fix.mjs
+
+      - name: Allowlist guard
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, subprocess, sys
+          p=json.load(open("/tmp/behavior_job.json"))
+          allow=tuple(p.get("allowlist") or [])
+          forbidden=("system/migrations/", ".github/workflows/", "budget_config.go")
+          out=subprocess.check_output(["git","status","--porcelain"], text=True)
+          bad=[]
+          for line in out.splitlines():
+              path=line[3:].strip()
+              if "regression_behavior_" in path:
+                  continue
+              if any(f in path for f in forbidden):
+                  bad.append(path)
+                  continue
+              if allow and any(path.startswith(a) or path.startswith(a.rstrip("/")) for a in allow):
+                  continue
+              if path:
+                  bad.append(path)
+          if bad:
+              print("out of allowlist:", bad)
+              sys.exit(1)
+          PY
+
+      - name: Targeted tests
+        id: green
+        continue-on-error: true
+        run: |
+          chmod +x scripts/run-triage-behavior-tests.sh
+          ./scripts/run-triage-behavior-tests.sh 2>&1 | tee /tmp/behavior_green.log
+
+      - name: Draft PR from allowlist
+        id: pr
+        if: steps.red.outcome == 'failure'
+        env:
+          GITHUB_PAT: ${{ secrets.GITHUB_PAT }}
+        run: |
+          set -euo pipefail
+          BRANCH="fix/ai-triage-behavior-${JOB_ID}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
+          python3 - <<'PY'
+          import json, subprocess
+          p=json.load(open("/tmp/behavior_job.json"))
+          allow=list(p.get("allowlist") or [])
+          porcelain=subprocess.check_output(["git","status","--porcelain"], text=True)
+          to_add=["internal/buyerflow/regression_behavior_"]
+          for line in porcelain.splitlines():
+              path=line[3:].strip()
+              if not path:
+                  continue
+              if any(path.startswith(prefix) or prefix in path for prefix in to_add):
+                  subprocess.check_call(["git","add","--",path])
+                  continue
+              if any(path.startswith(a) or path.startswith(a.rstrip("/")) for a in allow):
+                  subprocess.check_call(["git","add","--",path])
+          PY
+          if git diff --cached --quiet; then
+            echo "no staged changes"
+          else
+            git commit -m "fix(ai-triage): behavior job $JOB_ID"
+          fi
+          git push -u origin HEAD
+          export GH_TOKEN="${GITHUB_PAT:-${{ github.token }}}"
+          PR_URL="$(gh pr list --head "$BRANCH" --json url --jq '.[0].url // empty')"
+          if [ -z "$PR_URL" ]; then
+            PR_URL=$(gh pr create --draft --title "fix(ai-triage): behavior ${JOB_ID}" --body "Behavior job \`$JOB_ID\`. **Jangan auto-merge.** Chat WhatsApp lama tidak berubah sampai PR ini di-merge dan Encore staging di-deploy.")
+          fi
+          echo "pr_url=$PR_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Complete Encore job
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.red.outcome }}" = "success" ]; then
+            STATUS="already_fixed"
+          elif [ "${{ steps.green.outcome }}" = "success" ]; then
+            STATUS="pr_ready"
+          else
+            STATUS="failed"
+          fi
+          BODY=$(jq -n --arg status "$STATUS" --arg pr "${{ steps.pr.outputs.pr_url }}" \
+            --arg run "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --arg rid "${{ github.run_id }}" \
+            '{status:$status, prUrl:$pr, githubRunUrl:$run, githubRunId:$rid}')
+          curl -fsS -X POST -H "X-Ai-Internal-Token: $AI_INTERNAL_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$BODY" \
+            "$ENCORE_API_URL/api/v1/internal/ai-triage/behavior-jobs/$JOB_ID/complete"

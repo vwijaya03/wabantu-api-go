@@ -51,5 +51,6 @@ func recordActivity(ctx context.Context, meta AiReplyMeta, purpose string, input
 		OutputTokens:   outputTok,
 		RouteReason:    ac.RouteReason,
 		Classifier:     ac.Classifier,
+		Channel:        "whatsapp",
 	})
 }

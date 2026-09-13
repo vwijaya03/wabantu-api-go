@@ -55,6 +55,8 @@ type AITriageAnomaly struct {
 	TenantSchema    string    `json:"tenantSchema"`
 	Path            string    `json:"path"`
 	Reason          string    `json:"reason,omitempty"`
+	Channel         string    `json:"channel,omitempty"`
+	DegradedMode    string    `json:"degradedMode,omitempty"`
 	ConversationID  string    `json:"conversationId,omitempty"`
 	InboundID       string    `json:"inboundId,omitempty"`
 	UserText        string    `json:"userText,omitempty"`
@@ -134,6 +136,8 @@ func ListAITriageAnomalies(ctx context.Context, p *ListAITriageAnomaliesParams) 
 			TenantSchema:    schema,
 			Path:            e.Path,
 			Reason:          e.Reason,
+			Channel:         e.Channel,
+			DegradedMode:    e.DegradedMode,
 			ConversationID:  e.ConversationID,
 			InboundID:       e.InboundID,
 			UserText:        e.UserText,
@@ -184,9 +188,12 @@ func CreateAITriageJob(ctx context.Context, p *CreateAITriageJobParams) (*Create
 		return nil, &errs.Error{Code: errs.Internal, Message: "analyze conversation failed"}
 	}
 	if ai.CountRegressionMismatches(analysis.Mismatches) == 0 {
-		msg := "tidak ada mismatch path (WhatsApp metadata.path vs simulator). force=true hanya melewati job duplikat, bukan gerbang ini. Bug isi keranjang/SKU tetap order_flow di kedua sisi — perbaiki parse, jangan Jalankan loop. Sukses routing = Verifikasi fix (simulator vs golden wantPath)."
-		if analysis.HasDeterministic {
+		msg := ai.RoutingLoopRejectedReason(analysis)
+		if msg == "" && analysis.HasDeterministic {
 			msg = "ada mismatch forensic, tapi wantPath tidak dipercaya (daftar order tidak boleh di-lock sebagai consulting). Jangan buat tes. Sukses = Verifikasi fix setelah routing benar."
+		}
+		if msg == "" {
+			msg = "tidak ada mismatch path (WhatsApp metadata.path vs simulator). force=true hanya melewati job duplikat, bukan gerbang ini. Bug isi keranjang/SKU tetap order_flow di kedua sisi — perbaiki parse, jangan Jalankan loop. Sukses routing = Verifikasi fix (simulator vs golden wantPath)."
 		}
 		return nil, &errs.Error{Code: errs.InvalidArgument, Message: msg}
 	}
@@ -342,13 +349,6 @@ func VerifyAITriageJob(ctx context.Context, id string) (*VerifyAITriageJobRespon
 
 	reportsResolved := 0
 	if verify.AllPassed {
-		note := fmt.Sprintf("Otomatis selesai setelah verifikasi job %s", jobID)
-		n, resErr := resolveOpenReportsForConversation(ctx, job.TenantID, job.ConversationID, jobID, job.StartedBy, note)
-		if resErr != nil {
-			rlog.Warn("resolve open triage reports failed", "jobId", jobID, "err", resErr)
-		} else {
-			reportsResolved = n
-		}
 		if err := updateTriageJobStatus(ctx, jobID, triageJobStatusVerified, "", job.GitHubRunURL); err != nil {
 			return nil, &errs.Error{Code: errs.Internal, Message: "update status verified gagal"}
 		}
@@ -682,7 +682,15 @@ func dispatchGitHubWorkflow(ctx context.Context, workflowFile, jobID string, inp
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("github workflow_dispatch %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+		return wrapWorkflowDispatchError(workflowFile, "master", resp.StatusCode, string(respBody))
 	}
 	return nil
+}
+
+func wrapWorkflowDispatchError(workflowFile, ref string, status int, body string) error {
+	body = strings.TrimSpace(body)
+	if status == http.StatusNotFound {
+		return fmt.Errorf("github workflow_dispatch 404: %s belum terdaftar di default branch %s. Merge file .github/workflows/%s ke master dulu. GitHub: %s", workflowFile, ref, workflowFile, body)
+	}
+	return fmt.Errorf("github workflow_dispatch %d: %s", status, body)
 }

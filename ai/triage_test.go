@@ -21,6 +21,9 @@ func TestIsNonDeterministicTriagePath(t *testing.T) {
 	if !IsNonDeterministicTriagePath(PathLLM) {
 		t.Fatal("llm should be non-deterministic")
 	}
+	if !IsNonDeterministicTriagePath(PathLLMGrounded) {
+		t.Fatal("llm_grounded should be non-deterministic")
+	}
 	if IsNonDeterministicTriagePath(PathPaymentFAQ) {
 		t.Fatal("payment_faq should be deterministic")
 	}
@@ -92,6 +95,76 @@ func TestCompareConversationRoutes_focusInbound(t *testing.T) {
 	}
 	if result.Mismatches[0].InboundID != "in-2" {
 		t.Fatalf("inboundId = %q want in-2", result.Mismatches[0].InboundID)
+	}
+	if !result.FocusFound {
+		t.Fatal("expected focusFound for in-2")
+	}
+}
+
+func TestRoutingLoopRejectedReason_llmGroundedFocus(t *testing.T) {
+	r := &AnalyzeConversationResult{
+		FocusInboundID: "in-abon",
+		FocusFound:     true,
+		Mismatches: []TriageMismatch{{
+			InboundID:  "in-abon",
+			UserText:   "hah ? nambah abon sapi 125 gram 1, abon sapi 500 gram 1",
+			ActualPath: PathLLMGrounded,
+			Skipped:    true,
+			SkipReason: "non_deterministic_path",
+		}},
+	}
+	msg := RoutingLoopRejectedReason(r)
+	if msg == "" {
+		t.Fatal("expected rejection for llm_grounded focus")
+	}
+	if !strings.Contains(msg, "llm_grounded") || !strings.Contains(msg, "abon sapi") {
+		t.Fatalf("reason = %q", msg)
+	}
+	if !strings.Contains(msg, "Insiden") {
+		t.Fatalf("should point to Insiden tab, got %q", msg)
+	}
+}
+
+func TestRoutingLoopRejectedReason_missingFocusedTurn(t *testing.T) {
+	r := &AnalyzeConversationResult{FocusInboundID: "deleted-id"}
+	msg := RoutingLoopRejectedReason(r)
+	if !strings.Contains(msg, "tidak ada di percakapan") {
+		t.Fatalf("reason = %q", msg)
+	}
+}
+
+func TestRoutingLoopRejectedReason_focusFoundSamePath(t *testing.T) {
+	r := &AnalyzeConversationResult{
+		FocusInboundID: "in-status",
+		FocusFound:     true,
+	}
+	msg := RoutingLoopRejectedReason(r)
+	if !strings.Contains(msg, "Insiden") {
+		t.Fatalf("reason = %q", msg)
+	}
+	if strings.Contains(msg, "tidak ada di percakapan") {
+		t.Fatalf("matched turn must not look deleted: %q", msg)
+	}
+}
+
+func TestCompareConversationRoutes_llmGroundedSkipped(t *testing.T) {
+	sim := newOmahSimulator()
+	messages := []TriageMessage{
+		{ID: "in-abon", Direction: "in", Body: "hah ? nambah abon sapi 125 gram 1"},
+		{ID: "out-abon", Direction: "out", Metadata: mustMetaPath(t, PathLLMGrounded)},
+	}
+	result := CompareConversationRoutes(sim, messages, "in-abon")
+	if !result.FocusFound {
+		t.Fatal("expected focusFound")
+	}
+	if len(result.Mismatches) != 1 || !result.Mismatches[0].Skipped {
+		t.Fatalf("want skipped llm_grounded, got %+v", result.Mismatches)
+	}
+	if result.Mismatches[0].SkipReason != "non_deterministic_path" {
+		t.Fatalf("skipReason = %q", result.Mismatches[0].SkipReason)
+	}
+	if CountRegressionMismatches(result.Mismatches) != 0 {
+		t.Fatal("llm_grounded must not emit routing regression")
 	}
 }
 
