@@ -71,6 +71,17 @@ func insertOrLinkIncident(ctx context.Context, in triageincident.Incident, sourc
 		if err != nil {
 			return triageincident.Incident{}, err
 		}
+	} else if len(in.Evidence) > 0 {
+		// New report on the same fingerprint must show THIS turn, not an older sibling in the thread.
+		_, _ = system.DB.Exec(ctx, `
+			UPDATE ai_triage_incident
+			SET evidence_json = $2::jsonb,
+			    draft_contract_json = COALESCE($3::jsonb, draft_contract_json),
+			    updated_at = NOW()
+			WHERE id = $1::uuid
+			  AND review_status IN ('open', 'needs_human_input')`,
+			openID, string(in.Evidence), nullJSON(in.DraftContract),
+		)
 	}
 
 	_, err = system.DB.Exec(ctx, `
@@ -82,6 +93,21 @@ func insertOrLinkIncident(ctx context.Context, in triageincident.Incident, sourc
 		return triageincident.Incident{}, err
 	}
 	return loadIncident(ctx, openID)
+}
+
+func loadIncidentBySource(ctx context.Context, sourceType, sourceID string) (triageincident.Incident, error) {
+	var id string
+	err := system.DB.QueryRow(ctx, `
+		SELECT incident_id::text FROM ai_triage_incident_source
+		WHERE source_type = $1 AND source_id = $2
+		LIMIT 1`, sourceType, sourceID).Scan(&id)
+	if err == sql.ErrNoRows {
+		return triageincident.Incident{}, &errs.Error{Code: errs.NotFound, Message: "insiden belum ada untuk sumber ini"}
+	}
+	if err != nil {
+		return triageincident.Incident{}, err
+	}
+	return loadIncident(ctx, id)
 }
 
 func nullJSON(raw json.RawMessage) any {

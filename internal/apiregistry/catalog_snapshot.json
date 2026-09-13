@@ -1,5 +1,5 @@
 {
-  "count": 367,
+  "count": 368,
   "endpoints": [
     {
       "service": "admin",
@@ -124,7 +124,7 @@
     {
       "service": "admin",
       "file": "admin/ai_triage.go",
-      "line": 225,
+      "line": 228,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/admin/ai-triage/jobs/:id",
@@ -134,7 +134,7 @@
     {
       "service": "admin",
       "file": "admin/ai_triage.go",
-      "line": 244,
+      "line": 247,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/admin/ai-triage/jobs/:id/ai-fix",
@@ -144,7 +144,7 @@
     {
       "service": "admin",
       "file": "admin/ai_triage.go",
-      "line": 312,
+      "line": 315,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/admin/ai-triage/jobs/:id/verify",
@@ -204,7 +204,7 @@
     {
       "service": "admin",
       "file": "admin/ai_triage_report.go",
-      "line": 37,
+      "line": 38,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/admin/ai-triage/reports",
@@ -214,7 +214,7 @@
     {
       "service": "admin",
       "file": "admin/ai_triage_report.go",
-      "line": 58,
+      "line": 59,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/admin/ai-triage/reports/:id",
@@ -224,12 +224,22 @@
     {
       "service": "admin",
       "file": "admin/ai_triage_report.go",
-      "line": 72,
+      "line": 73,
       "access": "auth",
       "method": "PATCH",
       "path": "/api/v1/admin/ai-triage/reports/:id",
       "tag": "super_admin",
       "annotation": "auth method=PATCH path=/api/v1/admin/ai-triage/reports/:id tag:super_admin"
+    },
+    {
+      "service": "admin",
+      "file": "admin/ai_triage_report.go",
+      "line": 99,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/admin/ai-triage/reports/:id/incident",
+      "tag": "super_admin",
+      "annotation": "auth method=POST path=/api/v1/admin/ai-triage/reports/:id/incident tag:super_admin"
     },
     {
       "service": "admin",

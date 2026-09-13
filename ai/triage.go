@@ -72,6 +72,7 @@ type AnalyzeConversationResult struct {
 	TurnsSkipped          int                       `json:"turnsSkipped"`
 	Mismatches            []TriageMismatch          `json:"mismatches"`
 	HasDeterministic      bool                      `json:"hasDeterministicMismatch"`
+	FocusFound            bool                      `json:"focusFound,omitempty"`
 	RegressionFailures    []TriageRegressionFailure `json:"regressionFailures,omitempty"`
 	FixHints              *TriageFixHints           `json:"fixHints,omitempty"`
 	SimulatorSnapshot     *TriageSimulatorSnapshot  `json:"simulatorSnapshot,omitempty"`
@@ -209,9 +210,8 @@ func fetchTriageMessagesAnchored(ctx context.Context, ts tenantScopedQuerier, co
 	if err != nil {
 		return nil, err
 	}
-	if len(msgs) == 0 {
-		return fetchTriageMessagesTail(ctx, ts, conversationID, maxMessages)
-	}
+	// Missing anchor (hard-deleted inbound) must not fall back to the conversation tail —
+	// that would analyze sibling turns and surface the wrong pair in the same thread.
 	return msgs, nil
 }
 
@@ -249,6 +249,9 @@ func CompareConversationRoutes(sim *ConversationSimulator, messages []TriageMess
 		}
 		if focusInboundID != "" && msg.ID != focusInboundID {
 			continue
+		}
+		if focusInboundID != "" {
+			result.FocusFound = true
 		}
 
 		userText := strings.TrimSpace(msg.Body)
@@ -397,6 +400,66 @@ func CountRegressionMismatches(mismatches []TriageMismatch) int {
 		}
 	}
 	return n
+}
+
+func mismatchForInbound(mismatches []TriageMismatch, inboundID string) *TriageMismatch {
+	inboundID = strings.TrimSpace(inboundID)
+	if inboundID == "" {
+		return nil
+	}
+	for i := range mismatches {
+		if mismatches[i].InboundID == inboundID {
+			return &mismatches[i]
+		}
+	}
+	return nil
+}
+
+// RoutingLoopRejectedReason explains why a focused (or empty) analyze must not
+// open a forensic routing job — especially when the reported turn is llm_grounded.
+func RoutingLoopRejectedReason(result *AnalyzeConversationResult) string {
+	if result == nil || CountRegressionMismatches(result.Mismatches) > 0 {
+		return ""
+	}
+	focus := strings.TrimSpace(result.FocusInboundID)
+	if focus == "" {
+		return ""
+	}
+	if !result.FocusFound {
+		return "turn yang diminta tidak ada di percakapan (pesan mungkin sudah dihapus). Loop tidak boleh memakai turn lain dalam thread yang sama."
+	}
+	m := mismatchForInbound(result.Mismatches, focus)
+	if m != nil && m.Skipped && m.SkipReason == "non_deterministic_path" {
+		return fmt.Sprintf(
+			"turn yang dilaporkan %q path=%s — loop routing tidak menilai isi katalog/SKU/teks. Buka tab Insiden; jangan Jalankan loop percakapan.",
+			previewText(m.UserText, 80),
+			m.ActualPath,
+		)
+	}
+	if m != nil && m.Skipped {
+		return fmt.Sprintf(
+			"turn %q dilewati (%s). Loop routing tidak menilai turn ini.",
+			previewText(m.UserText, 80),
+			m.SkipReason,
+		)
+	}
+	path := ""
+	text := ""
+	if m != nil {
+		path = m.ActualPath
+		text = m.UserText
+	}
+	if path == "" {
+		path = "sama di WhatsApp dan simulator"
+	}
+	if text == "" {
+		text = focus
+	}
+	return fmt.Sprintf(
+		"turn %q path %s — bukan mismatch routing. Bug isi (katalog/SKU/teks) → tab Insiden; jangan Jalankan loop percakapan.",
+		previewText(text, 80),
+		path,
+	)
 }
 
 // GenerateRegressionCases emits Go source for conversation_regression_auto_gen_test.go.

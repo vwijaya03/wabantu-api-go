@@ -1,8 +1,8 @@
 {
   "total_services": 29,
-  "total_endpoints": 367,
+  "total_endpoints": 368,
   "services": {
-    "admin": 41,
+    "admin": 42,
     "ai": 3,
     "analytics": 1,
     "audit": 2,

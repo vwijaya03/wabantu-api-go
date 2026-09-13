@@ -188,9 +188,12 @@ func CreateAITriageJob(ctx context.Context, p *CreateAITriageJobParams) (*Create
 		return nil, &errs.Error{Code: errs.Internal, Message: "analyze conversation failed"}
 	}
 	if ai.CountRegressionMismatches(analysis.Mismatches) == 0 {
-		msg := "tidak ada mismatch path (WhatsApp metadata.path vs simulator). force=true hanya melewati job duplikat, bukan gerbang ini. Bug isi keranjang/SKU tetap order_flow di kedua sisi — perbaiki parse, jangan Jalankan loop. Sukses routing = Verifikasi fix (simulator vs golden wantPath)."
-		if analysis.HasDeterministic {
+		msg := ai.RoutingLoopRejectedReason(analysis)
+		if msg == "" && analysis.HasDeterministic {
 			msg = "ada mismatch forensic, tapi wantPath tidak dipercaya (daftar order tidak boleh di-lock sebagai consulting). Jangan buat tes. Sukses = Verifikasi fix setelah routing benar."
+		}
+		if msg == "" {
+			msg = "tidak ada mismatch path (WhatsApp metadata.path vs simulator). force=true hanya melewati job duplikat, bukan gerbang ini. Bug isi keranjang/SKU tetap order_flow di kedua sisi — perbaiki parse, jangan Jalankan loop. Sukses routing = Verifikasi fix (simulator vs golden wantPath)."
 		}
 		return nil, &errs.Error{Code: errs.InvalidArgument, Message: msg}
 	}
