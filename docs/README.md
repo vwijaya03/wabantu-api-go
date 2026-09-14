@@ -2,6 +2,8 @@
 
 Peta navigasi untuk menjawab pertanyaan tentang backend WABantu. Mulai dari sini jika tidak tahu file mana yang harus dibuka.
 
+**Agent:** skill `wabantu-docs` — baca indeks ini dan [docs-development-shipped/](../docs-development-shipped/) sebelum menulis plan baru atau mengklaim fitur belum ada.
+
 **Dokumen kanonik routing WhatsApp → AI:** [WHATSAPP_AI_ROUTING.md](./WHATSAPP_AI_ROUTING.md)
 
 **Fitur sudah rilis (bukan roadmap):** [docs-development-shipped/](../docs-development-shipped/)

@@ -2,6 +2,8 @@
 
 Folder ini berisi **catatan implementasi** fitur yang sudah (atau sedang) di-merge — bukan spesifikasi/roadmap.
 
+**Agent:** skill `wabantu-docs`. File di sini **bukan** otomatis produksi — baca baris **Status** (contoh: `ai-image-context.md` masih planned).
+
 | Folder / file | Isi |
 |---------------|-----|
 | [`docs/`](../docs/) | Spesifikasi, riset, roadmap (belum tentu sudah di-build) |
