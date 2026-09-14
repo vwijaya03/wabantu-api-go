@@ -22,12 +22,12 @@ type InternalGetAITriageJobResponse struct {
 
 // CompleteAITriageJobParams updates job status after GHA finishes.
 type CompleteAITriageJobParams struct {
-	Status               string                        `json:"status"`
-	PRURL                string                        `json:"prUrl,omitempty"`
-	GitHubRunURL         string                        `json:"githubRunUrl,omitempty"`
-	ErrorText            string                        `json:"errorText,omitempty"`
-	RegressionFailures   []ai.TriageRegressionFailure  `json:"regressionFailures,omitempty"`
-	CursorAgentID        string                        `json:"cursorAgentId,omitempty"`
+	Status                string                       `json:"status"`
+	PRURL                 string                       `json:"prUrl,omitempty"`
+	GitHubRunURL          string                       `json:"githubRunUrl,omitempty"`
+	ErrorText             string                       `json:"errorText,omitempty"`
+	RegressionFailures    []ai.TriageRegressionFailure `json:"regressionFailures,omitempty"`
+	CursorAgentID         string                       `json:"cursorAgentId,omitempty"`
 	CursorFixGitHubRunURL string                       `json:"cursorFixGithubRunUrl,omitempty"`
 }
 
@@ -159,7 +159,10 @@ func triageJobIDFromPath(req *http.Request) string {
 	}
 	parts := strings.Split(strings.Trim(req.URL.Path, "/"), "/")
 	for i, p := range parts {
-		if p != "jobs" || i+1 >= len(parts) {
+		if i+1 >= len(parts) {
+			continue
+		}
+		if p != "jobs" && p != "behavior-jobs" {
 			continue
 		}
 		id := strings.TrimSpace(parts[i+1])

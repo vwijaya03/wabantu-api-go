@@ -13,6 +13,9 @@ func TestTriageJobIDFromPath(t *testing.T) {
 	}{
 		{"/api/v1/internal/ai-triage/jobs/1cd46c91-0d57-4ce1-acd8-3f1713fa7dad", "1cd46c91-0d57-4ce1-acd8-3f1713fa7dad"},
 		{"/api/v1/internal/ai-triage/jobs/1cd46c91-0d57-4ce1-acd8-3f1713fa7dad/complete", "1cd46c91-0d57-4ce1-acd8-3f1713fa7dad"},
+		{"/api/v1/internal/ai-triage/behavior-jobs/f7168625-1823-4dc2-8eb2-d6d7e248b2b4", "f7168625-1823-4dc2-8eb2-d6d7e248b2b4"},
+		{"/api/v1/internal/ai-triage/behavior-jobs/f7168625-1823-4dc2-8eb2-d6d7e248b2b4/complete", "f7168625-1823-4dc2-8eb2-d6d7e248b2b4"},
+		{"/api/v1/internal/ai-triage/behavior-jobs/", ""},
 		{"/api/v1/internal/ai-triage/jobs/", ""},
 		{"/api/v1/internal/ai-triage/jobs", ""},
 	}

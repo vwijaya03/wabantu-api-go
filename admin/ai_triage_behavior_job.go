@@ -16,18 +16,21 @@ import (
 )
 
 const (
-	behaviorStatusPlanning      = "planning"
-	behaviorStatusNeedsHuman    = "needs_human_input"
-	behaviorStatusNeedsCustomer = "needs_customer_input"
-	behaviorStatusTestReady     = "test_ready"
-	behaviorStatusFixRunning    = "fix_running"
-	behaviorStatusPRReady       = "pr_ready"
-	behaviorStatusAlreadyFixed  = "already_fixed"
-	behaviorStatusVerifyPending = "verify_pending"
-	behaviorStatusVerified      = "verified"
-	behaviorStatusFailed        = "failed"
-	behaviorMaxAttempts         = 2
-	behaviorWorkflowFile        = "ai-triage-behavior-fix.yml"
+	behaviorStatusPlanning         = "planning"
+	behaviorStatusNeedsHuman       = "needs_human_input"
+	behaviorStatusNeedsCustomer    = "needs_customer_input"
+	behaviorStatusTestReady        = "test_ready"
+	behaviorStatusFixRunning       = "fix_running"
+	behaviorStatusPRReady          = "pr_ready"
+	behaviorStatusAlreadyFixed     = "already_fixed"
+	behaviorStatusVerifyPending    = "verify_pending"
+	behaviorStatusVerified         = "verified"
+	behaviorStatusFailed           = "failed"
+	behaviorMaxAttempts            = 2
+	behaviorWorkflowFile           = "ai-triage-behavior-fix.yml"
+	behaviorStaleNoCallbackAfter   = 3 * time.Minute
+	behaviorStaleWithCallbackAfter = 50 * time.Minute
+	behaviorStuckErrorText         = "GitHub Actions tidak mengembalikan hasil. Buka GitHub Actions, lalu Coba Composer lagi."
 )
 
 // AITriageBehaviorJob is the code-fix track (separate from legacy routing jobs).
@@ -63,6 +66,7 @@ func GetAITriageBehaviorJob(ctx context.Context, id string) (*GetAITriageBehavio
 	if _, err := requireSuperAdmin(ctx); err != nil {
 		return nil, err
 	}
+	maybeReclaimStaleBehaviorJobs(ctx)
 	job, err := loadBehaviorJob(ctx, strings.TrimSpace(id))
 	if err != nil {
 		return nil, err
@@ -81,15 +85,22 @@ func RetryAITriageBehaviorJob(ctx context.Context, id string) (*RetryAITriageBeh
 	if _, err := requireSuperAdmin(ctx); err != nil {
 		return nil, err
 	}
+	maybeReclaimStaleBehaviorJobs(ctx)
 	job, err := loadBehaviorJob(ctx, strings.TrimSpace(id))
 	if err != nil {
 		return nil, err
 	}
-	if !canRetryBehaviorJob(job.Status, job.AttemptCount) {
-		if job.AttemptCount >= behaviorMaxAttempts {
-			return nil, &errs.Error{Code: errs.FailedPrecondition, Message: "batas percobaan Composer tercapai"}
+	if behaviorJobStuck(job.Status, job.GitHubRunURL, job.UpdatedAt, time.Now().UTC()) {
+		if err := markBehaviorJobStuckFailed(ctx, job.ID); err != nil {
+			return nil, err
 		}
-		return nil, &errs.Error{Code: errs.FailedPrecondition, Message: "retry hanya untuk failed atau pr_ready"}
+		job, err = loadBehaviorJob(ctx, job.ID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if msg := behaviorJobRetryBlockedMessage(job, time.Now().UTC()); msg != "" {
+		return nil, &errs.Error{Code: errs.FailedPrecondition, Message: msg}
 	}
 	if err := dispatchBehaviorFixWorkflow(ctx, job.ID, job.TenantSchema); err != nil {
 		return nil, &errs.Error{Code: errs.Unavailable, Message: composerDispatchUnavailableMessage(err)}
@@ -106,6 +117,87 @@ func canRetryBehaviorJob(status string, attempts int) bool {
 		return false
 	}
 	return status == behaviorStatusFailed || status == behaviorStatusPRReady
+}
+
+func behaviorJobInFlight(status string) bool {
+	return status == behaviorStatusFixRunning || status == behaviorStatusTestReady || status == behaviorStatusPlanning
+}
+
+func behaviorJobStuck(status, runURL string, updatedAt, now time.Time) bool {
+	if !behaviorJobInFlight(status) {
+		return false
+	}
+	age := now.Sub(updatedAt)
+	if strings.TrimSpace(runURL) == "" {
+		return age >= behaviorStaleNoCallbackAfter
+	}
+	return age >= behaviorStaleWithCallbackAfter
+}
+
+func behaviorJobRetryBlockedMessage(job AITriageBehaviorJob, now time.Time) string {
+	if job.AttemptCount >= behaviorMaxAttempts {
+		return "batas percobaan Composer tercapai"
+	}
+	if behaviorJobStuck(job.Status, job.GitHubRunURL, job.UpdatedAt, now) {
+		return ""
+	}
+	if behaviorJobInFlight(job.Status) {
+		return "Composer masih berjalan di GitHub Actions. Buka tab Actions, atau tunggu sampai selesai."
+	}
+	if !canRetryBehaviorJob(job.Status, job.AttemptCount) {
+		return "retry hanya untuk failed atau pr_ready"
+	}
+	return ""
+}
+
+func maybeReclaimStaleBehaviorJobs(ctx context.Context) {
+	n, err := reclaimStaleBehaviorJobs(ctx)
+	if err != nil {
+		rlog.Warn("reclaim stale behavior jobs failed", "err", err)
+		return
+	}
+	if n > 0 {
+		rlog.Info("reclaimed stale behavior jobs", "count", n)
+	}
+}
+
+func reclaimStaleBehaviorJobs(ctx context.Context) (int, error) {
+	now := time.Now().UTC()
+	noURLCutoff := now.Add(-behaviorStaleNoCallbackAfter)
+	withURLCutoff := now.Add(-behaviorStaleWithCallbackAfter)
+	res, err := system.DB.Exec(ctx, `
+		UPDATE ai_triage_behavior_job
+		SET status = $1,
+		    error_text = COALESCE(NULLIF(error_text, ''), $2),
+		    updated_at = now(),
+		    completed_at = now()
+		WHERE status IN ($3, $4, $5)
+		  AND (
+		    (COALESCE(github_run_url, '') = '' AND updated_at < $6)
+		    OR (COALESCE(github_run_url, '') <> '' AND updated_at < $7)
+		  )`,
+		behaviorStatusFailed,
+		behaviorStuckErrorText,
+		behaviorStatusFixRunning, behaviorStatusTestReady, behaviorStatusPlanning,
+		noURLCutoff, withURLCutoff,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return int(res.RowsAffected()), nil
+}
+
+func markBehaviorJobStuckFailed(ctx context.Context, id string) error {
+	_, err := system.DB.Exec(ctx, `
+		UPDATE ai_triage_behavior_job
+		SET status = $2,
+		    error_text = COALESCE(NULLIF(error_text, ''), $3),
+		    updated_at = now(),
+		    completed_at = now()
+		WHERE id = $1::uuid AND status IN ($4, $5, $6)`,
+		id, behaviorStatusFailed, behaviorStuckErrorText,
+		behaviorStatusFixRunning, behaviorStatusTestReady, behaviorStatusPlanning)
+	return err
 }
 
 func composerDispatchUnavailableMessage(err error) string {
@@ -158,7 +250,7 @@ func loadBehaviorJob(ctx context.Context, id string) (AITriageBehaviorJob, error
 		&j.Status, &j.Contract, &hash, &runID, &runURL, &pr,
 		&rev, &errText, &j.AttemptCount, &j.CreatedAt, &j.UpdatedAt,
 	)
-	if err == sql.ErrNoRows {
+	if isNoRows(err) {
 		return AITriageBehaviorJob{}, &errs.Error{Code: errs.NotFound, Message: "behavior job tidak ditemukan"}
 	}
 	if err != nil {

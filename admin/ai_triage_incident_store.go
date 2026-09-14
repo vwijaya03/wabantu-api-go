@@ -168,7 +168,23 @@ func loadIncident(ctx context.Context, id string) (triageincident.Incident, erro
 	inc.BehaviorJobID = jobID.String
 	inc.RepairPlanID = repairID.String
 	inc.Sources, _ = listIncidentSources(ctx, inc.ID)
+	attachBehaviorJobSummary(ctx, &inc)
 	return inc, nil
+}
+
+func attachBehaviorJobSummary(ctx context.Context, inc *triageincident.Incident) {
+	if inc == nil || strings.TrimSpace(inc.BehaviorJobID) == "" {
+		return
+	}
+	job, err := loadBehaviorJob(ctx, inc.BehaviorJobID)
+	if err != nil {
+		return
+	}
+	inc.BehaviorJobStatus = job.Status
+	inc.BehaviorJobError = job.ErrorText
+	inc.BehaviorJobRunURL = job.GitHubRunURL
+	updated := job.UpdatedAt
+	inc.BehaviorJobUpdatedAt = &updated
 }
 
 func listIncidentSources(ctx context.Context, incidentID string) ([]triageincident.Source, error) {

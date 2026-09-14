@@ -57,11 +57,21 @@ jobs:
           fi
 
       - name: Fetch behavior job
+        id: fetch
         run: |
           set -euo pipefail
-          curl -fsS -H "X-Ai-Internal-Token: $AI_INTERNAL_TOKEN" \
-            "$ENCORE_API_URL/api/v1/internal/ai-triage/behavior-jobs/$JOB_ID" \
-            -o /tmp/behavior_job.json
+          code=$(curl -sS -o /tmp/behavior_job.json -w '%{http_code}' \
+            -H "X-Ai-Internal-Token: $AI_INTERNAL_TOKEN" \
+            "$ENCORE_API_URL/api/v1/internal/ai-triage/behavior-jobs/$JOB_ID")
+          echo "GET behavior job HTTP $code"
+          if [ "$code" != "200" ]; then
+            echo "body:" >&2
+            cat /tmp/behavior_job.json >&2 || true
+            if [ "$code" = "404" ]; then
+              echo "Job $JOB_ID tidak ada di Encore staging. Confirm dari UI staging (bukan encore run lokal)." >&2
+            fi
+            exit 1
+          fi
           python3 - <<'PY'
           import json,sys
           p=json.load(open("/tmp/behavior_job.json"))
@@ -178,7 +188,9 @@ jobs:
           echo "pr_url=$PR_URL" >> "$GITHUB_OUTPUT"
 
       - name: Complete Encore job
+        id: complete
         if: always()
+        continue-on-error: true
         run: |
           set -euo pipefail
           if [ "${{ steps.red.outcome }}" = "success" ]; then
@@ -188,11 +200,34 @@ jobs:
           else
             STATUS="failed"
           fi
+          ERR=""
+          if [ "${{ steps.fetch.outcome }}" != "success" ]; then
+            STATUS="failed"
+            ERR="GHA gagal fetch job dari Encore staging. Confirm dari UI staging (bukan encore run lokal), lalu Coba Composer lagi."
+          elif [ ! -s /tmp/behavior_job.json ]; then
+            STATUS="failed"
+            ERR="GHA tidak bisa fetch job dari Encore staging"
+          fi
           BODY=$(jq -n --arg status "$STATUS" --arg pr "${{ steps.pr.outputs.pr_url }}" \
             --arg run "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            --arg rid "${{ github.run_id }}" \
-            '{status:$status, prUrl:$pr, githubRunUrl:$run, githubRunId:$rid}')
-          curl -fsS -X POST -H "X-Ai-Internal-Token: $AI_INTERNAL_TOKEN" \
+            --arg rid "${{ github.run_id }}" --arg err "$ERR" \
+            '{status:$status, prUrl:$pr, githubRunUrl:$run, githubRunId:$rid, errorText:$err}')
+          code=$(curl -sS -o /tmp/complete.json -w '%{http_code}' -X POST \
+            -H "X-Ai-Internal-Token: $AI_INTERNAL_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$BODY" \
-            "$ENCORE_API_URL/api/v1/internal/ai-triage/behavior-jobs/$JOB_ID/complete"
+            "$ENCORE_API_URL/api/v1/internal/ai-triage/behavior-jobs/$JOB_ID/complete")
+          echo "POST complete HTTP $code"
+          cat /tmp/complete.json || true
+          if [ "$code" != "200" ]; then
+            echo "Encore complete gagal HTTP $code — Insiden harus menampilkan Composer gagal, bukan stuck." >&2
+            exit 1
+          fi
+
+      - name: Fail if Encore complete failed
+        if: always()
+        run: |
+          if [ "${{ steps.complete.outcome }}" != "success" ]; then
+            echo "GitHub Actions merah: Encore tidak menerima hasil job. UI Insiden tidak boleh tetap 'sedang jalan'." >&2
+            exit 1
+          fi
