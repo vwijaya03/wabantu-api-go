@@ -277,6 +277,9 @@ func updateBehaviorJobStatus(ctx context.Context, id, status, runID, errText str
 }
 
 func completeBehaviorJob(ctx context.Context, id, status, prURL, runURL, runID, errText string, _ []string) error {
+	if len(runID) > 64 {
+		runID = runID[:64]
+	}
 	res, err := system.DB.Exec(ctx, `
 		UPDATE ai_triage_behavior_job
 		SET status = $2,
@@ -287,7 +290,7 @@ func completeBehaviorJob(ctx context.Context, id, status, prURL, runURL, runID, 
 		    attempt_count = attempt_count + 1,
 		    updated_at = now(),
 		    completed_at = CASE WHEN $2 IN ('pr_ready', 'already_fixed', 'failed', 'verified') THEN now() ELSE completed_at END
-		WHERE id = $1::uuid AND status IN ('fix_running', 'test_ready', 'planning', 'pr_ready', 'already_fixed', 'verify_pending')`,
+		WHERE id = $1::uuid AND status IN ('fix_running', 'test_ready', 'planning', 'pr_ready', 'already_fixed', 'verify_pending', 'failed')`,
 		id, status, prURL, runURL, runID, errText)
 	if err != nil {
 		return err

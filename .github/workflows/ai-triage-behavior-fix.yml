@@ -89,20 +89,43 @@ jobs:
         id: red
         continue-on-error: true
         run: |
+          set -euo pipefail
           chmod +x scripts/run-triage-behavior-tests.sh
           ./scripts/run-triage-behavior-tests.sh 2>&1 | tee /tmp/behavior_red.log
 
+      - name: Classify RED
+        id: redclass
+        if: always()
+        run: |
+          set -euo pipefail
+          log=/tmp/behavior_red.log
+          kind=unknown
+          if [ ! -s "$log" ]; then
+            kind=missing
+          elif grep -qE 'import cycle|setup failed|build failed|build constraints exclude all' "$log"; then
+            kind=compile_error
+          elif grep -qE '^FAIL|^--- FAIL' "$log"; then
+            kind=test_fail
+          elif grep -qE '^ok |^PASS' "$log"; then
+            kind=pass
+          fi
+          echo "kind=$kind" >> "$GITHUB_OUTPUT"
+          echo "RED classification: $kind"
+          if [ -s "$log" ]; then
+            tail -n 40 "$log"
+          fi
+
       - name: Install Cursor SDK
-        if: steps.red.outcome == 'failure'
+        if: steps.redclass.outputs.kind == 'test_fail'
         working-directory: tools/ai-triage-runner
         run: npm ci
 
       - name: Install ripgrep for Cursor SDK
-        if: steps.red.outcome == 'failure'
+        if: steps.redclass.outputs.kind == 'test_fail'
         run: sudo apt-get update && sudo apt-get install -y ripgrep
 
       - name: Composer fix
-        if: steps.red.outcome == 'failure'
+        if: steps.redclass.outputs.kind == 'test_fail'
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
           TRIAGE_JOB_JSON: /tmp/behavior_job.json
@@ -115,6 +138,7 @@ jobs:
           node tools/ai-triage-runner/triage-behavior-cursor-fix.mjs
 
       - name: Allowlist guard
+        if: always() && steps.fetch.outcome == 'success'
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -142,14 +166,16 @@ jobs:
 
       - name: Targeted tests
         id: green
+        if: steps.redclass.outputs.kind == 'test_fail'
         continue-on-error: true
         run: |
+          set -euo pipefail
           chmod +x scripts/run-triage-behavior-tests.sh
           ./scripts/run-triage-behavior-tests.sh 2>&1 | tee /tmp/behavior_green.log
 
       - name: Draft PR from allowlist
         id: pr
-        if: steps.red.outcome == 'failure'
+        if: steps.redclass.outputs.kind == 'test_fail'
         env:
           GITHUB_PAT: ${{ secrets.GITHUB_PAT }}
         run: |
@@ -190,23 +216,26 @@ jobs:
       - name: Complete Encore job
         id: complete
         if: always()
-        continue-on-error: true
         run: |
           set -euo pipefail
-          if [ "${{ steps.red.outcome }}" = "success" ]; then
-            STATUS="already_fixed"
-          elif [ "${{ steps.green.outcome }}" = "success" ]; then
-            STATUS="pr_ready"
-          else
-            STATUS="failed"
-          fi
+          KIND="${{ steps.redclass.outputs.kind }}"
+          STATUS="failed"
           ERR=""
           if [ "${{ steps.fetch.outcome }}" != "success" ]; then
-            STATUS="failed"
             ERR="GHA gagal fetch job dari Encore staging. Confirm dari UI staging (bukan encore run lokal), lalu Coba Composer lagi."
-          elif [ ! -s /tmp/behavior_job.json ]; then
-            STATUS="failed"
-            ERR="GHA tidak bisa fetch job dari Encore staging"
+          elif [ "$KIND" = "pass" ]; then
+            STATUS="already_fixed"
+          elif [ "$KIND" = "test_fail" ] && [ "${{ steps.green.outcome }}" = "success" ]; then
+            STATUS="pr_ready"
+          elif [ "$KIND" = "compile_error" ]; then
+            ERR="$(tr '\n' ' ' < /tmp/behavior_red.log | cut -c1-1500)"
+            ERR="Tes behavior tidak compile (import cycle / setup failed). ${ERR}"
+          elif [ -s /tmp/behavior_red.log ]; then
+            ERR="$(tr '\n' ' ' < /tmp/behavior_red.log | cut -c1-1500)"
+          elif [ -s /tmp/behavior_green.log ]; then
+            ERR="$(tr '\n' ' ' < /tmp/behavior_green.log | cut -c1-1500)"
+          else
+            ERR="GitHub Actions behavior job gagal (kind=${KIND:-unknown})."
           fi
           BODY=$(jq -n --arg status "$STATUS" --arg pr "${{ steps.pr.outputs.pr_url }}" \
             --arg run "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
@@ -217,17 +246,26 @@ jobs:
             -H "Content-Type: application/json" \
             -d "$BODY" \
             "$ENCORE_API_URL/api/v1/internal/ai-triage/behavior-jobs/$JOB_ID/complete")
-          echo "POST complete HTTP $code"
+          echo "POST complete HTTP $code status=$STATUS kind=$KIND"
           cat /tmp/complete.json || true
           if [ "$code" != "200" ]; then
-            echo "Encore complete gagal HTTP $code — Insiden harus menampilkan Composer gagal, bukan stuck." >&2
+            echo "Encore complete gagal HTTP $code" >&2
             exit 1
           fi
 
-      - name: Fail if Encore complete failed
+      - name: Fail unless RED passed or green PR ready
         if: always()
         run: |
+          KIND="${{ steps.redclass.outputs.kind }}"
           if [ "${{ steps.complete.outcome }}" != "success" ]; then
-            echo "GitHub Actions merah: Encore tidak menerima hasil job. UI Insiden tidak boleh tetap 'sedang jalan'." >&2
+            echo "Encore tidak menerima hasil job." >&2
             exit 1
           fi
+          if [ "$KIND" = "pass" ]; then
+            exit 0
+          fi
+          if [ "$KIND" = "test_fail" ] && [ "${{ steps.green.outcome }}" = "success" ]; then
+            exit 0
+          fi
+          echo "Behavior job tidak lulus (kind=$KIND). Jangan anggap already_fixed." >&2
+          exit 1
