@@ -227,11 +227,7 @@ func listIncidents(ctx context.Context, tenantID, channel, review string, limit 
 		args = append(args, channel)
 		n++
 	}
-	if review != "" {
-		q += ` AND review_status = $` + strconv.Itoa(n)
-		args = append(args, review)
-		n++
-	}
+	q, args, n = appendIncidentReviewFilter(q, args, n, review)
 	q += ` ORDER BY created_at DESC LIMIT $` + strconv.Itoa(n)
 	args = append(args, limit)
 	rows, err := system.DB.Query(ctx, q, args...)
@@ -256,6 +252,16 @@ func listIncidents(ctx context.Context, tenantID, channel, review string, limit 
 		out = append(out, inc)
 	}
 	return out, nil
+}
+
+func appendIncidentReviewFilter(q string, args []any, n int, review string) (string, []any, int) {
+	review = strings.TrimSpace(review)
+	if review == "" {
+		return q + ` AND review_status <> 'dismissed'`, args, n
+	}
+	q += ` AND review_status = $` + strconv.Itoa(n)
+	args = append(args, review)
+	return q, args, n + 1
 }
 
 func updateIncidentReview(ctx context.Context, id, status string, contract json.RawMessage, reviewedBy string) (triageincident.Incident, error) {
