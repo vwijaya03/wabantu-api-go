@@ -58,25 +58,29 @@ var ValidLanes = map[string]bool{
 
 // Incident is the unified self-healing case (system DB).
 type Incident struct {
-	ID                string          `json:"id"`
-	TenantID          string          `json:"tenantId"`
-	TenantSchema      string          `json:"tenantSchema"`
-	Channel           string          `json:"channel"`
-	Fingerprint       string          `json:"fingerprint"`
-	CrossChannelKey   string          `json:"crossChannelKey,omitempty"`
-	ReviewStatus      string          `json:"reviewStatus"`
-	ResolutionStatus  string          `json:"resolutionStatus"`
-	Lane              string          `json:"lane,omitempty"`
-	DegradedMode      string          `json:"degradedMode,omitempty"`
-	EvidenceVersion   int             `json:"evidenceVersion"`
-	Evidence          json.RawMessage `json:"evidence,omitempty"`
-	DraftContract     json.RawMessage `json:"draftContract,omitempty"`
-	ConfirmedContract json.RawMessage `json:"confirmedContract,omitempty"`
-	BehaviorJobID     string          `json:"behaviorJobId,omitempty"`
-	RepairPlanID      string          `json:"repairPlanId,omitempty"`
-	CreatedAt         time.Time       `json:"createdAt"`
-	UpdatedAt         time.Time       `json:"updatedAt"`
-	Sources           []Source        `json:"sources,omitempty"`
+	ID                   string          `json:"id"`
+	TenantID             string          `json:"tenantId"`
+	TenantSchema         string          `json:"tenantSchema"`
+	Channel              string          `json:"channel"`
+	Fingerprint          string          `json:"fingerprint"`
+	CrossChannelKey      string          `json:"crossChannelKey,omitempty"`
+	ReviewStatus         string          `json:"reviewStatus"`
+	ResolutionStatus     string          `json:"resolutionStatus"`
+	Lane                 string          `json:"lane,omitempty"`
+	DegradedMode         string          `json:"degradedMode,omitempty"`
+	EvidenceVersion      int             `json:"evidenceVersion"`
+	Evidence             json.RawMessage `json:"evidence,omitempty"`
+	DraftContract        json.RawMessage `json:"draftContract,omitempty"`
+	ConfirmedContract    json.RawMessage `json:"confirmedContract,omitempty"`
+	BehaviorJobID        string          `json:"behaviorJobId,omitempty"`
+	BehaviorJobStatus    string          `json:"behaviorJobStatus,omitempty"`
+	BehaviorJobError     string          `json:"behaviorJobError,omitempty"`
+	BehaviorJobRunURL    string          `json:"behaviorJobRunUrl,omitempty"`
+	BehaviorJobUpdatedAt *time.Time      `json:"behaviorJobUpdatedAt,omitempty"`
+	RepairPlanID         string          `json:"repairPlanId,omitempty"`
+	CreatedAt            time.Time       `json:"createdAt"`
+	UpdatedAt            time.Time       `json:"updatedAt"`
+	Sources              []Source        `json:"sources,omitempty"`
 }
 
 // Source is one intake row linked to an incident.

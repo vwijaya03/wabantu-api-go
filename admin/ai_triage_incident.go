@@ -72,6 +72,7 @@ func ListAITriageIncidents(ctx context.Context, p *ListAITriageIncidentsParams) 
 	if p.Channel != "" && !interactionevidence.ValidChannels[interactionevidence.Channel(p.Channel)] {
 		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "channel tidak valid"}
 	}
+	maybeReclaimStaleBehaviorJobs(ctx)
 	items, err := listIncidents(ctx, p.TenantID, p.Channel, p.Status, p.Limit)
 	if err != nil {
 		return nil, &errs.Error{Code: errs.Internal, Message: "gagal memuat insiden"}
@@ -86,6 +87,7 @@ func GetAITriageIncident(ctx context.Context, id string) (*GetAITriageIncidentRe
 	if _, err := requireSuperAdmin(ctx); err != nil {
 		return nil, err
 	}
+	maybeReclaimStaleBehaviorJobs(ctx)
 	inc, err := loadIncident(ctx, strings.TrimSpace(id))
 	if err != nil {
 		return nil, err

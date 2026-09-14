@@ -33,9 +33,10 @@ func GetInternalAITriageBehaviorJob(w http.ResponseWriter, req *http.Request) {
 		writeTriageJSONError(w, err)
 		return
 	}
-	id := strings.TrimSpace(req.PathValue("id"))
+	id := triageJobIDFromPath(req)
 	if id == "" {
-		id = triageJobIDFromPath(req)
+		writeTriageJSONError(w, &errs.Error{Code: errs.InvalidArgument, Message: "job id required"})
+		return
 	}
 	job, err := loadBehaviorJob(ctx, id)
 	if err != nil {
@@ -95,9 +96,10 @@ func CompleteInternalAITriageBehaviorJob(w http.ResponseWriter, req *http.Reques
 		writeTriageJSONError(w, err)
 		return
 	}
-	id := strings.TrimSpace(req.PathValue("id"))
+	id := triageJobIDFromPath(req)
 	if id == "" {
-		id = triageJobIDFromPath(req)
+		writeTriageJSONError(w, &errs.Error{Code: errs.InvalidArgument, Message: "job id required"})
+		return
 	}
 	body, err := io.ReadAll(io.LimitReader(req.Body, 1<<20))
 	if err != nil {
