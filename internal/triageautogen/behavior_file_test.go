@@ -1,6 +1,8 @@
 package triageautogen
 
 import (
+	"go/parser"
+	"go/token"
 	"strings"
 	"testing"
 )
@@ -15,8 +17,14 @@ func TestBuildBehaviorTestFileEscapesCustomerText(t *testing.T) {
 		nil,
 		[]string{"White Coffee"},
 	)
-	if strings.Count(src, "package buyerflow") != 1 {
-		t.Fatal("customer text must not inject another package clause")
+	if strings.Count(src, "package buyerflow_test") != 1 {
+		t.Fatal("generated test must use external test package buyerflow_test")
+	}
+	if strings.Contains(src, "package buyerflow\n") {
+		t.Fatal("package buyerflow would import-cycle with triageassert")
+	}
+	if !strings.Contains(src, "buyerflow.NewOmahSimulator()") {
+		t.Fatal("external tests must call buyerflow.NewOmahSimulator")
 	}
 	if !strings.Contains(src, `saya mau \"durian\"`) {
 		t.Fatalf("expected quoted customer text, got:\n%s", src)
@@ -32,5 +40,13 @@ func TestBuildBehaviorTestFileEscapesCustomerText(t *testing.T) {
 	}
 	if strings.Contains(src, "func TestRegressionAutoGen") {
 		t.Fatal("behavior tests must not use TestRegressionAutoGen — that filter would skip them")
+	}
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "regression_behavior_x_test.go", src, 0)
+	if err != nil {
+		t.Fatalf("generated test must parse: %v\n%s", err, src)
+	}
+	if f.Name.Name != "buyerflow_test" {
+		t.Fatalf("package %s", f.Name.Name)
 	}
 }

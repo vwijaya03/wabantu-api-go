@@ -119,7 +119,8 @@ func CompleteInternalAITriageBehaviorJob(w http.ResponseWriter, req *http.Reques
 		return
 	}
 	if err := completeBehaviorJob(ctx, id, status, p.PRURL, p.GitHubRunURL, p.GitHubRunID, p.ErrorText, nil); err != nil {
-		writeTriageJSONError(w, &errs.Error{Code: errs.Internal, Message: "update job failed"})
+		rlog.Error("complete behavior job failed", "jobId", id, "status", status, "err", err)
+		writeTriageJSONError(w, &errs.Error{Code: errs.Internal, Message: "update job failed: " + err.Error()})
 		return
 	}
 	rlog.Info("behavior job completed", "jobId", id, "status", status)

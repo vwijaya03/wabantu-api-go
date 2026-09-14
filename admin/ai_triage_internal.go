@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/google/uuid"
+
 	"encore.dev/beta/errs"
 	"encore.dev/rlog"
 
@@ -154,8 +156,8 @@ func patchTriageJobAnalysis(ctx context.Context, jobID string, failures []ai.Tri
 }
 
 func triageJobIDFromPath(req *http.Request) string {
-	if v := strings.TrimSpace(req.PathValue("id")); v != "" {
-		return v
+	if id := triagePathUUID(req.PathValue("id")); id != "" {
+		return id
 	}
 	parts := strings.Split(strings.Trim(req.URL.Path, "/"), "/")
 	for i, p := range parts {
@@ -165,13 +167,23 @@ func triageJobIDFromPath(req *http.Request) string {
 		if p != "jobs" && p != "behavior-jobs" {
 			continue
 		}
-		id := strings.TrimSpace(parts[i+1])
-		if id == "" || id == "complete" {
-			continue
+		if id := triagePathUUID(parts[i+1]); id != "" {
+			return id
 		}
-		return id
 	}
 	return ""
+}
+
+func triagePathUUID(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" || s == "complete" {
+		return ""
+	}
+	id, err := uuid.Parse(s)
+	if err != nil {
+		return ""
+	}
+	return id.String()
 }
 
 func assertTriageInternalToken(token string) error {

@@ -2,7 +2,6 @@ package admin
 
 import (
 	"net/http/httptest"
-	"strings"
 	"testing"
 )
 
@@ -30,17 +29,28 @@ func TestTriageJobIDFromPath(t *testing.T) {
 }
 
 func TestTriageJobIDFromPath_prefersPathValue(t *testing.T) {
+	const id = "1cd46c91-0d57-4ce1-acd8-3f1713fa7dad"
 	req := httptest.NewRequest("GET", "/api/v1/internal/ai-triage/jobs/wrong", nil)
-	req.SetPathValue("id", "from-path-value")
-	if got := triageJobIDFromPath(req); got != "from-path-value" {
-		t.Fatalf("got %q want from-path-value", got)
+	req.SetPathValue("id", id)
+	if got := triageJobIDFromPath(req); got != id {
+		t.Fatalf("got %q want %s", got, id)
+	}
+}
+
+func TestTriageJobIDFromPath_ignoresPathValueComplete(t *testing.T) {
+	const id = "f7168625-1823-4dc2-8eb2-d6d7e248b2b4"
+	req := httptest.NewRequest("POST", "/api/v1/internal/ai-triage/behavior-jobs/"+id+"/complete", nil)
+	req.SetPathValue("id", "complete")
+	if got := triageJobIDFromPath(req); got != id {
+		t.Fatalf("PathValue complete must fall back to UUID in URL, got %q", got)
 	}
 }
 
 func TestTriageJobIDFromPath_stripsCompleteSuffix(t *testing.T) {
-	req := httptest.NewRequest("POST", "/jobs/"+strings.Repeat("a", 36)+"/complete", nil)
+	const id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+	req := httptest.NewRequest("POST", "/jobs/"+id+"/complete", nil)
 	got := triageJobIDFromPath(req)
-	if got != strings.Repeat("a", 36) {
+	if got != id {
 		t.Fatalf("got %q", got)
 	}
 }
