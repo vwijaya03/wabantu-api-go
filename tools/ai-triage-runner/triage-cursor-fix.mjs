@@ -7,6 +7,12 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const COMPLEXITY_RULES = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), "complexity-rules.md"),
+  "utf8",
+);
 
 // SDK reads CURSOR_RIPGREP_PATH during module init — must be set before import.
 const rgPath = resolveRipgrepPath();
@@ -137,6 +143,9 @@ function buildPrompt(job, analysis) {
 - Minimal diff; match existing Go patterns; standard testing package only (no testify)
 - Do NOT run shell commands (no encore test) — CI runs regression after this step
 - Do NOT modify test files, snapshots, or triageAutoGenSnapshotJSON*
+
+## Complexity
+${COMPLEXITY_RULES}
 
 ## Job
 - id: ${job.id || ""}
