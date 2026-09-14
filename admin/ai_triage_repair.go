@@ -293,9 +293,14 @@ func insertRepairPlan(ctx context.Context, plan AITriageRepairPlan) (AITriageRep
 
 func loadRepairPlan(ctx context.Context, id string) (AITriageRepairPlan, error) {
 	var p AITriageRepairPlan
+	parsed, err := requireTriageUUID(id)
+	if err != nil {
+		return p, err
+	}
+	id = parsed
 	var orderID, approved, reasons sql.NullString
 	var applied sql.NullTime
-	err := system.DB.QueryRow(ctx, `
+	err = system.DB.QueryRow(ctx, `
 		SELECT id::text, incident_id::text, tenant_id::text, tenant_schema, operation, status,
 		       target_order_id::text, array_to_string(block_reasons, ','), before_json, after_json,
 		       before_hash, after_hash, approved_by::text, applied_at, apply_result, created_at, updated_at
