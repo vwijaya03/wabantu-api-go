@@ -1,8 +1,11 @@
 package admin
 
 import (
+	"errors"
 	"net/http/httptest"
 	"testing"
+
+	"encore.dev/beta/errs"
 )
 
 func TestTriageJobIDFromPath(t *testing.T) {
@@ -52,5 +55,23 @@ func TestTriageJobIDFromPath_stripsCompleteSuffix(t *testing.T) {
 	got := triageJobIDFromPath(req)
 	if got != id {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestRequireTriageUUID(t *testing.T) {
+	const id = "f7168625-1823-4dc2-8eb2-d6d7e248b2b4"
+	got, err := requireTriageUUID(id)
+	if err != nil || got != id {
+		t.Fatalf("valid uuid: got %q err %v", got, err)
+	}
+	for _, s := range []string{"", "undefined", "null", "complete", "not-a-uuid"} {
+		got, err := requireTriageUUID(s)
+		if got != "" {
+			t.Fatalf("%q: want empty id, got %q", s, got)
+		}
+		var e *errs.Error
+		if !errors.As(err, &e) || e.Code != errs.InvalidArgument {
+			t.Fatalf("%q: want InvalidArgument, got %v", s, err)
+		}
 	}
 }

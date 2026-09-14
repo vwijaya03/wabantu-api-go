@@ -186,6 +186,14 @@ func triagePathUUID(s string) string {
 	return id.String()
 }
 
+func requireTriageUUID(id string) (string, error) {
+	parsed := triagePathUUID(id)
+	if parsed == "" {
+		return "", &errs.Error{Code: errs.InvalidArgument, Message: "id tidak valid"}
+	}
+	return parsed, nil
+}
+
 func assertTriageInternalToken(token string) error {
 	expected := strings.TrimSpace(secrets.AiInternalToken)
 	if expected == "" || token == "" {
