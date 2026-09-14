@@ -257,11 +257,59 @@ func listIncidents(ctx context.Context, tenantID, channel, review string, limit 
 func appendIncidentReviewFilter(q string, args []any, n int, review string) (string, []any, int) {
 	review = strings.TrimSpace(review)
 	if review == "" {
-		return q + ` AND review_status <> 'dismissed'`, args, n
+		return q, args, n
 	}
 	q += ` AND review_status = $` + strconv.Itoa(n)
 	args = append(args, review)
 	return q, args, n + 1
+}
+
+func parseTriageUUIDList(ids []string, max int) ([]string, error) {
+	if max < 1 {
+		max = 50
+	}
+	if len(ids) == 0 {
+		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "ids required"}
+	}
+	if len(ids) > max {
+		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "terlalu banyak id"}
+	}
+	out := make([]string, 0, len(ids))
+	seen := make(map[string]struct{}, len(ids))
+	for _, raw := range ids {
+		id, err := requireTriageUUID(raw)
+		if err != nil {
+			return nil, err
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	if len(out) == 0 {
+		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "ids required"}
+	}
+	return out, nil
+}
+
+func deleteIncidents(ctx context.Context, ids []string) (int, error) {
+	if _, err := system.DB.Exec(ctx, `
+		UPDATE ai_triage_incident SET behavior_job_id = NULL, repair_plan_id = NULL, updated_at = now()
+		WHERE id = ANY($1::uuid[])`, ids); err != nil {
+		return 0, err
+	}
+	if _, err := system.DB.Exec(ctx, `DELETE FROM ai_triage_behavior_job WHERE incident_id = ANY($1::uuid[])`, ids); err != nil {
+		return 0, err
+	}
+	if _, err := system.DB.Exec(ctx, `DELETE FROM ai_triage_repair_plan WHERE incident_id = ANY($1::uuid[])`, ids); err != nil {
+		return 0, err
+	}
+	res, err := system.DB.Exec(ctx, `DELETE FROM ai_triage_incident WHERE id = ANY($1::uuid[])`, ids)
+	if err != nil {
+		return 0, err
+	}
+	return int(res.RowsAffected()), nil
 }
 
 func updateIncidentReview(ctx context.Context, id, status string, contract json.RawMessage, reviewedBy string) (triageincident.Incident, error) {
