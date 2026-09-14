@@ -37,6 +37,7 @@ type ConfirmAITriageIncidentParams struct {
 type ConfirmAITriageIncidentResponse struct {
 	Incident    triageincident.Incident `json:"incident"`
 	BehaviorJob *AITriageBehaviorJob    `json:"behaviorJob,omitempty"`
+	HoldReason  string                  `json:"holdReason,omitempty"`
 }
 
 type DismissAITriageIncidentParams struct {
@@ -132,22 +133,24 @@ func ConfirmAITriageIncident(ctx context.Context, id string, p *ConfirmAITriageI
 		return nil, err
 	}
 	resp := &ConfirmAITriageIncidentResponse{Incident: inc}
-	if contract.Assertions.NeedCustomerInput {
-		_, _ = updateIncidentReview(ctx, inc.ID, triageincident.ReviewNeedsHuman, raw, user.AccountID)
-		inc.ReviewStatus = triageincident.ReviewNeedsHuman
-		inc.ResolutionStatus = triageincident.ResolutionNeedsCust
+	if reason := confirmHoldReason(contract); reason != "" {
+		if reason == holdNeedCustomerInput {
+			_, _ = updateIncidentReview(ctx, inc.ID, triageincident.ReviewNeedsHuman, raw, user.AccountID)
+			_ = setIncidentResolution(ctx, inc.ID, triageincident.ResolutionNeedsCust)
+		} else {
+			_, _ = updateIncidentReview(ctx, inc.ID, triageincident.ReviewNeedsHuman, raw, user.AccountID)
+		}
+		held, loadErr := loadIncident(ctx, inc.ID)
+		if loadErr == nil {
+			inc = held
+		} else {
+			inc.ReviewStatus = triageincident.ReviewNeedsHuman
+			if reason == holdNeedCustomerInput {
+				inc.ResolutionStatus = triageincident.ResolutionNeedsCust
+			}
+		}
 		resp.Incident = inc
-		return resp, nil
-	}
-	if !ai.HasDeterministicInvariant(contract) {
-		_, _ = updateIncidentReview(ctx, inc.ID, triageincident.ReviewNeedsHuman, raw, user.AccountID)
-		inc.ReviewStatus = triageincident.ReviewNeedsHuman
-		resp.Incident = inc
-		return resp, nil
-	}
-	if contract.Lane == triageincident.LanePresentation {
-		inc.ReviewStatus = triageincident.ReviewNeedsHuman
-		resp.Incident = inc
+		resp.HoldReason = reason
 		return resp, nil
 	}
 	if !laneFilesExist(contract.Lane) {
@@ -280,6 +283,25 @@ func upsertIncidentFromParams(ctx context.Context, p *IngestTriageIncidentParams
 
 func systemExecIncidentStatus(ctx context.Context, id, status string) (triageincident.Incident, error) {
 	return updateIncidentReview(ctx, id, status, nil, "")
+}
+
+const (
+	holdNeedCustomerInput        = "need_customer_input"
+	holdContractNotDeterministic = "contract_not_deterministic"
+	holdLaneFailClosed           = "lane_fail_closed"
+)
+
+func confirmHoldReason(c ai.BehaviorContract) string {
+	if c.Assertions.NeedCustomerInput {
+		return holdNeedCustomerInput
+	}
+	if !ai.HasDeterministicInvariant(c) {
+		return holdContractNotDeterministic
+	}
+	if c.Lane == triageincident.LanePresentation {
+		return holdLaneFailClosed
+	}
+	return ""
 }
 
 func laneFilesExist(lane string) bool {

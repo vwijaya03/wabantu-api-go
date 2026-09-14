@@ -294,6 +294,13 @@ func setIncidentRepairPlan(ctx context.Context, incidentID, planID string) error
 	return err
 }
 
+func setIncidentResolution(ctx context.Context, id, resolution string) error {
+	_, err := system.DB.Exec(ctx, `
+		UPDATE ai_triage_incident SET resolution_status = $2, updated_at = now() WHERE id = $1::uuid`,
+		id, resolution)
+	return err
+}
+
 func resolveIncidentSourcesOnly(ctx context.Context, incidentID, jobID, note string) error {
 	sources, err := listIncidentSources(ctx, incidentID)
 	if err != nil {
