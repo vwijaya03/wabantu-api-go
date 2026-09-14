@@ -15,7 +15,7 @@ func IsAddItemToOrderMessage(userText string) bool {
 	if text == "" {
 		return false
 	}
-	signals := []string{"lalu ", "lalu,", "tambah ", "sekalian ", "plus ", "sama ", "dan juga ", "tambahannya", "itu saja"}
+	signals := []string{"lalu ", "lalu,", "nambah ", "nambah,", "tambah ", "sekalian ", "plus ", "sama ", "dan juga ", "tambahannya", "itu saja"}
 	for _, s := range signals {
 		if strings.Contains(text, s) {
 			return true
@@ -188,7 +188,7 @@ func ParseStructuredOrderLineWithVector(raw string, catalog []CatalogItem, vctx 
 
 func parseStructuredOrderLine(raw string, catalog []CatalogItem, vctx *CatalogVectorContext) OrderLineState {
 	var line OrderLineState
-	text := strings.TrimSpace(raw)
+	text := stripOrderSegmentPrefix(raw)
 	if text == "" {
 		return line
 	}
