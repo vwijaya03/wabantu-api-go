@@ -90,6 +90,7 @@ function buildPrompt(job, allowlist, hint) {
 
 ## Scope (strict)
 - ONLY edit files matching: ${JSON.stringify(allowlist)}
+- Do NOT edit ai/buyerflow_bridge.go (type aliases only). Cart/SKU logic lives in internal/buyerflow/
 - Do NOT edit generated tests, snapshots, migrations, workflows, or shared/retrieval/budget_config.go
 - Do NOT run shell commands
 - Do NOT access DB, MCP, secrets, or network

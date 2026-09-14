@@ -142,7 +142,8 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import json, subprocess, sys
+          import json, subprocess
+          from pathlib import Path
           p=json.load(open("/tmp/behavior_job.json"))
           allow=tuple(p.get("allowlist") or [])
           forbidden=("system/migrations/", ".github/workflows/", "budget_config.go")
@@ -150,6 +151,8 @@ jobs:
           bad=[]
           for line in out.splitlines():
               path=line[3:].strip()
+              if " -> " in path:
+                  path=path.split(" -> ",1)[-1]
               if "regression_behavior_" in path:
                   continue
               if any(f in path for f in forbidden):
@@ -159,14 +162,21 @@ jobs:
                   continue
               if path:
                   bad.append(path)
-          if bad:
-              print("out of allowlist:", bad)
-              sys.exit(1)
+          if not bad:
+              raise SystemExit(0)
+          print("reverting out of allowlist:", bad)
+          open("/tmp/allowlist_err.txt","w").write(
+              "Composer mengubah file di luar allowlist (di-revert, bukan PR): " + ", ".join(bad)
+          )
+          for path in bad:
+              st=subprocess.run(["git","restore","--source=HEAD","--worktree","--staged","--",path])
+              if st.returncode != 0 and Path(path).exists():
+                  Path(path).unlink()
           PY
 
       - name: Targeted tests
         id: green
-        if: steps.redclass.outputs.kind == 'test_fail'
+        if: always() && steps.fetch.outcome == 'success' && steps.redclass.outputs.kind == 'test_fail'
         continue-on-error: true
         run: |
           set -euo pipefail
@@ -175,7 +185,7 @@ jobs:
 
       - name: Draft PR from allowlist
         id: pr
-        if: steps.redclass.outputs.kind == 'test_fail'
+        if: always() && steps.green.outcome == 'success'
         env:
           GITHUB_PAT: ${{ secrets.GITHUB_PAT }}
         run: |
@@ -230,6 +240,11 @@ jobs:
           elif [ "$KIND" = "compile_error" ]; then
             ERR="$(tr '\n' ' ' < /tmp/behavior_red.log | cut -c1-1500)"
             ERR="Tes behavior tidak compile (import cycle / setup failed). ${ERR}"
+          elif [ -s /tmp/allowlist_err.txt ]; then
+            ERR="$(cat /tmp/allowlist_err.txt)"
+            if [ -s /tmp/behavior_red.log ]; then
+              ERR="$ERR | $(tr '\n' ' ' < /tmp/behavior_red.log | cut -c1-800)"
+            fi
           elif [ -s /tmp/behavior_red.log ]; then
             ERR="$(tr '\n' ' ' < /tmp/behavior_red.log | cut -c1-1500)"
           elif [ -s /tmp/behavior_green.log ]; then
