@@ -60,6 +60,9 @@ func isHistoryBackedPurchaseIntent(userText string, history []Message, catalog [
 
 // IsConsultingPurchaseQuestion — "boleh beli 1 pcs?", "kalau order satu bisa?" (CONSULTING, bukan CART_READY).
 func IsConsultingPurchaseQuestion(userText string, catalog []CatalogItem) bool {
+	if IsStructuredOrderList(userText) {
+		return false
+	}
 	text := strings.ToLower(strings.TrimSpace(userText))
 	if text == "" {
 		return false

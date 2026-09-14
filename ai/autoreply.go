@@ -16,6 +16,7 @@ import (
 	"encore.dev/storage/sqldb"
 
 	appflag "encore.app/wabantu/flag"
+	bf "encore.app/wabantu/internal/buyerflow"
 	appdb "encore.app/wabantu/shared/db"
 	"encore.app/wabantu/shared/pii"
 	"encore.app/wabantu/shared/retrieval"
@@ -931,18 +932,9 @@ func (s *AutoReplyService) handleCustomerOrderStatus(
 	return send(body)
 }
 
-// isStructuredOrderCheckoutBreak — multi-line order pasted mid-checkout (bukan append lalu/tambah).
+// isStructuredOrderCheckoutBreak — multi-line order pasted mid-checkout (bukan append lalu/tambah/nambah).
 func isStructuredOrderCheckoutBreak(userText string) bool {
-	if !IsStructuredOrderList(userText) || IsExplicitNewOrderStart(userText) || IsCheckoutMergeIntent(userText) {
-		return false
-	}
-	text := strings.ToLower(strings.TrimSpace(userText))
-	for _, s := range []string{"lalu ", "lalu,", "tambah ", "sekalian ", "plus ", "dan juga ", "tambahannya"} {
-		if strings.Contains(text, s) {
-			return false
-		}
-	}
-	return true
+	return bf.IsStructuredOrderCheckoutBreak(userText)
 }
 
 // ─── Message classifier ──────────────────────────────────────────────────────

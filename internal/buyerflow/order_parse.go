@@ -15,10 +15,15 @@ var (
 	orderQtyLusinRe    = regexp.MustCompile(`(?i)(?:^|\s)(\d{1,3})\s*lusin\b`)
 	orderQtyOneLusinRe = regexp.MustCompile(`(?i)(?:^|\s)1\s*lusin\b|satu\s*lusin`)
 	orderQtyIndoWordRe = regexp.MustCompile(`(?i)\b(satu|dua|tiga|empat|lima|enam|tujuh|delapan|sembilan|sepuluh)\s*(pcs|pc|biji|buah|piece|pieces|lusin)?\b`)
-	gluedCatalogQtyRe  = regexp.MustCompile(`(?i)\d+pcs`)
+	gluedCatalogQtyRe        = regexp.MustCompile(`(?i)\d+pcs`)
+	orderSegmentVerbPrefixRe = regexp.MustCompile(`(?i)^(hah+\s*[?.!]*)?\s*(?:nambah|tambahkan|tambah|beli|mau|order)\s+`)
 	// Longest-first so XXL is not parsed as XL and XL is not parsed as L.
 	orderSizeLineRe = regexp.MustCompile(`(?i)\b(xxxl|3xl|xxl|xl|4xl|5xl|xs|m|l|s|\d{2})\b`)
 )
+
+func stripOrderSegmentPrefix(raw string) string {
+	return strings.TrimSpace(orderSegmentVerbPrefixRe.ReplaceAllString(strings.TrimSpace(raw), ""))
+}
 
 // orderFlowTemplates — default WA copy; overridden by knowledge_base_entry when matched.
 type orderFlowTemplates struct {
@@ -288,6 +293,9 @@ func HasPurchaseIntent(userText string) bool {
 func hasPurchaseIntent(userText string, catalog []CatalogItem) bool {
 	if isSellAvailabilityQuestion(userText) {
 		return false
+	}
+	if IsStructuredOrderList(userText) && mentionsOrderQty(userText) {
+		return true
 	}
 	if IsConsultingPurchaseQuestion(userText, catalog) {
 		return false
