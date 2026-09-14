@@ -216,6 +216,36 @@ func DismissAITriageIncident(ctx context.Context, id string, p *DismissAITriageI
 	return &GetAITriageIncidentResponse{Incident: inc}, nil
 }
 
+type DeleteAITriageIncidentsParams struct {
+	IDs []string `json:"ids"`
+}
+
+type DeleteAITriageIncidentsResponse struct {
+	Deleted int `json:"deleted"`
+}
+
+// DeleteAITriageIncidents permanently removes incidents (and linked jobs/plans).
+//
+//encore:api auth method=POST path=/api/v1/admin/ai-triage/incident-deletes tag:super_admin
+func DeleteAITriageIncidents(ctx context.Context, p *DeleteAITriageIncidentsParams) (*DeleteAITriageIncidentsResponse, error) {
+	if _, err := requireSuperAdmin(ctx); err != nil {
+		return nil, err
+	}
+	if p == nil {
+		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "ids required"}
+	}
+	ids, err := parseTriageUUIDList(p.IDs, 50)
+	if err != nil {
+		return nil, err
+	}
+	n, err := deleteIncidents(ctx, ids)
+	if err != nil {
+		rlog.Error("delete incidents failed", "err", err)
+		return nil, &errs.Error{Code: errs.Internal, Message: "gagal menghapus insiden"}
+	}
+	return &DeleteAITriageIncidentsResponse{Deleted: n}, nil
+}
+
 // IngestTriageIncident upserts an incident from a report or finding (private).
 //
 //encore:api private method=POST path=/api/v1/internal/ai-triage/ingest
