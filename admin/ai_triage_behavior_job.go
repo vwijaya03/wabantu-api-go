@@ -282,14 +282,14 @@ func completeBehaviorJob(ctx context.Context, id, status, prURL, runURL, runID, 
 	}
 	res, err := system.DB.Exec(ctx, `
 		UPDATE ai_triage_behavior_job
-		SET status = $2,
+		SET status = $2::varchar,
 		    pr_url = COALESCE(NULLIF($3, ''), pr_url),
 		    github_run_url = COALESCE(NULLIF($4, ''), github_run_url),
 		    github_run_id = COALESCE(NULLIF($5, ''), github_run_id),
 		    error_text = NULLIF($6, ''),
 		    attempt_count = attempt_count + 1,
 		    updated_at = now(),
-		    completed_at = CASE WHEN $2 IN ('pr_ready', 'already_fixed', 'failed', 'verified') THEN now() ELSE completed_at END
+		    completed_at = CASE WHEN $2::varchar IN ('pr_ready', 'already_fixed', 'failed', 'verified') THEN now() ELSE completed_at END
 		WHERE id = $1::uuid AND status IN ('fix_running', 'test_ready', 'planning', 'pr_ready', 'already_fixed', 'verify_pending', 'failed')`,
 		id, status, prURL, runURL, runID, errText)
 	if err != nil {

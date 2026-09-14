@@ -38,7 +38,8 @@ async function main() {
       local: {
         cwd: process.cwd(),
         settingSources: [],
-        sandboxOptions: { enabled: true },
+        // GitHub-hosted runners do not support Cursor local sandbox.
+        sandboxOptions: { enabled: !process.env.GITHUB_ACTIONS },
         store,
       },
     });
