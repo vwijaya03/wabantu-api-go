@@ -62,6 +62,8 @@ type AiReplyJobPayload struct {
 	TenantSchema     string `json:"tenantSchema"`
 	ConversationID   string `json:"conversationId"`
 	InboundMessageID string `json:"inboundMessageId"`
+	UserTextOverride string `json:"-"`
+	CoalesceFlush    bool   `json:"-"`
 }
 
 type dbConversation struct {
@@ -133,6 +135,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		TenantID:         payload.TenantID,
 		ConversationID:   convo.ID,
 		InboundMessageID: payload.InboundMessageID,
+		CoalesceFlush:    payload.CoalesceFlush,
 	})
 
 	inbound, err := loadMessage(ctx, ts, payload.InboundMessageID)
@@ -153,6 +156,10 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return false, nil
 	}
 	userText, processable := inboundTextForAutoReply(inbound.Type, inbound.Body)
+	if ov := strings.TrimSpace(payload.UserTextOverride); ov != "" {
+		userText = SanitizeForPrompt(ov)
+		processable = userText != ""
+	}
 	if !processable {
 		if isMediaTypeWithOptionalCaption(inbound.Type) {
 			rlog.Info("AI job: media inbound without caption, skip", "type", inbound.Type)
@@ -209,7 +216,12 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return err == nil, err
 	}
 
-	rlog.Info("AI job: inbound text", "lenUserText", len(userText), "sourceType", inbound.Type)
+	rlog.Info("AI job: inbound text", "lenUserText", len(userText), "sourceType", inbound.Type, "coalesce", payload.CoalesceFlush)
+
+	if IsChannelRepairMeta(userText) {
+		rlog.Info("AI job: channel repair meta, skip outbound", "convoId", convo.ID)
+		return true, nil
+	}
 
 	if IsThirdPartyBuyerLookup(userText) {
 		return s.handleThirdPartyBuyerLookupDenied(ctx, ts, payload, convo, channel, contact)
@@ -1390,6 +1402,11 @@ func (s *AutoReplyService) sendAiMessage(
 	meta AiReplyMeta,
 ) error {
 	meta = metaForSend(meta, inboundMessageID)
+
+	if shouldDropCoalescedSend(ctx) {
+		rlog.Info("AI job: drop outbound, newer inbound in burst", "inboundId", inboundMessageID)
+		return errDropSuperseded
+	}
 
 	rlog.Info("AI job: sending WhatsApp text",
 		"len", len(text),

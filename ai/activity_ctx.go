@@ -14,6 +14,7 @@ type ActivityContext struct {
 	TenantID         string
 	ConversationID   string
 	InboundMessageID string
+	CoalesceFlush    bool
 	Classifier       string
 	RouteReason      string
 }

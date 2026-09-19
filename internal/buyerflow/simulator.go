@@ -82,6 +82,12 @@ func (s *Simulator) Turn(userText string) TurnOutcome {
 		return out
 	}
 
+	if IsChannelRepairMeta(userText) {
+		out.Path = PathChannelMeta
+		s.appendHistory(userText, "")
+		return out
+	}
+
 	// Match autoreply.go: status inquiry before cancel (clarification ≠ cancel command).
 	if IsOrderStatusInquiry(userText) {
 		out.Path = PathOrderStatus

@@ -17,7 +17,7 @@ const (
 	maxInboundAIAttempts = 4
 	aiAttemptKeyPrefix   = "ai:job:attempt:"
 	aiAttemptTTL         = 24 * time.Hour
-	aiJobParentBudget    = 25 * time.Second
+	aiJobParentBudget    = 40 * time.Second
 )
 
 // InboundAIJob is published when an inbound WhatsApp message needs AI processing.
@@ -54,19 +54,69 @@ func handleInboundAI(ctx context.Context, job *InboundAIJob) error {
 		tenantID = ""
 	}
 
-	attempt := incrementAIAttempt(ctx, job.InboundMessageID)
-	rlog.Info("processing inbound AI job",
-		"schema", job.TenantSchema,
-		"conversationId", job.ConversationID,
-		"inboundId", job.InboundMessageID,
-		"attempt", attempt,
-	)
-
 	jobCtx, cancel := reqctx.WithTimeout(ctx, aiJobParentBudget)
 	defer cancel()
 
-	sent, procErr := ProcessAutoReplyJob(jobCtx, tenantID, job.TenantSchema, job.ConversationID, job.InboundMessageID)
+	flush, coalErr := coalesceInboundTurn(jobCtx, job)
+	if coalErr != nil {
+		return coalErr
+	}
+	if flush != nil && flush.Skip {
+		rlog.Info("inbound AI job superseded by newer balloon",
+			"conversationId", job.ConversationID,
+			"inboundId", job.InboundMessageID,
+		)
+		return nil
+	}
+
+	inboundID := job.InboundMessageID
+	override := ""
+	coalesceFlush := false
+	if flush != nil && flush.Stitched != "" {
+		inboundID = flush.LastID
+		override = flush.Stitched
+		coalesceFlush = true
+	}
+
+	attempt := incrementAIAttempt(jobCtx, inboundID)
+	rlog.Info("processing inbound AI job",
+		"schema", job.TenantSchema,
+		"conversationId", job.ConversationID,
+		"inboundId", inboundID,
+		"attempt", attempt,
+		"coalesce", coalesceFlush,
+	)
+
+	sent, procErr := svc.ProcessAutoReply(jobCtx, AiReplyJobPayload{
+		TenantID:         tenantID,
+		TenantSchema:     job.TenantSchema,
+		ConversationID:   job.ConversationID,
+		InboundMessageID: inboundID,
+		UserTextOverride: override,
+		CoalesceFlush:    coalesceFlush,
+	})
+	if errors.Is(procErr, errDropSuperseded) {
+		latest := coalesceLastID(ctx, job)
+		if latest != "" && latest != inboundID {
+			_ = PublishInboundJob(ctx, &InboundAIJob{
+				TenantSchema:     job.TenantSchema,
+				ConversationID:   job.ConversationID,
+				InboundMessageID: latest,
+				InboundType:      job.InboundType,
+			})
+		}
+		rlog.Info("inbound AI outbound dropped; re-armed",
+			"conversationId", job.ConversationID,
+			"droppedId", inboundID,
+			"latestId", latest,
+		)
+		return nil
+	}
 	if procErr == nil {
+		if coalesceFlush && inboundID != "" {
+			markCoalesceWatermark(ctx, job.TenantSchema, job.ConversationID, inboundID)
+		}
+		clearAIAttempt(ctx, inboundID)
 		clearAIAttempt(ctx, job.InboundMessageID)
 		rlog.Info("inbound AI job done",
 			"conversationId", job.ConversationID,
