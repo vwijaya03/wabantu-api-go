@@ -1,6 +1,6 @@
 # Inbound coalesce — burst balloon WhatsApp
 
-**Status:** PR (belum merge)
+**Status:** PR [#208](https://github.com/vwijaya03/wabantu-api-go/pull/208) (belum merge)
 
 ## Masalah / Kebutuhan
 
