@@ -15,6 +15,7 @@ Peta navigasi untuk menjawab pertanyaan tentang backend WABantu. Mulai dari sini
 | Pertanyaan umum | Buka |
 |-----------------|------|
 | Alur pesan WA dari webhook sampai AI balas? | [WHATSAPP_AI_ROUTING.md](./WHATSAPP_AI_ROUTING.md) |
+| Pesan WA terpatah / banyak balloon satu niat? | [WHATSAPP_AI_ROUTING.md](./WHATSAPP_AI_ROUTING.md) → debounce burst · shipped: [2026-09-19_233800_inbound-coalesce-burst.md](../docs-development-shipped/2026-09-19_233800_inbound-coalesce-burst.md) |
 | Loop engineering otomatis (AI Triage)? | [AI_TRIAGE_LOOP_NEXT_DEV.md](./AI_TRIAGE_LOOP_NEXT_DEV.md) |
 | Kenapa pesan ini dapat path `order_status` / `llm` / `catalog_db`? | [WHATSAPP_AI_ROUTING.md](./WHATSAPP_AI_ROUTING.md) → §Decision tree + §Tabel path |
 | Bagaimana AI mendeteksi intent (greeting, order, katalog)? | [WHATSAPP_AI_ROUTING.md](./WHATSAPP_AI_ROUTING.md) → §Tabel deteksi intent |

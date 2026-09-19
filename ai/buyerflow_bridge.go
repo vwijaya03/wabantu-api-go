@@ -74,6 +74,7 @@ const (
 	PathShippingFAQ       = bf.PathShippingFAQ
 	PathProductImageMatch = bf.PathProductImageMatch
 	PathImageFallback     = bf.PathImageFallback
+	PathChannelMeta       = bf.PathChannelMeta
 )
 
 // Exported routing functions — delegate ke buyerflow.
@@ -98,6 +99,7 @@ var (
 	IsAmbiguousPurchaseSignal              = bf.IsAmbiguousPurchaseSignal
 	IsCancelClarificationQuestion          = bf.IsCancelClarificationQuestion
 	IsCasualChatOpener                     = bf.IsCasualChatOpener
+	IsChannelRepairMeta                    = bf.IsChannelRepairMeta
 	IsCasualPraiseLike                     = bf.IsCasualPraiseLike
 	IsCatalogBrowsingIntent                = bf.IsCatalogBrowsingIntent
 	IsCatalogExclusionQuestion             = bf.IsCatalogExclusionQuestion

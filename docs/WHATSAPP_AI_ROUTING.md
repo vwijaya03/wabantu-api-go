@@ -96,7 +96,11 @@ Payload job:
 }
 ```
 
-Entry point handler: `ProcessAutoReplyJob` → `AutoReplyService.ProcessAutoReply`.
+**Debounce burst (teks):** subscriber `ai-auto-reply` tidak langsung `ProcessAutoReply`. `coalesceInboundTurn` (`ai/inbound_coalesce.go`) buffer id di Redis `ai:coalesce:v1:{schema}:{convo}:*`, trailing-edge **3s** (`inboundQuiet`), cap **15s** (`inboundMaxWait`), max **20** balloon. Job lama **supersede** jika `lastInbound` lebih baru. Flush join body `\n` → satu `UserTextOverride`. `sendAiMessage` drop jika inbound baru datang saat generate (watermark + re-arm). Image/bukti transfer tidak di-debounce. Redis down → proses langsung (fail-open).
+
+Meta saluran (`maaf chatnya putus putus`) setelah stitch: path `channel_meta`, **tidak** kirim list ulang.
+
+Entry point handler: `ProcessAutoReplyJob` → `AutoReplyService.ProcessAutoReply` (setelah flush).
 
 ---
 
