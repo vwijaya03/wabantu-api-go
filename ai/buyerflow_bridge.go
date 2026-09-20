@@ -129,6 +129,7 @@ var (
 	IsStandaloneAddMoreItemsPolicyQuestion = bf.IsStandaloneAddMoreItemsPolicyQuestion
 	IsCartLineCorrectionIntent             = bf.IsCartLineCorrectionIntent
 	IsNegatedFullOrderCancel               = bf.IsNegatedFullOrderCancel
+	ApplyDraftLineMutations                = bf.ApplyDraftLineMutations
 	CartRecapReply                         = bf.CartRecapReply
 	AddMoreItemsPolicyReply                = bf.AddMoreItemsPolicyReply
 	IsOrderStatusInquiry                   = bf.IsOrderStatusInquiry

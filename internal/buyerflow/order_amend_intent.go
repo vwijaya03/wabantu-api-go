@@ -20,7 +20,11 @@ func IsOrderAmendMessage(userText string) bool {
 			return true
 		}
 	}
-	return false
+	if parseOrderRefFromMessage(userText) == "" {
+		return false
+	}
+	return strings.Contains(text, "nambah") || strings.Contains(text, "tambah") ||
+		strings.Contains(text, "1 lagi")
 }
 
 // IsCheckoutMergeIntent — gabungkan/pulihkan item ke keranjang chat, bukan recap-only atau status DB.

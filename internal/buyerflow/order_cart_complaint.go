@@ -10,7 +10,10 @@ func IsCartRecapOrComplaint(userText string, catalog []CatalogItem) bool {
 	if text == "" {
 		return false
 	}
-	if IsCheckoutMergeIntent(userText) {
+	if IsCheckoutMergeIntent(userText) || IsCartLineCorrectionIntent(userText) {
+		return false
+	}
+	if parseOrderRefFromMessage(userText) != "" && IsOrderAmendMessage(userText) {
 		return false
 	}
 	complaintSignals := []string{
@@ -24,7 +27,7 @@ func IsCartRecapOrComplaint(userText string, catalog []CatalogItem) bool {
 			return true
 		}
 	}
-	if strings.Contains(text, "pesanan") && strings.Contains(text, "ada") {
+	if strings.Contains(text, "pesanan") && containsAdaWord(text) {
 		if mentionsOrderQty(text) {
 			return true
 		}
