@@ -16,7 +16,7 @@ Peta navigasi untuk menjawab pertanyaan tentang backend WABantu. Mulai dari sini
 |-----------------|------|
 | Alur pesan WA dari webhook sampai AI balas? | [WHATSAPP_AI_ROUTING.md](./WHATSAPP_AI_ROUTING.md) |
 | Pesan WA terpatah / banyak balloon satu niat? | [WHATSAPP_AI_ROUTING.md](./WHATSAPP_AI_ROUTING.md) → debounce burst · shipped: [2026-09-19_233800_inbound-coalesce-burst.md](../docs-development-shipped/2026-09-19_233800_inbound-coalesce-burst.md) |
-| Loop engineering otomatis (AI Triage)? | [AI_TRIAGE_LOOP_NEXT_DEV.md](./AI_TRIAGE_LOOP_NEXT_DEV.md) |
+| Loop engineering otomatis (AI Triage)? | **Retired.** Self-heal: skill `wabantu-ai-triage` · shipped [2026-09-20_121000_drop-routing-loop-triage.md](../docs-development-shipped/2026-09-20_121000_drop-routing-loop-triage.md). Arsip spec: [AI_TRIAGE_LOOP_NEXT_DEV.md](./AI_TRIAGE_LOOP_NEXT_DEV.md) |
 | Kenapa pesan ini dapat path `order_status` / `llm` / `catalog_db`? | [WHATSAPP_AI_ROUTING.md](./WHATSAPP_AI_ROUTING.md) → §Decision tree + §Tabel path |
 | Bagaimana AI mendeteksi intent (greeting, order, katalog)? | [WHATSAPP_AI_ROUTING.md](./WHATSAPP_AI_ROUTING.md) → §Tabel deteksi intent |
 | Cek / batal pesanan lewat chat pembeli | [ORDER_CUSTOMER_CHAT.md](./ORDER_CUSTOMER_CHAT.md) |

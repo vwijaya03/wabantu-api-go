@@ -32,8 +32,8 @@ func TestBuildBehaviorTestFileEscapesCustomerText(t *testing.T) {
 	if !strings.Contains(src, "41191bb5-a79f-4820-bf61-298c8757e85d") {
 		t.Fatal("full job UUID required in file")
 	}
-	if AutoGenRelPath("41191bb5-a79f-4820-bf61-298c8757e85d") == BehaviorRelPath("41191bb5-a79f-4820-bf61-298c8757e85d") {
-		t.Fatal("behavior path must differ from 8-char routing autogen")
+	if !strings.Contains(BehaviorRelPath("41191bb5-a79f-4820-bf61-298c8757e85d"), "regression_behavior_41191bb5-a79f-4820-bf61-298c8757e85d") {
+		t.Fatal("behavior path must use full job UUID")
 	}
 	if !strings.Contains(src, "func TestBehavior_41191bb5_a79f_4820_bf61_298c8757e85d(") {
 		t.Fatalf("GHA runner must match TestBehavior_, got:\n%s", src)

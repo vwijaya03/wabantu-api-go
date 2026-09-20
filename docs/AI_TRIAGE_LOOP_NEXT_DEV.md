@@ -1,5 +1,7 @@
 # Next Development: AI Triage Loop (Loop Engineering Otomatis)
 
+> **Retired (2026-09-20).** Loop routing (`CreateAITriageJob`, Mencurigakan, Investigasi, `ai-triage-fix.yml`) sudah dicabut. Operator live: tab **Insiden** + Composer `ai-triage-behavior-fix.yml`. Skill `wabantu-ai-triage`. Catatan rilis: [docs-development-shipped/2026-09-20_121000_drop-routing-loop-triage.md](../docs-development-shipped/2026-09-20_121000_drop-routing-loop-triage.md). Dokumen ini tersisa sebagai arsip desain.
+
 Dokumen rencana pengembangan berikutnya untuk loop engineering otomatis WABantu.
 Kamu hanya flag percakapan aneh di konsol superadmin; sistem analisa, generate test, fix, dan buat PR draft.
 
