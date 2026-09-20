@@ -43,6 +43,7 @@ Entri lama tanpa prefix datetime (mis. `inbox-media-fase1.md`) tetap valid; entr
 
 | File | Isi | Status |
 |------|-----|--------|
+| [2026-09-20_121000_drop-routing-loop-triage.md](./2026-09-20_121000_drop-routing-loop-triage.md) | Cabut loop routing; self-heal Insiden + Composer tetap | PR |
 | [2026-09-19_233800_inbound-coalesce-burst.md](./2026-09-19_233800_inbound-coalesce-burst.md) | Debounce burst WhatsApp: stitch balloon, satu reply, watermark CAS | PR [#208](https://github.com/vwijaya03/wabantu-api-go/pull/208) |
 | [20260901_143000_rag-staging-rollout-hotfixes.md](./20260901_143000_rag-staging-rollout-hotfixes.md) | Hotfix deploy RAG staging: build test KB, secrets RAG, finance seed idempotent, cloud DDL retrieval, backfill `embedding_version` | PR [#146](https://github.com/vwijaya03/wabantu-api-go/pull/146)–[#150](https://github.com/vwijaya03/wabantu-api-go/pull/150) merged |
 

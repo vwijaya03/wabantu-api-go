@@ -13,12 +13,10 @@ func TestTriageJobIDFromPath(t *testing.T) {
 		path string
 		want string
 	}{
-		{"/api/v1/internal/ai-triage/jobs/1cd46c91-0d57-4ce1-acd8-3f1713fa7dad", "1cd46c91-0d57-4ce1-acd8-3f1713fa7dad"},
-		{"/api/v1/internal/ai-triage/jobs/1cd46c91-0d57-4ce1-acd8-3f1713fa7dad/complete", "1cd46c91-0d57-4ce1-acd8-3f1713fa7dad"},
 		{"/api/v1/internal/ai-triage/behavior-jobs/f7168625-1823-4dc2-8eb2-d6d7e248b2b4", "f7168625-1823-4dc2-8eb2-d6d7e248b2b4"},
 		{"/api/v1/internal/ai-triage/behavior-jobs/f7168625-1823-4dc2-8eb2-d6d7e248b2b4/complete", "f7168625-1823-4dc2-8eb2-d6d7e248b2b4"},
 		{"/api/v1/internal/ai-triage/behavior-jobs/", ""},
-		{"/api/v1/internal/ai-triage/jobs/", ""},
+		{"/api/v1/internal/ai-triage/jobs/1cd46c91-0d57-4ce1-acd8-3f1713fa7dad", ""},
 		{"/api/v1/internal/ai-triage/jobs", ""},
 	}
 	for _, tc := range cases {
@@ -33,7 +31,7 @@ func TestTriageJobIDFromPath(t *testing.T) {
 
 func TestTriageJobIDFromPath_prefersPathValue(t *testing.T) {
 	const id = "1cd46c91-0d57-4ce1-acd8-3f1713fa7dad"
-	req := httptest.NewRequest("GET", "/api/v1/internal/ai-triage/jobs/wrong", nil)
+	req := httptest.NewRequest("GET", "/api/v1/internal/ai-triage/behavior-jobs/wrong", nil)
 	req.SetPathValue("id", id)
 	if got := triageJobIDFromPath(req); got != id {
 		t.Fatalf("got %q want %s", got, id)
@@ -51,7 +49,7 @@ func TestTriageJobIDFromPath_ignoresPathValueComplete(t *testing.T) {
 
 func TestTriageJobIDFromPath_stripsCompleteSuffix(t *testing.T) {
 	const id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-	req := httptest.NewRequest("POST", "/jobs/"+id+"/complete", nil)
+	req := httptest.NewRequest("POST", "/behavior-jobs/"+id+"/complete", nil)
 	got := triageJobIDFromPath(req)
 	if got != id {
 		t.Fatalf("got %q", got)

@@ -32,12 +32,6 @@ func TestLaneFilesExistFailClosedForChatengine(t *testing.T) {
 	}
 }
 
-func TestTriageJobVerifyNoLongerImpliesReportsResolvedAlways(t *testing.T) {
-	if !triageJobCanVerify(triageJobStatusPRReady) {
-		t.Fatal("legacy verify still allowed for routing jobs")
-	}
-}
-
 func TestWrapWorkflowDispatchError_NotFound(t *testing.T) {
 	err := wrapWorkflowDispatchError("ai-triage-behavior-fix.yml", "master", 404, `{"message":"Not Found"}`)
 	if err == nil {

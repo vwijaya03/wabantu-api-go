@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Immutable TestBehavior_* only — used by ai-triage-behavior-fix.yml.
-# Do not reuse run-triage-autogen-tests.sh (that filter is TestRegressionAutoGen).
+# Prove RED for Composer self-heal (`TestBehavior_`). Do not filter TestRegressionAutoGen.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
