@@ -153,7 +153,7 @@ func IsDraftOrderCancelRequest(userText string) bool {
 // IsSoftCancelRegret — "ga jadi" tanpa kata batal eksplisit.
 func IsSoftCancelRegret(userText string) bool {
 	text := strings.ToLower(strings.TrimSpace(userText))
-	if text == "" || isRevisionNotCancel(userText) {
+	if text == "" || isRevisionNotCancel(userText) || IsCartLineCorrectionIntent(userText) {
 		return false
 	}
 	for _, p := range softCancelRegretPhrases {
@@ -221,7 +221,7 @@ func IsOrderRefStatusLookup(userText string) bool {
 	if IsCartLineCorrectionIntent(userText) || IsNegatedFullOrderCancel(userText) {
 		return false
 	}
-	if IsCheckoutMergeIntent(userText) {
+	if IsCheckoutMergeIntent(userText) || IsOrderAmendMessage(userText) {
 		return false
 	}
 	ref := parseOrderRefFromMessage(userText)
@@ -273,7 +273,7 @@ func WantsActiveOrderOnly(userText string) bool {
 			return true
 		}
 	}
-	if (strings.Contains(text, "punya pesanan") || strings.Contains(text, "ada pesanan") ||
+	if (strings.Contains(text, "punya pesanan") || containsAdaPesananPhrase(text) ||
 		strings.Contains(text, "punya order") || strings.Contains(text, "ada order")) &&
 		(strings.Contains(text, "nggak") || strings.Contains(text, " gak") ||
 			strings.Contains(text, " ga") || strings.Contains(text, "tidak") ||
@@ -333,7 +333,7 @@ func IsOrderStatusInquiry(userText string) bool {
 	if IsCartLineCorrectionIntent(userText) || IsNegatedFullOrderCancel(userText) {
 		return false
 	}
-	if IsCheckoutMergeIntent(userText) {
+	if IsCheckoutMergeIntent(userText) || IsOrderAmendMessage(userText) {
 		return false
 	}
 	if IsCartRecapOrComplaint(userText, nil) {
@@ -353,6 +353,12 @@ func IsOrderStatusInquiry(userText string) bool {
 		return false
 	}
 	for _, p := range orderStatusInquiryPhrases {
+		if p == "ada pesanan" {
+			if containsAdaPesananPhrase(text) {
+				return true
+			}
+			continue
+		}
 		if strings.Contains(text, p) {
 			return true
 		}
@@ -367,7 +373,7 @@ func IsOrderStatusInquiry(userText string) bool {
 		return false
 	}
 	return (strings.Contains(text, "pesanan") || strings.Contains(text, "order")) &&
-		(strings.Contains(text, "?") || strings.Contains(text, "ada") ||
+		(strings.Contains(text, "?") || containsAdaWord(text) ||
 			strings.Contains(text, "berapa") || strings.Contains(text, "cek") ||
 			strings.Contains(text, "status") || strings.Contains(text, "nomor"))
 }

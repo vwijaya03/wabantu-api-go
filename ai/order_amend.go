@@ -463,6 +463,24 @@ func (s *AutoReplyService) handleOrderAmend(
 	if err != nil {
 		return false, err
 	}
+	bfCat := toBFCatalogSlice(catalog)
+	st := orderStateFromPersistedDraft(draft)
+	if bf.ApplyDraftLineMutations(&st, userText, bfCat) {
+		merged := orderLinesToItems(st.Items)
+		if err := updateDraftOrderItems(ctx, ts, payload.TenantSchema, draft.ID, scope, merged); err != nil {
+			rlog.Warn("AI order amend: update failed", "err", err, "orderId", draft.ID)
+			return send("Maaf kak, gagal memperbarui pesanan. Coba sebut produknya lagi ya 🙏")
+		}
+		if len(st.Items) > 0 {
+			bf.ApplyLineToOrderState(&st, st.Items[0])
+		}
+		s.setOrderState(ctx, payload.TenantID, convo.ID, st)
+		summary := formatOrderSummary(st)
+		ref := FormatOrderNumber(draft.ID)
+		reply := fmt.Sprintf("Siap kak, pesanan %s sudah diperbarui:\n\n%s", ref, summary)
+		return send(reply)
+	}
+
 	existingIDs := make(map[string]bool)
 	for _, it := range existing {
 		if it.CatalogItemID != "" {
@@ -480,7 +498,7 @@ func (s *AutoReplyService) handleOrderAmend(
 	}
 
 	var added []bf.OrderLineState
-	if lines := bf.ExtractAmendLinesFromText(userText, toBFCatalogSlice(catalog), vctx); len(lines) > 0 {
+	if lines := bf.ExtractAmendLinesFromText(userText, bfCat, vctx); len(lines) > 0 {
 		for _, ln := range lines {
 			if !existingIDs[ln.CatalogItemID] {
 				added = append(added, ln)
@@ -488,7 +506,7 @@ func (s *AutoReplyService) handleOrderAmend(
 		}
 	}
 	if len(added) == 0 {
-		histLines := bf.ExtractAmendLinesFromHistory(bfHistory, toBFCatalogSlice(catalog), existingIDs, vctx)
+		histLines := bf.ExtractAmendLinesFromHistory(bfHistory, bfCat, existingIDs, vctx)
 		added = histLines
 	}
 	if len(added) == 0 {
@@ -504,7 +522,7 @@ func (s *AutoReplyService) handleOrderAmend(
 		return send("Maaf kak, gagal memperbarui pesanan. Coba sebut produknya lagi ya 🙏")
 	}
 
-	st := orderStateFromPersistedDraft(draft)
+	st = orderStateFromPersistedDraft(draft)
 	st.Items = orderItemsToLines(merged)
 	if len(st.Items) > 0 {
 		bf.ApplyLineToOrderState(&st, st.Items[0])

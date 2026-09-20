@@ -301,6 +301,10 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		}
 	}
 
+	if IsCartLineCorrectionIntent(userText) || IsOrderAmendMessage(userText) {
+		return s.handleOrderAmend(ctx, ts, payload, convo, channel, contact, userText, profile, history)
+	}
+
 	if IsOrderCancelRequest(userText) && !IsCartLineCorrectionIntent(userText) && !IsNegatedFullOrderCancel(userText) {
 		orderSt, _ := s.getOrderState(ctx, payload.TenantID, convo.ID)
 		if orderSt != nil && strings.TrimSpace(orderSt.PersistedOrderID) != "" {
@@ -336,7 +340,9 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	if IsThirdPartyBuyerLookup(userText) {
 		return s.handleThirdPartyBuyerLookupDenied(ctx, ts, payload, convo, channel, contact)
 	}
-	if !IsCheckoutMergeIntent(userText) && (IsCartRecapOrComplaint(userText, toBFCatalogSlice(catalog)) || IsActiveCheckoutRecapQuestion(userText)) {
+	if !IsCheckoutMergeIntent(userText) && !IsCartLineCorrectionIntent(userText) &&
+		!(IsOrderAmendMessage(userText) && parseOrderRefFromMessage(userText) != "") &&
+		(IsCartRecapOrComplaint(userText, toBFCatalogSlice(catalog)) || IsActiveCheckoutRecapQuestion(userText)) {
 		if orderSt, _ := s.getOrderState(ctx, payload.TenantID, convo.ID); orderSt != nil {
 			formal := strOrEmpty(profile.Tone) == "formal"
 			reply := CartRecapReply(*orderSt, formal)

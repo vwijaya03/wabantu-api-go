@@ -21,7 +21,10 @@ func IsNegatedFullOrderCancel(userText string) bool {
 // IsCartLineCorrectionIntent — ganti/hapus baris keranjang, bukan status DB / batal semua.
 func IsCartLineCorrectionIntent(userText string) bool {
 	text := normalizeBuyerTextForRules(userText)
-	if text == "" || IsNegatedFullOrderCancel(userText) {
+	if text == "" || IsNegatedFullOrderCancel(userText) || IsCancelClarificationQuestion(userText) {
+		return false
+	}
+	if isWholeOrderCancelPhrase(text) {
 		return false
 	}
 	if strings.Contains(text, "batalkan yang") || strings.Contains(text, "batalin yang") ||
@@ -34,6 +37,13 @@ func IsCartLineCorrectionIntent(userText string) bool {
 	if strings.Contains(text, "tidak mau") || strings.Contains(text, "ga mau") ||
 		strings.Contains(text, "gak mau") || strings.Contains(text, "nggak mau") {
 		return strings.Contains(text, "yang") || strings.Contains(text, "bukan")
+	}
+	if strings.Contains(text, "ga jadi beli") || strings.Contains(text, "gak jadi beli") ||
+		strings.Contains(text, "nggak jadi beli") || strings.Contains(text, "tidak jadi beli") {
+		return skuCancelRemainder(text)
+	}
+	if orderCancelWordRe.MatchString(text) && skuCancelRemainder(text) {
+		return true
 	}
 	return false
 }
@@ -64,31 +74,15 @@ func checkoutEditPrompt(st OrderState, tmpl orderFlowTemplates) string {
 }
 
 func tryApplyCartLineCorrection(st *OrderState, userText string, catalog []CatalogItem, tmpl orderFlowTemplates, formal bool) (bool, string) {
-	if st == nil || !IsCartLineCorrectionIntent(userText) || len(catalog) == 0 {
+	if st == nil || len(catalog) == 0 {
 		return false, ""
 	}
-	rejectText, wantText := splitCartCorrectionSpans(userText)
-	reject := catalogItemsIdentifiedInText(rejectText, catalog)
-	want := catalogItemsIdentifiedInText(wantText, catalog)
-	if len(reject) == 0 {
-		reject = cartItemsMatchingBrandOrText(*st, rejectText, catalog)
-	}
-	want = subtractCatalogItems(want, reject)
-	if len(reject) == 0 && len(want) == 0 {
+	if !IsCartLineCorrectionIntent(userText) && !IsOrderAmendMessage(userText) {
 		return false, ""
 	}
-
-	ensureMultiItemsFromSingle(st)
-	if len(reject) > 0 {
-		st.Items = filterOrderLinesExcluding(st.Items, catalogItemIDs(reject))
+	if !ApplyDraftLineMutations(st, userText, catalog) {
+		return false, ""
 	}
-	for _, it := range want {
-		if orderCartContainsID(*st, it.ID) {
-			continue
-		}
-		st.Items = append(st.Items, orderLineFromCatalogItem(it, 1))
-	}
-	syncOrderStateFromItems(st)
 	if !st.ProductComplete() && len(st.Items) == 0 {
 		st.Step = "ask_product"
 		ack := "Siap kak, item itu sudah dihapus dari pesanan. Mau ganti produk apa?"
@@ -122,7 +116,35 @@ func splitCartCorrectionSpans(userText string) (reject, want string) {
 			return after, before
 		}
 	}
+	for _, m := range []string{"ga jadi beli", "gak jadi beli", "nggak jadi beli", "tidak jadi beli"} {
+		if i := strings.Index(lower, m); i >= 0 {
+			return strings.TrimSpace(text[i+len(m):]), strings.TrimSpace(text[:i])
+		}
+	}
+	for _, m := range []string{"nya saya mau cancel", "nya mau cancel", "nya cancel", "nya batal"} {
+		if i := strings.Index(lower, m); i >= 0 {
+			return strings.TrimSpace(text[:i]), ""
+		}
+	}
+	for _, m := range []string{"saya batalkan", "mau batalkan", "batalkan", "batalin"} {
+		if i := strings.Index(lower, m); i >= 0 {
+			after := strings.TrimSpace(text[i+len(m):])
+			before := strings.TrimSpace(text[:i])
+			rej, add := splitRejectAndAdd(after)
+			return rej, strings.TrimSpace(before + " " + add)
+		}
+	}
 	return "", text
+}
+
+func splitRejectAndAdd(after string) (reject, add string) {
+	low := strings.ToLower(after)
+	for _, sep := range []string{" dan nambah ", " dan tambah ", " nambah ", " tambah "} {
+		if i := strings.Index(low, sep); i >= 0 {
+			return strings.TrimSpace(after[:i]), strings.TrimSpace(after[i:])
+		}
+	}
+	return strings.TrimSpace(after), ""
 }
 
 func catalogItemsIdentifiedInText(userText string, catalog []CatalogItem) []CatalogItem {
