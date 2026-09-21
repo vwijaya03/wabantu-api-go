@@ -42,10 +42,18 @@ func IsCartLineCorrectionIntent(userText string) bool {
 		strings.Contains(text, "nggak jadi beli") || strings.Contains(text, "tidak jadi beli") {
 		return skuCancelRemainder(text)
 	}
-	if orderCancelWordRe.MatchString(text) && skuCancelRemainder(text) {
+	if lineCancelWithSKURemainder(text) {
 		return true
 	}
 	return false
+}
+
+// lineCancelWithSKURemainder — batal/batalkan/cancel/dibatalkan + sisa teks SKU (bukan batal order kosong).
+func lineCancelWithSKURemainder(text string) bool {
+	if strings.Contains(text, "dibatalkan") || strings.Contains(text, "dibatalin") {
+		return skuCancelRemainder(text)
+	}
+	return orderCancelWordRe.MatchString(text) && skuCancelRemainder(text)
 }
 
 func tryCheckoutCartEdits(st *OrderState, userText string, catalog []CatalogItem, tmpl orderFlowTemplates, formal bool) (bool, string) {
@@ -126,6 +134,13 @@ func splitCartCorrectionSpans(userText string) (reject, want string) {
 			return strings.TrimSpace(text[:i]), ""
 		}
 	}
+	for _, m := range []string{"nya tolong dibatalkan", "tolong dibatalkan", "dibatalkan", "dibatalin"} {
+		if i := strings.Index(lower, m); i >= 0 {
+			before := strings.TrimSpace(text[:i])
+			after := trimCorrectionLinker(strings.TrimSpace(text[i+len(m):]))
+			return before, after
+		}
+	}
 	for _, m := range []string{"saya batalkan", "mau batalkan", "batalkan", "batalin"} {
 		if i := strings.Index(lower, m); i >= 0 {
 			after := strings.TrimSpace(text[i+len(m):])
@@ -137,9 +152,21 @@ func splitCartCorrectionSpans(userText string) (reject, want string) {
 	return "", text
 }
 
+func trimCorrectionLinker(s string) string {
+	s = strings.TrimSpace(s)
+	low := strings.ToLower(s)
+	for _, p := range []string{", lalu ", ", kemudian ", "lalu ", "kemudian "} {
+		if strings.HasPrefix(low, p) {
+			s = strings.TrimSpace(s[len(p):])
+			low = strings.ToLower(s)
+		}
+	}
+	return strings.TrimSpace(strings.TrimLeft(s, ",;"))
+}
+
 func splitRejectAndAdd(after string) (reject, add string) {
 	low := strings.ToLower(after)
-	for _, sep := range []string{" dan nambah ", " dan tambah ", " nambah ", " tambah "} {
+	for _, sep := range []string{", lalu ", ", kemudian ", " dan nambah ", " dan tambah ", " nambah ", " tambah "} {
 		if i := strings.Index(low, sep); i >= 0 {
 			return strings.TrimSpace(after[:i]), strings.TrimSpace(after[i:])
 		}

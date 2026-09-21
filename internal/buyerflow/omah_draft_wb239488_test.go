@@ -123,6 +123,39 @@ func TestCadburryCancelIsLineNotMissingOrder(t *testing.T) {
 	}
 }
 
+func TestDibatalkanCadburryNambahDurianKeepsDraft(t *testing.T) {
+	msg := "cadburry nya tolong dibatalkan, lalu musang king durian nya mau nambah 1 ya"
+	if !IsCartLineCorrectionIntent(msg) {
+		t.Fatal("dibatalkan + SKU is line edit, not full cancel")
+	}
+	if IsOrderCancelRequest(msg) && !IsCartLineCorrectionIntent(msg) {
+		t.Fatal("mixed dibatalkan SKU + nambah is not full cancel")
+	}
+	if IsDraftOrderCancelRequest(msg) {
+		t.Fatal("dibatalkan on SKU must not be draft cancel request")
+	}
+	sim := newWB239488Sim()
+	out := sim.Turn(msg)
+	if out.Canceled || out.Order == nil {
+		t.Fatalf("status must stay draft, path=%s reply=%q", out.Path, out.Reply)
+	}
+	if out.Path == PathOrderCancel {
+		t.Fatalf("path=%s want order_flow mutate, reply=%q", out.Path, out.Reply)
+	}
+	if stringsContainsCancelAll(out.Reply) {
+		t.Fatalf("reply must not claim whole-order cancel: %q", out.Reply)
+	}
+	if cartHasSKU(out.Order, "cad-bar") {
+		t.Fatalf("Cadbury excluded, cart=%+v", out.Order.Items)
+	}
+	if qtyOf(out.Order, "durian-biscuit") != 2 {
+		t.Fatalf("durian qty want 2, cart=%+v reply=%q", out.Order.Items, out.Reply)
+	}
+	if !cartHasSKU(out.Order, "maggi-berempah") {
+		t.Fatalf("Maggi Berempah stay, cart=%+v", out.Order.Items)
+	}
+}
+
 func TestLanjutkanBatalkanCadburyNambahDurianKeepsDraft(t *testing.T) {
 	msg := "lanjutkan WB-239488D0, saya batalkan cadburry dan nambah durian musangking nya 1"
 	if IsOrderCancelRequest(msg) && !IsCartLineCorrectionIntent(msg) {
