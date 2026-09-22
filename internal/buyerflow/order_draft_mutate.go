@@ -34,8 +34,8 @@ func isWholeOrderCancelPhrase(text string) bool {
 var skuCancelFiller = map[string]struct{}{
 	"ya": {}, "deh": {}, "dong": {}, "kak": {}, "pesanan": {}, "order": {},
 	"semua": {}, "bisa": {}, "dan": {}, "nambah": {}, "tambah": {}, "nya": {},
-	"mau": {}, "saya": {}, "lanjutkan": {}, "pada": {}, "wb": {},
-	"batal": {}, "batalkan": {}, "batalin": {}, "cancel": {},
+	"mau": {}, "saya": {}, "lanjutkan": {}, "pada": {}, "wb": {}, "lalu": {}, "tolong": {},
+	"batal": {}, "batalkan": {}, "batalin": {}, "cancel": {}, "dibatalkan": {}, "dibatalin": {},
 }
 
 func skuCancelRemainder(text string) bool {
@@ -44,7 +44,7 @@ func skuCancelRemainder(text string) bool {
 		"pada pesanan", "saya batalkan", "mau batalkan", "mau saya batalkan",
 		"ga jadi beli", "gak jadi beli", "nggak jadi beli", "tidak jadi beli",
 		"nya saya mau", "nya mau", "saya mau", "lanjutkan",
-		"batalkan", "batalin", "cancel", "ga jadi", "gak jadi", "nggak jadi", "tidak jadi",
+		"batalkan", "batalin", "dibatalkan", "dibatalin", "tolong", "cancel", "ga jadi", "gak jadi", "nggak jadi", "tidak jadi",
 	} {
 		rem = strings.ReplaceAll(rem, p, " ")
 	}

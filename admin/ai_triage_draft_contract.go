@@ -28,6 +28,24 @@ func buildDraftContract(channel, path, category, userText, replyText string) ai.
 		},
 	}
 	lowUser := strings.ToLower(userText)
+	if buyerflow.IsCartLineCorrectionIntent(userText) {
+		c.Lane = triageincident.LaneBuyerflow
+		c.Assertions.WantPath = buyerflow.PathOrderFlow
+		c.Assertions.CartExclude = extractCartExcludeHints(userText)
+		if cart := extractCartHints(userText); len(cart) > 0 {
+			c.Assertions.CartInclude = cart
+		} else if inc := extractAmendBrandHints(userText); len(inc) > 0 {
+			c.Assertions.CartInclude = inc
+		}
+		c.Assertions.ReplyExcludes = []string{
+			"Untuk batalkan, pilih nomor pesanan",
+			"Ketik: batalkan WB-",
+			"ordernya dibatalkan",
+			"pesanan dibatalkan",
+		}
+		c.Clarification = "Ubah baris pesanan draft (hapus SKU + tambah qty), bukan batalkan order utuh."
+		return c
+	}
 	if strings.Contains(lowUser, "oatlife") && !strings.Contains(lowUser, "white") {
 		c.Assertions.NeedCustomerInput = true
 		c.Clarification = "Jangan menebak varian; tanya pelanggan jika SKU ambigu."
@@ -162,6 +180,54 @@ func parseCartSegment(seg string) (string, int, bool) {
 		return "", 0, false
 	}
 	return name, qty, true
+}
+
+func extractCartExcludeHints(userText string) []string {
+	low := strings.ToLower(userText)
+	cut := len(userText)
+	for _, m := range []string{
+		"nya tolong dibatalkan", "tolong dibatalkan", "dibatalkan", "dibatalin",
+		"saya batalkan", "mau batalkan", "batalkan", "nya mau cancel", "nya cancel",
+	} {
+		if i := strings.Index(low, m); i >= 0 && i < cut {
+			cut = i
+		}
+	}
+	rejectLow := strings.ToLower(strings.TrimSpace(userText[:cut]))
+	var out []string
+	for _, p := range []struct {
+		sub  string
+		hint string
+	}{
+		{"cadbur", "cadbury"},
+		{"maggi", "maggi"},
+		{"abon", "abon"},
+	} {
+		if strings.Contains(rejectLow, p.sub) {
+			out = append(out, p.hint)
+		}
+	}
+	return out
+}
+
+func extractAmendBrandHints(userText string) []ai.CartAssertion {
+	low := strings.ToLower(userText)
+	if !strings.Contains(low, "nambah") && !strings.Contains(low, "tambah") {
+		return nil
+	}
+	want := userText
+	for _, m := range []string{", lalu ", " lalu ", " dan nambah ", " nambah "} {
+		if i := strings.Index(low, m); i >= 0 {
+			want = userText[i+len(m):]
+			low = strings.ToLower(want)
+			break
+		}
+	}
+	var out []ai.CartAssertion
+	if strings.Contains(low, "durian") || strings.Contains(low, "musang") {
+		out = append(out, ai.CartAssertion{NameContains: "durian"})
+	}
+	return out
 }
 
 func productNameHints(userText string) []string {
