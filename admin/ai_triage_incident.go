@@ -266,14 +266,14 @@ func upsertIncidentFromParams(ctx context.Context, p *IngestTriageIncidentParams
 		// Public feedback never dispatches Composer; confirm-first only.
 		channel = string(interactionevidence.ChannelWebChat)
 	}
-	ev := ieadapters.FromWhatsApp(ieadapters.WhatsAppInput{
+	ev := ieadapters.FromIngest(ieadapters.IngestInput{
+		Channel:        channel,
 		ConversationID: p.ConversationID,
 		InboundID:      p.InboundID,
 		OutboundID:     p.OutboundID,
 		UserText:       p.UserText,
-		FinalText:      p.ReplyText,
+		ReplyText:      p.ReplyText,
 		Path:           p.Path,
-		Author:         "ai",
 		DegradedMode:   kbcontext.DegradedNone,
 	})
 	if !ev.Valid() {
@@ -319,6 +319,7 @@ const (
 	holdNeedCustomerInput        = "need_customer_input"
 	holdContractNotDeterministic = "contract_not_deterministic"
 	holdLaneFailClosed           = "lane_fail_closed"
+	holdShadowChannel            = "shadow_channel"
 )
 
 func confirmHoldReason(c ai.BehaviorContract) string {
@@ -328,10 +329,23 @@ func confirmHoldReason(c ai.BehaviorContract) string {
 	if !ai.HasDeterministicInvariant(c) {
 		return holdContractNotDeterministic
 	}
+	if isShadowTriageChannel(c.Channel) {
+		return holdShadowChannel
+	}
 	if c.Lane == triageincident.LanePresentation {
 		return holdLaneFailClosed
 	}
 	return ""
+}
+
+// isShadowTriageChannel — rollout step 3: intake + contract OK, Composer/repair blocked until chatbot Alpha.
+func isShadowTriageChannel(channel string) bool {
+	switch interactionevidence.Channel(strings.TrimSpace(channel)) {
+	case interactionevidence.ChannelWebChat, interactionevidence.ChannelStorefrontSearch:
+		return true
+	default:
+		return false
+	}
 }
 
 func laneFilesExist(lane string) bool {
