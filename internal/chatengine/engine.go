@@ -30,7 +30,7 @@ type Output struct {
 
 // Engine processes web chat messages using shared retrieval + FAQ fallback.
 type Engine struct {
-	KB kbcontext.Provider
+	KB KBProvider
 }
 
 // ProcessMessage returns a deterministic FAQ/greeting reply (LLM wiring in Epic 1b).
