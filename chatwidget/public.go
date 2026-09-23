@@ -9,7 +9,6 @@ import (
 
 	"encore.app/wabantu/internal/chatengine"
 	appdb "encore.app/wabantu/shared/db"
-	iev "encore.app/wabantu/shared/interactionevidence/adapters"
 	appErrs "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/publictenant"
 )
@@ -61,7 +60,7 @@ var secrets struct {
 	JWTSecret string
 }
 
-var engine = &chatengine.Engine{}
+var engine = &chatengine.Engine{KB: &chatengine.KBProvider{}}
 
 //encore:api public method=GET path=/api/v1/public/chat/:tenantSlug/config
 func GetPublicChatConfig(ctx context.Context, tenantSlug string) (*PublicConfigResponse, error) {
@@ -173,6 +172,11 @@ func PostPublicChatMessage(ctx context.Context, tenantSlug, sessionId string, re
 			}
 		}
 
+		block, degraded, why := abuseGate(ctx, ref.TenantSchema, ref.TenantID, "", body)
+		if block {
+			return nil, appErrs.BadRequest(why)
+		}
+
 		err = ts.QueryRowContext(ctx, `
 			INSERT INTO `+ts.T("web_chat_message")+`
 			(session_id, client_message_id, role, body, content_type)
@@ -185,7 +189,7 @@ func PostPublicChatMessage(ctx context.Context, tenantSlug, sessionId string, re
 		out, err := engine.ProcessMessage(ctx, ts, chatengine.Input{
 			TenantID: ref.TenantID, TenantSchema: ref.TenantSchema,
 			SessionID: sessionId, UserText: body, Enabled: enabled,
-			Welcome: welcome, PersonaName: persona,
+			Welcome: welcome, PersonaName: persona, Degraded: degraded,
 		})
 		if err != nil {
 			return nil, err
@@ -207,11 +211,7 @@ func PostPublicChatMessage(ctx context.Context, tenantSlug, sessionId string, re
 			UPDATE `+ts.T("web_chat_session")+`
 			SET last_message_at = now(), updated_at = now() WHERE id = $1::uuid`, sessionId)
 
-		_ = iev.FromWebChat(iev.WebChatInput{
-			SessionID: sessionId, InboundID: visitorMsgID, OutboundID: replyID,
-			ClientMessageID: clientID, UserText: body, FinalText: out.Body, Path: out.Path,
-			Retrieval: out.Retrieval, DegradedMode: out.DegradedMode,
-		})
+		captureWebChatEvidence(ctx, ref.TenantID, ref.TenantSchema, sessionId, visitorMsgID, replyID, clientID, body, out.Body, out.Path, out.Retrieval, out.DegradedMode)
 
 		return &PostMessageResponse{
 			Visitor: MessagePair{ID: visitorMsgID},

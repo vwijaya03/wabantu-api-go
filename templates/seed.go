@@ -49,6 +49,42 @@ var platformSeeds = []seedTemplate{
 			},
 		},
 	},
+	{
+		Kind: "chatbot", Slug: "platform-chat-bold", Title: "Chat Bold",
+		Version: "1.0.0",
+		Manifest: map[string]any{
+			"schemaVersion": 1, "kind": "chatbot",
+			"meta": map[string]any{"name": "Chat Bold", "author": "WABantu"},
+			"tokens": map[string]any{"color": map[string]any{"primary": "#0f172a", "primaryForeground": "#fff", "background": "#fff", "foreground": "#0f172a"}},
+		},
+	},
+	{
+		Kind: "storefront", Slug: "platform-store-classic", Title: "Store Classic",
+		Version: "1.0.0",
+		Manifest: map[string]any{
+			"schemaVersion": 1, "kind": "storefront",
+			"meta": map[string]any{"name": "Store Classic", "author": "WABantu"},
+			"tokens": map[string]any{"color": map[string]any{"primary": "#10b981", "background": "#fafafa", "foreground": "#111827"}},
+		},
+	},
+	{
+		Kind: "storefront", Slug: "platform-store-modern", Title: "Store Modern",
+		Version: "1.0.0",
+		Manifest: map[string]any{
+			"schemaVersion": 1, "kind": "storefront",
+			"meta": map[string]any{"name": "Store Modern", "author": "WABantu"},
+			"tokens": map[string]any{"color": map[string]any{"primary": "#6366f1", "background": "#ffffff", "foreground": "#0f172a"}},
+		},
+	},
+	{
+		Kind: "bundle", Slug: "platform-bundle-fresh", Title: "Bundle Fresh",
+		Version: "1.0.0",
+		Manifest: map[string]any{
+			"schemaVersion": 1, "kind": "bundle",
+			"meta": map[string]any{"name": "Bundle Fresh", "author": "WABantu"},
+			"tokens": map[string]any{"color": map[string]any{"primary": "#10b981", "accent": "#f59e0b", "background": "#fff", "foreground": "#0f172a"}},
+		},
+	},
 }
 
 func manifestSHA(m map[string]any) string {

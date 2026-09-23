@@ -17,6 +17,7 @@ type Input struct {
 	Enabled      bool
 	Welcome      string
 	PersonaName  string
+	Degraded     kbcontext.DegradedMode
 }
 
 // Output is the grounded assistant reply for one turn.
@@ -30,12 +31,12 @@ type Output struct {
 
 // Engine processes web chat messages using shared retrieval + FAQ fallback.
 type Engine struct {
-	KB KBProvider
+	KB *KBProvider
 }
 
 // ProcessMessage returns a deterministic FAQ/greeting reply (LLM wiring in Epic 1b).
 func (e *Engine) ProcessMessage(ctx context.Context, ts appdb.TenantScope, in Input) (Output, error) {
-	out := Output{Path: PathGreeting}
+	out := Output{Path: PathGreeting, DegradedMode: in.Degraded}
 	if !in.Enabled {
 		out.Path = PathDisabled
 		out.Body = "Chat sedang tidak aktif."

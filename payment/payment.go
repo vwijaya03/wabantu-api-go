@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"encore.dev/beta/auth"
@@ -18,6 +19,7 @@ import (
 	appErrs "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/billing"
 	"encore.app/wabantu/shared/types"
+	"encore.app/wabantu/templates"
 )
 
 var dataDB = sqldb.Named("tenant")
@@ -140,46 +142,17 @@ func CreateQRIS(ctx context.Context, p *CreateQRISParams) (*QRISResponse, error)
 
 	orderID := fmt.Sprintf("WB-%s-%d", p.InvoiceID, time.Now().UnixMilli())
 
-	chargeResp, err := callMidtransCharge(orderID, p.AmountIDR)
+	qr, err := ChargeQRIS(ctx, &ChargeQRISRequest{
+		TenantSchema: u.TenantSchema,
+		OrderID:      orderID,
+		AmountIDR:    p.AmountIDR,
+		Description:  p.Description,
+		InvoiceID:    p.InvoiceID,
+	})
 	if err != nil {
 		return nil, appErrs.Unavailable("payment gateway error: " + err.Error())
 	}
-
-	qrURL := ""
-	for _, a := range chargeResp.Actions {
-		if a.Name == "generate-qr-code" {
-			qrURL = a.URL
-			break
-		}
-	}
-
-	expiresAt := time.Now().Add(15 * time.Minute)
-
-	_, err = dataDB.Exec(ctx, fmt.Sprintf(
-		`INSERT INTO "%s".payment_transaction
-			(midtrans_order_id, midtrans_transaction_id, invoice_id, amount_idr,
-			 description, status, payment_type, qr_url, expires_at)
-		 VALUES ($1,$2,$3,$4,$5,'PENDING','qris',$6,$7)`,
-		u.TenantSchema),
-		orderID, chargeResp.TransactionID, p.InvoiceID, p.AmountIDR,
-		p.Description, qrURL, expiresAt)
-	if err != nil {
-		return nil, fmt.Errorf("save transaction: %w", err)
-	}
-
-	_, err = systemDB.Exec(ctx,
-		`INSERT INTO payment_webhook_map (order_id, tenant_schema) VALUES ($1,$2)`,
-		orderID, u.TenantSchema)
-	if err != nil {
-		rlog.Error("failed to save webhook map", "err", err)
-	}
-
-	return &QRISResponse{
-		TransactionID: chargeResp.TransactionID,
-		OrderID:       orderID,
-		QRURL:         qrURL,
-		ExpiresAt:     expiresAt,
-	}, nil
+	return qr, nil
 }
 
 //encore:api auth method=GET path=/api/v1/payment/:id/status
@@ -234,6 +207,16 @@ func serveMidtransWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
+
+	if strings.HasPrefix(n.OrderID, "WB-TPL-") {
+		if mapMidtransStatus(n.TransStatus) == "PAID" {
+			if err := templates.FulfillTemplatePurchase(ctx, n.OrderID); err != nil {
+				rlog.Error("template purchase fulfill failed", "orderId", n.OrderID, "err", err)
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+		return
+	}
 
 	var tenantSchema string
 	if err := systemDB.QueryRow(ctx,

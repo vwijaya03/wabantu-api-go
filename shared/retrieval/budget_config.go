@@ -12,9 +12,9 @@ const (
 	budgetMinMs = 200
 	budgetMaxMs = 10_000
 
-	budgetDevelopment = 2500 * time.Millisecond
-	budgetStaging     = 1200 * time.Millisecond
-	budgetProduction  = 1200 * time.Millisecond
+	budgetDevelopment = 5000 * time.Millisecond
+	budgetStaging     = 5000 * time.Millisecond
+	budgetProduction  = 5000 * time.Millisecond
 )
 
 // QueryBudget returns the nominal retrieval sub-budget for the current environment.

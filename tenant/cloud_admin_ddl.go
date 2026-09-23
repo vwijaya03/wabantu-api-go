@@ -56,6 +56,11 @@ func cloudAdminTenantDDLBlocks() []cloudAdminDDLBlock {
 			sql:    tenantschema.ChatWidgetPatchSQL,
 			covers: "ChatWidgetReady",
 		},
+		{
+			label:  "storefront patch",
+			sql:    tenantschema.StorefrontPatchSQL,
+			covers: "StorefrontReady",
+		},
 	}
 }
 

@@ -118,6 +118,20 @@ func KnowledgeBaseReady(ctx context.Context, q any, schema string) (bool, error)
 	return TableExists(ctx, q, schema, "knowledge_base_entry")
 }
 
+// StorefrontReady — storefront config + catalog/order extensions.
+func StorefrontReady(ctx context.Context, q any, schema string) (bool, error) {
+	q = Q(q)
+	ok, err := TableExists(ctx, q, schema, "storefront_config")
+	if err != nil || !ok {
+		return false, err
+	}
+	ok, err = ColumnExists(ctx, q, schema, "business_catalog_item", "slug")
+	if err != nil || !ok {
+		return false, err
+	}
+	return ColumnExists(ctx, q, schema, "order", "source")
+}
+
 // ChatWidgetReady — web chat widget tables for Epic 1.
 func ChatWidgetReady(ctx context.Context, q any, schema string) (bool, error) {
 	q = Q(q)
@@ -242,6 +256,7 @@ func CloudTenantReady(ctx context.Context, q any, schema string) (bool, error) {
 		OrderPaymentProofPatchReady,
 		InventoryModuleReady,
 		ChatWidgetReady,
+		StorefrontReady,
 	}
 	for _, fn := range checks {
 		ok, err := fn(ctx, q, schema)

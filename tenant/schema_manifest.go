@@ -15,9 +15,13 @@ var SchemaManifests = []PatchManifest{
 		Description: "Payment proof, inventory, finance, RAG retrieval",
 	},
 	{
+		Version:     3,
+		Description: "Web chat widget tables (chat_widget_config, web_chat_session, web_chat_message)",
+	},
+	{
 		Version:          CurrentSchemaPatchVersion,
 		RequiresAdminDDL: false,
-		Description:      "Web chat widget tables (chat_widget_config, web_chat_session, web_chat_message)",
+		Description:      "Storefront config, catalog slug/visibility, order.source + guest columns",
 	},
 }
 
