@@ -51,6 +51,11 @@ func cloudAdminTenantDDLBlocks() []cloudAdminDDLBlock {
 			sql:    retrievalOutboxPatchSQL,
 			covers: "RetrievalReady",
 		},
+		{
+			label:  "chatwidget patch",
+			sql:    tenantschema.ChatWidgetPatchSQL,
+			covers: "ChatWidgetReady",
+		},
 	}
 }
 

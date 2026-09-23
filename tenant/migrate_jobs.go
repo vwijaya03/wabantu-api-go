@@ -340,6 +340,9 @@ func processTenantSchemaMigrationLocked(ctx context.Context, tenantID, schemaNam
 	if err := EnsureRetrievalSchema(ctx, schemaName); err != nil {
 		return err
 	}
+	if err := EnsureChatWidgetSchema(ctx, schemaName); err != nil {
+		return err
+	}
 
 	ver, err := getTenantSchemaPatchVersion(ctx, tenantID)
 	if err != nil {

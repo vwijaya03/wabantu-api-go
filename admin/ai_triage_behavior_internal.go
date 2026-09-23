@@ -62,7 +62,8 @@ func GetInternalAITriageBehaviorJob(w http.ResponseWriter, req *http.Request) {
 		}
 		includes = append(includes, triageautogen.CartInclude{Name: line.NameContains, Qty: qty})
 	}
-	gen := triageautogen.BuildBehaviorTestFile(job.ID, userText, contract.Assertions.WantPath, includes, contract.Assertions.CartExclude, contract.Assertions.ReplyContains, contract.Assertions.ReplyExcludes)
+	hydrate := len(includes) > 0 || len(contract.Assertions.CartExclude) > 0
+	gen := triageautogen.BuildBehaviorTestFile(job.ID, userText, contract.Assertions.WantPath, includes, contract.Assertions.CartExclude, contract.Assertions.ReplyContains, contract.Assertions.ReplyExcludes, hydrate)
 	hint, _ := json.Marshal(map[string]any{
 		"lane":    job.Lane,
 		"channel": job.Channel,
