@@ -172,6 +172,17 @@ func PostPublicChatMessage(ctx context.Context, tenantSlug, sessionId string, re
 			}
 		}
 
+		var sessionStatus string
+		if err := ts.QueryRowContext(ctx, `SELECT status FROM `+ts.T("web_chat_session")+` WHERE id = $1::uuid`, sessionId).Scan(&sessionStatus); err == sql.ErrNoRows {
+			return nil, appErrs.NotFound("sesi tidak ditemukan")
+		} else if err != nil {
+			return nil, err
+		}
+		if sessionStatus == "handoff" {
+			out := chatengine.Output{Path: "handoff", Body: "Tim kami sedang menangani percakapan ini. Mohon tunggu."}
+			return persistAssistantReply(ctx, ts, ref, sessionId, clientID, body, out)
+		}
+
 		block, degraded, why := abuseGate(ctx, ref.TenantSchema, ref.TenantID, "", body)
 		if block {
 			return nil, appErrs.BadRequest(why)

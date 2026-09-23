@@ -103,22 +103,14 @@ func InstallTemplate(ctx context.Context, slug string) (*InstallTemplateResponse
 	if err != nil {
 		return nil, err
 	}
-	surface := kind
-	if kind == "bundle" {
-		surface = "chatbot"
-	}
-	var installID string
-	err = sysDB.QueryRow(ctx, `
-		INSERT INTO tenant_template_install (tenant_id, listing_id, version_id, kind, surface, installed_by)
-		VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6::uuid)
-		ON CONFLICT (tenant_id, surface) DO UPDATE
-		SET listing_id = EXCLUDED.listing_id, version_id = EXCLUDED.version_id,
-		    kind = EXCLUDED.kind, is_active = true, installed_at = now()
-		RETURNING id::text`,
-		u.TenantID, listingID, versionID, kind, surface, u.AccountID).Scan(&installID)
-	if err != nil {
+	if err := installTemplateSurfaces(ctx, u.TenantID, listingID, versionID, kind, u.AccountID); err != nil {
 		return nil, err
 	}
+	var installID string
+	surface := surfacesForKind(kind)[0]
+	_ = sysDB.QueryRow(ctx, `
+		SELECT id::text FROM tenant_template_install
+		WHERE tenant_id = $1::uuid AND surface = $2`, u.TenantID, surface).Scan(&installID)
 	_, _ = sysDB.Exec(ctx, `UPDATE template_listing SET install_count = install_count + 1 WHERE id = $1::uuid`, listingID)
 	return &InstallTemplateResponse{InstallID: installID, Kind: kind, Slug: slug}, nil
 }

@@ -131,19 +131,11 @@ func FulfillTemplatePurchase(ctx context.Context, midtransOrderID string) error 
 		return err
 	}
 
-	surface := kind
-	if kind == "bundle" {
-		surface = "chatbot"
+	var purchasedBy string
+	if err := sysDB.QueryRow(ctx, `SELECT purchased_by::text FROM template_purchase WHERE id = $1::uuid`, purchaseID).Scan(&purchasedBy); err != nil {
+		return err
 	}
-	_, err = sysDB.Exec(ctx, `
-		INSERT INTO tenant_template_install (tenant_id, listing_id, version_id, kind, surface, installed_by)
-		VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5,
-			(SELECT purchased_by FROM template_purchase WHERE id = $6::uuid))
-		ON CONFLICT (tenant_id, surface) DO UPDATE
-		SET listing_id = EXCLUDED.listing_id, version_id = EXCLUDED.version_id,
-		    kind = EXCLUDED.kind, is_active = true, installed_at = now()`,
-		tenantID, listingID, versionID, kind, surface, purchaseID)
-	if err != nil {
+	if err := installTemplateSurfaces(ctx, tenantID, listingID, versionID, kind, purchasedBy); err != nil {
 		return err
 	}
 	_, _ = sysDB.Exec(ctx, `

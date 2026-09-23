@@ -3,6 +3,8 @@ package templates
 import (
 	"encoding/json"
 	"fmt"
+
+	"encore.app/wabantu/shared/templateassets"
 )
 
 // ManifestV1 is the minimal template manifest contract for Epic 0.
@@ -34,6 +36,9 @@ func ValidateManifestJSON(raw json.RawMessage) (ManifestV1, error) {
 	}
 	if m.Tokens == nil {
 		return ManifestV1{}, fmt.Errorf("tokens wajib diisi")
+	}
+	if err := templateassets.SanitizeManifestTokens(m.Tokens); err != nil {
+		return ManifestV1{}, err
 	}
 	return m, nil
 }
