@@ -1,6 +1,6 @@
 {
-  "total_services": 29,
-  "total_endpoints": 361,
+  "total_services": 31,
+  "total_endpoints": 371,
   "services": {
     "admin": 35,
     "ai": 3,
@@ -11,6 +11,7 @@
     "branch": 2,
     "broadcast": 3,
     "business": 24,
+    "chatwidget": 8,
     "events": 64,
     "finance": 60,
     "flag": 12,
@@ -25,6 +26,7 @@
     "order": 13,
     "payment": 3,
     "shipping": 3,
+    "templates": 2,
     "tenant": 6,
     "tenantaccess": 5,
     "usage": 5,

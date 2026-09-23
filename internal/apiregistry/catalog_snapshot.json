@@ -1,5 +1,5 @@
 {
-  "count": 361,
+  "count": 371,
   "endpoints": [
     {
       "service": "admin",
@@ -745,6 +745,36 @@
       "path": "/api/v1/business/setup-interview/start",
       "tag": "owner",
       "annotation": "auth method=POST path=/api/v1/business/setup-interview/start tag:owner"
+    },
+    {
+      "service": "chatwidget",
+      "file": "chatwidget/dashboard.go",
+      "line": 50,
+      "access": "auth",
+      "method": "GET",
+      "path": "/api/v1/chat-widget/config",
+      "tag": "owner",
+      "annotation": "auth method=GET path=/api/v1/chat-widget/config tag:owner"
+    },
+    {
+      "service": "chatwidget",
+      "file": "chatwidget/dashboard.go",
+      "line": 81,
+      "access": "auth",
+      "method": "PUT",
+      "path": "/api/v1/chat-widget/config",
+      "tag": "owner",
+      "annotation": "auth method=PUT path=/api/v1/chat-widget/config tag:owner"
+    },
+    {
+      "service": "chatwidget",
+      "file": "chatwidget/dashboard.go",
+      "line": 135,
+      "access": "auth",
+      "method": "GET",
+      "path": "/api/v1/chat-widget/embed-snippet",
+      "tag": "owner",
+      "annotation": "auth method=GET path=/api/v1/chat-widget/embed-snippet tag:owner"
     },
     {
       "service": "events",
@@ -2211,7 +2241,7 @@
     {
       "service": "admin",
       "file": "admin/ai_triage_behavior_internal.go",
-      "line": 92,
+      "line": 93,
       "access": "public",
       "method": "POST",
       "path": "/api/v1/internal/ai-triage/behavior-jobs/:id/complete",
@@ -3071,6 +3101,52 @@
       "annotation": "public raw method=POST path=/api/v1/payment/webhook/midtrans"
     },
     {
+      "service": "chatwidget",
+      "file": "chatwidget/public.go",
+      "line": 66,
+      "access": "public",
+      "method": "GET",
+      "path": "/api/v1/public/chat/:tenantSlug/config",
+      "annotation": "public method=GET path=/api/v1/public/chat/:tenantSlug/config"
+    },
+    {
+      "service": "chatwidget",
+      "file": "chatwidget/public.go",
+      "line": 93,
+      "access": "public",
+      "method": "POST",
+      "path": "/api/v1/public/chat/:tenantSlug/sessions",
+      "annotation": "public method=POST path=/api/v1/public/chat/:tenantSlug/sessions"
+    },
+    {
+      "service": "chatwidget",
+      "file": "chatwidget/public.go",
+      "line": 230,
+      "access": "public",
+      "method": "GET",
+      "path": "/api/v1/public/chat/:tenantSlug/sessions/:sessionId/messages",
+      "annotation": "public method=GET path=/api/v1/public/chat/:tenantSlug/sessions/:sessionId/messages"
+    },
+    {
+      "service": "chatwidget",
+      "file": "chatwidget/public.go",
+      "line": 133,
+      "access": "public",
+      "method": "POST",
+      "path": "/api/v1/public/chat/:tenantSlug/sessions/:sessionId/messages",
+      "annotation": "public method=POST path=/api/v1/public/chat/:tenantSlug/sessions/:sessionId/messages"
+    },
+    {
+      "service": "chatwidget",
+      "file": "chatwidget/stream.go",
+      "line": 36,
+      "access": "public",
+      "method": "GET",
+      "path": "/api/v1/public/chat/:tenantSlug/sessions/:sessionId/stream",
+      "raw": true,
+      "annotation": "public raw method=GET path=/api/v1/public/chat/:tenantSlug/sessions/:sessionId/stream"
+    },
+    {
       "service": "events",
       "file": "events/public_monitor.go",
       "line": 34,
@@ -3189,6 +3265,24 @@
       "path": "/api/v1/team/members/:id",
       "tag": "owner",
       "annotation": "auth method=DELETE path=/api/v1/team/members/:id tag:owner"
+    },
+    {
+      "service": "templates",
+      "file": "templates/templates.go",
+      "line": 42,
+      "access": "public",
+      "method": "GET",
+      "path": "/api/v1/templates",
+      "annotation": "public method=GET path=/api/v1/templates"
+    },
+    {
+      "service": "templates",
+      "file": "templates/templates.go",
+      "line": 74,
+      "access": "public",
+      "method": "GET",
+      "path": "/api/v1/templates/:slug",
+      "annotation": "public method=GET path=/api/v1/templates/:slug"
     },
     {
       "service": "tenantaccess",
