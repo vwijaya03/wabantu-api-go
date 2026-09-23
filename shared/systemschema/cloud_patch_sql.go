@@ -279,4 +279,124 @@ CREATE INDEX IF NOT EXISTS idx_ai_triage_repair_plan_status ON ai_triage_repair_
 
 DROP TABLE IF EXISTS ai_triage_anomaly;
 DROP TABLE IF EXISTS ai_triage_job;
+
+CREATE TABLE IF NOT EXISTS template_listing (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    developer_id    UUID,
+    kind            VARCHAR(20) NOT NULL,
+    slug            VARCHAR(80) NOT NULL,
+    title           TEXT NOT NULL,
+    description     TEXT,
+    preview_image_url TEXT,
+    price_idr       INTEGER NOT NULL DEFAULT 0,
+    status          VARCHAR(20) NOT NULL DEFAULT 'draft',
+    install_count   INTEGER NOT NULL DEFAULT 0,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(kind, slug)
+);
+
+CREATE TABLE IF NOT EXISTS template_version (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    listing_id      UUID NOT NULL REFERENCES template_listing(id) ON DELETE CASCADE,
+    version         VARCHAR(20) NOT NULL,
+    manifest_json   JSONB NOT NULL,
+    manifest_sha256 VARCHAR(64) NOT NULL,
+    status          VARCHAR(20) NOT NULL DEFAULT 'draft',
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(listing_id, version)
+);
+
+CREATE TABLE IF NOT EXISTS tenant_template_install (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id       UUID NOT NULL,
+    listing_id      UUID NOT NULL REFERENCES template_listing(id),
+    version_id      UUID NOT NULL REFERENCES template_version(id),
+    kind            VARCHAR(20) NOT NULL,
+    surface         VARCHAR(20) NOT NULL,
+    is_active       BOOLEAN NOT NULL DEFAULT true,
+    installed_by    UUID NOT NULL,
+    installed_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(tenant_id, surface)
+);
+
+CREATE INDEX IF NOT EXISTS idx_template_listing_status ON template_listing(status, kind);
+CREATE INDEX IF NOT EXISTS idx_template_version_listing ON template_version(listing_id, status);
+
+CREATE TABLE IF NOT EXISTS developer_account (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    account_id      UUID NOT NULL,
+    tenant_id       UUID NOT NULL,
+    display_name    TEXT NOT NULL,
+    slug            VARCHAR(64) NOT NULL UNIQUE,
+    bio             TEXT,
+    website_url     TEXT,
+    kyc_status      VARCHAR(20) NOT NULL DEFAULT 'pending',
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(account_id),
+    UNIQUE(tenant_id)
+);
+
+CREATE TABLE IF NOT EXISTS template_review (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    version_id      UUID NOT NULL REFERENCES template_version(id) ON DELETE CASCADE,
+    reviewer_id     UUID,
+    decision        VARCHAR(20) NOT NULL,
+    notes           TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS template_purchase (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id       UUID NOT NULL,
+    listing_id      UUID NOT NULL REFERENCES template_listing(id),
+    version_id      UUID NOT NULL REFERENCES template_version(id),
+    amount_idr      INTEGER NOT NULL,
+    platform_fee_idr INTEGER NOT NULL DEFAULT 0,
+    developer_share_idr INTEGER NOT NULL DEFAULT 0,
+    midtrans_order_id TEXT UNIQUE,
+    status          VARCHAR(20) NOT NULL DEFAULT 'pending',
+    purchased_by    UUID NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS developer_payout_ledger (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    developer_id    UUID NOT NULL REFERENCES developer_account(id),
+    purchase_id     UUID REFERENCES template_purchase(id),
+    amount_idr      INTEGER NOT NULL,
+    status          VARCHAR(20) NOT NULL DEFAULT 'pending',
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(purchase_id)
+);
+
+CREATE TABLE IF NOT EXISTS template_asset (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    developer_id    UUID NOT NULL REFERENCES developer_account(id) ON DELETE CASCADE,
+    kind            VARCHAR(20) NOT NULL,
+    content_sha256  VARCHAR(64) NOT NULL,
+    s3_key          TEXT NOT NULL UNIQUE,
+    byte_size       INTEGER NOT NULL,
+    scan_status     VARCHAR(20) NOT NULL DEFAULT 'pending',
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (kind IN ('lottie', 'web_component')),
+    CHECK (scan_status IN ('pending', 'clean', 'rejected')),
+    CHECK (byte_size > 0)
+);
+
+CREATE TABLE IF NOT EXISTS tenant_custom_domain (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id           UUID NOT NULL,
+    hostname            VARCHAR(253) NOT NULL,
+    verification_token  VARCHAR(64) NOT NULL,
+    status              VARCHAR(20) NOT NULL DEFAULT 'pending',
+    cname_target        TEXT NOT NULL DEFAULT 'custom.wabantu.id',
+    verified_at         TIMESTAMPTZ,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(hostname),
+    UNIQUE(tenant_id, hostname),
+    CHECK (status IN ('pending', 'verified', 'disabled'))
+);
 `

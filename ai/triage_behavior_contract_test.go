@@ -29,4 +29,7 @@ func TestHasDeterministicInvariant(t *testing.T) {
 	if !HasDeterministicInvariant(BehaviorContract{Lane: "grounded_content", Assertions: BehaviorAssertions{ReplyExcludes: []string{"belum menemukan"}}}) {
 		t.Fatal("grounded replyExcludes must be dispatchable")
 	}
+	if HasDeterministicInvariant(BehaviorContract{Lane: "buyerflow", Assertions: BehaviorAssertions{WantPath: "order_cancel"}}) {
+		t.Fatal("buyerflow wantPath-only must not dispatch Composer")
+	}
 }

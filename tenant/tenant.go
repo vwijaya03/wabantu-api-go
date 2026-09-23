@@ -753,6 +753,79 @@ CREATE INDEX IF NOT EXISTS idx_webhook_event_status
 CREATE INDEX IF NOT EXISTS idx_webhook_event_created
     ON webhook_event(created_at);
 
+-- chat widget (web embed)
+CREATE TABLE IF NOT EXISTS chat_widget_config (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    is_enabled          BOOLEAN NOT NULL DEFAULT false,
+    install_id          UUID,
+    welcome_message     TEXT,
+    persona_name        VARCHAR(120),
+    persona_avatar_url  TEXT,
+    position            VARCHAR(20) NOT NULL DEFAULT 'bottom-right',
+    locale              VARCHAR(10) NOT NULL DEFAULT 'id',
+    custom_tokens       JSONB NOT NULL DEFAULT '{}',
+    allowed_domains     JSONB NOT NULL DEFAULT '[]',
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS web_chat_session (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    visitor_token_hash VARCHAR(64) NOT NULL,
+    status          VARCHAR(20) NOT NULL DEFAULT 'active',
+    metadata        JSONB NOT NULL DEFAULT '{}',
+    order_state     JSONB NOT NULL DEFAULT '{}',
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_message_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_web_chat_session_visitor
+    ON web_chat_session(visitor_token_hash, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS web_chat_message (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id      UUID NOT NULL REFERENCES web_chat_session(id) ON DELETE CASCADE,
+    client_message_id VARCHAR(80),
+    role            VARCHAR(20) NOT NULL,
+    body            TEXT NOT NULL,
+    content_type    VARCHAR(20) NOT NULL DEFAULT 'text',
+    metadata        JSONB NOT NULL DEFAULT '{}',
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_web_chat_msg_session
+    ON web_chat_message(session_id, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_web_chat_msg_client_id
+    ON web_chat_message(session_id, client_message_id) WHERE client_message_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS storefront_config (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    is_enabled          BOOLEAN NOT NULL DEFAULT false,
+    install_id          UUID,
+    store_title         TEXT,
+    store_description   TEXT,
+    seo_title           TEXT,
+    seo_description     TEXT,
+    featured_product_ids JSONB NOT NULL DEFAULT '[]',
+    custom_tokens       JSONB NOT NULL DEFAULT '{}',
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE business_catalog_item ADD COLUMN IF NOT EXISTS slug VARCHAR(120);
+ALTER TABLE business_catalog_item ADD COLUMN IF NOT EXISTS image_url TEXT;
+ALTER TABLE business_catalog_item ADD COLUMN IF NOT EXISTS is_storefront_visible BOOLEAN NOT NULL DEFAULT true;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_slug
+    ON business_catalog_item(slug) WHERE deleted_at IS NULL AND slug IS NOT NULL;
+
+ALTER TABLE "order" ADD COLUMN IF NOT EXISTS source VARCHAR(20) NOT NULL DEFAULT 'manual';
+ALTER TABLE "order" ADD COLUMN IF NOT EXISTS web_session_id UUID;
+ALTER TABLE "order" ADD COLUMN IF NOT EXISTS guest_email_enc TEXT;
+ALTER TABLE "order" ADD COLUMN IF NOT EXISTS guest_email_idx VARCHAR(64);
+ALTER TABLE "order" ADD COLUMN IF NOT EXISTS guest_phone_enc TEXT;
+ALTER TABLE "order" ADD COLUMN IF NOT EXISTS guest_phone_idx VARCHAR(64);
+CREATE INDEX IF NOT EXISTS idx_order_source
+    ON "order"(source, created_at DESC) WHERE deleted_at IS NULL;
+
 -- ============================================================
 -- FINANCE MODULE
 -- ============================================================

@@ -280,6 +280,12 @@ func runAlwaysApplyPatches(ctx context.Context, conn *sql.Conn) error {
 	if err := alwaysApplyRetrievalPatch(ctx, conn, kbSchema); err != nil {
 		return err
 	}
+	if err := alwaysApplyChatWidgetPatch(ctx, conn, kbSchema); err != nil {
+		return err
+	}
+	if err := alwaysApplyStorefrontPatch(ctx, conn, kbSchema); err != nil {
+		return err
+	}
 	return alwaysApplyInventoryIndexPatch(ctx, conn)
 }
 

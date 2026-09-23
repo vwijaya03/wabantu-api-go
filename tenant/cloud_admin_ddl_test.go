@@ -24,6 +24,8 @@ func TestCloudAdminDDLCoversCloudTenantReady(t *testing.T) {
 		"OrderIncomePatchReady",
 		"OrderPaymentProofPatchReady",
 		"InventoryModuleReady",
+		"ChatWidgetReady",
+		"StorefrontReady",
 	}
 
 	covered := strings.Join(func() []string {

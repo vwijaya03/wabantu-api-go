@@ -16,6 +16,7 @@ func TestBuildBehaviorTestFileEscapesCustomerText(t *testing.T) {
 		[]string{"oatlife"},
 		nil,
 		[]string{"White Coffee"},
+		false,
 	)
 	if strings.Count(src, "package buyerflow_test") != 1 {
 		t.Fatal("generated test must use external test package buyerflow_test")
@@ -48,5 +49,21 @@ func TestBuildBehaviorTestFileEscapesCustomerText(t *testing.T) {
 	}
 	if f.Name.Name != "buyerflow_test" {
 		t.Fatalf("package %s", f.Name.Name)
+	}
+}
+
+func TestBuildBehaviorTestFileHydratesDraftFixture(t *testing.T) {
+	src := BuildBehaviorTestFile(
+		"e26179a5-cfe8-4109-a5af-dfeb19fc7dcb",
+		"cadburry nya tolong dibatalkan, lalu musang king durian nya mau nambah 1 ya",
+		"order_flow",
+		[]CartInclude{{Name: "durian", Qty: 2}},
+		[]string{"cadbury"},
+		nil,
+		nil,
+		true,
+	)
+	if !strings.Contains(src, "buyerflow.NewWB239488Simulator()") {
+		t.Fatalf("cart mutation tests must hydrate WB-239488D0, got:\n%s", src)
 	}
 }

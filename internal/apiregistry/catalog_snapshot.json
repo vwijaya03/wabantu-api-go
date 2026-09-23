@@ -1,5 +1,5 @@
 {
-  "count": 361,
+  "count": 399,
   "endpoints": [
     {
       "service": "admin",
@@ -260,6 +260,26 @@
       "path": "/api/v1/admin/stop-impersonation",
       "tag": "super_admin",
       "annotation": "auth method=POST path=/api/v1/admin/stop-impersonation tag:super_admin"
+    },
+    {
+      "service": "templates",
+      "file": "templates/admin_review.go",
+      "line": 26,
+      "access": "auth",
+      "method": "GET",
+      "path": "/api/v1/admin/template-reviews",
+      "tag": "super_admin",
+      "annotation": "auth method=GET path=/api/v1/admin/template-reviews tag:super_admin"
+    },
+    {
+      "service": "templates",
+      "file": "templates/admin_review.go",
+      "line": 49,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/admin/template-reviews/:versionId/decide",
+      "tag": "super_admin",
+      "annotation": "auth method=POST path=/api/v1/admin/template-reviews/:versionId/decide tag:super_admin"
     },
     {
       "service": "tenantaccess",
@@ -745,6 +765,116 @@
       "path": "/api/v1/business/setup-interview/start",
       "tag": "owner",
       "annotation": "auth method=POST path=/api/v1/business/setup-interview/start tag:owner"
+    },
+    {
+      "service": "chatwidget",
+      "file": "chatwidget/dashboard.go",
+      "line": 50,
+      "access": "auth",
+      "method": "GET",
+      "path": "/api/v1/chat-widget/config",
+      "tag": "owner",
+      "annotation": "auth method=GET path=/api/v1/chat-widget/config tag:owner"
+    },
+    {
+      "service": "chatwidget",
+      "file": "chatwidget/dashboard.go",
+      "line": 81,
+      "access": "auth",
+      "method": "PUT",
+      "path": "/api/v1/chat-widget/config",
+      "tag": "owner",
+      "annotation": "auth method=PUT path=/api/v1/chat-widget/config tag:owner"
+    },
+    {
+      "service": "chatwidget",
+      "file": "chatwidget/dashboard.go",
+      "line": 135,
+      "access": "auth",
+      "method": "GET",
+      "path": "/api/v1/chat-widget/embed-snippet",
+      "tag": "owner",
+      "annotation": "auth method=GET path=/api/v1/chat-widget/embed-snippet tag:owner"
+    },
+    {
+      "service": "chatwidget",
+      "file": "chatwidget/handoff.go",
+      "line": 28,
+      "access": "auth",
+      "method": "GET",
+      "path": "/api/v1/chat-widget/sessions",
+      "tag": "owner",
+      "annotation": "auth method=GET path=/api/v1/chat-widget/sessions tag:owner"
+    },
+    {
+      "service": "chatwidget",
+      "file": "chatwidget/handoff.go",
+      "line": 58,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/chat-widget/sessions/:sessionId/handoff",
+      "tag": "owner",
+      "annotation": "auth method=POST path=/api/v1/chat-widget/sessions/:sessionId/handoff tag:owner"
+    },
+    {
+      "service": "templates",
+      "file": "templates/preview.go",
+      "line": 16,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/developer/asset-preview-token/:assetId",
+      "tag": "owner",
+      "annotation": "auth method=POST path=/api/v1/developer/asset-preview-token/:assetId tag:owner"
+    },
+    {
+      "service": "templates",
+      "file": "templates/assets.go",
+      "line": 81,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/developer/asset-signed-url/:assetId",
+      "tag": "owner",
+      "annotation": "auth method=POST path=/api/v1/developer/asset-signed-url/:assetId tag:owner"
+    },
+    {
+      "service": "templates",
+      "file": "templates/assets.go",
+      "line": 38,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/developer/lottie-assets",
+      "tag": "owner",
+      "annotation": "auth method=POST path=/api/v1/developer/lottie-assets tag:owner"
+    },
+    {
+      "service": "templates",
+      "file": "templates/developer.go",
+      "line": 55,
+      "access": "auth",
+      "method": "GET",
+      "path": "/api/v1/developer/me",
+      "tag": "owner",
+      "annotation": "auth method=GET path=/api/v1/developer/me tag:owner"
+    },
+    {
+      "service": "templates",
+      "file": "templates/developer.go",
+      "line": 29,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/developer/register",
+      "tag": "owner",
+      "annotation": "auth method=POST path=/api/v1/developer/register tag:owner"
+    },
+    {
+      "service": "templates",
+      "file": "templates/assets.go",
+      "line": 62,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/developer/web-component-assets",
+      "tag": "owner",
+      "annotation": "auth method=POST path=/api/v1/developer/web-component-assets tag:owner"
     },
     {
       "service": "events",
@@ -2211,7 +2341,7 @@
     {
       "service": "admin",
       "file": "admin/ai_triage_behavior_internal.go",
-      "line": 92,
+      "line": 93,
       "access": "public",
       "method": "POST",
       "path": "/api/v1/internal/ai-triage/behavior-jobs/:id/complete",
@@ -3045,7 +3175,7 @@
     {
       "service": "payment",
       "file": "payment/payment.go",
-      "line": 185,
+      "line": 158,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/payment/:id/status",
@@ -3054,7 +3184,7 @@
     {
       "service": "payment",
       "file": "payment/payment.go",
-      "line": 110,
+      "line": 112,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/payment/create-qris",
@@ -3063,12 +3193,67 @@
     {
       "service": "payment",
       "file": "payment/payment.go",
-      "line": 208,
+      "line": 181,
       "access": "public",
       "method": "POST",
       "path": "/api/v1/payment/webhook/midtrans",
       "raw": true,
       "annotation": "public raw method=POST path=/api/v1/payment/webhook/midtrans"
+    },
+    {
+      "service": "chatwidget",
+      "file": "chatwidget/public.go",
+      "line": 65,
+      "access": "public",
+      "method": "GET",
+      "path": "/api/v1/public/chat/:tenantSlug/config",
+      "annotation": "public method=GET path=/api/v1/public/chat/:tenantSlug/config"
+    },
+    {
+      "service": "chatwidget",
+      "file": "chatwidget/public.go",
+      "line": 92,
+      "access": "public",
+      "method": "POST",
+      "path": "/api/v1/public/chat/:tenantSlug/sessions",
+      "annotation": "public method=POST path=/api/v1/public/chat/:tenantSlug/sessions"
+    },
+    {
+      "service": "chatwidget",
+      "file": "chatwidget/feedback.go",
+      "line": 18,
+      "access": "public",
+      "method": "POST",
+      "path": "/api/v1/public/chat/:tenantSlug/sessions/:sessionId/feedback",
+      "annotation": "public method=POST path=/api/v1/public/chat/:tenantSlug/sessions/:sessionId/feedback"
+    },
+    {
+      "service": "chatwidget",
+      "file": "chatwidget/public.go",
+      "line": 241,
+      "access": "public",
+      "method": "GET",
+      "path": "/api/v1/public/chat/:tenantSlug/sessions/:sessionId/messages",
+      "annotation": "public method=GET path=/api/v1/public/chat/:tenantSlug/sessions/:sessionId/messages"
+    },
+    {
+      "service": "chatwidget",
+      "file": "chatwidget/public.go",
+      "line": 132,
+      "access": "public",
+      "method": "POST",
+      "path": "/api/v1/public/chat/:tenantSlug/sessions/:sessionId/messages",
+      "annotation": "public method=POST path=/api/v1/public/chat/:tenantSlug/sessions/:sessionId/messages"
+    },
+    {
+      "service": "chatwidget",
+      "file": "chatwidget/stream.go",
+      "line": 36,
+      "access": "public",
+      "method": "GET",
+      "path": "/api/v1/public/chat/:tenantSlug/sessions/:sessionId/stream",
+      "raw": true,
+      "annotation": "public raw method=GET path=/api/v1/public/chat/:tenantSlug/sessions/:sessionId/stream"
     },
     {
       "service": "events",
@@ -3134,6 +3319,79 @@
       "annotation": "public method=POST path=/api/v1/public/events/:tenantSlug/register/:eventSlug/staff"
     },
     {
+      "service": "storefront",
+      "file": "storefront/public.go",
+      "line": 40,
+      "access": "public",
+      "method": "GET",
+      "path": "/api/v1/public/store/:tenantSlug",
+      "annotation": "public method=GET path=/api/v1/public/store/:tenantSlug"
+    },
+    {
+      "service": "storefront",
+      "file": "storefront/cart.go",
+      "line": 49,
+      "access": "public",
+      "method": "POST",
+      "path": "/api/v1/public/store/:tenantSlug/cart",
+      "annotation": "public method=POST path=/api/v1/public/store/:tenantSlug/cart"
+    },
+    {
+      "service": "storefront",
+      "file": "storefront/cart.go",
+      "line": 61,
+      "access": "public",
+      "method": "GET",
+      "path": "/api/v1/public/store/:tenantSlug/cart/:cartToken",
+      "annotation": "public method=GET path=/api/v1/public/store/:tenantSlug/cart/:cartToken"
+    },
+    {
+      "service": "storefront",
+      "file": "storefront/checkout.go",
+      "line": 49,
+      "access": "public",
+      "method": "POST",
+      "path": "/api/v1/public/store/:tenantSlug/cart/:cartToken/checkout",
+      "annotation": "public method=POST path=/api/v1/public/store/:tenantSlug/cart/:cartToken/checkout"
+    },
+    {
+      "service": "storefront",
+      "file": "storefront/cart.go",
+      "line": 72,
+      "access": "public",
+      "method": "PUT",
+      "path": "/api/v1/public/store/:tenantSlug/cart/:cartToken/items",
+      "annotation": "public method=PUT path=/api/v1/public/store/:tenantSlug/cart/:cartToken/items"
+    },
+    {
+      "service": "storefront",
+      "file": "storefront/public.go",
+      "line": 70,
+      "access": "public",
+      "method": "GET",
+      "path": "/api/v1/public/store/:tenantSlug/products",
+      "annotation": "public method=GET path=/api/v1/public/store/:tenantSlug/products"
+    },
+    {
+      "service": "storefront",
+      "file": "storefront/public.go",
+      "line": 105,
+      "access": "public",
+      "method": "GET",
+      "path": "/api/v1/public/store/:tenantSlug/products/:slug",
+      "annotation": "public method=GET path=/api/v1/public/store/:tenantSlug/products/:slug"
+    },
+    {
+      "service": "templates",
+      "file": "templates/asset_serve.go",
+      "line": 13,
+      "access": "public",
+      "method": "GET",
+      "path": "/api/v1/public/template-assets/:assetId/module.js",
+      "raw": true,
+      "annotation": "public raw method=GET path=/api/v1/public/template-assets/:assetId/module.js"
+    },
+    {
       "service": "shipping",
       "file": "shipping/shipping.go",
       "line": 107,
@@ -3159,6 +3417,56 @@
       "method": "GET",
       "path": "/api/v1/shipping/provinces",
       "annotation": "auth method=GET path=/api/v1/shipping/provinces"
+    },
+    {
+      "service": "storefront",
+      "file": "storefront/dashboard.go",
+      "line": 25,
+      "access": "auth",
+      "method": "GET",
+      "path": "/api/v1/storefront/config",
+      "tag": "owner",
+      "annotation": "auth method=GET path=/api/v1/storefront/config tag:owner"
+    },
+    {
+      "service": "storefront",
+      "file": "storefront/dashboard.go",
+      "line": 54,
+      "access": "auth",
+      "method": "PUT",
+      "path": "/api/v1/storefront/config",
+      "tag": "owner",
+      "annotation": "auth method=PUT path=/api/v1/storefront/config tag:owner"
+    },
+    {
+      "service": "storefront",
+      "file": "storefront/custom_domain.go",
+      "line": 40,
+      "access": "auth",
+      "method": "GET",
+      "path": "/api/v1/storefront/custom-domains",
+      "tag": "owner",
+      "annotation": "auth method=GET path=/api/v1/storefront/custom-domains tag:owner"
+    },
+    {
+      "service": "storefront",
+      "file": "storefront/custom_domain.go",
+      "line": 66,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/storefront/custom-domains",
+      "tag": "owner",
+      "annotation": "auth method=POST path=/api/v1/storefront/custom-domains tag:owner"
+    },
+    {
+      "service": "storefront",
+      "file": "storefront/custom_domain.go",
+      "line": 95,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/storefront/custom-domains/:id/verify",
+      "tag": "owner",
+      "annotation": "auth method=POST path=/api/v1/storefront/custom-domains/:id/verify tag:owner"
     },
     {
       "service": "auth",
@@ -3189,6 +3497,33 @@
       "path": "/api/v1/team/members/:id",
       "tag": "owner",
       "annotation": "auth method=DELETE path=/api/v1/team/members/:id tag:owner"
+    },
+    {
+      "service": "templates",
+      "file": "templates/templates.go",
+      "line": 42,
+      "access": "public",
+      "method": "GET",
+      "path": "/api/v1/templates",
+      "annotation": "public method=GET path=/api/v1/templates"
+    },
+    {
+      "service": "templates",
+      "file": "templates/templates.go",
+      "line": 74,
+      "access": "public",
+      "method": "GET",
+      "path": "/api/v1/templates/:slug",
+      "annotation": "public method=GET path=/api/v1/templates/:slug"
+    },
+    {
+      "service": "templates",
+      "file": "templates/tenant_install.go",
+      "line": 118,
+      "access": "public",
+      "method": "GET",
+      "path": "/api/v1/templates/:slug/versions/:version",
+      "annotation": "public method=GET path=/api/v1/templates/:slug/versions/:version"
     },
     {
       "service": "tenantaccess",
@@ -3228,6 +3563,36 @@
       "method": "GET",
       "path": "/api/v1/tenant/readiness",
       "annotation": "auth method=GET path=/api/v1/tenant/readiness"
+    },
+    {
+      "service": "templates",
+      "file": "templates/tenant_install.go",
+      "line": 74,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/tenant/templates/:slug/install",
+      "tag": "owner",
+      "annotation": "auth method=POST path=/api/v1/tenant/templates/:slug/install tag:owner"
+    },
+    {
+      "service": "templates",
+      "file": "templates/purchase.go",
+      "line": 28,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/tenant/templates/:slug/purchase",
+      "tag": "owner",
+      "annotation": "auth method=POST path=/api/v1/tenant/templates/:slug/purchase tag:owner"
+    },
+    {
+      "service": "templates",
+      "file": "templates/tenant_install.go",
+      "line": 46,
+      "access": "auth",
+      "method": "GET",
+      "path": "/api/v1/tenant/templates/installed",
+      "tag": "owner",
+      "annotation": "auth method=GET path=/api/v1/tenant/templates/installed tag:owner"
     },
     {
       "service": "usage",

@@ -11,9 +11,17 @@ type PatchManifest struct {
 // SchemaManifests lists known patch versions (newest last).
 var SchemaManifests = []PatchManifest{
 	{
+		Version:     2,
+		Description: "Payment proof, inventory, finance, RAG retrieval",
+	},
+	{
+		Version:     3,
+		Description: "Web chat widget tables (chat_widget_config, web_chat_session, web_chat_message)",
+	},
+	{
 		Version:          CurrentSchemaPatchVersion,
 		RequiresAdminDDL: false,
-		Description:      "Payment proof, inventory, finance, RAG retrieval — migrate-tenant-schemas / rollout applies admin DDL on cloud otomatis",
+		Description:      "Storefront config, catalog slug/visibility, order.source + guest columns",
 	},
 }
 

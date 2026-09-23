@@ -14,42 +14,57 @@ const (
 	FeatureHybridAI    = "hybrid_ai"
 	FeatureAPIAccess   = "api_access"
 	FeatureWorkflow    = "workflow"
-	FeatureMultiBranch = "multi_branch"
+	FeatureMultiBranch      = "multi_branch"
+	FeatureChatWidget       = "chat_widget"
+	FeatureStorefront       = "storefront"
+	FeatureTemplateMarket   = "template_marketplace"
 )
 
 // Trial: all product surfaces enabled; tight caps live in usage.planQuotas["trial"].
 var planFeatures = map[string]map[string]bool{
 	"starter": {
-		FeatureCRMLeads:    false,
-		FeatureBroadcast:   false,
-		FeatureHybridAI:    false,
-		FeatureAPIAccess:   false,
-		FeatureWorkflow:    false,
-		FeatureMultiBranch: false,
+		FeatureCRMLeads:       false,
+		FeatureBroadcast:      false,
+		FeatureHybridAI:       false,
+		FeatureAPIAccess:      false,
+		FeatureWorkflow:       false,
+		FeatureMultiBranch:    false,
+		FeatureChatWidget:     true,
+		FeatureStorefront:     false,
+		FeatureTemplateMarket: true,
 	},
 	"business": {
-		FeatureCRMLeads:    true,
-		FeatureBroadcast:   true,
-		FeatureHybridAI:    true,
-		FeatureAPIAccess:   false,
-		FeatureWorkflow:    true,
-		FeatureMultiBranch: false,
+		FeatureCRMLeads:       true,
+		FeatureBroadcast:      true,
+		FeatureHybridAI:       true,
+		FeatureAPIAccess:      false,
+		FeatureWorkflow:       true,
+		FeatureMultiBranch:    false,
+		FeatureChatWidget:     true,
+		FeatureStorefront:     true,
+		FeatureTemplateMarket: true,
 	},
 	"basic": { // legacy alias
-		FeatureCRMLeads:    true,
-		FeatureBroadcast:   true,
-		FeatureHybridAI:    true,
-		FeatureAPIAccess:   false,
-		FeatureWorkflow:    true,
-		FeatureMultiBranch: false,
+		FeatureCRMLeads:       true,
+		FeatureBroadcast:      true,
+		FeatureHybridAI:       true,
+		FeatureAPIAccess:      false,
+		FeatureWorkflow:       true,
+		FeatureMultiBranch:    false,
+		FeatureChatWidget:     true,
+		FeatureStorefront:     true,
+		FeatureTemplateMarket: true,
 	},
 	"pro": {
-		FeatureCRMLeads:    true,
-		FeatureBroadcast:   true,
-		FeatureHybridAI:    true,
-		FeatureAPIAccess:   true,
-		FeatureWorkflow:    true,
-		FeatureMultiBranch: true,
+		FeatureCRMLeads:       true,
+		FeatureBroadcast:      true,
+		FeatureHybridAI:       true,
+		FeatureAPIAccess:      true,
+		FeatureWorkflow:       true,
+		FeatureMultiBranch:    true,
+		FeatureChatWidget:     true,
+		FeatureStorefront:     true,
+		FeatureTemplateMarket: true,
 	},
 }
 

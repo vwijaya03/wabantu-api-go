@@ -118,6 +118,32 @@ func KnowledgeBaseReady(ctx context.Context, q any, schema string) (bool, error)
 	return TableExists(ctx, q, schema, "knowledge_base_entry")
 }
 
+// StorefrontReady — storefront config + catalog/order extensions.
+func StorefrontReady(ctx context.Context, q any, schema string) (bool, error) {
+	q = Q(q)
+	ok, err := TableExists(ctx, q, schema, "storefront_config")
+	if err != nil || !ok {
+		return false, err
+	}
+	ok, err = ColumnExists(ctx, q, schema, "business_catalog_item", "slug")
+	if err != nil || !ok {
+		return false, err
+	}
+	return ColumnExists(ctx, q, schema, "order", "source")
+}
+
+// ChatWidgetReady — web chat widget tables for Epic 1.
+func ChatWidgetReady(ctx context.Context, q any, schema string) (bool, error) {
+	q = Q(q)
+	for _, t := range []string{"chat_widget_config", "web_chat_session", "web_chat_message"} {
+		ok, err := TableExists(ctx, q, schema, t)
+		if err != nil || !ok {
+			return false, err
+		}
+	}
+	return IndexExists(ctx, q, schema, "idx_web_chat_msg_session")
+}
+
 // RetrievalReady — RAG outbox + embedding columns on KB and catalog.
 func RetrievalReady(ctx context.Context, q any, schema string) (bool, error) {
 	q = Q(q)
@@ -229,6 +255,8 @@ func CloudTenantReady(ctx context.Context, q any, schema string) (bool, error) {
 		OrderIncomePatchReady,
 		OrderPaymentProofPatchReady,
 		InventoryModuleReady,
+		ChatWidgetReady,
+		StorefrontReady,
 	}
 	for _, fn := range checks {
 		ok, err := fn(ctx, q, schema)

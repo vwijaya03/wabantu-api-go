@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://wabantu.id/schemas/template-manifest-v1.json",
+  "type": "object",
+  "required": ["schemaVersion", "kind", "meta", "tokens"],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "kind": { "type": "string", "enum": ["chatbot", "storefront", "bundle"] },
+    "meta": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "author": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "tokens": { "type": "object" }
+  },
+  "additionalProperties": true
+}
