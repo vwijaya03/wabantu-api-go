@@ -19,6 +19,12 @@ Body `{"email": "...", "password": "..."}` (JSON atau form).
 Token admin: JWT `typ:"admin"`, berlaku 60 menit; sesi Redis `kind:"admin"` dengan batas
 **absolut 2 jam** (tidak diperpanjang oleh reauth/touch).
 
+### Profil (`me`)
+- `GET /api/v1/platform-admin/me` — HANYA token admin (sesi `kind:admin`, belum lewat 2 jam) →
+  `200 {"id","email","name","role"}`. Token client/impersonation → `401 {"error":"not authenticated"}`.
+- `GET /api/v1/auth/me` — token client dan impersonation tetap jalan; token admin → `401`
+  (tidak lagi dikecualikan).
+
 ### `POST /api/v1/auth/login` (client) — perubahan
 Akun `super_admin` tanpa tenant kini ditolak dengan `401 Email atau password salah` (sama
 dengan password salah). Response bertambah `sessionType:"client"`.
@@ -98,5 +104,6 @@ Setelah admin pertama dibuat, ganti ke nilai pendek mis. `disabled` → bootstra
 - Skrip/CI yang login super_admin lewat `/auth/login` atau memakai bootstrap lama (mengharapkan
   token dari bootstrap) harus diubah. `scripts/setup-secrets-for-cloud.sh` kini menset
   `PlatformAdminBootstrapKey`.
-- Endpoint raw public yang memakai `AuthenticateHTTP` (SSE, `/auth/me`, firebase-token) tidak
+- Admin console memakai `/api/v1/platform-admin/me` (bukan `/auth/me`) untuk cek sesi.
+- Endpoint raw public lain yang memakai `AuthenticateHTTP` (SSE, firebase-token) tidak
   melewati middleware; token admin di sana tidak punya tenant sehingga endpoint tenant menolak.

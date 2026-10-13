@@ -459,3 +459,30 @@ func TestRequestAccess(t *testing.T) {
 		}
 	}
 }
+
+func TestMeAccessAllKinds(t *testing.T) {
+	cases := []struct {
+		ep, kind string
+		ok       bool
+	}{
+		{MeAdmin, KindAdmin, true},
+		{MeAdmin, KindClient, false},
+		{MeAdmin, "", false},
+		{MeAdmin, KindImpersonation, false},
+		{MeClient, KindAdmin, false},
+		{MeClient, KindClient, true},
+		{MeClient, "", true},
+		{MeClient, KindImpersonation, true},
+		{"/other", KindAdmin, false},
+	}
+	for _, c := range cases {
+		if err := MeAccess(c.ep, c.kind); (err == nil) != c.ok {
+			t.Errorf("%s %q: %v", c.ep, c.kind, err)
+		}
+	}
+	// An expired admin session never reaches MeAccess: CheckAdminExpiry rejects it first.
+	now := time.Now()
+	if CheckAdminExpiry(KindAdmin, now.Add(-3*time.Hour), now) == nil {
+		t.Fatal("expired admin must be rejected")
+	}
+}

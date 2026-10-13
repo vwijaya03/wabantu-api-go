@@ -341,6 +341,11 @@ func serveMe(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "not authenticated")
 		return
 	}
+	// Admin tokens are not accepted here; use GET /api/v1/platform-admin/me.
+	if adminauth.MeAccess(adminauth.MeClient, userData.SessionKind) != nil {
+		writeError(w, http.StatusUnauthorized, "not authenticated")
+		return
+	}
 
 	writeJSON(w, http.StatusOK, profileResponse(userData))
 }

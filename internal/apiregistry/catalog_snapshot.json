@@ -1,5 +1,5 @@
 {
-  "count": 370,
+  "count": 371,
   "endpoints": [
     {
       "service": "admin",
@@ -3142,6 +3142,16 @@
       "path": "/api/v1/platform-admin/login",
       "raw": true,
       "annotation": "public raw method=POST path=/api/v1/platform-admin/login"
+    },
+    {
+      "service": "auth",
+      "file": "auth/login_portal.go",
+      "line": 211,
+      "access": "public",
+      "method": "GET",
+      "path": "/api/v1/platform-admin/me",
+      "raw": true,
+      "annotation": "public raw method=GET path=/api/v1/platform-admin/me"
     },
     {
       "service": "events",

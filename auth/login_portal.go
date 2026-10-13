@@ -196,3 +196,24 @@ func serveLoginPortal(w http.ResponseWriter, req *http.Request, portal string) {
 	completeLoginKind(w, req, ctx, accountID, email, nullStr(accountName), accountRole,
 		accountTenantID.String, tenantSlug, tenantName, schemaName, http.StatusOK, adminauth.KindClient)
 }
+
+// PlatformAdminMeResponse is the admin profile.
+type PlatformAdminMeResponse struct {
+	ID    string `json:"id"`
+	Email string `json:"email"`
+	Name  string `json:"name"`
+	Role  string `json:"role"`
+}
+
+// PlatformAdminMe returns the admin profile. ONLY admin tokens (session kind admin, within
+// the 2 h cap); client and impersonation tokens get 401.
+//
+//encore:api public raw method=GET path=/api/v1/platform-admin/me
+func PlatformAdminMe(w http.ResponseWriter, r *http.Request) {
+	u, err := AuthenticateHTTP(r.Context(), r)
+	if err != nil || adminauth.MeAccess(adminauth.MeAdmin, u.SessionKind) != nil {
+		writeError(w, http.StatusUnauthorized, "not authenticated")
+		return
+	}
+	writeJSON(w, http.StatusOK, PlatformAdminMeResponse{ID: u.AccountID, Email: u.Email, Name: u.Name, Role: u.Role})
+}

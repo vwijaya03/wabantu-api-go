@@ -195,3 +195,28 @@ var PrivatePaths = map[string]bool{
 	"/api/v1/usage/reset":                   true,
 	"/internal/apitest/ping":                true,
 }
+
+// Profile endpoints ("me").
+const (
+	MeClient = "/api/v1/auth/me"           // client + impersonation tokens
+	MeAdmin  = "/api/v1/platform-admin/me" // admin tokens only
+)
+
+// ErrWrongTokenKind → 401 on the profile endpoints.
+var ErrWrongTokenKind = errors.New("not authenticated")
+
+// MeAccess decides whether a token kind may read the given profile endpoint.
+func MeAccess(endpoint, kind string) error {
+	k := NormalizeKind(kind)
+	switch endpoint {
+	case MeAdmin:
+		if k == KindAdmin {
+			return nil
+		}
+	case MeClient:
+		if k == KindClient || k == KindImpersonation {
+			return nil
+		}
+	}
+	return ErrWrongTokenKind
+}
