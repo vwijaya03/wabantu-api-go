@@ -95,3 +95,23 @@ func TestSessionlessExactOnly(t *testing.T) {
 		}
 	}
 }
+
+// The handler of every HandlerEnforcedRaw "me" endpoint must reject non-admin kinds itself.
+func TestHandlerEnforcedRawMeRejectsNonAdmin(t *testing.T) {
+	if !HandlerEnforcedRaw["auth.PlatformAdminMe"] {
+		t.Fatal("PlatformAdminMe expected handler-enforced")
+	}
+	for _, k := range []string{KindClient, KindImpersonation, ""} {
+		if MeAccess(MeAdmin, k) == nil {
+			t.Errorf("MeAccess(MeAdmin, %q) allowed", k)
+		}
+	}
+	if MeAccess(MeAdmin, KindAdmin) != nil {
+		t.Error("admin rejected by MeAccess")
+	}
+	for id := range HandlerEnforcedRaw {
+		if !PlatformAdminEndpoints[id] {
+			t.Errorf("%s handler-enforced but not a platform-admin endpoint", id)
+		}
+	}
+}

@@ -28,6 +28,12 @@ func SessionKind(req encoremw.Request, next encoremw.Next) encoremw.Response {
 			tag = data.API.Tags.Has("super_admin")
 		}
 	}
+	// Raw endpoints: Encore does not write a middleware error (client gets 200 + empty body).
+	// The platform-admin raw handlers enforce the session kind themselves (MeAccess → 401,
+	// login portal check), so let them answer with a real status.
+	if data != nil && data.API != nil && data.API.Raw && adminauth.HandlerEnforcedRaw[endpoint] {
+		return next(req)
+	}
 	if err := adminauth.RequestAccessEndpoint(endpoint, path, tag, u.SessionKind); err != nil {
 		return encoremw.Response{Err: &errs.Error{Code: errs.PermissionDenied, Message: err.Error()}}
 	}

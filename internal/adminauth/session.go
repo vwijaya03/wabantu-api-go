@@ -193,6 +193,14 @@ var PlatformAdminEndpoints = map[string]bool{
 	"auth.PlatformAdminMe":    true,
 }
 
+// HandlerEnforcedRaw are raw endpoints whose handler enforces the session kind itself
+// (PlatformAdminMe: MeAccess(MeAdmin) → 401; PlatformAdminLogin: portal check). The
+// middleware defers to them because Encore drops middleware errors on raw endpoints.
+var HandlerEnforcedRaw = map[string]bool{
+	"auth.PlatformAdminMe":    true,
+	"auth.PlatformAdminLogin": true,
+}
+
 // SessionlessEndpoints skip the session-kind check entirely (exact route identity): the admin
 // login and the one-time bootstrap. Both authenticate by their own means.
 var SessionlessEndpoints = map[string]bool{
