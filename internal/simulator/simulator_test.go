@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"encore.app/wabantu/shared/whatsappchannel"
 )
 
 var png1x1, _ = base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
@@ -58,5 +60,14 @@ func TestBuyerPhoneStableAndScoped(t *testing.T) {
 	}
 	if len(a) != 15 || !strings.HasPrefix(a, "62000") {
 		t.Fatal(a)
+	}
+}
+
+func TestBuyerPhoneIsSimulatorPhone(t *testing.T) {
+	for _, s := range []string{"abcdef", "reseller-demo", "zzzzzzzzzz"} {
+		p := BuyerPhone("11111111-1111-1111-1111-111111111111", s)
+		if !whatsappchannel.IsSimulatorPhone(p) {
+			t.Fatalf("%s not recognised as simulator phone", p)
+		}
 	}
 }

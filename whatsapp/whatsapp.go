@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"encore.app/wabantu/shared/whatsappchannel"
 )
 
 // GraphAPIVersion is the Meta Graph API version for Cloud API calls (align with META_GRAPH_API_VERSION in api/.env).
@@ -52,6 +54,9 @@ func SendText(ctx context.Context, accessToken, phoneNumberID, to, body string) 
 	to = NormalizeRecipient(to)
 	if to == "" {
 		return "", fmt.Errorf("invalid recipient phone")
+	}
+	if err := GuardRecipient(to); err != nil {
+		return "", err
 	}
 	accessToken = strings.TrimSpace(accessToken)
 	phoneNumberID = strings.TrimSpace(phoneNumberID)
@@ -309,4 +314,15 @@ func truncate(s string, max int) string {
 		return s
 	}
 	return s[:max]
+}
+
+// ErrSimulatorRecipient is returned when code tries to send a simulator buyer to Meta.
+var ErrSimulatorRecipient = fmt.Errorf("simulator recipient must never be sent to Meta")
+
+// GuardRecipient is the last-line safety net: simulator buyer phones never reach Meta.
+func GuardRecipient(to string) error {
+	if whatsappchannel.IsSimulatorPhone(NormalizeRecipient(to)) {
+		return ErrSimulatorRecipient
+	}
+	return nil
 }

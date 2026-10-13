@@ -14,6 +14,7 @@ import (
 	appErrs "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/entitlement"
 	"encore.app/wabantu/shared/pii"
+	"encore.app/wabantu/shared/whatsappchannel"
 	"encore.app/wabantu/shared/types"
 	"encore.app/wabantu/usage"
 	"encore.app/wabantu/whatsapp"
@@ -249,7 +250,13 @@ func handleBroadcastSend(ctx context.Context, req BroadcastSendRequest) error {
 		if err != nil || phone == "" {
 			continue
 		}
-		sendErr := sendToPhone(ctx, req.TenantSchema, phone, body)
+		var sendErr error
+		if whatsappchannel.IsSimulatorPhone(phone) {
+			// Simulator buyer: store in its simulator conversation, never Meta.
+			sendErr = deliverSimulatorBroadcast(ctx, req.TenantSchema, phone, body, piiActive)
+		} else {
+			sendErr = sendToPhone(ctx, req.TenantSchema, phone, body)
+		}
 		if sendErr != nil {
 			_, _ = db.Exec(ctx, fmt.Sprintf(`
 				UPDATE "%s".broadcast_recipient SET status='failed', last_error=$1 WHERE id=$2`,
@@ -310,6 +317,7 @@ func sendToPhone(ctx context.Context, schema, phone, body string) error {
 		       COALESCE(meta_phone_number_id,'')
 		FROM "%s".whatsapp_channel
 		WHERE status = 'connected'
+		  AND provider <> 'simulator'
 		  AND (
 		    NULLIF(TRIM(access_token_enc), '') IS NOT NULL
 		    OR (NULLIF(TRIM(access_token), '') IS NOT NULL AND access_token <> $1)
@@ -338,4 +346,37 @@ func normalizePhone(p string) string {
 		p = "62" + p[1:]
 	}
 	return p
+}
+
+// deliverSimulatorBroadcast persists a broadcast to the buyer's simulator conversation so it
+// shows up via GET /api/v1/simulator/messages. It never calls Meta.
+func deliverSimulatorBroadcast(ctx context.Context, schema, phone, body string, piiActive bool) error {
+	var contactID string
+	var err error
+	if piiActive {
+		idx := pii.BlindIndex(pii.NormalizePhone(phone), encKey())
+		err = db.QueryRow(ctx, fmt.Sprintf(`SELECT id::text FROM "%s".contact WHERE phone_number_idx=$1 AND deleted_at IS NULL LIMIT 1`, schema), idx).Scan(&contactID)
+	} else {
+		err = db.QueryRow(ctx, fmt.Sprintf(`SELECT id::text FROM "%s".contact WHERE phone_number=$1 AND deleted_at IS NULL LIMIT 1`, schema), phone).Scan(&contactID)
+	}
+	if err != nil {
+		return fmt.Errorf("simulator contact not found")
+	}
+	var convID string
+	if err := db.QueryRow(ctx, fmt.Sprintf(`
+		SELECT c.id::text FROM "%[1]s".conversation c
+		JOIN "%[1]s".whatsapp_channel ch ON ch.id = c.channel_id
+		WHERE c.contact_id=$1 AND ch.provider=$2
+		ORDER BY c.last_message_at DESC NULLS LAST LIMIT 1`, schema),
+		contactID, whatsappchannel.SimulatorProvider).Scan(&convID); err != nil {
+		return fmt.Errorf("simulator conversation not found")
+	}
+	if _, err := db.Exec(ctx, fmt.Sprintf(`
+		INSERT INTO "%s".message (conversation_id, external_id, direction, author, type, body, metadata, status)
+		VALUES ($1, $2, 'out', 'human', 'text', $3, '{"source":"broadcast"}'::jsonb, 'sent')`, schema),
+		convID, whatsappchannel.SimulatorExternalID("bc"), body); err != nil {
+		return fmt.Errorf("simulator store failed: %w", err)
+	}
+	_, _ = db.Exec(ctx, fmt.Sprintf(`UPDATE "%s".conversation SET last_message_at=NOW(), last_message_preview=LEFT($1,280) WHERE id=$2`, schema), body, convID)
+	return nil
 }
