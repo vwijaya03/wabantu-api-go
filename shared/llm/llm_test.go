@@ -138,7 +138,7 @@ func geminiMock(t *testing.T, status int, check func(path string, body map[strin
 
 func TestGeminiComplete(t *testing.T) {
 	srv := geminiMock(t, 200, func(path string, b map[string]any) {
-		if path != "/models/gemini-2.5-flash:generateContent" {
+		if path != "/models/"+GeminiDefaultModel+":generateContent" {
 			t.Errorf("path %s", path)
 		}
 		if b["systemInstruction"] == nil {
@@ -149,7 +149,7 @@ func TestGeminiComplete(t *testing.T) {
 	g := NewGeminiProvider("fake-key")
 	g.BaseURL = srv.URL
 	text, u, err := g.Complete(context.Background(), "", "sys", "hai", 100)
-	if err != nil || text != "halo kak" || u.InputTokens != 12 || u.OutputTokens != 3 || u.Provider != "gemini" || u.Model != "gemini-2.5-flash" {
+	if err != nil || text != "halo kak" || u.InputTokens != 12 || u.OutputTokens != 3 || u.Provider != "gemini" || u.Model != GeminiDefaultModel {
 		t.Fatalf("%q %+v %v", text, u, err)
 	}
 }

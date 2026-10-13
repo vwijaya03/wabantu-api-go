@@ -22,7 +22,7 @@ Changes apply immediately on the instance that handled the request and within **
 
 Functions: `chat`, `intent`, `ocr`, `payment_ocr`, `vision`, `memory`, `embedding`.
 Allowed providers per function: `embedding` → `openai` only; all others → `anthropic`, `gemini`. **OpenAI has no chat adapter** (catalog marks its models `embedding_only`).
-`model: ""` = provider default (Anthropic: caller's legacy default, e.g. Haiku 4.5; Gemini: `gemini-2.5-flash`).
+`model: ""` = provider default (Anthropic: caller's legacy default, e.g. Haiku 4.5; Gemini: `gemini-3.1-flash-lite`, see `llm.GeminiDefaultModel`).
 
 ### Types
 ```ts
@@ -37,7 +37,7 @@ Returns all global rows (`tenantId: null`) plus the overrides of `tenantId` if g
 ```json
 { "configs": [
   { "function": "payment_ocr", "tenantId": null,
-    "chain": [ {"provider":"gemini","model":"gemini-2.5-flash","timeout_ms":8000}, {"provider":"anthropic","model":""} ],
+    "chain": [ {"provider":"gemini","model":"gemini-3.1-flash-lite","timeout_ms":8000}, {"provider":"anthropic","model":""} ],
     "maxRetries": 1 },
   { "function": "payment_ocr", "tenantId": "0b6c…", "chain": [ {"provider":"anthropic","model":"claude-haiku-4-5"} ], "maxRetries": 1 }
 ] }
@@ -55,7 +55,7 @@ Removes the **tenant override** only (global rows can't be deleted here → use 
 { "providers": [ {"id":"anthropic","enabled":true,"available":true},
                  {"id":"gemini","enabled":true,"available":false},
                  {"id":"openai","enabled":true,"available":false} ],
-  "models": [ {"provider":"gemini","id":"gemini-2.5-flash","label":"Gemini 2.5 Flash","status":"supported","vision":true},
+  "models": [ {"provider":"gemini","id":"gemini-3.1-flash-lite","label":"Gemini 3.1 Flash-Lite","status":"supported","vision":true},
               {"provider":"openai","id":"text-embedding-3-small","label":"OpenAI text-embedding-3-small","status":"embedding_only","vision":false} ] }
 ```
 - `enabled`: `ai_providers.enabled` (no row = enabled). Disabled providers are skipped in chains.
@@ -189,3 +189,6 @@ Rules (`firestore.rules`): read only if `request.auth.token.tenantId == tenantId
 Tool katalog (`search_catalog`, `get_product`) dijalankan oleh `CatalogToolExecutor` yang dibuat per job dari snapshot katalog tenant milik sesi/job (`ai/autoreply.go`, `NewCatalogToolExecutor(catalog)`). Executor tidak memegang koneksi DB, dan skema tool tidak punya parameter tenant/schema. Field tambahan seperti `tenantId`, `schema`, atau `search_path` di argumen tool diabaikan. Tool yang tidak dikenal ditolak. Loop Gemini dan path Anthropic meneruskan argumen apa adanya ke executor yang sama, dan `RunToolChat` me-resolve chain hanya dari tenantID pemanggil.
 
 Test: `ai/tool_tenant_isolation_test.go` (perlu `encore test`; dengan `go test` biasa paket `ai` panic di init Encore, jadi di box hanya dicek compile + vet) dan `shared/llm/tools_tenant_test.go` (jalan dengan `go test`).
+
+### Gemini default model (be/gemini-model)
+Default Gemini model is `gemini-3.1-flash-lite` (`shared/llm` `GeminiDefaultModel`, allowlisted). `gemini-2.5-flash` and `gemini-2.5-flash-lite` stay in the allowlist for older keys, but return `404 no longer available to new users` for the contest key. Migration `29_gemini_default_model` moves the `intent`/`memory` rows seeded by migration 27 to the new model; admin-edited rows are untouched. Cost estimate: $0.25 input / $1.50 output per 1M tokens (Gemini API paid tier, Standard, text).

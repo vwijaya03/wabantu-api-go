@@ -21,12 +21,16 @@ type GeminiProvider struct {
 	DefaultModel string
 }
 
+// GeminiDefaultModel: cheapest stable Flash text model callable by new API keys
+// (gemini-2.5-flash / -flash-lite return 404 "no longer available to new users", Oct 2026).
+const GeminiDefaultModel = "gemini-3.1-flash-lite"
+
 func NewGeminiProvider(apiKey string) *GeminiProvider {
 	return &GeminiProvider{
 		APIKey:       apiKey,
 		BaseURL:      "https://generativelanguage.googleapis.com/v1beta",
 		HTTP:         &http.Client{Timeout: 20 * time.Second},
-		DefaultModel: "gemini-2.5-flash",
+		DefaultModel: GeminiDefaultModel,
 	}
 }
 

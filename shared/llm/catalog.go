@@ -28,6 +28,7 @@ var modelMeta = map[string]struct {
 	"claude-sonnet-4-5":          {"Claude Sonnet 4.5", true},
 	"claude-sonnet-4-5-20250929": {"Claude Sonnet 4.5 (2025-09-29)", true},
 	"claude-sonnet-4-6":          {"Claude Sonnet 4.6", true},
+	"gemini-3.1-flash-lite":      {"Gemini 3.1 Flash-Lite", true},
 	"gemini-2.5-flash-lite":      {"Gemini 2.5 Flash-Lite", true},
 	"gemini-2.5-flash":           {"Gemini 2.5 Flash", true},
 	"gemini-2.5-pro":             {"Gemini 2.5 Pro", true},
