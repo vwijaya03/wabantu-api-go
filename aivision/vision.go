@@ -184,7 +184,14 @@ func SanitizeVisionJSON(text string) string {
 }
 
 func visionExtract(ctx context.Context, apiKey string, imageBytes []byte, mediaType, system, user string) (string, Usage, error) {
+	return visionExtractModel(ctx, apiKey, haikuModelID, imageBytes, mediaType, system, user)
+}
+
+func visionExtractModel(ctx context.Context, apiKey, model string, imageBytes []byte, mediaType, system, user string) (string, Usage, error) {
 	var usage Usage
+	if strings.TrimSpace(model) == "" {
+		model = haikuModelID
+	}
 	if strings.TrimSpace(apiKey) == "" {
 		return "", usage, fmt.Errorf("kunci Anthropic belum dikonfigurasi — set secret AnthropicAPIKey (encore secret set --type local AnthropicAPIKey)")
 	}
@@ -197,7 +204,7 @@ func visionExtract(ctx context.Context, apiKey string, imageBytes []byte, mediaT
 	b64 := base64.StdEncoding.EncodeToString(imageBytes)
 
 	resp, err := client.Messages.New(ctx, anthropic.MessageNewParams{
-		Model:       anthropic.Model(haikuModelID),
+		Model:       anthropic.Model(model),
 		MaxTokens:   4096,
 		Temperature: anthropic.Float(0.1),
 		System: []anthropic.TextBlockParam{

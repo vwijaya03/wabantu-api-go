@@ -85,7 +85,7 @@ type InternalFallbackResponse struct {
 
 // ─── Endpoints ───────────────────────────────────────────────────────────────
 
-//encore:api public method=POST path=/api/v1/internal/ai/auto-reply
+//encore:api private method=POST path=/api/v1/internal/ai/auto-reply
 func InternalProcessAutoReply(ctx context.Context, req *InternalAutoReplyRequest) (*InternalAutoReplyResponse, error) {
 	if err := assertInternalToken(req.InternalToken); err != nil {
 		return nil, err
@@ -115,7 +115,7 @@ func InternalProcessAutoReply(ctx context.Context, req *InternalAutoReplyRequest
 	return &InternalAutoReplyResponse{Sent: sent}, nil
 }
 
-//encore:api public method=POST path=/api/v1/internal/ai/auto-reply/fallback
+//encore:api private method=POST path=/api/v1/internal/ai/auto-reply/fallback
 func InternalProcessFallback(ctx context.Context, req *InternalFallbackRequest) (*InternalFallbackResponse, error) {
 	if err := assertInternalToken(req.InternalToken); err != nil {
 		return nil, err
