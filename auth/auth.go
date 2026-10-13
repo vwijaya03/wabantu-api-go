@@ -314,15 +314,27 @@ func Logout(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if adminauth.RawHandlerAccess("auth.Logout", userData.SessionKind) != nil {
+	if err := logoutSession(ctx, userData); err != nil {
 		writeError(w, http.StatusUnauthorized, "not authenticated")
 		return
 	}
-	_ = destroySession(ctx, userData.AccountID, userData.SessionID)
 	audit.Log(ctx, userData.TenantID, userData.AccountID, "auth.logout", "account", userData.AccountID, nil)
 	revokeFirebaseAsync(ctx, userData.AccountID)
 
 	writeJSON(w, http.StatusOK, LogoutResponse{OK: true})
+}
+
+// logoutSession revokes exactly the session behind the presented token (any kind). For an
+// impersonation token that is only the impersonation session: the parent admin session (and
+// its token) stays valid; it may still reference the destroyed id, which is harmless.
+func logoutSession(ctx context.Context, u *types.AuthUser) error {
+	if u == nil || adminauth.RawHandlerAccess("auth.Logout", u.SessionKind) != nil {
+		return adminauth.ErrWrongTokenKind
+	}
+	if err := destroySession(ctx, u.AccountID, u.SessionID); err != nil {
+		return err
+	}
+	return nil
 }
 
 // MeEnvelopeResponse matches NestJS { success, data } for GET /auth/me.

@@ -201,17 +201,24 @@ var HandlerEnforcedRaw = map[string]bool{
 	"auth.PlatformAdminMe":    true,
 	"auth.PlatformAdminLogin": true,
 	"auth.Me":                 true, // RawHandlerAccess: client + impersonation; admin → 401
-	"auth.Reauth":             true, // RawHandlerAccess: client + impersonation; admin → 401
+	"auth.Reauth":             true, // RawHandlerAccess: client only; admin/impersonation → 401
 	"auth.Logout":             true, // RawHandlerAccess: any kind may end its own session
 }
 
 // RawHandlerAccess is the session-kind policy the client-portal raw auth handlers enforce
-// themselves (they are in HandlerEnforcedRaw, so the middleware does not). Admin sessions get
-// 401 on /auth/me and /auth/reauth (use /api/v1/platform-admin/*); logout ends any own session.
+// themselves (they are in HandlerEnforcedRaw, so the middleware does not): /auth/me client +
+// impersonation; /auth/reauth client only; /auth/logout any kind (revokes only the used session).
 func RawHandlerAccess(endpoint, kind string) error {
 	switch endpoint {
-	case "auth.Me", "auth.Reauth":
-		return MeAccess(MeClient, kind)
+	case "auth.Me":
+		return MeAccess(MeClient, kind) // client + impersonation
+	case "auth.Reauth":
+		// Client only (Security 2026-10-13): impersonation tokens are short-lived by design and
+		// must not be re-issued with the admin password; admins re-login via the admin portal.
+		if NormalizeKind(kind) != KindClient {
+			return ErrWrongTokenKind
+		}
+		return nil
 	case "auth.Logout":
 		return nil // every (normalized) kind may end its own authenticated session
 	}

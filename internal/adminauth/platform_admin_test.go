@@ -80,7 +80,7 @@ func TestHandlerEnforcedRawIsBounded(t *testing.T) {
 func TestRawHandlerAccessMatrix(t *testing.T) {
 	want := map[string]map[string]bool{ // endpoint → kind → allowed
 		"auth.Me":     {KindClient: true, KindImpersonation: true, KindAdmin: false, "": true},
-		"auth.Reauth": {KindClient: true, KindImpersonation: true, KindAdmin: false, "": true},
+		"auth.Reauth": {KindClient: true, KindImpersonation: false, KindAdmin: false, "": true},
 		"auth.Logout": {KindClient: true, KindImpersonation: true, KindAdmin: true, "": true},
 		"auth.Other":  {KindClient: false, KindImpersonation: false, KindAdmin: false},
 	}
