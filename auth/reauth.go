@@ -67,6 +67,11 @@ func Reauth(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	if err := checkSessionKind(token, sess); err != nil {
+		writeError(w, http.StatusUnauthorized, "session tidak valid — silakan masuk ulang")
+		return
+	}
+
 	if err := verifyAccountPassword(ctx, accountID, body.Password); err != nil {
 		if errors.Is(err, errInvalidCredentials) {
 			writeError(w, http.StatusUnauthorized, "Password salah")
@@ -80,7 +85,7 @@ func Reauth(w http.ResponseWriter, req *http.Request) {
 		rlog.Warn("touch session failed", "err", err)
 	}
 
-	accessToken, expiresIn, err := signJWT(accountID, sessionID)
+	accessToken, expiresIn, err := signJWTKind(accountID, sessionID, sess.Kind)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "sign jwt failed")
 		return

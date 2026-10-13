@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"encore.app/wabantu/internal/adminauth"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -32,6 +33,14 @@ type SessionData struct {
 	ActAsModules      []string `json:"actAsModules,omitempty"`
 	ActAsGrantID      string `json:"actAsGrantId,omitempty"`
 	ActAsGrantExpiresAt int64  `json:"actAsGrantExpiresAt,omitempty"` // unix sec; 0 = permanent
+
+	// Kind is adminauth.KindAdmin for platform-admin portal sessions; "" = client (legacy).
+	Kind string `json:"kind,omitempty"`
+	// IssuedAt (unix sec) enforces the absolute admin session lifetime.
+	IssuedAt int64 `json:"issuedAt,omitempty"`
+	// ImpersonationSessionID (admin sessions only) is the live impersonation session, so
+	// stop-impersonation can revoke it.
+	ImpersonationSessionID string `json:"impersonationSessionId,omitempty"`
 }
 
 type Session struct {
@@ -67,7 +76,7 @@ func createSession(ctx context.Context, data SessionData) (*Session, error) {
 	if err != nil {
 		return nil, fmt.Errorf("marshal session: %w", err)
 	}
-	if err := getRedis().Set(ctx, key, raw, defaultSessionTTL).Err(); err != nil {
+	if err := getRedis().Set(ctx, key, raw, adminauth.SessionTTL(data.Kind)).Err(); err != nil {
 		return nil, fmt.Errorf("redis set session: %w", err)
 	}
 	return &Session{SessionID: sid, Data: data}, nil
@@ -96,6 +105,9 @@ func destroySession(ctx context.Context, accountID, sessionID string) error {
 
 func touchSession(ctx context.Context, accountID, sessionID string) error {
 	key := sessionKey(accountID, sessionID)
+	if sess, err := getSession(ctx, accountID, sessionID); err == nil && sess != nil && adminauth.NormalizeKind(sess.Kind) == adminauth.KindAdmin {
+		return nil // admin sessions have an absolute lifetime; never extended
+	}
 	if err := getRedis().Expire(ctx, key, defaultSessionTTL).Err(); err != nil {
 		return fmt.Errorf("redis expire session: %w", err)
 	}

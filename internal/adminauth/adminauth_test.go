@@ -75,20 +75,54 @@ func TestTokenKindAndCookies(t *testing.T) {
 }
 
 func TestEndpointAccess(t *testing.T) {
-	if EndpointAccess(KindClient, false, true) != ErrAdminSessionRequired || EndpointAccess("", false, true) != ErrAdminSessionRequired {
+	if EndpointAccess(KindClient, true) != ErrAdminSessionRequired || EndpointAccess("", true) != ErrAdminSessionRequired {
 		t.Fatal("client session must be rejected on /admin/*")
 	}
-	if EndpointAccess(KindAdmin, false, true) != nil {
+	if EndpointAccess(KindImpersonation, true) != ErrAdminSessionRequired {
+		t.Fatal("impersonation token must be rejected on /admin/*")
+	}
+	if EndpointAccess(KindAdmin, true) != nil {
 		t.Fatal("admin on admin endpoint")
 	}
-	if EndpointAccess(KindAdmin, false, false) != ErrClientSessionRequired {
+	if EndpointAccess(KindAdmin, false) != ErrClientSessionRequired {
 		t.Fatal("admin session must be rejected on client endpoints")
 	}
-	if EndpointAccess(KindAdmin, true, false) != nil {
-		t.Fatal("impersonating admin may use tenant endpoints")
+	if EndpointAccess(KindImpersonation, false) != nil || EndpointAccess(KindClient, false) != nil {
+		t.Fatal("client/impersonation on client endpoint")
 	}
-	if EndpointAccess(KindClient, false, false) != nil {
-		t.Fatal("client on client endpoint")
+}
+
+func TestImpersonationTokenShorterAndMarked(t *testing.T) {
+	if !(TokenTTL(KindImpersonation) < SessionTTL(KindAdmin)) || !(SessionTTL(KindImpersonation) < SessionTTL(KindAdmin)) {
+		t.Fatal("impersonation must expire before the admin session")
+	}
+	if NormalizeKind(KindImpersonation) != KindImpersonation {
+		t.Fatal("marker lost")
+	}
+	if CheckTokenKind(KindImpersonation, KindAdmin) != ErrTokenKind || CheckTokenKind(KindAdmin, KindImpersonation) != ErrTokenKind ||
+		CheckTokenKind(KindImpersonation, KindImpersonation) != nil {
+		t.Fatal("impersonation token bound to impersonation session only")
+	}
+	now := time.Now()
+	if CheckAdminExpiry(KindImpersonation, now.Add(-31*time.Minute), now) != ErrSessionExpired ||
+		CheckAdminExpiry(KindImpersonation, now.Add(-29*time.Minute), now) != nil {
+		t.Fatal("absolute impersonation cap")
+	}
+	for _, p := range []string{"/api/v1/admin/impersonate/t1", "/api/v1/admin/ai/function-config", "/api/v1/admin/ai/catalog", "/api/v1/admin/stop-impersonation"} {
+		if RequestAccess(p, true, KindImpersonation) == nil {
+			t.Fatalf("impersonation token accepted at %s", p)
+		}
+	}
+}
+
+func TestImpersonationAuditHasAdminAndTenant(t *testing.T) {
+	m := ImpersonationAudit("acc-admin", " Ops@WaBantu.id ", "tenant-9", "grant-1", "sess-2")
+	if m["adminAccountId"] != "acc-admin" || m["adminEmail"] != "ops@wabantu.id" || m["tenantId"] != "tenant-9" {
+		t.Fatal(m)
+	}
+	b, _ := json.Marshal(m)
+	if strings.Contains(strings.ToLower(string(b)), "token") && !strings.Contains(string(b), "impersonationSessionId") {
+		t.Fatal(string(b))
 	}
 }
 
@@ -400,5 +434,28 @@ func TestDummyHashIsRealBcrypt(t *testing.T) {
 	}
 	if bcrypt.CompareHashAndPassword(h, []byte("x")) == nil {
 		t.Fatal()
+	}
+}
+
+func TestRequestAccess(t *testing.T) {
+	cases := []struct {
+		path string
+		tag  bool
+		kind string
+		want error
+	}{
+		{"/api/v1/admin/ai/catalog", true, KindClient, ErrAdminSessionRequired},
+		{"/api/v1/admin/ai/catalog", false, KindClient, ErrAdminSessionRequired},
+		{"/api/v1/admin/tenants", true, KindAdmin, nil},
+		{"/api/v1/tenant-access/requests", true, KindClient, ErrAdminSessionRequired},
+		{"/api/v1/orders", false, KindAdmin, ErrClientSessionRequired},
+		{"/api/v1/orders", false, KindImpersonation, nil},
+		{"/api/v1/orders", false, KindClient, nil},
+		{"/api/v1/internal/kb/triage-patch", false, KindAdmin, nil},
+	}
+	for _, c := range cases {
+		if got := RequestAccess(c.path, c.tag, c.kind); got != c.want {
+			t.Errorf("%+v: got %v", c, got)
+		}
 	}
 }

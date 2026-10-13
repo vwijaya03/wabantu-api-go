@@ -1,0 +1,102 @@
+# Platform-admin auth (terpisah dari login client)
+
+Branch `be/admin-auth`. Logika inti: `internal/adminauth` (tanpa Encore, unit-tested). Wiring:
+`auth/login_portal.go`, `auth/admin_session.go`, `auth/platform_bootstrap.go`,
+`auth/impersonation.go`, `middleware/session_kind.go`, `admin/admin.go`.
+
+## Kontrak (fixed, CTO)
+
+### `POST /api/v1/platform-admin/login` (public)
+Body `{"email": "...", "password": "..."}` (JSON atau form).
+- `200` → `{"accessToken": "<jwt>", "expiresAt": "2026-10-13T07:20:00Z"}` (RFC3339, UTC).
+  **Tidak ada cookie yang di-set**; kirim sebagai `Authorization: Bearer`. (Cookie admin bernama
+  `wabantu_admin_at` dibaca bila FE memilih menyimpannya sendiri; client tetap `wabantu_at`.)
+- `401` `{"error":"Email atau password salah"}` — akun tidak ada, password salah, ATAU akun client
+  (owner/staff) mencoba portal admin. Body identik.
+- `429` `{"error":"too many attempts — coba lagi nanti"}` — rate limit / lockout.
+- `400` `{"error":"email and password are required"}`.
+
+Token admin: JWT `typ:"admin"`, berlaku 60 menit; sesi Redis `kind:"admin"` dengan batas
+**absolut 2 jam** (tidak diperpanjang oleh reauth/touch).
+
+### `POST /api/v1/auth/login` (client) — perubahan
+Akun `super_admin` tanpa tenant kini ditolak dengan `401 Email atau password salah` (sama
+dengan password salah). Response bertambah `sessionType:"client"`.
+
+### `POST /api/v1/admin/impersonate/:tenantId` (admin token SAJA)
+- Butuh grant persetujuan owner (tenant-access, tidak berubah).
+- Mengembalikan token **impersonation terpisah**: `{ok, tenant, accessToken, expiresAt}`.
+  JWT `typ:"impersonation"`, sesi `kind:"impersonation"`, berlaku **30 menit** (< sesi admin 2 jam).
+- Token admin TIDAK diubah. FE memakai token impersonation untuk endpoint tenant
+  (`/api/v1/orders`, dst) dan tetap memakai token admin untuk `/admin/*`.
+- Token impersonation **ditolak di semua `/admin/*`** (termasuk AI config/catalog, impersonate
+  dan stop-impersonation) → `403 permission_denied`.
+- Audit: `audit_log` action `admin.impersonate.start` dengan `adminAccountId`, `adminEmail`,
+  `tenantId`, `grantId`, `impersonationSessionId` (+ `impersonation_log` lama tetap).
+- `POST /api/v1/admin/stop-impersonation` (admin token) mencabut sesi impersonation di Redis
+  dan menulis `admin.impersonate.stop` (admin + tenant).
+
+## Matriks akses (middleware global `SessionKind`)
+
+| Token \ endpoint | `/api/v1/admin/*` & `tag:super_admin` | endpoint tenant/client | `/api/v1/internal/*` & private |
+|---|---|---|---|
+| client (`typ` kosong/`client`) | 403 | OK | n/a (private) |
+| admin (`typ:admin`) | OK | **403** | OK (service-to-service) |
+| impersonation | **403** | OK (sebagai tenant, scope grant) | OK |
+
+`typ` di JWT wajib cocok dengan `kind` sesi di Redis (token client tidak bisa memakai sesi admin
+dan sebaliknya) → 401 bila tidak cocok. `GET /api/v1/audit/logs` dan `GET/POST/PATCH /api/v1/flags`
+kini ber-`tag:super_admin` (admin-only). `GET /api/v1/flags/check/:key` tetap client.
+
+## Lockout & rate limit (Redis, `adminauth.Guard`)
+
+Dihitung per **(akun,IP)**, per **IP**, dan per **akun** (email di-hash; akun yang tidak ada
+dihitung sama persis → tidak bisa dipakai enumerasi):
+
+| Portal | pair (akun+IP) | IP | akun (semua IP) | window/lock | rate per menit |
+|---|---|---|---|---|---|
+| admin | 5 gagal | 10 gagal | 20 gagal | 15 m / 15 m | 10/IP, 5/akun |
+| client | 5 gagal | 30 gagal | 50 gagal | 15 m / 15 m | 20/IP, 10/akun (+ limit lama `AuthRPM`) |
+| bootstrap | 5 gagal | 5 gagal | – | 15 m / 15 m | 5/IP |
+
+Lock akun (semua IP) sengaja jauh di atas lock pair, jadi penyerang dari satu IP tidak bisa
+mengunci owner lain dari IP-nya sendiri. Store Redis error: admin **fail-closed**, client fail-open.
+Timing: akun tidak ada → bcrypt compare ke hash dummy **asli** (cost 12) — dulu string dummy tidak
+valid sehingga return instan (oracle timing). Portal salah juga melewati bcrypt penuh.
+
+## Audit login (`auth_login_attempt`, migration system `28_auth_login_attempt.up.sql`)
+
+Setiap percobaan (client, admin, bootstrap): `at, portal, email, account_id, ip, user_agent,
+result (success|failure|blocked), reason`. `reason` hanya dari daftar kode tetap
+(`invalid_credentials`, `portal_mismatch`, `locked_*`, `rate_limited_*`, `bootstrap_*`, …);
+UA dipotong 256 char dan karakter kontrol dibuang. Tidak ada kolom/field untuk password, token
+atau secret. Error body login hanya pesan generik di atas.
+
+## Bootstrap `POST /api/v1/internal/platform-admin/bootstrap`
+
+- Header `X-Platform-Bootstrap-Secret` vs Encore secret **baru** `PlatformAdminBootstrapKey`
+  (secret lama `PlatformAdminBootstrapSecret` tidak dibaca lagi).
+- Secret tidak diset / kosong / < 32 char → `403 {"error":"forbidden"}`; secret salah → `403`
+  dengan body yang sama. Compare SHA-256 + `subtle.ConstantTimeCompare`.
+- Satu kali: dalam SATU transaksi `pg_advisory_xact_lock` → cek super_admin tanpa tenant →
+  `409 platform admin already exists` → insert → commit.
+- Password min 12 char. Response `201 {accountId,email}` — **tidak menerbitkan token**; login
+  lewat `/api/v1/platform-admin/login`.
+- Semua percobaan tercatat di `auth_login_attempt` (portal `bootstrap`) tanpa secret.
+
+**Viko:** set KEY BARU (jangan pakai nilai lama) di tiap environment:
+`openssl rand -base64 48 | tr -d '\n' | encore secret set --env=<env> PlatformAdminBootstrapKey`.
+Setelah admin pertama dibuat, ganti ke nilai pendek mis. `disabled` → bootstrap mati (403).
+
+## Dampak Frontend / tooling
+
+- Admin console (`wabantu-web-frontend`) harus login via `/api/v1/platform-admin/login`
+  (bukan `/auth/login`), simpan token admin terpisah dari token client, re-login tiap ≤ 60 menit /
+  2 jam absolut (tidak ada refresh).
+- "Pantau" tenant: simpan `accessToken` dari `/admin/impersonate` dan pakai untuk request
+  tenant; jangan kirim token admin ke endpoint tenant (403) atau token impersonation ke `/admin/*`.
+- Skrip/CI yang login super_admin lewat `/auth/login` atau memakai bootstrap lama (mengharapkan
+  token dari bootstrap) harus diubah. `scripts/setup-secrets-for-cloud.sh` kini menset
+  `PlatformAdminBootstrapKey`.
+- Endpoint raw public yang memakai `AuthenticateHTTP` (SSE, `/auth/me`, firebase-token) tidak
+  melewati middleware; token admin di sana tidak punya tenant sehingga endpoint tenant menolak.

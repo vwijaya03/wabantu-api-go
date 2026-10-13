@@ -17,7 +17,7 @@ Base: same backend origin as other `/api/v1` endpoints, session cookie/bearer as
 
 ## 1. AI function config (superadmin only)
 
-All endpoints: `auth` + `tag:super_admin`. The server checks `role == "super_admin"` from the **auth session** (never from params) → `403 permission_denied` otherwise. Every write is audit-logged (`audit_log`, actor = session account) and logged with the actor.
+All endpoints: `auth` + `tag:super_admin`. The server checks `role == "super_admin"` from the **auth session** (never from params) → `403 permission_denied` otherwise. Since `be/admin-auth`: ONLY an **admin token** from `POST /api/v1/platform-admin/login` is accepted; client and impersonation tokens get `403` (see `docs/ADMIN_AUTH.md`). Every write is audit-logged (`audit_log`, actor = session account) and logged with the actor.
 Changes apply immediately on the instance that handled the request and within **≤30 s** on other instances (resolver TTL; no Pub/Sub).
 
 Functions: `chat`, `intent`, `ocr`, `payment_ocr`, `vision`, `memory`, `embedding`.
