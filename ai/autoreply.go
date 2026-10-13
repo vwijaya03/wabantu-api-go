@@ -691,7 +691,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	)
 
 	toolExec := NewCatalogToolExecutor(catalog)
-	reply, compUsage, usedTools, err := s.anthropic.GenerateSalesReplyWithCatalogTools(
+	reply, compUsage, usedTools, err := s.chatClientFor(ctx, payload.TenantID).GenerateSalesReplyWithCatalogTools(
 		ctx,
 		route.Model,
 		SalesReplyRequest{

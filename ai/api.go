@@ -38,6 +38,7 @@ func init() {
 		MaxTokens: defaultAnthropicMaxToks,
 	})
 	svc = NewAutoReplyService(rdb, client)
+	WireLLMConfig(llmConfigDB())
 	rlog.Info("ai model catalog",
 		"haiku", DefaultHaikuAPIID(),
 		"sonnet", DefaultSonnetAPIID(),

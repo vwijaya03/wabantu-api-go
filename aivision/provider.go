@@ -3,6 +3,7 @@ package aivision
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"encore.app/wabantu/shared/llm"
@@ -76,27 +77,48 @@ func visionRegistry(apiKey string) *llm.Registry {
 	return reg
 }
 
-// visionViaRegistry resolves provider+model for fn and runs the vision prompt.
-// With empty config this is exactly the legacy path (Anthropic Haiku snapshot).
-func visionViaRegistry(ctx context.Context, fn llm.Function, apiKey string, img []byte, mime, system, user string) (string, Usage, error) {
-	p, model, err := visionRegistry(apiKey).For(ctx, "", fn)
-	if err != nil {
-		return "", Usage{}, err
-	}
-	var text string
-	var u llm.Usage
-	if av, ok := p.(AnthropicVision); ok {
-		// Legacy error messages / validation preserved verbatim.
-		if model == "" {
-			model = haikuModelID
+// visionViaRegistry runs the vision prompt over the configured chain for (tenant, fn) with
+// BE-05 fallback on retryable errors. With empty config this is exactly the legacy path.
+func visionViaRegistry(ctx context.Context, fn llm.Function, tenantID, apiKey string, img []byte, mime, system, user string) (string, Usage, error) {
+	var (
+		text string
+		out  Usage
+	)
+	err := visionRegistry(apiKey).Run(ctx, tenantID, fn, func(p llm.Provider, model string) error {
+		if av, ok := p.(AnthropicVision); ok {
+			// Legacy error messages / validation preserved verbatim.
+			if model == "" {
+				model = haikuModelID
+			}
+			t, lu, err := visionExtractModel(ctx, av.APIKey, model, img, mime, system, user)
+			lu.Provider, lu.Model = "anthropic", model
+			text, out = t, lu
+			return err
 		}
-		var lu Usage
-		text, lu, err = visionExtractModel(ctx, av.APIKey, model, img, mime, system, user)
-		return text, lu, err
+		if len(img) == 0 {
+			return fmt.Errorf("empty image")
+		}
+		t, u, err := VisionWith(ctx, p, model, img, mime, system, user)
+		text = t
+		out = Usage{InputTokens: int(u.InputTokens), OutputTokens: int(u.OutputTokens), Provider: u.Provider, Model: u.Model}
+		return err
+	})
+	if err != nil {
+		return "", out, err
 	}
-	if len(img) == 0 {
-		return "", Usage{}, fmt.Errorf("empty image")
+	return text, out, nil
+}
+
+// IsRetryable classifies transient Anthropic vision errors for chain fallback.
+func (AnthropicVision) IsRetryable(err error) bool {
+	if err == nil {
+		return false
 	}
-	text, u, err = VisionWith(ctx, p, model, img, mime, system, user)
-	return text, Usage{InputTokens: int(u.InputTokens), OutputTokens: int(u.OutputTokens)}, err
+	s := strings.ToLower(err.Error())
+	for _, p := range []string{"429", "529", "500", "502", "503", "504", "overloaded", "too many requests", "timeout", "deadline exceeded", "connection reset", "connection refused", "eof"} {
+		if strings.Contains(s, p) {
+			return true
+		}
+	}
+	return false
 }

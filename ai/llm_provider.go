@@ -83,3 +83,6 @@ func (p *AnthropicProvider) Chat(ctx context.Context, r llm.ChatRequest) (llm.Ch
 func (p *AnthropicProvider) Vision(ctx context.Context, model string, img []byte, mime, system, user string) (string, llm.Usage, error) {
 	return aivision.AnthropicVision{APIKey: p.APIKey}.Vision(ctx, model, img, mime, system, user)
 }
+
+// IsRetryable lets llm.Registry fall back on transient Anthropic errors.
+func (p *AnthropicProvider) IsRetryable(err error) bool { return IsAnthropicRetryable(err) }

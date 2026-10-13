@@ -21,6 +21,9 @@ const haikuModelID = "claude-haiku-4-5-20251001"
 type Usage struct {
 	InputTokens  int
 	OutputTokens int
+	// Provider/Model actually used (set by the registry path; empty on legacy direct calls).
+	Provider string
+	Model    string
 }
 
 const transactionVisionSystem = `Kamu mengekstrak daftar transaksi keuangan dari screenshot aplikasi keuangan (WABantu, bank, e-wallet, dll.) untuk impor massal.
@@ -156,7 +159,12 @@ const productImageVisionUser = `Identifikasi produk dagangan di gambar ini untuk
 
 // ExtractProductMatchFromImage calls Claude vision for catalog product matching.
 func ExtractProductMatchFromImage(ctx context.Context, apiKey string, imageBytes []byte, mediaType string) (ProductImageMatchExtract, Usage, error) {
-	raw, usage, err := visionExtract(ctx, apiKey, imageBytes, mediaType, productImageVisionSystem, productImageVisionUser)
+	return ExtractProductMatchFromImageForTenant(ctx, apiKey, "", imageBytes, mediaType)
+}
+
+// ExtractProductMatchFromImageForTenant is ExtractProductMatchFromImage with tenant-scoped provider config.
+func ExtractProductMatchFromImageForTenant(ctx context.Context, apiKey, tenantID string, imageBytes []byte, mediaType string) (ProductImageMatchExtract, Usage, error) {
+	raw, usage, err := visionViaRegistry(ctx, llm.FnVision, tenantID, apiKey, imageBytes, mediaType, productImageVisionSystem, productImageVisionUser)
 	var out ProductImageMatchExtract
 	if err != nil {
 		return out, usage, err
@@ -169,7 +177,12 @@ func ExtractProductMatchFromImage(ctx context.Context, apiKey string, imageBytes
 
 // ExtractPaymentProofFromImage calls Claude vision for payment proof OCR.
 func ExtractPaymentProofFromImage(ctx context.Context, apiKey string, imageBytes []byte, mediaType string) (PaymentProofExtract, Usage, error) {
-	raw, usage, err := visionViaRegistry(ctx, llm.FnOCR, apiKey, imageBytes, mediaType, paymentProofVisionSystem, paymentProofVisionUser)
+	return ExtractPaymentProofFromImageForTenant(ctx, apiKey, "", imageBytes, mediaType)
+}
+
+// ExtractPaymentProofFromImageForTenant routes payment-proof OCR via the 'payment_ocr' chain for the tenant.
+func ExtractPaymentProofFromImageForTenant(ctx context.Context, apiKey, tenantID string, imageBytes []byte, mediaType string) (PaymentProofExtract, Usage, error) {
+	raw, usage, err := visionViaRegistry(ctx, llm.FnPaymentOCR, tenantID, apiKey, imageBytes, mediaType, paymentProofVisionSystem, paymentProofVisionUser)
 	var out PaymentProofExtract
 	if err != nil {
 		return out, usage, err
@@ -186,7 +199,7 @@ func SanitizeVisionJSON(text string) string {
 }
 
 func visionExtract(ctx context.Context, apiKey string, imageBytes []byte, mediaType, system, user string) (string, Usage, error) {
-	return visionViaRegistry(ctx, llm.FnVision, apiKey, imageBytes, mediaType, system, user)
+	return visionViaRegistry(ctx, llm.FnVision, "", apiKey, imageBytes, mediaType, system, user)
 }
 
 func visionExtractModel(ctx context.Context, apiKey, model string, imageBytes []byte, mediaType, system, user string) (string, Usage, error) {

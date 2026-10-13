@@ -106,7 +106,7 @@ func processPaymentProofJob(ctx context.Context, job *PaymentProofJob) error {
 		return applyPaymentProofResult(ctx, ts, job, target, "proof_submitted", target.Status, meta, true, "")
 	}
 
-	ocr, ocrUsage, ocrErr := aivision.ExtractPaymentProofFromImage(ctx, secrets.AnthropicAPIKey, imageBytes, mime)
+	ocr, ocrUsage, ocrErr := aivision.ExtractPaymentProofFromImageForTenant(ctx, secrets.AnthropicAPIKey, job.TenantID, imageBytes, mime)
 	_ = usage.RecordAIActivity(ctx, usage.AIActivityParams{
 		TenantSchema:   job.TenantSchema,
 		TenantID:       job.TenantID,
@@ -114,7 +114,7 @@ func processPaymentProofJob(ctx context.Context, job *PaymentProofJob) error {
 		InboundID:      job.InboundMessageID,
 		Purpose:        usage.PurposePaymentProofOCR,
 		Path:           "payment_proof_ocr",
-		Model:          "claude-haiku-4-5",
+		Model:          paymentOCRModelForUsage(ocrUsage),
 		LLMUsed:        ocrErr == nil,
 		InputTokens:    ocrUsage.InputTokens,
 		OutputTokens:   ocrUsage.OutputTokens,

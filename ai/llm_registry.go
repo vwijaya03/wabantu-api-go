@@ -2,15 +2,19 @@ package ai
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
 	"strings"
 	"sync"
 
+	"encore.app/wabantu/aivision"
 	"encore.app/wabantu/shared/llm"
+	"encore.dev/rlog"
 )
 
 // Text-LLM registry for ai + business. Anthropic is always registered; other providers
-// (Gemini, BE-04) are added with RegisterLLMProvider. With no DB store wired, the
-// resolver yields code defaults (Anthropic, model "") = legacy behaviour.
+// (Gemini, BE-04) are added with RegisterLLMProvider. The resolver is DB-backed once
+// WireLLMConfig runs at service start; with empty tables it yields code defaults (Anthropic).
 var (
 	llmMu       sync.RWMutex
 	llmExtra    = map[string]llm.Provider{}
@@ -29,6 +33,18 @@ func SetLLMResolver(r *llm.Resolver) {
 	llmMu.Unlock()
 }
 
+// WireLLMConfig points both the text registry and the aivision registry at one DB-backed
+// resolver (TTL 30s, no Pub/Sub invalidation yet) and routes llm diagnostics to rlog.
+func WireLLMConfig(db *sql.DB) {
+	llm.Logf = func(format string, args ...any) { rlog.Warn("llm: " + fmt.Sprintf(format, args...)) }
+	if db == nil {
+		return
+	}
+	r := llm.NewResolver(llm.NewSQLStore(db), llm.DefaultTTL)
+	SetLLMResolver(r)
+	aivision.SetVisionResolver(r)
+}
+
 // LLMRegistry builds a registry whose Anthropic provider uses apiKey/cfg (legacy client settings).
 func LLMRegistry(apiKey string, cfg AnthropicConfig) *llm.Registry {
 	llmMu.RLock()
@@ -41,37 +57,64 @@ func LLMRegistry(apiKey string, cfg AnthropicConfig) *llm.Registry {
 	return reg
 }
 
-// CompleteViaRegistry replaces direct NewAnthropicClient(...).CompleteText calls.
-// defaultModel is used only when the resolved provider is Anthropic and config gives no model,
-// so Claude model ids are never sent to another provider. Returns the model actually used.
+// CompleteViaRegistry replaces direct NewAnthropicClient(...).CompleteText calls and runs the
+// configured chain with fallback on retryable errors. defaultModel is used only for Anthropic
+// links without a model, so Claude ids are never sent to another provider. Returns the model used.
 func CompleteViaRegistry(ctx context.Context, apiKey string, cfg AnthropicConfig, tenantID string, fn llm.Function,
 	defaultModel, system, user string, maxTok int64) (string, CompletionUsage, string, error) {
-	p, model, err := LLMRegistry(apiKey, cfg).For(ctx, tenantID, fn)
-	if err != nil {
-		return "", CompletionUsage{}, defaultModel, err
-	}
-	if ap, ok := p.(*AnthropicProvider); ok {
-		if strings.TrimSpace(model) == "" {
-			model = defaultModel
+	var (
+		text      string
+		usage     CompletionUsage
+		usedModel = defaultModel
+	)
+	err := LLMRegistry(apiKey, cfg).Run(ctx, tenantID, fn, func(p llm.Provider, model string) error {
+		if ap, ok := p.(*AnthropicProvider); ok {
+			if strings.TrimSpace(model) == "" {
+				model = defaultModel
+			}
+			// Legacy client directly: usage (incl. cache counters) and errors byte-identical.
+			t, u, err := ap.Client.CompleteText(ctx, model, system, user, maxTok)
+			text, usage, usedModel = t, u, model
+			return err
 		}
-		// Call the legacy client directly so usage (incl. cache counters) and errors are byte-identical.
-		text, u, err := ap.Client.CompleteText(ctx, model, system, user, maxTok)
-		return text, u, model, err
+		t, u, err := p.Complete(ctx, model, system, user, maxTok)
+		text, usedModel = t, u.Model
+		usage = CompletionUsage{
+			InputTokens: int(u.InputTokens), OutputTokens: int(u.OutputTokens),
+			CacheReadInputTokens: int(u.CacheReadInputTokens), CacheCreationInputTokens: int(u.CacheCreationInputTokens),
+		}
+		return err
+	})
+	if err != nil {
+		return "", usage, usedModel, err
 	}
-	text, u, err := p.Complete(ctx, model, system, user, maxTok)
-	return text, CompletionUsage{
-		InputTokens: int(u.InputTokens), OutputTokens: int(u.OutputTokens),
-		CacheReadInputTokens: int(u.CacheReadInputTokens), CacheCreationInputTokens: int(u.CacheCreationInputTokens),
-	}, u.Model, err
+	return text, usage, usedModel, nil
 }
 
-// ChatClientViaRegistry returns the Anthropic client for the auto-reply pipeline.
-// Sales chat + tool-use is Anthropic-specific (anthropic_tools.go) until BE-04, so this
-// always yields Anthropic; the registry lookup is kept so the switch point exists.
+// ChatClientViaRegistry returns the Anthropic client for the auto-reply pipeline (startup).
 func ChatClientViaRegistry(apiKey string, cfg AnthropicConfig) *AnthropicClient {
-	reg := LLMRegistry(apiKey, cfg)
-	if p, ok := reg.Get("anthropic"); ok {
+	if p, ok := LLMRegistry(apiKey, cfg).Get("anthropic"); ok {
 		return p.(*AnthropicProvider).Client
 	}
 	return NewAnthropicClient(apiKey, cfg)
+}
+
+// chatClientFor resolves the tenant's 'chat' chain. Sales chat + tool-use is Anthropic-only
+// until BE-04, so the Anthropic client is always returned; a non-Anthropic first link is logged.
+func (s *AutoReplyService) chatClientFor(ctx context.Context, tenantID string) *AnthropicClient {
+	cands := LLMRegistry(secrets.AnthropicAPIKey, AnthropicConfig{Model: defaultAnthropicModel, MaxTokens: defaultAnthropicMaxToks}).
+		Candidates(ctx, tenantID, llm.FnChat)
+	if len(cands) > 0 && cands[0].Provider.ID() != "anthropic" {
+		rlog.Warn("llm: chat chain prefers non-anthropic provider but tool-use chat is anthropic-only (BE-04); using anthropic",
+			"tenantId", tenantID, "provider", cands[0].Provider.ID())
+	}
+	return s.anthropic
+}
+
+// paymentOCRModelForUsage records the real model; keeps the legacy label when unknown.
+func paymentOCRModelForUsage(u aivision.Usage) string {
+	if strings.TrimSpace(u.Model) != "" {
+		return u.Model
+	}
+	return "claude-haiku-4-5"
 }
