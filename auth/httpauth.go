@@ -12,7 +12,8 @@ import (
 	"encore.app/wabantu/shared/types"
 )
 
-// AuthenticateHTTP validates JWT from Authorization Bearer, access_token query (SSE), or cookie.
+// AuthenticateHTTP validates JWT from Authorization Bearer, cookie, or access_token
+// query on the inbox SSE stream only.
 func AuthenticateHTTP(ctx context.Context, r *http.Request) (*types.AuthUser, error) {
 	token := extractBearerOrCookie(r)
 	if token == "" {
@@ -62,8 +63,18 @@ func extractBearerOrCookie(r *http.Request) string {
 	if c, err := r.Cookie(adminauth.AdminCookie); err == nil && c.Value != "" {
 		return c.Value
 	}
-	if t := strings.TrimSpace(r.URL.Query().Get("access_token")); t != "" {
-		return t
+	// Query tokens are for EventSource only. Other routes ignore ?access_token=
+	// so a leaked stream URL cannot authenticate REST calls.
+	if accessTokenQueryAllowed(r.URL.Path) {
+		if t := strings.TrimSpace(r.URL.Query().Get("access_token")); t != "" {
+			return t
+		}
 	}
 	return ""
+}
+
+// accessTokenQueryAllowed is true only for the inbox SSE stream.
+func accessTokenQueryAllowed(path string) bool {
+	path = strings.TrimSuffix(path, "/")
+	return path == "/api/v1/inbox/stream" || strings.HasSuffix(path, "/api/v1/inbox/stream")
 }
