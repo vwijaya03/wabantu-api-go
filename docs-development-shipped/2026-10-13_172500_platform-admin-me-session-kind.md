@@ -12,3 +12,8 @@ Token admin valid → `/api/v1/platform-admin/me` tidak mengembalikan profil; lo
 - `/api/v1/platform-admin/*` = prefix admin kedua, dicocokkan via identitas route Encore (`service.Endpoint`), bukan URL mentah.
 - Tanpa cek sesi hanya (exact): `auth.PlatformAdminLogin`, `auth.BootstrapPlatformAdmin`.
 - Test: sinkron dengan source, matrix admin/client/impersonate × {platform-admin/me, /admin/*}, variasi path (`..`, `%2F`, case, trailing slash), sessionless exact-only.
+
+## Catatan raw endpoint
+Encore tidak menulis error middleware untuk endpoint `raw` (klien dapat `200` body kosong — itulah gejala awalnya). `auth.PlatformAdminMe` dan `auth.PlatformAdminLogin` (raw) memeriksa jenis sesi di handler sendiri (`MeAccess` → `401`, cek portal login), jadi middleware menyerahkan ke handler (`adminauth.HandlerEnforcedRaw`).
+
+Live (127.0.0.1:4100, DB sintetis): admin → `/platform-admin/me` 200 + profil; client/impersonate → 401; tanpa token → 401. `/admin/*`: admin 200, client/impersonate 403, tanpa token 401. Variasi path: trailing slash → 301 ke path kanonik; `%2F`, `..`, huruf besar → 404.
