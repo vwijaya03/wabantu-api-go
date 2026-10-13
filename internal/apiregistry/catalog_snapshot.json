@@ -1,5 +1,5 @@
 {
-  "count": 368,
+  "count": 369,
   "endpoints": [
     {
       "service": "admin",
@@ -544,7 +544,7 @@
     {
       "service": "broadcast",
       "file": "broadcast/broadcast.go",
-      "line": 159,
+      "line": 165,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/broadcast/campaigns",
@@ -553,7 +553,7 @@
     {
       "service": "broadcast",
       "file": "broadcast/broadcast.go",
-      "line": 75,
+      "line": 80,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/broadcast/campaigns",
@@ -563,7 +563,7 @@
     {
       "service": "broadcast",
       "file": "broadcast/broadcast.go",
-      "line": 189,
+      "line": 195,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/broadcast/campaigns/:id/send",
@@ -3055,6 +3055,15 @@
       "method": "PATCH",
       "path": "/api/v1/orders/:id",
       "annotation": "auth method=PATCH path=/api/v1/orders/:id"
+    },
+    {
+      "service": "order",
+      "file": "order/approve.go",
+      "line": 26,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/orders/:id/approve",
+      "annotation": "auth method=POST path=/api/v1/orders/:id/approve"
     },
     {
       "service": "order",

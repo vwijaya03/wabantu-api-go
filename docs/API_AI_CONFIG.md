@@ -125,8 +125,7 @@ Errors: `400` (bad sessionId/after), `401`, `403`.
 |---|---|---|---|
 | Buyer chats, AI quotes **tier price** and creates the order at that price | `POST /api/v1/simulator/messages` → AI pipeline | auth; owner/staff/super_admin (session tenant) | `webhook/simulator.go` (SimulatorSend); tier pricing `ai/order_catalog_db.go` `applyContactTierPrices` (called from `ai/autoreply.go`, `ai/order_flow_handler.go`, `ai/order_amend.go`) |
 | Buyer sends transfer proof → OCR (Gemini, fallback Anthropic) → stored in `order.payment_proof_meta`, exposed as `proofCheck` | same POST with `image` | same | `ai/payment_proof.go` (`evaluatePaymentProofRules`, `applyPaymentProofResult`); derivation `internal/proofcheck` |
-| Owner approves → `paymentStatus=verified`, `status=processing` | `POST /api/v1/orders/:id/payment-proof/verify` | auth; owner (or super_admin impersonating) | `order/payment_proof.go` VerifyPaymentProof |
-| Owner completes the order (finance income recorded) | `PATCH /api/v1/orders/:id` `{ "status": "completed" }` | auth; owner | `order/order.go` Update |
+| Owner approves → proof verified **and** order `completed` + finance income, one transaction | `POST /api/v1/orders/:id/approve` | auth; owner (or super_admin impersonating the tenant) | `order/approve.go` Approve; rules `internal/orderapprove` |
 
 Demo data: `go run ./scripts/cmd/demo-seed/` (DEMO ONLY; see header). Simulator session `reseller-demo` buys at the reseller price.
 
@@ -140,7 +139,8 @@ All `auth`, tenant from session; mutations require owner (`CanPerformOwnerAction
 |---|---|---|---|
 | GET | `/api/v1/orders?status=&q=&page=&pageSize=` | – | `{ orders: Order[], total, page, pageSize }` |
 | GET | `/api/v1/orders/:id` | – | `Order` |
-| POST | `/api/v1/orders/:id/payment-proof/verify` | – | `Order` (approve proof → `paymentStatus=verified`, `status=processing`) |
+| POST | **`/api/v1/orders/:id/approve`** | – | `Order` — **the "Setujui" button**: verifies the proof and completes the order (`paymentStatus=verified`, `status=completed`, finance income) in one DB transaction. Idempotent: already `completed` → 200 with the order, nothing re-written (no duplicate income). `409 aborted` when there is no payment proof, the order is cancelled, the proof is blocked, or it is still a draft without proof. Another tenant's order → 404. |
+| POST | `/api/v1/orders/:id/payment-proof/verify` | – | `Order` (legacy: verify only → `status=processing`; prefer `/approve`) |
 | POST | `/api/v1/orders/:id/payment-proof/reject` | `{ reason?: string }` | `Order` (`paymentStatus=rejected`; buyer is told to resend) |
 | POST | `/api/v1/orders/:id/payment-proof/unblock` | – | `Order` (after repeated rejections the proof is blocked) |
 | PATCH | `/api/v1/orders/:id` | `{ status?: "completed" \| "shipped" \| ..., trackingNumber?, courier?, ... }` | `Order` |
@@ -149,7 +149,7 @@ All `auth`, tenant from session; mutations require owner (`CanPerformOwnerAction
 `Order` (relevant fields): `id, orderNumber, conversationId, contactId, contactDisplayName, items[{name, qty, unitPrice, sellUnit}], status, paymentStatus, total, paymentProofMeta{amount, bank, accountNumber, accountName, date, confidence, flags[], rejectReason, rejectionCount, proofBlocked}`, **`proofCheck: "cocok"|"perlu_dicek"` (absent = no proof)**, **`proofCheckReasons: string[]`**.
 Badge: `proofCheck=="cocok"` → green "Bukti cocok"; `"perlu_dicek"` → amber "Perlu dicek" + reasons. Approval is always the owner's decision; `cocok` is advisory (amount equals order total and destination account matches the payment info in the knowledge base).
 Proof image: `GET /api/v1/inbox/messages/{paymentProofMessageId}/media` (Bearer).
-Errors: `400` invalid state (e.g. already verified), `403` not owner, `404` order not found, `409/400` stock precheck failure on verify.
+Errors: `400` invalid state (e.g. already verified on `/verify`), `403` not owner, `404` order not found (also another tenant's id), `409` approve preconditions (message explains), stock precheck failure as returned by inventory. After `/approve` the stock reconcile and Firestore mirror run after commit; on a stock-sync error the order is already completed and a retry of `/approve` (idempotent) repairs stock.
 
 ---
 
@@ -177,6 +177,6 @@ Errors (JSON `{code, message}`): `401 unauthenticated` (no/invalid session), `40
 | `tenants/{tenantId}/orders/{orderId}` | `conversationId`, `order` (`OrderSummary`), `updatedAt` |
 
 `OrderSummary` = the same shape as in §2 (numbers as integers when whole). Get `conversationId` from the POST response, then listen to `.../messages` ordered by `createdAt`.
-Written on: simulator inbound, AI/system replies (incl. payment-proof result), owner manual reply, and owner order actions (verify/reject/unblock/update/cancel). Not mirrored yet: broadcasts (still visible via GET polling).
+Written on: simulator inbound, AI/system replies (incl. payment-proof result), owner manual reply, and owner order actions (approve/verify/reject/unblock/update/cancel), and broadcasts to simulator buyers (job payload carries `tenantId`; jobs queued before that change skip the mirror only).
 
 Rules (`firestore.rules`): read only if `request.auth.token.tenantId == tenantId` and the role is owner/staff/super_admin; `write: false` for all clients (the server writes with the service account).
