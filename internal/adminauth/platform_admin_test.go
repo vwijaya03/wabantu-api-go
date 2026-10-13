@@ -36,6 +36,12 @@ func TestPlatformAdminEndpointsComplete(t *testing.T) {
 	if found != len(PlatformAdminEndpoints) {
 		t.Errorf("found %d platform-admin endpoints in source, map has %d", found, len(PlatformAdminEndpoints))
 	}
+	// HandlerEnforcedRaw bypasses the middleware: it must stay a subset of the platform-admin routes.
+	for id := range HandlerEnforcedRaw {
+		if !PlatformAdminEndpoints[id] {
+			t.Errorf("HandlerEnforcedRaw %s is not a platform-admin endpoint", id)
+		}
+	}
 }
 
 // Kind × endpoint matrix. "" kind = no token: the middleware is not reached (auth.Data nil),
