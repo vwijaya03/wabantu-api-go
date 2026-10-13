@@ -26,6 +26,8 @@ var lookupGeminiKey = func() string { return strings.TrimSpace(os.Getenv(geminiK
 func ensureGeminiRegistered() {
 	geminiOnce.Do(func() {
 		key := lookupGeminiKey()
+		llm.SetProviderAvailable("anthropic", strings.TrimSpace(secrets.AnthropicAPIKey) != "")
+		llm.SetProviderAvailable("gemini", key != "")
 		if key == "" {
 			rlog.Info("llm: GeminiAPIKey not set; gemini provider not registered, chains fall back to anthropic")
 			return

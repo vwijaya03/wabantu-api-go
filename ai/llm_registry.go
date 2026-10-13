@@ -44,6 +44,7 @@ func WireLLMConfig(db *sql.DB) {
 	r := llm.NewResolver(llm.NewSQLStore(db), llm.DefaultTTL)
 	SetLLMResolver(r)
 	aivision.SetVisionResolver(r)
+	llm.OnConfigChanged(r.Invalidate)
 	ensureGeminiRegistered() // vision callers may hit aivision before any text registry use
 }
 
