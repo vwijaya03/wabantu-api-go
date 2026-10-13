@@ -123,11 +123,17 @@ type SimulatorMessage struct {
 	Text      string `json:"text"`
 	CreatedAt string `json:"createdAt"`
 	Status    string `json:"status"`
+	// ImageURL is set for image messages: authenticated GET (Bearer), served from the media cache.
+	ImageURL *string `json:"imageUrl"`
 }
 
 type SimulatorListResponse struct {
 	ConversationID *string            `json:"conversationId"`
 	Messages       []SimulatorMessage `json:"messages"`
+	// Pricing is the tier the AI quotes to this buyer; null before the first message.
+	Pricing *sim.PricingView `json:"pricing"`
+	// Order is the latest order of this conversation (status + proof check); null if none.
+	Order *sim.OrderView `json:"order"`
 }
 
 // SimulatorMessages polls the simulator conversation for the session tenant.
@@ -194,11 +200,49 @@ func SimulatorMessages(ctx context.Context, p *SimulatorListParams) (*SimulatorL
 		if m.Type == "image" && m.Text == "" {
 			m.Text = "[gambar]"
 		}
+		if m.Type == "image" {
+			u := sim.ImageURL(m.ID)
+			m.ImageURL = &u
+		}
 		m.CreatedAt = created.UTC().Format(time.RFC3339Nano)
 		out.Messages = append(out.Messages, m)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, &errs.Error{Code: errs.Internal, Message: "gagal membaca pesan"}
+	}
 	out.ConversationID = &convoID
-	return out, rows.Err()
+	out.Pricing, out.Order = loadSimulatorState(ctx, ts, convoID)
+	return out, nil
+}
+
+// loadSimulatorState returns the buyer's quoted price tier and latest order. Best-effort:
+// errors leave the fields null so polling never fails on enrichment.
+func loadSimulatorState(ctx context.Context, ts appdb.TenantScope, convoID string) (*sim.PricingView, *sim.OrderView) {
+	var pricing *sim.PricingView
+	var code, label string
+	if err := ts.QueryRowContext(ctx, `
+		SELECT t.code, t.label FROM conversation c
+		JOIN contact ct ON ct.id = c.contact_id
+		JOIN business_price_type t ON t.deleted_at IS NULL AND t.is_active = true
+		     AND (t.id = ct.price_type_id OR t.is_default = true)
+		WHERE c.id = $1
+		ORDER BY (t.id = ct.price_type_id) IS TRUE DESC, t.is_default DESC, t.display_order
+		LIMIT 1`, convoID).Scan(&code, &label); err == nil {
+		pricing = &sim.PricingView{Tier: code, TierLabel: label}
+	}
+	var id, status, payStatus string
+	var total float64
+	var items, meta []byte
+	var updated time.Time
+	if err := ts.QueryRowContext(ctx, `
+		SELECT id::text, status, payment_status, COALESCE(total, 0)::float8, COALESCE(items, '[]'::jsonb),
+		       COALESCE(payment_proof_meta, '{}'::jsonb), updated_at
+		FROM "order" WHERE conversation_id = $1 AND deleted_at IS NULL
+		ORDER BY created_at DESC LIMIT 1`, convoID).Scan(&id, &status, &payStatus, &total, &items, &meta, &updated); err != nil {
+		return pricing, nil
+	}
+	v := sim.BuildOrderView(id, status, payStatus, total, items, meta, updated.UTC().Format(time.RFC3339Nano))
+	return pricing, &v
 }
 
 func simulatorUser() (*types.AuthUser, error) {
