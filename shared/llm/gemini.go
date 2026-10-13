@@ -106,15 +106,17 @@ func (g *GeminiProvider) generate(ctx context.Context, model string, body gReq) 
 	}
 	resp, err := hc.Do(req)
 	if err != nil {
-		return "", u, fmt.Errorf("gemini: %w", err)
+		// No response received: mark explicitly as transport so classification isn't heuristic.
+		return "", u, &TransportError{Provider: "gemini", Err: err}
 	}
 	defer resp.Body.Close()
 	raw, rerr := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if rerr != nil {
-		// %w keeps io.ErrUnexpectedEOF / timeouts visible to IsProviderRetryable.
 		if resp.StatusCode/100 != 2 {
-			return "", u, fmt.Errorf("gemini: read error body (http %d): %w", resp.StatusCode, rerr)
+			// HTTP status wins over the read error (a truncated 4xx must not look transient).
+			return "", u, &APIError{Status: resp.StatusCode, Body: string(raw) + " [body read error: " + rerr.Error() + "]"}
 		}
+		// 2xx with truncated body: %w keeps io.ErrUnexpectedEOF visible → retryable.
 		return "", u, fmt.Errorf("gemini: read body: %w", rerr)
 	}
 	if resp.StatusCode/100 != 2 {

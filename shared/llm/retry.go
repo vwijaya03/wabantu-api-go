@@ -5,8 +5,24 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/url"
+	"regexp"
 	"strings"
 )
+
+// TransportError marks a failure before any HTTP response was received (dial, write,
+// connection closed / stale keep-alive "EOF", client timeout). Always retryable unless
+// the cause is context.Canceled.
+type TransportError struct {
+	Provider string
+	Err      error
+}
+
+func (e *TransportError) Error() string { return e.Provider + ": transport: " + e.Err.Error() }
+func (e *TransportError) Unwrap() error { return e.Err }
+
+// Google/gRPC status form only (JSON "status": "UNAVAILABLE", "status: UNAVAILABLE", gRPC "code = Unavailable").
+var reUnavailableStatus = regexp.MustCompile(`"?status"?\s*[:=]\s*"?UNAVAILABLE\b|code\s*=\s*Unavailable\b`)
 
 // IsProviderRetryable reports provider-neutral transient errors:
 //   - typed *APIError with 429/5xx
@@ -14,8 +30,11 @@ import (
 //     (e.g. http.Client.Timeout) — regardless of whether the chain link has timeout_ms.
 //     A cancelled context (context.Canceled) is never retryable; Registry.Run additionally
 //     stops when the parent ctx is done, so a parent deadline never advances the chain.
-//   - text: "429 Too Many Requests", Google status RESOURCE_EXHAUSTED, and UNAVAILABLE only
-//     as a status/code (or HTTP 503) — not free-text "unavailable" (e.g. 404 "model unavailable").
+//   - *TransportError (no response received), or *url.Error wrapping io.EOF
+//   - text: "429 Too Many Requests", RESOURCE_EXHAUSTED, "503 Service Unavailable", and
+//     UNAVAILABLE only in status/code form — not free text (e.g. 404 "model unavailable").
+//
+// A typed *APIError always wins: its HTTP status decides (429/5xx), whatever the body/read error.
 func IsProviderRetryable(err error) bool {
 	if err == nil || errors.Is(err, context.Canceled) {
 		return false
@@ -23,6 +42,16 @@ func IsProviderRetryable(err error) bool {
 	var ae *APIError
 	if errors.As(err, &ae) {
 		return ae.Retryable()
+	}
+	var te *TransportError
+	if errors.As(err, &te) {
+		return true
+	}
+	// Other SDKs: http.Client.Do returns *url.Error with no response; a bare EOF there means
+	// the connection closed before a response (stale keep-alive). Plain io.EOF elsewhere is not retryable.
+	var ue *url.Error
+	if errors.As(err, &ue) && errors.Is(ue.Err, io.EOF) {
+		return true
 	}
 	if errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, context.DeadlineExceeded) {
 		return true
@@ -40,9 +69,5 @@ func retryableText(msg string) bool {
 		strings.Contains(low, "resource_exhausted") || strings.Contains(low, "503 service unavailable") {
 		return true
 	}
-	// Google/gRPC status form only: "UNAVAILABLE" enum, "code = Unavailable", `"status": "UNAVAILABLE"`.
-	if strings.Contains(msg, "UNAVAILABLE") || strings.Contains(msg, "code = Unavailable") {
-		return true
-	}
-	return false
+	return reUnavailableStatus.MatchString(msg)
 }
