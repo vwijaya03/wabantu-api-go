@@ -5,12 +5,19 @@ import (
 	"errors"
 	"net"
 	"strings"
+
+	"encore.app/wabantu/shared/llm"
 )
 
-// IsAnthropicRetryable reports transient Anthropic/network failures worth pubsub retry.
+// IsAnthropicRetryable reports transient LLM/network failures worth pubsub retry.
+// Despite the name it is provider-neutral: Gemini RESOURCE_EXHAUSTED / UNAVAILABLE
+// (and typed llm.APIError 429/5xx) are also retryable.
 func IsAnthropicRetryable(err error) bool {
 	if err == nil {
 		return false
+	}
+	if llm.IsProviderRetryable(err) {
+		return true
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		return true
