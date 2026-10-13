@@ -1428,6 +1428,9 @@ func (s *AutoReplyService) sendAiMessage(
 	if channel == nil || contact == nil {
 		return fmt.Errorf("missing channel or contact")
 	}
+	if whatsappchannel.IsSimulator(channel.Provider) {
+		return s.sendSimulatorMessage(ctx, ts, tenantID, convo, text, author, inboundMessageID, meta)
+	}
 	if channel.Provider != "meta_cloud" {
 		return fmt.Errorf("unsupported channel provider %q", channel.Provider)
 	}

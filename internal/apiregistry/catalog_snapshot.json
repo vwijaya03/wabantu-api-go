@@ -1,5 +1,5 @@
 {
-  "count": 361,
+  "count": 367,
   "endpoints": [
     {
       "service": "admin",
@@ -200,6 +200,46 @@
       "path": "/api/v1/admin/ai-triage/reports/:id/incident",
       "tag": "super_admin",
       "annotation": "auth method=POST path=/api/v1/admin/ai-triage/reports/:id/incident tag:super_admin"
+    },
+    {
+      "service": "admin",
+      "file": "admin/ai_config.go",
+      "line": 201,
+      "access": "auth",
+      "method": "GET",
+      "path": "/api/v1/admin/ai/catalog",
+      "tag": "super_admin",
+      "annotation": "auth method=GET path=/api/v1/admin/ai/catalog tag:super_admin"
+    },
+    {
+      "service": "admin",
+      "file": "admin/ai_config.go",
+      "line": 46,
+      "access": "auth",
+      "method": "GET",
+      "path": "/api/v1/admin/ai/function-config",
+      "tag": "super_admin",
+      "annotation": "auth method=GET path=/api/v1/admin/ai/function-config tag:super_admin"
+    },
+    {
+      "service": "admin",
+      "file": "admin/ai_config.go",
+      "line": 158,
+      "access": "auth",
+      "method": "DELETE",
+      "path": "/api/v1/admin/ai/function-config/:function",
+      "tag": "super_admin",
+      "annotation": "auth method=DELETE path=/api/v1/admin/ai/function-config/:function tag:super_admin"
+    },
+    {
+      "service": "admin",
+      "file": "admin/ai_config.go",
+      "line": 98,
+      "access": "auth",
+      "method": "PUT",
+      "path": "/api/v1/admin/ai/function-config/:function",
+      "tag": "super_admin",
+      "annotation": "auth method=PUT path=/api/v1/admin/ai/function-config/:function tag:super_admin"
     },
     {
       "service": "admin",
@@ -3159,6 +3199,24 @@
       "method": "GET",
       "path": "/api/v1/shipping/provinces",
       "annotation": "auth method=GET path=/api/v1/shipping/provinces"
+    },
+    {
+      "service": "webhook",
+      "file": "webhook/simulator.go",
+      "line": 135,
+      "access": "auth",
+      "method": "GET",
+      "path": "/api/v1/simulator/messages",
+      "annotation": "auth method=GET path=/api/v1/simulator/messages"
+    },
+    {
+      "service": "webhook",
+      "file": "webhook/simulator.go",
+      "line": 52,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/simulator/messages",
+      "annotation": "auth method=POST path=/api/v1/simulator/messages"
     },
     {
       "service": "auth",

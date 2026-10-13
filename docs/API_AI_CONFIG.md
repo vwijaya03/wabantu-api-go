@@ -1,6 +1,6 @@
 # API — AI config (superadmin) & Chat simulator
 
-Status: **config = FINAL & implemented** (`admin/ai_config.go`). **Simulator = contract FINAL, implementation in progress** (`webhook/simulator.go`).
+Status: **config = FINAL & implemented** (`admin/ai_config.go`). **Simulator = FINAL & implemented** (`webhook/simulator.go`, validation in `internal/simulator`).
 Base: same backend origin as other `/api/v1` endpoints, session cookie/bearer as usual. Error body is Encore's standard: `{"code": "<errs code>", "message": "...", "details": null}`.
 
 | Encore code | HTTP |

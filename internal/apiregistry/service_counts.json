@@ -1,8 +1,8 @@
 {
   "total_services": 29,
-  "total_endpoints": 361,
+  "total_endpoints": 367,
   "services": {
-    "admin": 35,
+    "admin": 39,
     "ai": 3,
     "analytics": 1,
     "audit": 2,
@@ -28,7 +28,7 @@
     "tenant": 6,
     "tenantaccess": 5,
     "usage": 5,
-    "webhook": 1,
+    "webhook": 3,
     "whatsappapi": 6,
     "workflow": 4
   }
