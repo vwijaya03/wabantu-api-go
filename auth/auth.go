@@ -1,12 +1,12 @@
 package auth
 
 import (
-	"encore.app/wabantu/internal/adminauth"
 	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"encore.app/wabantu/internal/adminauth"
 	"errors"
 	"fmt"
 	"net/http"
@@ -36,9 +36,9 @@ import (
 // ---------- Encore secrets ----------
 
 var secrets struct {
-	JWTSecret                    string
-	DataEncryptionKey            string
-	RedisURL                     string
+	JWTSecret         string
+	DataEncryptionKey string
+	RedisURL          string
 	// PlatformAdminBootstrapKey replaces PlatformAdminBootstrapSecret (retired; its old value
 	// must not be reused). Unset/empty/<32 chars → bootstrap disabled (403).
 	PlatformAdminBootstrapKey string
