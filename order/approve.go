@@ -14,6 +14,7 @@ import (
 	"encore.app/wabantu/internal/orderapprove"
 	"encore.app/wabantu/inventory"
 	appErrs "encore.app/wabantu/shared/errs"
+	"encore.app/wabantu/shared/tenantschema"
 	"encore.app/wabantu/shared/types"
 )
 
@@ -65,10 +66,11 @@ func Approve(ctx context.Context, id string) (*Order, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Stock is reconciled after commit (inventory has no tx API); SyncOrderStock is a
-	// reconcile, so a retry on an already-completed order repairs it.
-	if err := inventory.SyncOrderStock(ctx, u.TenantSchema, o.ID, o.Status, orderStockItems(o.Items), u.AccountID); err != nil {
-		rlog.Error("approve: stock sync after commit failed", "orderId", o.ID, "err", err)
+	// Stock after commit (inventory has no tx API), at most once per order via the
+	// stock_applied_at claim; on failure the claim is released so a retry applies it.
+	ss := &approveStockStore{u: u, o: o}
+	if _, err := orderapprove.ApplyStockOnce(ctx, ss); err != nil {
+		rlog.Error("approve: stock apply after commit failed (claim released; retry /approve)", "orderId", o.ID, "err", err)
 		return nil, err
 	}
 	if res.Decision == orderapprove.Proceed {
@@ -159,3 +161,48 @@ func (s *approveTxStore) NotifyBuyer(ctx context.Context) error {
 
 func (s *approveTxStore) Commit() error   { return s.tx.Commit() }
 func (s *approveTxStore) Rollback() error { return s.tx.Rollback() }
+
+// approveStockStore implements orderapprove.StockStore on order.stock_applied_at.
+type approveStockStore struct {
+	u *types.AuthUser
+	o *Order
+}
+
+func (s *approveStockStore) hasMarker(ctx context.Context) bool {
+	ok, err := tenantschema.ColumnExists(ctx, db.Stdlib(), s.u.TenantSchema, "order", "stock_applied_at")
+	return err == nil && ok
+}
+
+func (s *approveStockStore) ClaimStock(ctx context.Context) (string, bool, error) {
+	if !s.hasMarker(ctx) {
+		// Migration not applied yet: fall back to the row-locked reconcile in SyncOrderStock,
+		// which is itself safe against double deduction.
+		return "", true, nil
+	}
+	var token string
+	err := db.Stdlib().QueryRowContext(ctx, fmt.Sprintf(`
+		UPDATE "%s"."order" SET stock_applied_at = now()
+		WHERE id::text = $1 AND stock_applied_at IS NULL AND deleted_at IS NULL
+		RETURNING stock_applied_at::text`, s.u.TenantSchema), s.o.ID).Scan(&token)
+	if err == sql.ErrNoRows {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("claim stock marker: %w", err)
+	}
+	return token, true, nil
+}
+
+func (s *approveStockStore) ApplyStock(ctx context.Context) error {
+	return inventory.SyncOrderStock(ctx, s.u.TenantSchema, s.o.ID, s.o.Status, orderStockItems(s.o.Items), s.u.AccountID)
+}
+
+func (s *approveStockStore) ReleaseStock(ctx context.Context, token string) error {
+	if token == "" {
+		return nil
+	}
+	_, err := db.Stdlib().ExecContext(ctx, fmt.Sprintf(`
+		UPDATE "%s"."order" SET stock_applied_at = NULL
+		WHERE id::text = $1 AND stock_applied_at::text = $2`, s.u.TenantSchema), s.o.ID, token)
+	return err
+}
