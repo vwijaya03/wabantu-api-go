@@ -86,6 +86,90 @@
         },
         {
           "service": "admin",
+          "file": "admin/ai_activity.go",
+          "line": 13,
+          "annotation": "auth method=GET path=/api/v1/admin/tenant/:id/ai-activity tag:super_admin"
+        },
+        {
+          "service": "admin",
+          "file": "admin/ai_activity.go",
+          "line": 35,
+          "annotation": "auth method=GET path=/api/v1/admin/tenant/:id/ai-activity/summary tag:super_admin"
+        },
+        {
+          "service": "admin",
+          "file": "admin/ai_retrieval_incidents.go",
+          "line": 14,
+          "annotation": "auth method=GET path=/api/v1/admin/ai-retrieval/incidents tag:super_admin"
+        },
+        {
+          "service": "admin",
+          "file": "admin/ai_triage_report.go",
+          "line": 38,
+          "annotation": "auth method=GET path=/api/v1/admin/ai-triage/reports tag:super_admin"
+        },
+        {
+          "service": "admin",
+          "file": "admin/ai_triage_report.go",
+          "line": 59,
+          "annotation": "auth method=GET path=/api/v1/admin/ai-triage/reports/:id tag:super_admin"
+        },
+        {
+          "service": "admin",
+          "file": "admin/ai_triage_report.go",
+          "line": 73,
+          "annotation": "auth method=PATCH path=/api/v1/admin/ai-triage/reports/:id tag:super_admin"
+        },
+        {
+          "service": "admin",
+          "file": "admin/ai_triage_report.go",
+          "line": 99,
+          "annotation": "auth method=POST path=/api/v1/admin/ai-triage/reports/:id/incident tag:super_admin"
+        },
+        {
+          "service": "admin",
+          "file": "admin/ai_triage_incident.go",
+          "line": 65,
+          "annotation": "auth method=GET path=/api/v1/admin/ai-triage/incidents tag:super_admin"
+        },
+        {
+          "service": "admin",
+          "file": "admin/ai_triage_incident.go",
+          "line": 86,
+          "annotation": "auth method=GET path=/api/v1/admin/ai-triage/incidents/:id tag:super_admin"
+        },
+        {
+          "service": "admin",
+          "file": "admin/ai_triage_incident.go",
+          "line": 101,
+          "annotation": "auth method=POST path=/api/v1/admin/ai-triage/incidents/:id/confirm tag:super_admin"
+        },
+        {
+          "service": "admin",
+          "file": "admin/ai_triage_incident.go",
+          "line": 205,
+          "annotation": "auth method=POST path=/api/v1/admin/ai-triage/incidents/:id/dismiss tag:super_admin"
+        },
+        {
+          "service": "admin",
+          "file": "admin/ai_triage_incident.go",
+          "line": 229,
+          "annotation": "auth method=POST path=/api/v1/admin/ai-triage/incident-deletes tag:super_admin"
+        },
+        {
+          "service": "admin",
+          "file": "admin/ai_triage_incident.go",
+          "line": 251,
+          "annotation": "private method=POST path=/api/v1/internal/ai-triage/ingest"
+        },
+        {
+          "service": "admin",
+          "file": "admin/ai_triage_behavior_verify.go",
+          "line": 21,
+          "annotation": "auth method=POST path=/api/v1/admin/ai-triage/behavior-jobs/:id/verify tag:super_admin"
+        },
+        {
+          "service": "admin",
           "file": "admin/ai_triage_repair.go",
           "line": 64,
           "annotation": "auth method=POST path=/api/v1/admin/ai-triage/incidents/:id/repair/dry-run tag:super_admin"
@@ -131,90 +215,6 @@
           "file": "admin/ai_triage_behavior_job.go",
           "line": 83,
           "annotation": "auth method=POST path=/api/v1/admin/ai-triage/behavior-jobs/:id/retry tag:super_admin"
-        },
-        {
-          "service": "admin",
-          "file": "admin/ai_activity.go",
-          "line": 13,
-          "annotation": "auth method=GET path=/api/v1/admin/tenant/:id/ai-activity tag:super_admin"
-        },
-        {
-          "service": "admin",
-          "file": "admin/ai_activity.go",
-          "line": 35,
-          "annotation": "auth method=GET path=/api/v1/admin/tenant/:id/ai-activity/summary tag:super_admin"
-        },
-        {
-          "service": "admin",
-          "file": "admin/ai_retrieval_incidents.go",
-          "line": 14,
-          "annotation": "auth method=GET path=/api/v1/admin/ai-retrieval/incidents tag:super_admin"
-        },
-        {
-          "service": "admin",
-          "file": "admin/ai_triage_incident.go",
-          "line": 65,
-          "annotation": "auth method=GET path=/api/v1/admin/ai-triage/incidents tag:super_admin"
-        },
-        {
-          "service": "admin",
-          "file": "admin/ai_triage_incident.go",
-          "line": 86,
-          "annotation": "auth method=GET path=/api/v1/admin/ai-triage/incidents/:id tag:super_admin"
-        },
-        {
-          "service": "admin",
-          "file": "admin/ai_triage_incident.go",
-          "line": 101,
-          "annotation": "auth method=POST path=/api/v1/admin/ai-triage/incidents/:id/confirm tag:super_admin"
-        },
-        {
-          "service": "admin",
-          "file": "admin/ai_triage_incident.go",
-          "line": 205,
-          "annotation": "auth method=POST path=/api/v1/admin/ai-triage/incidents/:id/dismiss tag:super_admin"
-        },
-        {
-          "service": "admin",
-          "file": "admin/ai_triage_incident.go",
-          "line": 229,
-          "annotation": "auth method=POST path=/api/v1/admin/ai-triage/incident-deletes tag:super_admin"
-        },
-        {
-          "service": "admin",
-          "file": "admin/ai_triage_incident.go",
-          "line": 251,
-          "annotation": "private method=POST path=/api/v1/internal/ai-triage/ingest"
-        },
-        {
-          "service": "admin",
-          "file": "admin/ai_triage_report.go",
-          "line": 38,
-          "annotation": "auth method=GET path=/api/v1/admin/ai-triage/reports tag:super_admin"
-        },
-        {
-          "service": "admin",
-          "file": "admin/ai_triage_report.go",
-          "line": 59,
-          "annotation": "auth method=GET path=/api/v1/admin/ai-triage/reports/:id tag:super_admin"
-        },
-        {
-          "service": "admin",
-          "file": "admin/ai_triage_report.go",
-          "line": 73,
-          "annotation": "auth method=PATCH path=/api/v1/admin/ai-triage/reports/:id tag:super_admin"
-        },
-        {
-          "service": "admin",
-          "file": "admin/ai_triage_report.go",
-          "line": 99,
-          "annotation": "auth method=POST path=/api/v1/admin/ai-triage/reports/:id/incident tag:super_admin"
-        },
-        {
-          "service": "admin",
-          "file": "admin/ai_triage_behavior_verify.go",
-          "line": 21,
-          "annotation": "auth method=POST path=/api/v1/admin/ai-triage/behavior-jobs/:id/verify tag:super_admin"
         }
       ]
     },
@@ -223,21 +223,21 @@
       "endpoints": [
         {
           "service": "ai",
-          "file": "ai/models_api.go",
-          "line": 18,
-          "annotation": "auth method=GET path=/api/v1/ai/models"
-        },
-        {
-          "service": "ai",
           "file": "ai/api.go",
-          "line": 89,
+          "line": 90,
           "annotation": "private method=POST path=/api/v1/internal/ai/auto-reply"
         },
         {
           "service": "ai",
           "file": "ai/api.go",
-          "line": 119,
+          "line": 120,
           "annotation": "private method=POST path=/api/v1/internal/ai/auto-reply/fallback"
+        },
+        {
+          "service": "ai",
+          "file": "ai/models_api.go",
+          "line": 18,
+          "annotation": "auth method=GET path=/api/v1/ai/models"
         }
       ]
     },
@@ -409,7 +409,7 @@
         {
           "service": "business",
           "file": "business/profile_ai.go",
-          "line": 32,
+          "line": 33,
           "annotation": "auth method=POST path=/api/v1/business/profile/ai-suggest tag:owner"
         },
         {
@@ -432,69 +432,27 @@
         },
         {
           "service": "business",
-          "file": "business/price_type.go",
-          "line": 49,
-          "annotation": "auth method=GET path=/api/v1/business/price-types"
-        },
-        {
-          "service": "business",
-          "file": "business/price_type.go",
-          "line": 114,
-          "annotation": "auth method=POST path=/api/v1/business/price-types tag:owner"
-        },
-        {
-          "service": "business",
-          "file": "business/price_type.go",
-          "line": 163,
-          "annotation": "auth method=PATCH path=/api/v1/business/price-types/:id tag:owner"
-        },
-        {
-          "service": "business",
-          "file": "business/price_type.go",
-          "line": 237,
-          "annotation": "auth method=DELETE path=/api/v1/business/price-types/:id tag:owner"
-        },
-        {
-          "service": "business",
           "file": "business/interview.go",
-          "line": 172,
+          "line": 173,
           "annotation": "auth method=POST path=/api/v1/business/setup-interview/start tag:owner"
         },
         {
           "service": "business",
           "file": "business/interview.go",
-          "line": 222,
+          "line": 223,
           "annotation": "auth method=GET path=/api/v1/business/setup-interview/session/:sessionId tag:owner"
         },
         {
           "service": "business",
           "file": "business/interview.go",
-          "line": 239,
+          "line": 240,
           "annotation": "auth method=POST path=/api/v1/business/setup-interview/session/:sessionId/message tag:owner"
         },
         {
           "service": "business",
           "file": "business/interview.go",
-          "line": 401,
+          "line": 400,
           "annotation": "auth method=POST path=/api/v1/business/setup-interview/session/:sessionId/publish tag:owner"
-        },
-        {
-          "service": "business",
-          "file": "business/catalog_image.go",
-          "line": 54,
-          "annotation": "auth method=GET path=/api/v1/business/catalog/import-image-limits tag:owner"
-        },
-        {
-          "service": "business",
-          "file": "business/catalog_image.go",
-          "line": 390,
-          "annotation": "auth method=GET path=/api/v1/business/catalog/import-image/draft/:jobId tag:owner"
-        },
-        {
-          "service": "business",
-          "file": "business/catalog_image.go",
-          "line": 421,
-          "annotation": "auth method=POST path=/api/v1/business/catalog/import-image/draft/:jobId/commit tag:owner"
         },
         {
           "service": "business",
@@ -528,6 +486,30 @@
         },
         {
           "service": "business",
+          "file": "business/catalog_image.go",
+          "line": 54,
+          "annotation": "auth method=GET path=/api/v1/business/catalog/import-image-limits tag:owner"
+        },
+        {
+          "service": "business",
+          "file": "business/catalog_image.go",
+          "line": 390,
+          "annotation": "auth method=GET path=/api/v1/business/catalog/import-image/draft/:jobId tag:owner"
+        },
+        {
+          "service": "business",
+          "file": "business/catalog_image.go",
+          "line": 421,
+          "annotation": "auth method=POST path=/api/v1/business/catalog/import-image/draft/:jobId/commit tag:owner"
+        },
+        {
+          "service": "business",
+          "file": "business/catalog_image_http.go",
+          "line": 17,
+          "annotation": "auth raw method=POST path=/api/v1/business/catalog/import-image/preview tag:owner"
+        },
+        {
+          "service": "business",
           "file": "business/business.go",
           "line": 150,
           "annotation": "auth method=GET path=/api/v1/business/profile"
@@ -546,9 +528,27 @@
         },
         {
           "service": "business",
-          "file": "business/catalog_image_http.go",
-          "line": 17,
-          "annotation": "auth raw method=POST path=/api/v1/business/catalog/import-image/preview tag:owner"
+          "file": "business/price_type.go",
+          "line": 49,
+          "annotation": "auth method=GET path=/api/v1/business/price-types"
+        },
+        {
+          "service": "business",
+          "file": "business/price_type.go",
+          "line": 114,
+          "annotation": "auth method=POST path=/api/v1/business/price-types tag:owner"
+        },
+        {
+          "service": "business",
+          "file": "business/price_type.go",
+          "line": 163,
+          "annotation": "auth method=PATCH path=/api/v1/business/price-types/:id tag:owner"
+        },
+        {
+          "service": "business",
+          "file": "business/price_type.go",
+          "line": 237,
+          "annotation": "auth method=DELETE path=/api/v1/business/price-types/:id tag:owner"
         }
       ]
     },
@@ -560,12 +560,6 @@
           "file": "events/public_monitor.go",
           "line": 34,
           "annotation": "public method=GET path=/api/v1/public/events/:tenantSlug/monitor/:eventSlug"
-        },
-        {
-          "service": "events",
-          "file": "events/public_patient_schedule.go",
-          "line": 57,
-          "annotation": "public method=GET path=/api/v1/public/events/:tenantSlug/patient-schedule/:eventSlug"
         },
         {
           "service": "events",
@@ -608,30 +602,6 @@
           "file": "events/image_import.go",
           "line": 628,
           "annotation": "auth method=POST path=/api/v1/events/masters/therapies/import-image/draft/:jobId/commit tag:owner"
-        },
-        {
-          "service": "events",
-          "file": "events/event_duplicate.go",
-          "line": 26,
-          "annotation": "auth method=POST path=/api/v1/events/detail/:eventId/duplicate tag:owner"
-        },
-        {
-          "service": "events",
-          "file": "events/image_import_http.go",
-          "line": 56,
-          "annotation": "auth raw method=POST path=/api/v1/events/detail/:eventId/people/import-image/preview tag:owner"
-        },
-        {
-          "service": "events",
-          "file": "events/image_import_http.go",
-          "line": 88,
-          "annotation": "auth raw method=POST path=/api/v1/events/detail/:eventId/patients/import-image/preview tag:owner"
-        },
-        {
-          "service": "events",
-          "file": "events/image_import_http.go",
-          "line": 119,
-          "annotation": "auth raw method=POST path=/api/v1/events/masters/therapies/import-image/preview tag:owner"
         },
         {
           "service": "events",
@@ -698,30 +668,6 @@
           "file": "events/dashboard.go",
           "line": 257,
           "annotation": "auth method=GET path=/api/v1/events/detail/:eventId/schedule"
-        },
-        {
-          "service": "events",
-          "file": "events/slots.go",
-          "line": 26,
-          "annotation": "auth method=POST path=/api/v1/events/detail/:eventId/therapies/:therapyId/generate-slots tag:owner"
-        },
-        {
-          "service": "events",
-          "file": "events/slots.go",
-          "line": 345,
-          "annotation": "auth method=DELETE path=/api/v1/events/detail/:eventId/slots/:slotId tag:owner"
-        },
-        {
-          "service": "events",
-          "file": "events/slots.go",
-          "line": 405,
-          "annotation": "auth method=POST path=/api/v1/events/detail/:eventId/slots/delete-bulk tag:owner"
-        },
-        {
-          "service": "events",
-          "file": "events/slots.go",
-          "line": 485,
-          "annotation": "auth method=GET path=/api/v1/events/detail/:eventId/slots"
         },
         {
           "service": "events",
@@ -839,6 +785,78 @@
         },
         {
           "service": "events",
+          "file": "events/export_job.go",
+          "line": 68,
+          "annotation": "auth method=POST path=/api/v1/events/detail/:eventId/export-jobs"
+        },
+        {
+          "service": "events",
+          "file": "events/export_job.go",
+          "line": 172,
+          "annotation": "auth method=GET path=/api/v1/events/detail/:eventId/export-jobs/:jobId"
+        },
+        {
+          "service": "events",
+          "file": "events/export_job.go",
+          "line": 186,
+          "annotation": "auth method=GET path=/api/v1/events/detail/:eventId/export-jobs"
+        },
+        {
+          "service": "events",
+          "file": "events/public_patient_schedule.go",
+          "line": 57,
+          "annotation": "public method=GET path=/api/v1/public/events/:tenantSlug/patient-schedule/:eventSlug"
+        },
+        {
+          "service": "events",
+          "file": "events/event_duplicate.go",
+          "line": 26,
+          "annotation": "auth method=POST path=/api/v1/events/detail/:eventId/duplicate tag:owner"
+        },
+        {
+          "service": "events",
+          "file": "events/image_import_http.go",
+          "line": 56,
+          "annotation": "auth raw method=POST path=/api/v1/events/detail/:eventId/people/import-image/preview tag:owner"
+        },
+        {
+          "service": "events",
+          "file": "events/image_import_http.go",
+          "line": 88,
+          "annotation": "auth raw method=POST path=/api/v1/events/detail/:eventId/patients/import-image/preview tag:owner"
+        },
+        {
+          "service": "events",
+          "file": "events/image_import_http.go",
+          "line": 119,
+          "annotation": "auth raw method=POST path=/api/v1/events/masters/therapies/import-image/preview tag:owner"
+        },
+        {
+          "service": "events",
+          "file": "events/slots.go",
+          "line": 26,
+          "annotation": "auth method=POST path=/api/v1/events/detail/:eventId/therapies/:therapyId/generate-slots tag:owner"
+        },
+        {
+          "service": "events",
+          "file": "events/slots.go",
+          "line": 345,
+          "annotation": "auth method=DELETE path=/api/v1/events/detail/:eventId/slots/:slotId tag:owner"
+        },
+        {
+          "service": "events",
+          "file": "events/slots.go",
+          "line": 405,
+          "annotation": "auth method=POST path=/api/v1/events/detail/:eventId/slots/delete-bulk tag:owner"
+        },
+        {
+          "service": "events",
+          "file": "events/slots.go",
+          "line": 485,
+          "annotation": "auth method=GET path=/api/v1/events/detail/:eventId/slots"
+        },
+        {
+          "service": "events",
           "file": "events/staff_roster.go",
           "line": 49,
           "annotation": "auth method=GET path=/api/v1/events/staff-roster"
@@ -920,24 +938,6 @@
           "file": "events/patients.go",
           "line": 357,
           "annotation": "auth method=POST path=/api/v1/events/detail/:eventId/patients/delete-bulk tag:owner"
-        },
-        {
-          "service": "events",
-          "file": "events/export_job.go",
-          "line": 68,
-          "annotation": "auth method=POST path=/api/v1/events/detail/:eventId/export-jobs"
-        },
-        {
-          "service": "events",
-          "file": "events/export_job.go",
-          "line": 172,
-          "annotation": "auth method=GET path=/api/v1/events/detail/:eventId/export-jobs/:jobId"
-        },
-        {
-          "service": "events",
-          "file": "events/export_job.go",
-          "line": 186,
-          "annotation": "auth method=GET path=/api/v1/events/detail/:eventId/export-jobs"
         }
       ]
     },
@@ -1582,51 +1582,15 @@
       "endpoints": [
         {
           "service": "inventory",
-          "file": "inventory/stock_transaction_patch.go",
-          "line": 26,
-          "annotation": "auth method=PATCH path=/api/v1/inventory/stock-transactions/:id"
-        },
-        {
-          "service": "inventory",
-          "file": "inventory/purchase_order_crud.go",
-          "line": 22,
-          "annotation": "auth method=DELETE path=/api/v1/inventory/purchase-orders/:id"
-        },
-        {
-          "service": "inventory",
-          "file": "inventory/purchase_order_crud.go",
-          "line": 66,
-          "annotation": "auth method=PATCH path=/api/v1/inventory/purchase-orders/:id"
-        },
-        {
-          "service": "inventory",
           "file": "inventory/wizard.go",
           "line": 60,
           "annotation": "auth method=POST path=/api/v1/inventory/wizard/recommend"
         },
         {
           "service": "inventory",
-          "file": "inventory/bundle.go",
-          "line": 140,
-          "annotation": "auth method=GET path=/api/v1/inventory/bundles/:catalogItemID/components"
-        },
-        {
-          "service": "inventory",
-          "file": "inventory/bundle.go",
-          "line": 183,
-          "annotation": "auth method=PUT path=/api/v1/inventory/bundles/:catalogItemID/components"
-        },
-        {
-          "service": "inventory",
           "file": "inventory/stock_transaction_batch.go",
           "line": 20,
           "annotation": "auth method=POST path=/api/v1/inventory/stock-transactions/batch-delete"
-        },
-        {
-          "service": "inventory",
-          "file": "inventory/sku_config_list.go",
-          "line": 31,
-          "annotation": "auth method=GET path=/api/v1/inventory/config-items"
         },
         {
           "service": "inventory",
@@ -1639,66 +1603,6 @@
           "file": "inventory/sku.go",
           "line": 48,
           "annotation": "auth method=PATCH path=/api/v1/inventory/skus/:catalogItemID"
-        },
-        {
-          "service": "inventory",
-          "file": "inventory/movement.go",
-          "line": 245,
-          "annotation": "auth method=GET path=/api/v1/inventory/stock"
-        },
-        {
-          "service": "inventory",
-          "file": "inventory/movement.go",
-          "line": 362,
-          "annotation": "auth method=GET path=/api/v1/inventory/movements"
-        },
-        {
-          "service": "inventory",
-          "file": "inventory/inventory.go",
-          "line": 104,
-          "annotation": "auth method=GET path=/api/v1/inventory/setting"
-        },
-        {
-          "service": "inventory",
-          "file": "inventory/inventory.go",
-          "line": 134,
-          "annotation": "auth method=PATCH path=/api/v1/inventory/setting"
-        },
-        {
-          "service": "inventory",
-          "file": "inventory/inventory.go",
-          "line": 184,
-          "annotation": "auth method=POST path=/api/v1/inventory/setup/complete"
-        },
-        {
-          "service": "inventory",
-          "file": "inventory/inventory.go",
-          "line": 262,
-          "annotation": "auth method=GET path=/api/v1/inventory/warehouses"
-        },
-        {
-          "service": "inventory",
-          "file": "inventory/inventory.go",
-          "line": 369,
-          "annotation": "auth method=POST path=/api/v1/inventory/warehouses"
-        },
-        {
-          "service": "inventory",
-          "file": "inventory/inventory.go",
-          "line": 426,
-          "annotation": "auth method=PATCH path=/api/v1/inventory/warehouses/:id"
-        },
-        {
-          "service": "inventory",
-          "file": "inventory/inventory.go",
-          "line": 473,
-          "annotation": "auth method=DELETE path=/api/v1/inventory/warehouses/:id"
-        },
-        {
-          "service": "inventory",
-          "file": "inventory/inventory.go",
-          "line": 513,
-          "annotation": "auth method=POST path=/api/v1/inventory/warehouses/:id/reactivate"
         },
         {
           "service": "inventory",
@@ -1717,12 +1621,6 @@
           "file": "inventory/invoice.go",
           "line": 130,
           "annotation": "auth method=GET path=/api/v1/inventory/invoices/:id"
-        },
-        {
-          "service": "inventory",
-          "file": "inventory/backfill.go",
-          "line": 72,
-          "annotation": "auth method=POST path=/api/v1/inventory/backfill/orders"
         },
         {
           "service": "inventory",
@@ -1747,24 +1645,6 @@
           "file": "inventory/setup_interview.go",
           "line": 298,
           "annotation": "auth method=POST path=/api/v1/inventory/setup-interview/session/:sessionId/finish tag:owner"
-        },
-        {
-          "service": "inventory",
-          "file": "inventory/bill.go",
-          "line": 91,
-          "annotation": "auth method=POST path=/api/v1/inventory/bills"
-        },
-        {
-          "service": "inventory",
-          "file": "inventory/bill.go",
-          "line": 191,
-          "annotation": "auth method=GET path=/api/v1/inventory/bills"
-        },
-        {
-          "service": "inventory",
-          "file": "inventory/bill.go",
-          "line": 246,
-          "annotation": "auth method=GET path=/api/v1/inventory/bills/:id"
         },
         {
           "service": "inventory",
@@ -1921,6 +1801,126 @@
           "file": "inventory/bill_patch.go",
           "line": 23,
           "annotation": "auth method=PATCH path=/api/v1/inventory/bills/:id"
+        },
+        {
+          "service": "inventory",
+          "file": "inventory/stock_transaction_patch.go",
+          "line": 26,
+          "annotation": "auth method=PATCH path=/api/v1/inventory/stock-transactions/:id"
+        },
+        {
+          "service": "inventory",
+          "file": "inventory/purchase_order_crud.go",
+          "line": 22,
+          "annotation": "auth method=DELETE path=/api/v1/inventory/purchase-orders/:id"
+        },
+        {
+          "service": "inventory",
+          "file": "inventory/purchase_order_crud.go",
+          "line": 66,
+          "annotation": "auth method=PATCH path=/api/v1/inventory/purchase-orders/:id"
+        },
+        {
+          "service": "inventory",
+          "file": "inventory/bundle.go",
+          "line": 140,
+          "annotation": "auth method=GET path=/api/v1/inventory/bundles/:catalogItemID/components"
+        },
+        {
+          "service": "inventory",
+          "file": "inventory/bundle.go",
+          "line": 183,
+          "annotation": "auth method=PUT path=/api/v1/inventory/bundles/:catalogItemID/components"
+        },
+        {
+          "service": "inventory",
+          "file": "inventory/sku_config_list.go",
+          "line": 31,
+          "annotation": "auth method=GET path=/api/v1/inventory/config-items"
+        },
+        {
+          "service": "inventory",
+          "file": "inventory/movement.go",
+          "line": 245,
+          "annotation": "auth method=GET path=/api/v1/inventory/stock"
+        },
+        {
+          "service": "inventory",
+          "file": "inventory/movement.go",
+          "line": 362,
+          "annotation": "auth method=GET path=/api/v1/inventory/movements"
+        },
+        {
+          "service": "inventory",
+          "file": "inventory/inventory.go",
+          "line": 104,
+          "annotation": "auth method=GET path=/api/v1/inventory/setting"
+        },
+        {
+          "service": "inventory",
+          "file": "inventory/inventory.go",
+          "line": 134,
+          "annotation": "auth method=PATCH path=/api/v1/inventory/setting"
+        },
+        {
+          "service": "inventory",
+          "file": "inventory/inventory.go",
+          "line": 184,
+          "annotation": "auth method=POST path=/api/v1/inventory/setup/complete"
+        },
+        {
+          "service": "inventory",
+          "file": "inventory/inventory.go",
+          "line": 262,
+          "annotation": "auth method=GET path=/api/v1/inventory/warehouses"
+        },
+        {
+          "service": "inventory",
+          "file": "inventory/inventory.go",
+          "line": 369,
+          "annotation": "auth method=POST path=/api/v1/inventory/warehouses"
+        },
+        {
+          "service": "inventory",
+          "file": "inventory/inventory.go",
+          "line": 426,
+          "annotation": "auth method=PATCH path=/api/v1/inventory/warehouses/:id"
+        },
+        {
+          "service": "inventory",
+          "file": "inventory/inventory.go",
+          "line": 473,
+          "annotation": "auth method=DELETE path=/api/v1/inventory/warehouses/:id"
+        },
+        {
+          "service": "inventory",
+          "file": "inventory/inventory.go",
+          "line": 513,
+          "annotation": "auth method=POST path=/api/v1/inventory/warehouses/:id/reactivate"
+        },
+        {
+          "service": "inventory",
+          "file": "inventory/backfill.go",
+          "line": 72,
+          "annotation": "auth method=POST path=/api/v1/inventory/backfill/orders"
+        },
+        {
+          "service": "inventory",
+          "file": "inventory/bill.go",
+          "line": 91,
+          "annotation": "auth method=POST path=/api/v1/inventory/bills"
+        },
+        {
+          "service": "inventory",
+          "file": "inventory/bill.go",
+          "line": 191,
+          "annotation": "auth method=GET path=/api/v1/inventory/bills"
+        },
+        {
+          "service": "inventory",
+          "file": "inventory/bill.go",
+          "line": 246,
+          "annotation": "auth method=GET path=/api/v1/inventory/bills/:id"
         }
       ]
     },
@@ -2010,6 +2010,36 @@
       "endpoints": [
         {
           "service": "order",
+          "file": "order/payment_proof.go",
+          "line": 17,
+          "annotation": "auth method=POST path=/api/v1/orders/:id/payment-proof/verify"
+        },
+        {
+          "service": "order",
+          "file": "order/payment_proof.go",
+          "line": 85,
+          "annotation": "auth method=POST path=/api/v1/orders/:id/payment-proof/reject"
+        },
+        {
+          "service": "order",
+          "file": "order/payment_proof.go",
+          "line": 130,
+          "annotation": "auth method=POST path=/api/v1/orders/:id/payment-proof/unblock"
+        },
+        {
+          "service": "order",
+          "file": "order/triage_repair.go",
+          "line": 54,
+          "annotation": "private method=POST path=/api/v1/internal/order/triage-draft-repair/dry-run"
+        },
+        {
+          "service": "order",
+          "file": "order/triage_repair.go",
+          "line": 61,
+          "annotation": "private method=POST path=/api/v1/internal/order/triage-draft-repair/apply"
+        },
+        {
+          "service": "order",
           "file": "order/order.go",
           "line": 215,
           "annotation": "auth method=GET path=/api/v1/orders"
@@ -2055,36 +2085,6 @@
           "file": "order/order.go",
           "line": 762,
           "annotation": "auth method=PATCH path=/api/v1/order-delete/batch"
-        },
-        {
-          "service": "order",
-          "file": "order/triage_repair.go",
-          "line": 54,
-          "annotation": "private method=POST path=/api/v1/internal/order/triage-draft-repair/dry-run"
-        },
-        {
-          "service": "order",
-          "file": "order/triage_repair.go",
-          "line": 61,
-          "annotation": "private method=POST path=/api/v1/internal/order/triage-draft-repair/apply"
-        },
-        {
-          "service": "order",
-          "file": "order/payment_proof.go",
-          "line": 17,
-          "annotation": "auth method=POST path=/api/v1/orders/:id/payment-proof/verify"
-        },
-        {
-          "service": "order",
-          "file": "order/payment_proof.go",
-          "line": 85,
-          "annotation": "auth method=POST path=/api/v1/orders/:id/payment-proof/reject"
-        },
-        {
-          "service": "order",
-          "file": "order/payment_proof.go",
-          "line": 130,
-          "annotation": "auth method=POST path=/api/v1/orders/:id/payment-proof/unblock"
         }
       ]
     },
