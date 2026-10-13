@@ -20,6 +20,7 @@ import (
 	"encore.app/wabantu/order"
 	appdb "encore.app/wabantu/shared/db"
 	"encore.app/wabantu/shared/inboxrealtime"
+	"encore.app/wabantu/shared/llm"
 	"encore.app/wabantu/usage"
 )
 
@@ -115,6 +116,7 @@ func processPaymentProofJob(ctx context.Context, job *PaymentProofJob) error {
 		Purpose:        usage.PurposePaymentProofOCR,
 		Path:           "payment_proof_ocr",
 		Model:          paymentOCRModelForUsage(ocrUsage),
+		Tier:           llm.ModelFamily(paymentOCRModelForUsage(ocrUsage)),
 		LLMUsed:        ocrErr == nil,
 		InputTokens:    ocrUsage.InputTokens,
 		OutputTokens:   ocrUsage.OutputTokens,

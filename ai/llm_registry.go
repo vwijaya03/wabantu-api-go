@@ -37,16 +37,19 @@ func SetLLMResolver(r *llm.Resolver) {
 // resolver (TTL 30s, no Pub/Sub invalidation yet) and routes llm diagnostics to rlog.
 func WireLLMConfig(db *sql.DB) {
 	llm.Logf = func(format string, args ...any) { rlog.Warn("llm: " + fmt.Sprintf(format, args...)) }
+	llm.Debugf = func(format string, args ...any) { rlog.Debug("llm: " + fmt.Sprintf(format, args...)) }
 	if db == nil {
 		return
 	}
 	r := llm.NewResolver(llm.NewSQLStore(db), llm.DefaultTTL)
 	SetLLMResolver(r)
 	aivision.SetVisionResolver(r)
+	ensureGeminiRegistered() // vision callers may hit aivision before any text registry use
 }
 
 // LLMRegistry builds a registry whose Anthropic provider uses apiKey/cfg (legacy client settings).
 func LLMRegistry(apiKey string, cfg AnthropicConfig) *llm.Registry {
+	ensureGeminiRegistered()
 	llmMu.RLock()
 	defer llmMu.RUnlock()
 	reg := llm.NewRegistry(llmResolver)
@@ -67,7 +70,7 @@ func CompleteViaRegistry(ctx context.Context, apiKey string, cfg AnthropicConfig
 		usage     CompletionUsage
 		usedModel = defaultModel
 	)
-	err := LLMRegistry(apiKey, cfg).Run(ctx, tenantID, fn, func(p llm.Provider, model string) error {
+	_, err := LLMRegistry(apiKey, cfg).Run(ctx, tenantID, fn, func(ctx context.Context, p llm.Provider, model string) error {
 		if ap, ok := p.(*AnthropicProvider); ok {
 			if strings.TrimSpace(model) == "" {
 				model = defaultModel

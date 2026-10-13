@@ -84,7 +84,7 @@ func visionViaRegistry(ctx context.Context, fn llm.Function, tenantID, apiKey st
 		text string
 		out  Usage
 	)
-	err := visionRegistry(apiKey).Run(ctx, tenantID, fn, func(p llm.Provider, model string) error {
+	_, err := visionRegistry(apiKey).Run(ctx, tenantID, fn, func(ctx context.Context, p llm.Provider, model string) error {
 		if av, ok := p.(AnthropicVision); ok {
 			// Legacy error messages / validation preserved verbatim.
 			if model == "" {
