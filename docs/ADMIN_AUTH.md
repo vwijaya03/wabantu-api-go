@@ -66,7 +66,9 @@ dihitung sama persis → tidak bisa dipakai enumerasi):
 | bootstrap | 5 gagal | 5 gagal | – | 15 m / 15 m | 5/IP |
 
 Lock akun (semua IP) sengaja jauh di atas lock pair, jadi penyerang dari satu IP tidak bisa
-mengunci owner lain dari IP-nya sendiri. Store Redis error: admin **fail-closed**, client fail-open.
+mengunci owner lain dari IP-nya sendiri. Store Redis error/tidak ada: admin **fail-closed** (429),
+bootstrap **fail-closed (503)**, client fail-open. `shared/ratelimit.Allow` (dipakai simulator dll.)
+tetap fail-open; tidak diubah.
 Timing: akun tidak ada → bcrypt compare ke hash dummy **asli** (cost 12) — dulu string dummy tidak
 valid sehingga return instan (oracle timing). Portal salah juga melewati bcrypt penuh.
 
@@ -89,6 +91,29 @@ atau secret. Error body login hanya pesan generik di atas.
 - Password min 12 char. Response `201 {accountId,email}` — **tidak menerbitkan token**; login
   lewat `/api/v1/platform-admin/login`.
 - Semua percobaan tercatat di `auth_login_attempt` (portal `bootstrap`) tanpa secret.
+- **Fail-closed (Security L-1):** Redis tidak ada atau error → `503 {"error":"temporarily unavailable"}`
+  sebelum secret dicek (audit `blocked`, reason `store_unavailable`). Rate limit/lock → `429`.
+  Policy: `adminauth.BootstrapPolicy()` (`FailClosed: true`).
+
+## Redis WAJIB di Cloud Run
+
+Session, lockout admin, dan bootstrap bergantung pada Redis (`RedisURL`). Di Cloud Run, Redis
+**wajib** ada (Memorystore atau Redis eksternal, lihat `docs/DEPLOY_REDIS.md`). Tanpa Redis,
+login gagal dan bootstrap menjawab 503. Rate limit lain yang fail-open (simulator) akan berjalan
+tanpa batas, jadi jangan deploy tanpa Redis. Ini belum dikonfigurasi (butuh login GCP oleh Viko).
+
+## Pencabutan sesi Firebase saat logout (Security M-1, bagian backend)
+
+`POST /api/v1/auth/logout` dan stop-impersonation (`admin.StopImpersonation`) memanggil
+`revokeFirebaseAsync(accountID)` → Identity Toolkit `accounts:update {localId, validSince=now}`
+(setara Admin SDK `RevokeRefreshTokens`; uid Firebase = accountID dari `/auth/firebase-token`).
+- Best-effort: goroutine terpisah, timeout 2 detik, lepas dari cancel request; gagal hanya di-log
+  (`firebase revoke failed`). Logout tidak pernah menunggu atau gagal karenanya.
+- No-op kalau `FIRESTORE_PROJECT_ID` / `FIREBASE_SERVICE_ACCOUNT_JSON` tidak diset.
+- Butuh service account dengan izin Firebase Auth admin (scope `identitytoolkit`).
+- Batasan: ID token yang sudah terbit tetap berlaku sampai kedaluwarsa (maks 1 jam), dan revoke
+  berlaku untuk semua perangkat akun itu. Frontend tetap wajib `signOut` + `inMemoryPersistence` (M-1).
+- Kode: `internal/realtime/revoke.go`, `auth/firebase_revoke.go`.
 
 **Viko:** set KEY BARU (jangan pakai nilai lama) di tiap environment:
 `openssl rand -base64 48 | tr -d '\n' | encore secret set --env=<env> PlatformAdminBootstrapKey`.
