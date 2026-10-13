@@ -7,6 +7,8 @@ import (
 
 	"encore.dev/rlog"
 
+	"encore.app/wabantu/internal/realtime"
+	sim "encore.app/wabantu/internal/simulator"
 	"encore.app/wabantu/shared/strutil"
 	"encore.app/wabantu/shared/whatsappchannel"
 )
@@ -52,6 +54,10 @@ func (s *AutoReplyService) sendSimulatorMessage(
 	if err := s.finalizeOutbound(ctx, ts, tenantID, convo.ID, msgID, extID, strutil.TruncateUTF8(text, 280), createdAt); err != nil {
 		return err
 	}
+	sim.Mirror(ctx, realtime.Default(realtime.LogfTo(rlog.Warn)),
+		func(ctx context.Context, q string, a ...any) sim.Scanner { return ts.QueryRowContext(ctx, q, a...) },
+		nil, tenantID, convo.ID,
+		&sim.MirrorMsg{ID: msgID, Direction: "out", Author: author, Type: "text", Text: text, Status: "sent", CreatedAt: createdAt})
 	rlog.Info("AI job: simulator outbound stored (no Meta send)", "convoId", convo.ID, "msgId", msgID, "model", meta.Model, "path", meta.Path)
 	s.markAiSendDone(ctx, inboundMessageID)
 	return nil

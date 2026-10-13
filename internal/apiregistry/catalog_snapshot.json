@@ -1,5 +1,5 @@
 {
-  "count": 367,
+  "count": 368,
   "endpoints": [
     {
       "service": "admin",
@@ -419,6 +419,16 @@
     },
     {
       "service": "auth",
+      "file": "auth/firebase_token.go",
+      "line": 15,
+      "access": "public",
+      "method": "POST",
+      "path": "/api/v1/auth/firebase-token",
+      "raw": true,
+      "annotation": "public raw method=POST path=/api/v1/auth/firebase-token"
+    },
+    {
+      "service": "auth",
       "file": "auth/auth.go",
       "line": 280,
       "access": "public",
@@ -534,7 +544,7 @@
     {
       "service": "broadcast",
       "file": "broadcast/broadcast.go",
-      "line": 158,
+      "line": 159,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/broadcast/campaigns",
@@ -543,7 +553,7 @@
     {
       "service": "broadcast",
       "file": "broadcast/broadcast.go",
-      "line": 74,
+      "line": 75,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/broadcast/campaigns",
@@ -553,7 +563,7 @@
     {
       "service": "broadcast",
       "file": "broadcast/broadcast.go",
-      "line": 188,
+      "line": 189,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/broadcast/campaigns/:id/send",
@@ -2050,7 +2060,7 @@
     {
       "service": "inbox",
       "file": "inbox/inbox.go",
-      "line": 957,
+      "line": 984,
       "access": "auth",
       "method": "PATCH",
       "path": "/api/v1/inbox-contact-status/batch",
@@ -2059,7 +2069,7 @@
     {
       "service": "inbox",
       "file": "inbox/inbox.go",
-      "line": 994,
+      "line": 1021,
       "access": "auth",
       "method": "PATCH",
       "path": "/api/v1/inbox-contacts/batch-delete",
@@ -2068,7 +2078,7 @@
     {
       "service": "inbox",
       "file": "inbox/inbox.go",
-      "line": 678,
+      "line": 705,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/inbox/contacts",
@@ -2077,7 +2087,7 @@
     {
       "service": "inbox",
       "file": "inbox/inbox.go",
-      "line": 746,
+      "line": 773,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/inbox/contacts",
@@ -2086,7 +2096,7 @@
     {
       "service": "inbox",
       "file": "inbox/inbox.go",
-      "line": 926,
+      "line": 953,
       "access": "auth",
       "method": "DELETE",
       "path": "/api/v1/inbox/contacts/:id",
@@ -2095,7 +2105,7 @@
     {
       "service": "inbox",
       "file": "inbox/inbox.go",
-      "line": 791,
+      "line": 818,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/inbox/contacts/:id",
@@ -2104,7 +2114,7 @@
     {
       "service": "inbox",
       "file": "inbox/inbox.go",
-      "line": 814,
+      "line": 841,
       "access": "auth",
       "method": "PATCH",
       "path": "/api/v1/inbox/contacts/:id",
@@ -2113,7 +2123,7 @@
     {
       "service": "inbox",
       "file": "inbox/inbox.go",
-      "line": 278,
+      "line": 281,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/inbox/conversations",
@@ -2140,7 +2150,7 @@
     {
       "service": "inbox",
       "file": "inbox/inbox.go",
-      "line": 418,
+      "line": 421,
       "access": "auth",
       "method": "PATCH",
       "path": "/api/v1/inbox/conversations/:id",
@@ -2167,7 +2177,7 @@
     {
       "service": "inbox",
       "file": "inbox/inbox.go",
-      "line": 486,
+      "line": 489,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/inbox/conversations/:id/messages",
@@ -2176,7 +2186,7 @@
     {
       "service": "inbox",
       "file": "inbox/inbox.go",
-      "line": 594,
+      "line": 597,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/inbox/conversations/:id/messages",
@@ -2986,7 +2996,7 @@
     {
       "service": "order",
       "file": "order/order.go",
-      "line": 762,
+      "line": 768,
       "access": "auth",
       "method": "PATCH",
       "path": "/api/v1/order-delete/batch",
@@ -2995,7 +3005,7 @@
     {
       "service": "order",
       "file": "order/order.go",
-      "line": 611,
+      "line": 617,
       "access": "auth",
       "method": "PATCH",
       "path": "/api/v1/order-status/batch",
@@ -3004,7 +3014,7 @@
     {
       "service": "order",
       "file": "order/order.go",
-      "line": 215,
+      "line": 219,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/orders",
@@ -3013,7 +3023,7 @@
     {
       "service": "order",
       "file": "order/order.go",
-      "line": 312,
+      "line": 316,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/orders",
@@ -3022,7 +3032,7 @@
     {
       "service": "order",
       "file": "order/order.go",
-      "line": 727,
+      "line": 733,
       "access": "auth",
       "method": "DELETE",
       "path": "/api/v1/orders/:id",
@@ -3031,7 +3041,7 @@
     {
       "service": "order",
       "file": "order/order.go",
-      "line": 291,
+      "line": 295,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/orders/:id",
@@ -3040,7 +3050,7 @@
     {
       "service": "order",
       "file": "order/order.go",
-      "line": 392,
+      "line": 396,
       "access": "auth",
       "method": "PATCH",
       "path": "/api/v1/orders/:id",
@@ -3049,7 +3059,7 @@
     {
       "service": "order",
       "file": "order/order.go",
-      "line": 558,
+      "line": 563,
       "access": "auth",
       "method": "PATCH",
       "path": "/api/v1/orders/:id/cancel",
@@ -3058,7 +3068,7 @@
     {
       "service": "order",
       "file": "order/payment_proof.go",
-      "line": 85,
+      "line": 86,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/orders/:id/payment-proof/reject",
@@ -3067,7 +3077,7 @@
     {
       "service": "order",
       "file": "order/payment_proof.go",
-      "line": 130,
+      "line": 132,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/orders/:id/payment-proof/unblock",
@@ -3203,7 +3213,7 @@
     {
       "service": "webhook",
       "file": "webhook/simulator.go",
-      "line": 135,
+      "line": 144,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/simulator/messages",
@@ -3212,7 +3222,7 @@
     {
       "service": "webhook",
       "file": "webhook/simulator.go",
-      "line": 52,
+      "line": 53,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/simulator/messages",
@@ -3354,7 +3364,7 @@
     {
       "service": "whatsappapi",
       "file": "whatsappapi/whatsappapi.go",
-      "line": 295,
+      "line": 296,
       "access": "auth",
       "method": "DELETE",
       "path": "/api/v1/whatsapp/channels/:id",
@@ -3363,7 +3373,7 @@
     {
       "service": "whatsappapi",
       "file": "whatsappapi/whatsappapi.go",
-      "line": 343,
+      "line": 344,
       "access": "auth",
       "method": "DELETE",
       "path": "/api/v1/whatsapp/channels/:id/permanent",
@@ -3373,7 +3383,7 @@
     {
       "service": "whatsappapi",
       "file": "whatsappapi/whatsappapi.go",
-      "line": 602,
+      "line": 603,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/whatsapp/channels/:id/test-message",
@@ -3383,7 +3393,7 @@
     {
       "service": "whatsappapi",
       "file": "whatsappapi/whatsappapi.go",
-      "line": 220,
+      "line": 221,
       "access": "public",
       "method": "POST",
       "path": "/api/v1/whatsapp/meta/connect/callback",
@@ -3392,7 +3402,7 @@
     {
       "service": "whatsappapi",
       "file": "whatsappapi/whatsappapi.go",
-      "line": 166,
+      "line": 167,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/whatsapp/meta/connect/init",

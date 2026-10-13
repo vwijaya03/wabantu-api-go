@@ -22,6 +22,8 @@ import (
 	"encore.app/wabantu/shared/strutil"
 	"encore.app/wabantu/shared/types"
 	"encore.app/wabantu/shared/whatsappchannel"
+	"encore.app/wabantu/internal/realtime"
+	sim "encore.app/wabantu/internal/simulator"
 	"encore.app/wabantu/tenant"
 	"encore.app/wabantu/whatsapp"
 	"encore.dev"
@@ -641,7 +643,15 @@ func SendMessage(ctx context.Context, id string, p *SendMessageParams) (*SendMes
 			return nil, err
 		}
 	}
-	return insertManualReply(ctx, ts, id, extID, text)
+	resp, err := insertManualReply(ctx, ts, id, extID, text)
+	if err == nil && strings.HasPrefix(extID, "sim-") {
+		m := resp.Message
+		sim.Mirror(ctx, realtime.Default(realtime.LogfTo(rlog.Warn)),
+			func(ctx context.Context, q string, a ...any) sim.Scanner { return ts.QueryRowContext(ctx, q, a...) },
+			nil, user.TenantID, id,
+			&sim.MirrorMsg{ID: m.ID, Direction: "out", Author: "human", Type: "text", Text: text, Status: "sent", CreatedAt: m.CreatedAt})
+	}
+	return resp, err
 }
 
 func sendViaMeta(ctx context.Context, chStatus, chProvider, tokenEnc, tokenLegacy string, chMetaPhoneNumberID *string, contactPhone, text string) (string, error) {

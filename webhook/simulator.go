@@ -14,6 +14,7 @@ import (
 
 	appauth "encore.app/wabantu/auth"
 	"encore.app/wabantu/inbox"
+	"encore.app/wabantu/internal/realtime"
 	sim "encore.app/wabantu/internal/simulator"
 	appdb "encore.app/wabantu/shared/db"
 	"encore.app/wabantu/shared/ratelimit"
@@ -106,6 +107,8 @@ func SimulatorSend(ctx context.Context, p *SimulatorSendParams) (*SimulatorSendR
 	if rdb := appauth.RedisClient(); rdb != nil {
 		_ = rdb.Set(ctx, simConvKey(user.TenantID, in.SessionID), opt.out.ConversationID, simConvTTL).Err()
 	}
+	sim.Mirror(ctx, realtime.Default(realtime.LogfTo(rlog.Warn)), tsQuerier(ts), nil, user.TenantID, opt.out.ConversationID,
+		&sim.MirrorMsg{ID: opt.out.MessageID, Direction: "in", Author: "contact", Type: in.Type(), Text: in.Text, Status: "received", CreatedAt: msg.ReceivedAt})
 	rlog.Info("simulator message queued", "tenantId", user.TenantID, "actor", user.AccountID, "type", in.Type(), "convoId", opt.out.ConversationID)
 	return &SimulatorSendResponse{ConversationID: opt.out.ConversationID, MessageID: opt.out.MessageID, Status: "queued"}, nil
 }
@@ -215,34 +218,8 @@ func SimulatorMessages(ctx context.Context, p *SimulatorListParams) (*SimulatorL
 	return out, nil
 }
 
-// loadSimulatorState returns the buyer's quoted price tier and latest order. Best-effort:
-// errors leave the fields null so polling never fails on enrichment.
 func loadSimulatorState(ctx context.Context, ts appdb.TenantScope, convoID string) (*sim.PricingView, *sim.OrderView) {
-	var pricing *sim.PricingView
-	var code, label string
-	if err := ts.QueryRowContext(ctx, `
-		SELECT t.code, t.label FROM conversation c
-		JOIN contact ct ON ct.id = c.contact_id
-		JOIN business_price_type t ON t.deleted_at IS NULL AND t.is_active = true
-		     AND (t.id = ct.price_type_id OR t.is_default = true)
-		WHERE c.id = $1
-		ORDER BY (t.id = ct.price_type_id) IS TRUE DESC, t.is_default DESC, t.display_order
-		LIMIT 1`, convoID).Scan(&code, &label); err == nil {
-		pricing = &sim.PricingView{Tier: code, TierLabel: label}
-	}
-	var id, status, payStatus string
-	var total float64
-	var items, meta []byte
-	var updated time.Time
-	if err := ts.QueryRowContext(ctx, `
-		SELECT id::text, status, payment_status, COALESCE(total, 0)::float8, COALESCE(items, '[]'::jsonb),
-		       COALESCE(payment_proof_meta, '{}'::jsonb), updated_at
-		FROM "order" WHERE conversation_id = $1 AND deleted_at IS NULL
-		ORDER BY created_at DESC LIMIT 1`, convoID).Scan(&id, &status, &payStatus, &total, &items, &meta, &updated); err != nil {
-		return pricing, nil
-	}
-	v := sim.BuildOrderView(id, status, payStatus, total, items, meta, updated.UTC().Format(time.RFC3339Nano))
-	return pricing, &v
+	return sim.LoadState(ctx, tsQuerier(ts), nil, convoID)
 }
 
 func simulatorUser() (*types.AuthUser, error) {
@@ -282,4 +259,8 @@ func ensureSimulatorChannel(ctx context.Context, ts appdb.TenantScope) (string, 
 		VALUES ($1, $2, $3, 'connected', now())
 		RETURNING id`, whatsappchannel.SimulatorProvider, sim.ChannelName, sim.ChannelPhone).Scan(&id)
 	return id, err
+}
+
+func tsQuerier(ts appdb.TenantScope) sim.RowQuerier {
+	return func(ctx context.Context, q string, a ...any) sim.Scanner { return ts.QueryRowContext(ctx, q, a...) }
 }

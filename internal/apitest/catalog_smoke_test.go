@@ -15,7 +15,7 @@ import (
 //go:embed catalog_snapshot.json
 var catalogSnapshotJSON []byte
 
-const expectedEndpointCount = 370
+const expectedEndpointCount = 371
 
 type catalogEndpoint struct {
 	Service    string `json:"service"`

@@ -556,6 +556,7 @@ func Update(ctx context.Context, id string, req *UpdateOrderParams) (*Order, err
 			return nil, err
 		}
 	}
+	mirrorOrderState(ctx, u, o.ConversationID)
 	return &o, nil
 }
 
@@ -590,6 +591,7 @@ func Cancel(ctx context.Context, id string) (*Order, error) {
 	if err := inventory.SyncOrderStock(ctx, u.TenantSchema, o.ID, "cancelled", orderStockItems(o.Items), u.AccountID); err != nil {
 		return nil, err
 	}
+	mirrorOrderState(ctx, u, o.ConversationID)
 	return &o, nil
 }
 

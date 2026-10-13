@@ -79,6 +79,7 @@ func VerifyPaymentProof(ctx context.Context, id string) (*Order, error) {
 			u.TenantSchema), o.ConversationID,
 			fmt.Sprintf("Pembayaran pesanan %s terverifikasi. Pesanan sedang diproses.", ref))
 	}
+	mirrorOrderState(ctx, u, o.ConversationID)
 	return &o, nil
 }
 
@@ -124,6 +125,7 @@ func RejectPaymentProof(ctx context.Context, id string, req *RejectPaymentProofR
 	if err != nil {
 		return nil, fmt.Errorf("reject payment proof: %w", err)
 	}
+	mirrorOrderState(ctx, u, o.ConversationID)
 	return &o, nil
 }
 
@@ -178,5 +180,6 @@ func UnblockPaymentProof(ctx context.Context, id string) (*Order, error) {
 		)
 		_ = sendPaymentProofConversationMessage(ctx, u.TenantSchema, conversationID, msg)
 	}
+	mirrorOrderState(ctx, u, o.ConversationID)
 	return &o, nil
 }
