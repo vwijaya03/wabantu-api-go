@@ -9,9 +9,13 @@ CREATE TABLE IF NOT EXISTS ai_providers (
 
 CREATE TABLE IF NOT EXISTS ai_function_config (
   id BIGSERIAL PRIMARY KEY,
-  function TEXT NOT NULL CHECK (function IN ('chat','intent','ocr','vision','memory','embedding')),
+  function TEXT NOT NULL
+    CONSTRAINT ai_function_config_function_check
+    CHECK (function IN ('chat','intent','ocr','vision','memory','embedding')),
   tenant_id TEXT NULL,            -- NULL = global default
-  chain JSONB NOT NULL CHECK (jsonb_typeof(chain) = 'array'),
+  chain JSONB NOT NULL
+    CONSTRAINT ai_function_config_chain_array_check
+    CHECK (jsonb_typeof(chain) = 'array'),
   max_retries INT NOT NULL DEFAULT 1,
   updated_by TEXT,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),

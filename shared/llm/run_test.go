@@ -14,6 +14,7 @@ func captureLogs(t *testing.T) *[]string {
 	logs := []string{}
 	old := Logf
 	Logf = func(f string, a ...any) { mu.Lock(); logs = append(logs, fmt.Sprintf(f, a...)); mu.Unlock() }
+	skipSeen.Range(func(k, _ any) bool { skipSeen.Delete(k); return true })
 	t.Cleanup(func() { Logf = old })
 	return &logs
 }
@@ -31,9 +32,9 @@ func regWith(chain []ChainLink, fn Function, ps ...Provider) *Registry {
 var demoChain = []ChainLink{{Provider: "gemini", Model: "gemini-2.5-flash"}, {Provider: "anthropic"}}
 
 func runRecord(r *Registry, fn Function) (used []string, err error) {
-	err = r.Run(context.Background(), "t1", fn, func(p Provider, model string) error {
+	_, err = r.Run(context.Background(), "t1", fn, func(ctx context.Context, p Provider, model string) error {
 		used = append(used, p.ID()+":"+model)
-		_, _, e := p.Complete(context.Background(), model, "", "", 0)
+		_, _, e := p.Complete(ctx, model, "", "", 0)
 		return e
 	})
 	return
@@ -124,7 +125,7 @@ func TestRunStopsOnCanceledContext(t *testing.T) {
 	a := &MockProvider{Name: "anthropic"}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_ = regWith(demoChain, FnChat, g, a).Run(ctx, "", FnChat, func(p Provider, m string) error {
+	_, _ = regWith(demoChain, FnChat, g, a).Run(ctx, "", FnChat, func(ctx context.Context, p Provider, m string) error {
 		_, _, e := p.Complete(ctx, m, "", "", 0)
 		return e
 	})

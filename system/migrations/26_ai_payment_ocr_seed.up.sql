@@ -1,4 +1,5 @@
 -- BE-03/04 review: separate 'payment_ocr' function + demo seed.
+-- Idempotent: explicit constraint name (also declared explicitly in migration 22).
 ALTER TABLE ai_function_config DROP CONSTRAINT IF EXISTS ai_function_config_function_check;
 ALTER TABLE ai_function_config ADD CONSTRAINT ai_function_config_function_check
   CHECK (function IN ('chat','intent','ocr','payment_ocr','vision','memory','embedding'));
