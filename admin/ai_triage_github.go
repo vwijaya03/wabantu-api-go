@@ -14,7 +14,10 @@ const triageGitHubRepo = "vwijaya03/wabantu-api-go"
 
 var secrets struct {
 	GitHubActionsToken string
-	AiInternalToken    string
+	// AiTriageInternalToken authenticates GitHub Actions callbacks to
+	// /api/v1/internal/ai-triage/*. Deliberately separate from the ai
+	// service's AiInternalToken so one leak does not open both (SEC-01/S2).
+	AiTriageInternalToken string
 }
 
 func dispatchGitHubWorkflow(ctx context.Context, workflowFile, jobID string, inputs map[string]string) error {

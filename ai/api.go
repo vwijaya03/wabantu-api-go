@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"crypto/subtle"
+	"strings"
 
 	"encore.dev/beta/errs"
 	"encore.dev/rlog"
@@ -146,9 +147,15 @@ func InternalProcessFallback(ctx context.Context, req *InternalFallbackRequest) 
 
 // ─── Token validation ────────────────────────────────────────────────────────
 
+// minInternalTokenLen rejects weak/placeholder tokens (fail closed).
+const minInternalTokenLen = 32
+
 func assertInternalToken(token string) error {
-	expected := secrets.AiInternalToken
-	if expected == "" || token == "" {
+	return checkInternalToken(token, strings.TrimSpace(secrets.AiInternalToken))
+}
+
+func checkInternalToken(token, expected string) error {
+	if len(expected) < minInternalTokenLen || token == "" {
 		return &errs.Error{Code: errs.Unauthenticated, Message: "Unauthorized internal request"}
 	}
 	if subtle.ConstantTimeCompare([]byte(token), []byte(expected)) != 1 {

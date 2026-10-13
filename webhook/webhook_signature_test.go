@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"testing"
 
 	"encore.app/wabantu/whatsapp"
@@ -56,13 +57,69 @@ func TestVerifyInboundWebhookSignaturePassesDisplayPhoneToLookup(t *testing.T) {
 	}
 }
 
-func TestVerifyInboundWebhookSignatureAllowsMissingSigWithoutSecret(t *testing.T) {
-	body := []byte(`{"object":"whatsapp_business_account","entry":[{"changes":[{"value":{"metadata":{"phone_number_id":"123"}}}]}]}`)
-	lookup := func(context.Context, string, string) (string, error) {
-		return "", nil
+func withGlobalSecret(t *testing.T, v string) {
+	t.Helper()
+	old := globalMetaAppSecret
+	globalMetaAppSecret = func() string { return v }
+	t.Cleanup(func() { globalMetaAppSecret = old })
+}
+
+const testBody = `{"object":"whatsapp_business_account","entry":[{"changes":[{"value":{"metadata":{"phone_number_id":"123"}}}]}]}`
+
+func TestVerifyInboundWebhookSignatureRejectsMissingSigWithoutSecret(t *testing.T) {
+	withGlobalSecret(t, "")
+	lookup := func(context.Context, string, string) (string, error) { return "", nil }
+	if err := verifyInboundWebhookSignature(context.Background(), []byte(testBody), "", nil, lookup); err == nil {
+		t.Fatal("expected unsigned request to be rejected even when channel has no secret")
 	}
-	if err := verifyInboundWebhookSignature(context.Background(), body, "", nil, lookup); err != nil {
-		t.Fatalf("expected legacy channel without secret to pass, got %v", err)
+}
+
+func TestVerifyInboundWebhookSignatureRejectsWhenNoSecretAnywhere(t *testing.T) {
+	withGlobalSecret(t, "")
+	body := []byte(testBody)
+	lookup := func(context.Context, string, string) (string, error) { return "", nil }
+	if err := verifyInboundWebhookSignature(context.Background(), body, signWebhookBody(body, "x"), nil, lookup); err == nil {
+		t.Fatal("expected rejection when no app secret configured")
+	}
+}
+
+func TestVerifyInboundWebhookSignatureRejectsMissingPhoneIDUnsigned(t *testing.T) {
+	withGlobalSecret(t, "")
+	body := []byte(`{"object":"whatsapp_business_account","entry":[]}`)
+	if err := verifyInboundWebhookSignature(context.Background(), body, "", nil, nil); err == nil {
+		t.Fatal("expected payload without phone_number_id and signature to be rejected")
+	}
+}
+
+func TestVerifyInboundWebhookSignatureGlobalSecretFallback(t *testing.T) {
+	withGlobalSecret(t, "global-secret")
+	body := []byte(testBody)
+	lookup := func(context.Context, string, string) (string, error) { return "", nil }
+	if err := verifyInboundWebhookSignature(context.Background(), body, signWebhookBody(body, "global-secret"), nil, lookup); err != nil {
+		t.Fatalf("expected global secret to verify, got %v", err)
+	}
+	if err := verifyInboundWebhookSignature(context.Background(), body, signWebhookBody(body, "wrong"), nil, lookup); err == nil {
+		t.Fatal("expected wrong signature to be rejected")
+	}
+}
+
+func TestVerifyInboundWebhookSignatureRejectsInvalidAndMalformed(t *testing.T) {
+	withGlobalSecret(t, "")
+	body := []byte(testBody)
+	lookup := func(context.Context, string, string) (string, error) { return "s", nil }
+	for _, sig := range []string{"sha256=deadbeef", "garbage", signWebhookBody([]byte("other"), "s"), "sha1=" + signWebhookBody(body, "s")[7:]} {
+		if err := verifyInboundWebhookSignature(context.Background(), body, sig, nil, lookup); err == nil {
+			t.Fatalf("expected rejection for sig %q", sig)
+		}
+	}
+}
+
+func TestVerifyInboundWebhookSignatureRejectsUnknownChannel(t *testing.T) {
+	withGlobalSecret(t, "global-secret")
+	body := []byte(testBody)
+	lookup := func(context.Context, string, string) (string, error) { return "", fmt.Errorf("nope") }
+	if err := verifyInboundWebhookSignature(context.Background(), body, signWebhookBody(body, "global-secret"), nil, lookup); err == nil {
+		t.Fatal("expected unknown channel to be rejected")
 	}
 }
 

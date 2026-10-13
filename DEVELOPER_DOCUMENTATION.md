@@ -734,8 +734,8 @@ encore run
 
 | Method | Path | Auth |
 |--------|------|------|
-| POST | `/api/v1/internal/ai/auto-reply` | public (token in practice) |
-| POST | `/api/v1/internal/ai/auto-reply/fallback` | public |
+| POST | `/api/v1/internal/ai/auto-reply` | private (SEC-01) |
+| POST | `/api/v1/internal/ai/auto-reply/fallback` | private (SEC-01) |
 
 Production path: **Pub/Sub** `ai-jobs`, not HTTP.
 

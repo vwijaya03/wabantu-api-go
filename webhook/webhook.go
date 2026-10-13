@@ -5,6 +5,7 @@ package webhook
 
 import (
 	"context"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -41,6 +42,9 @@ func openTenantScope(ctx context.Context, schema string) (appdb.TenantScope, err
 var secrets struct {
 	WebhookVerifyToken string
 	DataEncryptionKey  string
+	// MetaAppSecret is the app-wide Meta App Secret used to verify
+	// X-Hub-Signature-256 when a channel has no per-channel meta_app_secret.
+	MetaAppSecret string
 }
 
 // ---------------------------------------------------------------------------
@@ -68,7 +72,10 @@ func handleWhatsAppWebhook(w http.ResponseWriter, r *http.Request) {
 
 func verifyChallenge(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	if q.Get("hub.mode") == "subscribe" && q.Get("hub.verify_token") == secrets.WebhookVerifyToken {
+	expected := strings.TrimSpace(secrets.WebhookVerifyToken)
+	got := q.Get("hub.verify_token")
+	if q.Get("hub.mode") == "subscribe" && expected != "" && got != "" &&
+		subtle.ConstantTimeCompare([]byte(got), []byte(expected)) == 1 {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(q.Get("hub.challenge")))
 		return

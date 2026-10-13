@@ -2201,7 +2201,7 @@
     {
       "service": "admin",
       "file": "admin/ai_triage_behavior_internal.go",
-      "line": 29,
+      "line": 34,
       "access": "public",
       "method": "GET",
       "path": "/api/v1/internal/ai-triage/behavior-jobs/:id",
@@ -2211,7 +2211,7 @@
     {
       "service": "admin",
       "file": "admin/ai_triage_behavior_internal.go",
-      "line": 92,
+      "line": 97,
       "access": "public",
       "method": "POST",
       "path": "/api/v1/internal/ai-triage/behavior-jobs/:id/complete",
@@ -2230,20 +2230,20 @@
     {
       "service": "ai",
       "file": "ai/api.go",
-      "line": 88,
-      "access": "public",
+      "line": 89,
+      "access": "private",
       "method": "POST",
       "path": "/api/v1/internal/ai/auto-reply",
-      "annotation": "public method=POST path=/api/v1/internal/ai/auto-reply"
+      "annotation": "private method=POST path=/api/v1/internal/ai/auto-reply"
     },
     {
       "service": "ai",
       "file": "ai/api.go",
-      "line": 118,
-      "access": "public",
+      "line": 119,
+      "access": "private",
       "method": "POST",
       "path": "/api/v1/internal/ai/auto-reply/fallback",
-      "annotation": "public method=POST path=/api/v1/internal/ai/auto-reply/fallback"
+      "annotation": "private method=POST path=/api/v1/internal/ai/auto-reply/fallback"
     },
     {
       "service": "business",
@@ -3277,7 +3277,7 @@
     {
       "service": "webhook",
       "file": "webhook/webhook.go",
-      "line": 53,
+      "line": 57,
       "access": "public",
       "method": "*",
       "path": "/api/v1/webhook/whatsapp",

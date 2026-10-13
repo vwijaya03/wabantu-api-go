@@ -27,7 +27,7 @@ jobs:
     env:
       JOB_ID: ${{ github.event.inputs.job_id }}
       ENCORE_API_URL: ${{ secrets.ENCORE_STAGING_API_URL }}
-      AI_INTERNAL_TOKEN: ${{ secrets.AI_INTERNAL_TOKEN }}
+      AI_INTERNAL_TOKEN: ${{ secrets.AI_TRIAGE_INTERNAL_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -52,7 +52,7 @@ jobs:
             exit 1
           fi
           if [ -z "${AI_INTERNAL_TOKEN:-}" ]; then
-            echo "Secret AI_INTERNAL_TOKEN kosong." >&2
+            echo "Secret AI_TRIAGE_INTERNAL_TOKEN kosong." >&2
             exit 1
           fi
 
