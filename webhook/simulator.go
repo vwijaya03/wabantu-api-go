@@ -238,6 +238,12 @@ func simulatorUser() (*types.AuthUser, error) {
 	return u, nil
 }
 
+func init() {
+	sim.OnLoadError = func(part, convoID string, err error) {
+		rlog.Warn("simulator state query failed", "part", part, "convoId", convoID, "err", err.Error())
+	}
+}
+
 func simConvKey(tenantID, sessionID string) string {
 	return "simulator:conv:" + tenantID + ":" + sessionID
 }

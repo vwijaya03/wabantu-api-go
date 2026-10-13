@@ -3,6 +3,7 @@ package simulator
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"strconv"
 	"time"
 )
@@ -26,11 +27,32 @@ func SchemaQualifier(schema string) Qualifier {
 	return func(t string) string { return strconv.Quote(schema) + "." + strconv.Quote(t) }
 }
 
+// OnLoadError, when set (webhook wires rlog.Warn), receives query errors from LoadState
+// other than sql.ErrNoRows. Only the part name and error are passed (no args/PII).
+var OnLoadError func(part, convoID string, err error)
+
+func reportLoadError(part, convoID string, err error) {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) && OnLoadError != nil {
+		OnLoadError(part, convoID, err)
+	}
+}
+
+// DefaultQualifier leaves table names bare (resolved by search_path, or rewritten by
+// appdb.TenantScope's QualifySQL) and quotes only the reserved word "order". Quoting every
+// name broke TenantScope rewriting: "conversation" became ""schema"."conversation"" (syntax
+// error) — the cause of pricing:null in GET /simulator/messages.
+func DefaultQualifier(t string) string {
+	if t == "order" {
+		return `"order"`
+	}
+	return t
+}
+
 // LoadState returns the buyer's quoted price tier and the conversation's latest order.
-// Best-effort: errors leave the fields nil.
+// Best-effort: errors leave the fields nil and are reported via OnLoadError.
 func LoadState(ctx context.Context, q RowQuerier, qual Qualifier, convoID string) (*PricingView, *OrderView) {
 	if qual == nil {
-		qual = func(t string) string { return strconv.Quote(t) }
+		qual = DefaultQualifier
 	}
 	var pricing *PricingView
 	var code, label string
@@ -43,6 +65,8 @@ func LoadState(ctx context.Context, q RowQuerier, qual Qualifier, convoID string
 		ORDER BY (t.id = ct.price_type_id) IS TRUE DESC, t.is_default DESC, t.display_order
 		LIMIT 1`, convoID).Scan(&code, &label); err == nil {
 		pricing = &PricingView{Tier: code, TierLabel: label}
+	} else {
+		reportLoadError("pricing", convoID, err)
 	}
 	var id, status, payStatus string
 	var total float64
@@ -53,6 +77,7 @@ func LoadState(ctx context.Context, q RowQuerier, qual Qualifier, convoID string
 		       COALESCE(payment_proof_meta, '{}'::jsonb), updated_at
 		FROM `+qual("order")+` WHERE conversation_id = $1 AND deleted_at IS NULL
 		ORDER BY created_at DESC LIMIT 1`, convoID).Scan(&id, &status, &payStatus, &total, &items, &meta, &updated); err != nil {
+		reportLoadError("order", convoID, err)
 		return pricing, nil
 	}
 	v := BuildOrderView(id, status, payStatus, total, items, meta, updated.UTC().Format(time.RFC3339Nano))

@@ -114,7 +114,7 @@ type OrderSummary = {
   updatedAt: string;
 }
 ```
-`pricing`/`order` are null when nothing exists yet. Every message sent to a simulator buyer (AI reply, payment-proof result, owner manual reply from the inbox, broadcast) is stored here and **never** sent to Meta; the simulator channel is hidden from `GET /api/v1/whatsapp/channels` and cannot be disconnected/deleted there.
+`pricing`/`order` are null when nothing exists yet (query errors are logged as `simulator state query failed part=pricing|order`, not swallowed). Every message sent to a simulator buyer (AI reply, payment-proof result, owner manual reply from the inbox, broadcast) is stored here and **never** sent to Meta; the simulator channel is hidden from `GET /api/v1/whatsapp/channels` and cannot be disconnected/deleted there.
 Errors: `400` (bad sessionId/after), `401`, `403`.
 
 ---
