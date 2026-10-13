@@ -84,6 +84,7 @@ BEGIN
         ALTER TABLE "order" ADD COLUMN IF NOT EXISTS payment_proof_verified_at TIMESTAMPTZ;
         ALTER TABLE "order" ADD COLUMN IF NOT EXISTS payment_proof_verified_by UUID;
         ALTER TABLE "order" ADD COLUMN IF NOT EXISTS payment_proof_meta JSONB NOT NULL DEFAULT '{}';
+        ALTER TABLE "order" ADD COLUMN IF NOT EXISTS stock_applied_at TIMESTAMPTZ;
         CREATE INDEX IF NOT EXISTS idx_order_payment_status
             ON "order"(payment_status, created_at DESC)
             WHERE deleted_at IS NULL;
