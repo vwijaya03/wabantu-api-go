@@ -1,6 +1,6 @@
 # API — AI config (superadmin) & Chat simulator
 
-Status: **config = FINAL & implemented** (`admin/ai_config.go`). **Simulator = FINAL & implemented** (`webhook/simulator.go`, validation in `internal/simulator`).
+Status: **config = FINAL & implemented** (`admin/ai_config.go`). **Simulator = FINAL & implemented** (`webhook/simulator.go`, validation in `internal/simulator`). Golden flow, order page and realtime: §3–§5.
 Base: same backend origin as other `/api/v1` endpoints, session cookie/bearer as usual. Error body is Encore's standard: `{"code": "<errs code>", "message": "...", "details": null}`.
 
 | Encore code | HTTP |
@@ -87,18 +87,96 @@ Rate limit: 20 messages / minute / tenant → `429 resource_exhausted`.
 Errors: `400 invalid_argument` (bad sessionId, empty message, text too long, bad mime, image too large/invalid base64), `401`, `403` (no tenant in session / role not allowed), `429`.
 
 ### GET `/api/v1/simulator/messages?sessionId=<id>&after=<RFC3339 optional>`
-Poll for the AI reply (recommended every 1–2 s while waiting; replies normally arrive in 2–10 s).
+Poll for the AI reply (recommended every 1–2 s while waiting; replies normally arrive in 2–10 s). Or subscribe to Firestore (§5).
 ```ts
 { conversationId: string | null;   // null = no message sent yet for this session
   messages: Array<{
     id: string;
     direction: "inbound" | "outbound";
-    author: string;                  // "contact" | "ai" | "system" | "agent"
+    author: string;                  // "contact" | "ai" | "system" | "human" (owner manual reply / broadcast)
     type: "text" | "image";
     text: string;                    // image: caption or "[gambar]"
     createdAt: string;               // RFC3339
     status: string;                  // outbound: "sent" | "pending" | "failed"
-  }> }
+    imageUrl: string | null;         // image only: "/api/v1/inbox/messages/{id}/media" — GET with the same Bearer token; cached 1 h
+  }>;
+  pricing: { tier: string; tierLabel: string } | null;   // tier the AI quotes to this buyer: "umum" | "reseller" | "agen" | ...
+  order: OrderSummary | null;        // latest order of this conversation
+}
+type OrderSummary = {
+  id: string; orderNumber: string;   // "WB-1A2B3C4D"
+  status: "draft"|"confirmed"|"paid"|"processing"|"shipped"|"completed"|"cancelled";
+  paymentStatus: "unpaid"|"proof_submitted"|"verified"|"rejected";
+  total: number;
+  proofCheck?: "cocok" | "perlu_dicek";   // absent = no payment proof processed yet
+  proofCheckReasons?: string[];           // e.g. "mismatch_amount","account_mismatch","missing_amount","invalid_date","duplicate_hash","low_confidence","kb_empty","proof_blocked"
+  items: { name: string; qty: number; unitPrice: number; unit?: string }[];  // unitPrice = tier price at order time
+  updatedAt: string;
+}
 ```
-Order status / payment-proof result (badge "cocok / perlu dicek", owner approve) use the existing order endpoints for the session tenant; the simulator does not expose order mutation.
+`pricing`/`order` are null when nothing exists yet. Every message sent to a simulator buyer (AI reply, payment-proof result, owner manual reply from the inbox, broadcast) is stored here and **never** sent to Meta; the simulator channel is hidden from `GET /api/v1/whatsapp/channels` and cannot be disconnected/deleted there.
 Errors: `400` (bad sessionId/after), `401`, `403`.
+
+---
+
+## 3. Golden flow (judges)
+
+| Step | Endpoint | Auth | Code |
+|---|---|---|---|
+| Buyer chats, AI quotes **tier price** and creates the order at that price | `POST /api/v1/simulator/messages` → AI pipeline | auth; owner/staff/super_admin (session tenant) | `webhook/simulator.go` (SimulatorSend); tier pricing `ai/order_catalog_db.go` `applyContactTierPrices` (called from `ai/autoreply.go`, `ai/order_flow_handler.go`, `ai/order_amend.go`) |
+| Buyer sends transfer proof → OCR (Gemini, fallback Anthropic) → stored in `order.payment_proof_meta`, exposed as `proofCheck` | same POST with `image` | same | `ai/payment_proof.go` (`evaluatePaymentProofRules`, `applyPaymentProofResult`); derivation `internal/proofcheck` |
+| Owner approves → `paymentStatus=verified`, `status=processing` | `POST /api/v1/orders/:id/payment-proof/verify` | auth; owner (or super_admin impersonating) | `order/payment_proof.go` VerifyPaymentProof |
+| Owner completes the order (finance income recorded) | `PATCH /api/v1/orders/:id` `{ "status": "completed" }` | auth; owner | `order/order.go` Update |
+
+Demo data: `go run ./scripts/cmd/demo-seed/` (DEMO ONLY; see header). Simulator session `reseller-demo` buys at the reseller price.
+
+---
+
+## 4. Order page (Frontend)
+
+All `auth`, tenant from session; mutations require owner (`CanPerformOwnerActions`: owner, or super_admin impersonating).
+
+| Method | Path | Body | Response |
+|---|---|---|---|
+| GET | `/api/v1/orders?status=&q=&page=&pageSize=` | – | `{ orders: Order[], total, page, pageSize }` |
+| GET | `/api/v1/orders/:id` | – | `Order` |
+| POST | `/api/v1/orders/:id/payment-proof/verify` | – | `Order` (approve proof → `paymentStatus=verified`, `status=processing`) |
+| POST | `/api/v1/orders/:id/payment-proof/reject` | `{ reason?: string }` | `Order` (`paymentStatus=rejected`; buyer is told to resend) |
+| POST | `/api/v1/orders/:id/payment-proof/unblock` | – | `Order` (after repeated rejections the proof is blocked) |
+| PATCH | `/api/v1/orders/:id` | `{ status?: "completed" \| "shipped" \| ..., trackingNumber?, courier?, ... }` | `Order` |
+| PATCH | `/api/v1/orders/:id/cancel` | – | `Order` |
+
+`Order` (relevant fields): `id, orderNumber, conversationId, contactId, contactDisplayName, items[{name, qty, unitPrice, sellUnit}], status, paymentStatus, total, paymentProofMeta{amount, bank, accountNumber, accountName, date, confidence, flags[], rejectReason, rejectionCount, proofBlocked}`, **`proofCheck: "cocok"|"perlu_dicek"` (absent = no proof)**, **`proofCheckReasons: string[]`**.
+Badge: `proofCheck=="cocok"` → green "Bukti cocok"; `"perlu_dicek"` → amber "Perlu dicek" + reasons. Approval is always the owner's decision; `cocok` is advisory (amount equals order total and destination account matches the payment info in the knowledge base).
+Proof image: `GET /api/v1/inbox/messages/{paymentProofMessageId}/media` (Bearer).
+Errors: `400` invalid state (e.g. already verified), `403` not owner, `404` order not found, `409/400` stock precheck failure on verify.
+
+---
+
+## 5. Realtime (Firestore mirror) — optional
+
+Postgres is the source of truth. When `FIRESTORE_PROJECT_ID` and `FIREBASE_SERVICE_ACCOUNT_JSON` (service-account key JSON, from Secret Manager — never in the repo) are set, the backend **dual-writes best-effort** (failures are only logged; requests never fail because of Firestore). Unset → no-op. Only simulator conversations are mirrored.
+
+### POST `/api/v1/auth/firebase-token`
+Auth: Bearer session (owner, staff, or super_admin acting as a tenant). **Body ignored**; claims come only from the server session.
+```ts
+// response 200 (Cache-Control: no-store)
+{ token: string;      // Firebase custom token → signInWithCustomToken(auth, token)
+  tenantId: string;   // = custom claim tenantId
+  role: "owner"|"staff"|"super_admin";  // = custom claim role
+  expiresAt: string;  // RFC3339, custom token valid 1 h (exchange immediately; Firebase ID token refreshes itself)
+  projectId: string }
+```
+Errors (JSON `{code, message}`): `401 unauthenticated` (no/invalid session), `403 permission_denied` (other role, or super_admin without a selected tenant), `503 unavailable` (Firestore/Firebase not configured).
+
+### Documents (read-only for clients)
+| Path | Fields |
+|---|---|
+| `tenants/{tenantId}/simConversations/{conversationId}` | `conversationId`, `lastMessageAt` (timestamp), `pricing` (`{tier, tierLabel}` \| null), `order` (`OrderSummary` \| null), `updatedAt` |
+| `tenants/{tenantId}/simConversations/{conversationId}/messages/{messageId}` | `id`, `direction` (`inbound`\|`outbound`), `author`, `type` (`text`\|`image`), `text`, `status`, `imageUrl` (string \| null), `createdAt` (timestamp) |
+| `tenants/{tenantId}/orders/{orderId}` | `conversationId`, `order` (`OrderSummary`), `updatedAt` |
+
+`OrderSummary` = the same shape as in §2 (numbers as integers when whole). Get `conversationId` from the POST response, then listen to `.../messages` ordered by `createdAt`.
+Written on: simulator inbound, AI/system replies (incl. payment-proof result), owner manual reply, and owner order actions (verify/reject/unblock/update/cancel). Not mirrored yet: broadcasts (still visible via GET polling).
+
+Rules (`firestore.rules`): read only if `request.auth.token.tenantId == tenantId` and the role is owner/staff/super_admin; `write: false` for all clients (the server writes with the service account).
