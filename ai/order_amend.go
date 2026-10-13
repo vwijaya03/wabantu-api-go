@@ -458,6 +458,9 @@ func (s *AutoReplyService) handleOrderAmend(
 	if catErr != nil {
 		rlog.Warn("AI order amend: catalog load failed", "err", catErr)
 	}
+	if contact != nil {
+		applyContactTierPrices(ctx, ts, catalog, contact.ID)
+	}
 	vctx, catalog := s.fetchCatalogVectorContext(ctx, payload.TenantID, payload.TenantSchema, userText, ts, catalog)
 	existing, err := orderItemsFromJSON(draft.ItemsJSON)
 	if err != nil {

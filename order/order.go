@@ -14,6 +14,7 @@ import (
 	"encore.dev/storage/sqldb"
 
 	"encore.app/wabantu/finance"
+	"encore.app/wabantu/internal/proofcheck"
 	"encore.app/wabantu/inventory"
 	appdb "encore.app/wabantu/shared/db"
 	appErrs "encore.app/wabantu/shared/errs"
@@ -105,6 +106,9 @@ type Order struct {
 	PaymentProofVerifiedAt     *time.Time        `json:"paymentProofVerifiedAt,omitempty"`
 	PaymentProofVerifiedBy     string            `json:"paymentProofVerifiedBy,omitempty"`
 	PaymentProofMeta           *PaymentProofMeta `json:"paymentProofMeta,omitempty"`
+	// ProofCheck is derived from PaymentProofMeta: "" (no proof) | "cocok" | "perlu_dicek".
+	ProofCheck        string   `json:"proofCheck,omitempty"`
+	ProofCheckReasons []string `json:"proofCheckReasons,omitempty"`
 	Subtotal                   float64           `json:"subtotal"`
 	ShippingCost         float64          `json:"shippingCost"`
 	Total                float64          `json:"total"`
@@ -1020,6 +1024,7 @@ func applyPaymentProofMeta(o *Order, raw []byte) {
 	var meta PaymentProofMeta
 	if json.Unmarshal(raw, &meta) == nil {
 		o.PaymentProofMeta = &meta
+		o.ProofCheck, o.ProofCheckReasons = proofcheck.Result(true, meta.Amount, meta.Flags, meta.ProofBlocked)
 	}
 }
 

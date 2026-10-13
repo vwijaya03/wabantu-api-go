@@ -27,6 +27,9 @@ func (s *AutoReplyService) handleOrderFlow(
 		rlog.Warn("AI order: catalog load failed", "err", catErr)
 	}
 	enrichCatalogStock(ctx, ts, catalog)
+	if contact != nil {
+		applyContactTierPrices(ctx, ts, catalog, contact.ID)
+	}
 
 	vctx, catalog := s.fetchCatalogVectorContext(ctx, tenantID, tenantSchema, userText, ts, catalog)
 

@@ -290,6 +290,9 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		rlog.Warn("AI job: catalog load failed", "err", catLoadErr)
 	}
 	enrichCatalogStock(ctx, ts, catalog)
+	if contact != nil {
+		applyContactTierPrices(ctx, ts, catalog, contact.ID)
+	}
 
 	if IsPaymentQuestion(userText) {
 		if ans, ok := tryPaymentFAQAnswer(userText, kbEntries); ok {
