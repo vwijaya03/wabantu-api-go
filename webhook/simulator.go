@@ -5,8 +5,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"os"
 	"strings"
 	"time"
+
+	"github.com/redis/go-redis/v9"
 
 	"encore.dev/beta/auth"
 	"encore.dev/beta/errs"
@@ -64,7 +67,7 @@ func SimulatorSend(ctx context.Context, p *SimulatorSendParams) (*SimulatorSendR
 	if err != nil {
 		return nil, &errs.Error{Code: errs.InvalidArgument, Message: err.Error()}
 	}
-	if !ratelimit.Allow(ctx, appauth.RedisClient(), ratelimit.Key("simulator", user.TenantID), sim.RatePerMinute, time.Minute) {
+	if !simulatorRateOK(ctx, appauth.RedisClient(), simMemLimiter, user.TenantID, in.SessionID) {
 		return nil, &errs.Error{Code: errs.ResourceExhausted, Message: "terlalu banyak pesan simulator, coba lagi sebentar"}
 	}
 	ts, err := openTenantScope(ctx, user.TenantSchema)
@@ -235,6 +238,9 @@ func simulatorUser() (*types.AuthUser, error) {
 	if strings.TrimSpace(u.TenantID) == "" || strings.TrimSpace(u.TenantSchema) == "" {
 		return nil, &errs.Error{Code: errs.PermissionDenied, Message: "sesi tidak punya tenant (superadmin: pilih tenant dulu)"}
 	}
+	if err := simulatorTenantGate(u, sim.ParseAllowlist(os.Getenv(sim.AllowlistEnv))); err != nil {
+		return nil, err
+	}
 	return u, nil
 }
 
@@ -242,6 +248,32 @@ func init() {
 	sim.OnLoadError = func(part, convoID string, err error) {
 		rlog.Warn("simulator state query failed", "part", part, "convoId", convoID, "err", err.Error())
 	}
+}
+
+// simulatorTenantGate: simulator only for demo tenants. Tenant comes from the
+// server-side session (AuthUser), never from the request body.
+func simulatorTenantGate(u *types.AuthUser, allow map[string]bool) error {
+	if u == nil || !sim.TenantAllowed(allow, u.TenantID, u.TenantSchema) {
+		return &errs.Error{Code: errs.PermissionDenied, Message: "simulator hanya untuk tenant demo"}
+	}
+	return nil
+}
+
+// simMemLimiter backs the simulator rate limit per instance so a Redis outage
+// never means unlimited paid LLM calls.
+var simMemLimiter = sim.NewMemLimiter(nil)
+
+// simulatorRateOK applies the per-tenant and per-session limits in Redis and,
+// always, the same limits in memory (enforced even when Redis is down; the
+// Redis limiter alone fails open).
+func simulatorRateOK(ctx context.Context, rdb *redis.Client, mem *sim.MemLimiter, tenantID, sessionID string) bool {
+	tk := ratelimit.Key("simulator", tenantID)
+	sk := ratelimit.Key("simulator-session", tenantID+":"+sessionID)
+	if !mem.Allow(tk, sim.RatePerMinute, time.Minute) || !mem.Allow(sk, sim.RatePerMinute, time.Minute) {
+		return false
+	}
+	return ratelimit.Allow(ctx, rdb, tk, sim.RatePerMinute, time.Minute) &&
+		ratelimit.Allow(ctx, rdb, sk, sim.RatePerMinute, time.Minute)
 }
 
 func simConvKey(tenantID, sessionID string) string {

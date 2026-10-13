@@ -109,6 +109,38 @@ func NewAutoReplyService(rdb *redis.Client, anthropicClient *AnthropicClient) *A
 	}
 }
 
+// Outbound seams (swapped in tests only).
+var (
+	metaSendText      = whatsapp.SendText
+	simulatorOutbound = (*AutoReplyService).sendSimulatorMessage
+)
+
+type outboundRoute int
+
+const (
+	routeNone outboundRoute = iota
+	routeMeta
+	routeSimulator
+)
+
+// autoReplyRoute decides whether an AI reply can be delivered on this channel and how.
+// Simulator channels never need (or use) Meta credentials.
+func autoReplyRoute(ch *dbChannel) (outboundRoute, string) {
+	switch {
+	case ch == nil:
+		return routeNone, "no channel"
+	case ch.Status != "connected":
+		return routeNone, "channel not connected"
+	case whatsappchannel.IsSimulator(ch.Provider):
+		return routeSimulator, ""
+	case ch.Provider != "meta_cloud":
+		return routeNone, "unsupported provider"
+	case ch.AccessToken == nil || ch.MetaPhoneNumberID == nil:
+		return routeNone, "channel missing accessToken or metaPhoneNumberId"
+	}
+	return routeMeta, ""
+}
+
 // ProcessAutoReply is the main AI auto-reply pipeline.
 func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReplyJobPayload) (bool, error) {
 	rlog.Info("AI job start",
@@ -194,15 +226,12 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		rlog.Warn("AI job: missing contact or channel")
 		return false, nil
 	}
-	if channel.Provider != "meta_cloud" || channel.Status != "connected" {
+	if route, why := autoReplyRoute(channel); route == routeNone {
 		rlog.Warn("AI job: unsupported/invalid channel",
 			"provider", channel.Provider,
 			"status", channel.Status,
+			"reason", why,
 		)
-		return false, nil
-	}
-	if channel.AccessToken == nil || channel.MetaPhoneNumberID == nil {
-		rlog.Warn("AI job: channel missing accessToken or metaPhoneNumberId")
 		return false, nil
 	}
 
@@ -1438,8 +1467,10 @@ func (s *AutoReplyService) sendAiMessage(
 	if channel == nil || contact == nil {
 		return fmt.Errorf("missing channel or contact")
 	}
+	// Simulator branches away here, before any Meta code path: replies are only
+	// stored in the simulator conversation (never sent to graph.facebook.com).
 	if whatsappchannel.IsSimulator(channel.Provider) {
-		return s.sendSimulatorMessage(ctx, ts, tenantID, convo, text, author, inboundMessageID, meta)
+		return simulatorOutbound(s, ctx, ts, tenantID, convo, text, author, inboundMessageID, meta)
 	}
 	if channel.Provider != "meta_cloud" {
 		return fmt.Errorf("unsupported channel provider %q", channel.Provider)
@@ -1490,7 +1521,7 @@ func (s *AutoReplyService) sendAiMessage(
 		}
 	}
 
-	extID, err := whatsapp.SendText(
+	extID, err := metaSendText(
 		ctx,
 		*channel.AccessToken,
 		*channel.MetaPhoneNumberID,

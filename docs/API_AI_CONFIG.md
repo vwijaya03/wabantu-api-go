@@ -70,7 +70,11 @@ Cost policy (defaults seeded by migrations 26/27): `payment_ocr`, `intent`, `mem
 
 Same pipeline as the WhatsApp webhook (inbound → AI auto-reply / order flow / payment-proof OCR), but **nothing is sent to Meta**: outbound messages are stored only.
 Auth: `auth`; roles `owner`, `staff`, or `super_admin` while acting as a tenant. **Tenant = session tenant** (no tenantId in the request). The buyer can only send text or an image — there are no fields for price, order status, totals or tier; prices always come from catalog/tier tables and order status only changes through the normal order flow / owner approval.
-Rate limit: 20 messages / minute / tenant → `429 resource_exhausted`.
+Demo tenants only: the session tenant (ID or schema) must be listed in env `SimulatorTenantAllowlist` (comma-separated, e.g. `t_toko_demo`). Unset/empty = **no tenant allowed** (fail closed) → `403 permission_denied` on POST and GET.
+Rate limit: 20 messages / minute per tenant **and** per session → `429 resource_exhausted`. Enforced in Redis and, always, in an in-memory per-instance limiter, so a Redis outage never means unlimited LLM calls.
+AI replies on the simulator channel branch off in `sendAiMessage` **before** any Meta code (`ai/simulator_send.go`); the auto-reply gate `autoReplyRoute` (`ai/autoreply.go`) accepts `simulator` without Meta credentials. LLM tools stay read-only (`search_catalog`, `get_product` over the tenant's catalog snapshot); prices come from catalog/tier tables (`ResolveCatalogUnitPrice`), approval only via the owner endpoint.
+Tests: `ai/simulator_route_test.go` (graph.facebook.com tripwire, read-only tools vs prompt injection), `webhook/simulator_guard_test.go` (403 non-demo tenant, 429 with Redis down), `internal/simulator/guard_test.go`, tenant isolation of tool args `shared/llm/tools_tenant_test.go`.
+Gemini-first for local testing is **DB config only** (no code default change): `ai_providers` row `gemini` + `ai_function_config` `chat` chain with gemini first.
 
 ### POST `/api/v1/simulator/messages`
 ```ts
@@ -84,7 +88,7 @@ Rate limit: 20 messages / minute / tenant → `429 resource_exhausted`.
 // response 202
 { conversationId: string; messageId: string; status: "queued" }
 ```
-Errors: `400 invalid_argument` (bad sessionId, empty message, text too long, bad mime, image too large/invalid base64), `401`, `403` (no tenant in session / role not allowed), `429`.
+Errors: `400 invalid_argument` (bad sessionId, empty message, text too long, bad mime, image too large/invalid base64), `401`, `403` (no tenant in session / role not allowed / tenant not in `SimulatorTenantAllowlist`), `429`.
 
 ### GET `/api/v1/simulator/messages?sessionId=<id>&after=<RFC3339 optional>`
 Poll for the AI reply (recommended every 1–2 s while waiting; replies normally arrive in 2–10 s). Or subscribe to Firestore (§5).
