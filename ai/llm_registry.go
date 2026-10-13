@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -108,16 +109,51 @@ func ChatClientViaRegistry(apiKey string, cfg AnthropicConfig) *AnthropicClient 
 	return NewAnthropicClient(apiKey, cfg)
 }
 
-// chatClientFor resolves the tenant's 'chat' chain. Sales chat + tool-use is Anthropic-only
-// until BE-04, so the Anthropic client is always returned; a non-Anthropic first link is logged.
-func (s *AutoReplyService) chatClientFor(ctx context.Context, tenantID string) *AnthropicClient {
-	cands := LLMRegistry(secrets.AnthropicAPIKey, AnthropicConfig{Model: defaultAnthropicModel, MaxTokens: defaultAnthropicMaxToks}).
-		Candidates(ctx, tenantID, llm.FnChat)
-	if len(cands) > 0 && cands[0].Provider.ID() != "anthropic" {
-		rlog.Warn("llm: chat chain prefers non-anthropic provider but tool-use chat is anthropic-only (BE-04); using anthropic",
-			"tenantId", tenantID, "provider", cands[0].Provider.ID())
+// generateChatReply runs the tenant's 'chat' chain (tenant → global → code default) through
+// llm.RunToolChat. Anthropic links keep the legacy client (prompt caching, model-not-found
+// fallbacks) and use routeModel from ResolveRouting when the link has no model; Gemini links
+// use the native function-calling loop. Returns the provider/model actually used.
+func (s *AutoReplyService) generateChatReply(ctx context.Context, tenantID, routeModel string,
+	req SalesReplyRequest, exec *CatalogToolExecutor) (string, CompletionUsage, bool, string, string, error) {
+	reg := LLMRegistry(secrets.AnthropicAPIKey, AnthropicConfig{Model: defaultAnthropicModel, MaxTokens: defaultAnthropicMaxToks})
+	var usage CompletionUsage
+	anthropicLink := func(ctx context.Context, p llm.Provider, model string) (llm.ToolChatResponse, bool, error) {
+		if p.ID() != "anthropic" {
+			return llm.ToolChatResponse{}, false, nil
+		}
+		if strings.TrimSpace(model) == "" {
+			model = routeModel
+		}
+		client := s.anthropic
+		if client == nil {
+			if ap, ok := p.(*AnthropicProvider); ok {
+				client = ap.Client
+			}
+		}
+		text, u, used, err := client.GenerateSalesReplyWithCatalogTools(ctx, model, req, exec)
+		usage = u
+		return llm.ToolChatResponse{Text: text, UsedTools: used, Usage: llm.Usage{Provider: "anthropic", Model: model}}, true, err
 	}
-	return s.anthropic
+	toolReq := llm.ToolChatRequest{
+		System:    salesSystemText(req),
+		Messages:  salesMessagesNeutral(req),
+		Tools:     catalogToolDefsNeutral(),
+		MaxTokens: defaultAnthropicMaxToks,
+		MaxRounds: maxCatalogToolRounds,
+	}
+	var run func(string, json.RawMessage) (string, error)
+	if exec != nil {
+		run = exec.Run
+	}
+	out, res, err := llm.RunToolChat(ctx, reg, tenantID, llm.FnChat, toolReq, run, anthropicLink)
+	if out.Usage.Provider != "anthropic" {
+		usage = CompletionUsage{InputTokens: int(out.Usage.InputTokens), OutputTokens: int(out.Usage.OutputTokens)}
+	}
+	rlog.Info("llm chat",
+		"tenantId", tenantID, "provider", out.Usage.Provider, "model", out.Usage.Model,
+		"family", llm.ModelFamily(out.Usage.Model), "attempts", res.Attempts, "usedTools", out.UsedTools,
+		"inTok", usage.InputTokens, "outTok", usage.OutputTokens, "ok", err == nil)
+	return out.Text, usage, out.UsedTools, out.Usage.Provider, out.Usage.Model, err
 }
 
 // paymentOCRModelForUsage records the real model; keeps the legacy label when unknown.

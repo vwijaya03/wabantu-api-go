@@ -36,8 +36,12 @@ func (g *GeminiProvider) ID() string { return "gemini" }
 func (g *GeminiProvider) Available() bool { return g != nil && strings.TrimSpace(g.APIKey) != "" }
 
 type gPart struct {
-	Text       string    `json:"text,omitempty"`
-	InlineData *gInlined `json:"inlineData,omitempty"`
+	Text             string     `json:"text,omitempty"`
+	InlineData       *gInlined  `json:"inlineData,omitempty"`
+	FunctionCall     *gFuncCall `json:"functionCall,omitempty"`
+	FunctionResponse *gFuncResp `json:"functionResponse,omitempty"`
+	// ThoughtSignature must be echoed back unchanged on the model turn (Gemini 2.5 thinking).
+	ThoughtSignature string `json:"thoughtSignature,omitempty"`
 }
 type gInlined struct {
 	MimeType string `json:"mimeType"`
@@ -50,7 +54,10 @@ type gContent struct {
 type gReq struct {
 	SystemInstruction *gContent      `json:"systemInstruction,omitempty"`
 	Contents          []gContent     `json:"contents"`
+	Tools             []gTool        `json:"tools,omitempty"`
 	GenerationConfig  map[string]any `json:"generationConfig,omitempty"`
+
+	rawOut *gResp // when set, generate stores the decoded response and skips text extraction
 }
 type gResp struct {
 	Candidates []struct {
@@ -136,6 +143,10 @@ func (g *GeminiProvider) generate(ctx context.Context, model string, body gReq) 
 	}
 	u.InputTokens = gr.UsageMetadata.PromptTokenCount
 	u.OutputTokens = gr.UsageMetadata.CandidatesTokenCount
+	if body.rawOut != nil {
+		*body.rawOut = gr
+		return "", u, nil
+	}
 	var parts []string
 	for _, c := range gr.Candidates {
 		for _, p := range c.Content.Parts {

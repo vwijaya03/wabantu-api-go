@@ -691,8 +691,9 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	)
 
 	toolExec := NewCatalogToolExecutor(catalog)
-	reply, compUsage, usedTools, err := s.chatClientFor(ctx, payload.TenantID).GenerateSalesReplyWithCatalogTools(
+	reply, compUsage, usedTools, chatProvider, chatModel, err := s.generateChatReply(
 		ctx,
+		payload.TenantID,
 		route.Model,
 		SalesReplyRequest{
 			System:   sys,
@@ -705,9 +706,11 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		toolExec,
 	)
 	if err != nil {
-		rlog.Error("AI job: anthropic sales reply failed",
+		rlog.Error("AI job: sales reply failed",
 			"err", err,
-			"model", route.Model,
+			"provider", chatProvider,
+			"model", chatModel,
+			"routeModel", route.Model,
 			"tenantId", payload.TenantID,
 			"convoId", convo.ID,
 		)
@@ -716,6 +719,10 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 		sendErr := s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, fallbackText, "ai", payload.InboundMessageID, out)
 		return sendErr == nil, sendErr
+	}
+
+	if chatModel != "" {
+		route.Model = chatModel // record the model actually used (may be Gemini or a fallback)
 	}
 
 	groundedReply, wasGrounded, groundReason := groundLLMReply(reply, userText, profile, catalog, history,

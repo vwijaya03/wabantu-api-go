@@ -131,6 +131,9 @@ func isRetryable(classify func(error) bool, p Provider, err error) bool {
 	if err == nil || errors.Is(err, context.Canceled) {
 		return false
 	}
+	if errors.Is(err, ErrToolsUnsupported) {
+		return true // capability gap, not a request error: advance to the next link
+	}
 	if classify == nil {
 		classify = IsProviderRetryable
 	}

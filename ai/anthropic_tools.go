@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"encore.app/wabantu/shared/llm"
 	"encore.dev/rlog"
 	"github.com/anthropics/anthropic-sdk-go"
 )
@@ -209,4 +210,56 @@ func (c *AnthropicClient) callCatalogToolsRound(
 		Tools:     tools,
 		Messages:  messages,
 	})
+}
+
+// catalogToolDefsNeutral derives provider-neutral tool declarations from the Anthropic
+// definitions (single source of truth for names, descriptions and schemas).
+func catalogToolDefsNeutral() []llm.ToolDef {
+	defs := catalogToolDefinitions()
+	out := make([]llm.ToolDef, 0, len(defs))
+	for _, d := range defs {
+		t := d.OfTool
+		if t == nil {
+			continue
+		}
+		params := map[string]any{"type": "object", "properties": t.InputSchema.Properties}
+		if len(t.InputSchema.Required) > 0 {
+			params["required"] = t.InputSchema.Required
+		}
+		out = append(out, llm.ToolDef{Name: t.Name, Description: t.Description.Value, Parameters: params})
+	}
+	return out
+}
+
+// salesSystemText flattens the Anthropic system blocks for providers without cache blocks.
+func salesSystemText(req SalesReplyRequest) string {
+	hinted := req
+	if strings.TrimSpace(hinted.TaskHint) == "" {
+		hinted.TaskHint = catalogToolsTaskHint
+	}
+	blocks := buildSalesSystemBlocks(hinted)
+	parts := make([]string, 0, len(blocks))
+	for _, b := range blocks {
+		parts = append(parts, b.Text)
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+// salesMessagesNeutral mirrors buildSalesMessages (same turn limit, roles and merging).
+func salesMessagesNeutral(req SalesReplyRequest) []llm.Message {
+	var out []llm.Message
+	for _, m := range buildSalesMessages(req) {
+		role := "user"
+		if m.Role == anthropic.MessageParamRoleAssistant {
+			role = "assistant"
+		}
+		var text []string
+		for _, c := range m.Content {
+			if c.OfText != nil {
+				text = append(text, c.OfText.Text)
+			}
+		}
+		out = append(out, llm.Message{Role: role, Text: strings.Join(text, "\n")})
+	}
+	return out
 }

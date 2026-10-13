@@ -60,3 +60,29 @@ func (m *MockProvider) Vision(ctx context.Context, model string, _ []byte, _, _,
 	err := m.next(ctx)
 	return m.Reply, Usage{Provider: m.Name, Model: model, ImageCount: 1}, err
 }
+
+// ToolScript, if set, makes MockProvider a ToolCaller: it is called once per ChatWithTools
+// and may invoke exec to simulate tool rounds.
+type MockToolScript func(req ToolChatRequest, exec ToolExecutor) (ToolChatResponse, error)
+
+// MockToolProvider is a MockProvider that also implements ToolCaller.
+type MockToolProvider struct {
+	*MockProvider
+	Script  MockToolScript
+	LastReq ToolChatRequest
+}
+
+func (m *MockToolProvider) ChatWithTools(ctx context.Context, r ToolChatRequest, exec ToolExecutor) (ToolChatResponse, error) {
+	if err := m.next(ctx); err != nil {
+		return ToolChatResponse{Usage: Usage{Provider: m.Name, Model: r.Model}}, err
+	}
+	m.mu.Lock()
+	m.LastReq = r
+	m.mu.Unlock()
+	if m.Script == nil {
+		return ToolChatResponse{Text: m.Reply, Usage: Usage{Provider: m.Name, Model: r.Model}}, nil
+	}
+	out, err := m.Script(r, exec)
+	out.Usage.Provider, out.Usage.Model = m.Name, r.Model
+	return out, err
+}
