@@ -183,3 +183,9 @@ Errors (JSON `{code, message}`): `401 unauthenticated` (no/invalid session), `40
 Written on: simulator inbound, AI/system replies (incl. payment-proof result), owner manual reply, and owner order actions (approve/verify/reject/unblock/update/cancel), and broadcasts to simulator buyers (job payload carries `tenantId`; jobs queued before that change skip the mirror only).
 
 Rules (`firestore.rules`): read only if `request.auth.token.tenantId == tenantId` and the role is owner/staff/super_admin; `write: false` for all clients (the server writes with the service account).
+
+## Isolasi tenant pada tool LLM (Security L-2)
+
+Tool katalog (`search_catalog`, `get_product`) dijalankan oleh `CatalogToolExecutor` yang dibuat per job dari snapshot katalog tenant milik sesi/job (`ai/autoreply.go`, `NewCatalogToolExecutor(catalog)`). Executor tidak memegang koneksi DB, dan skema tool tidak punya parameter tenant/schema. Field tambahan seperti `tenantId`, `schema`, atau `search_path` di argumen tool diabaikan. Tool yang tidak dikenal ditolak. Loop Gemini dan path Anthropic meneruskan argumen apa adanya ke executor yang sama, dan `RunToolChat` me-resolve chain hanya dari tenantID pemanggil.
+
+Test: `ai/tool_tenant_isolation_test.go` (perlu `encore test`; dengan `go test` biasa paket `ai` panic di init Encore, jadi di box hanya dicek compile + vet) dan `shared/llm/tools_tenant_test.go` (jalan dengan `go test`).
