@@ -64,9 +64,11 @@ kini ber-`tag:super_admin` (admin-only). `GET /api/v1/flags/check/:key` tetap cl
 ### Aturan keamanan: `HandlerEnforcedRaw` adalah bagian dari security boundary
 
 - `adminauth.HandlerEnforcedRaw` membuat middleware `SessionKind` **melewatkan** pengecekan kind untuk endpoint raw tertentu (Encore membuang error middleware di endpoint raw → klien dapat 200 kosong). Endpoint di map ini **tidak** dilindungi middleware.
-- Endpoint raw baru di bawah `/api/v1/platform-admin/` **hanya boleh** ditambahkan ke map ini bila handler-nya sendiri menegakkan sesi admin (mis. memanggil `adminauth.MeAccess` / validasi token `typ:admin` + kind sesi Redis, dan menolak client & impersonation dengan 401) — atau bila endpoint itu memang sessionless (`SessionlessEndpoints`, exact match: login & bootstrap saja).
+- Isi saat ini: `auth.PlatformAdminMe` (MeAccess(MeAdmin)), `auth.PlatformAdminLogin` (cek portal), `auth.Me` & `auth.Reauth` (`adminauth.RawHandlerAccess` → client + impersonation; **admin → 401**), `auth.Logout` (semua kind boleh mengakhiri sesinya sendiri; ini satu-satunya logout untuk sesi admin).
+- Alasan: Encore membuang error middleware pada endpoint raw — sebelum fix, token admin di `/auth/me`, `/auth/reauth`, `/auth/logout` dapat **200 + body kosong** (handler tidak jalan; logout admin tidak menghapus sesi). `/auth/reauth` mengecek kind **sebelum** verifikasi password (bukan password oracle untuk akun admin).
+- Endpoint raw baru di bawah `/api/v1/platform-admin/` (atau endpoint raw lain) **hanya boleh** ditambahkan ke map ini bila handler-nya sendiri menegakkan sesi admin (mis. memanggil `adminauth.MeAccess` / validasi token `typ:admin` + kind sesi Redis, dan menolak client & impersonation dengan 401) — atau bila endpoint itu memang sessionless (`SessionlessEndpoints`, exact match: login & bootstrap saja).
 - Menambah entri tanpa enforcement di handler = bypass otorisasi. Perubahan map ini wajib review Security.
-- `TestPlatformAdminEndpointsComplete` menjaga sinkron: setiap route raw `/api/v1/platform-admin/*` harus terdaftar di `PlatformAdminEndpoints`, dan entri `HandlerEnforcedRaw` harus termasuk di sana; test gagal bila ada yang terlewat.
+- `TestPlatformAdminEndpointsComplete` menjaga sinkron: setiap route raw `/api/v1/platform-admin/*` harus terdaftar di `PlatformAdminEndpoints`. `TestHandlerEnforcedRawIsBounded`: setiap entri `HandlerEnforcedRaw` wajib endpoint raw di source dan berupa route platform-admin **atau** punya kebijakan `RawHandlerAccess`. `TestRawHandlerAccessMatrix`: matriks kind untuk me/reauth/logout.
 
 ## Lockout & rate limit (Redis, `adminauth.Guard`)
 

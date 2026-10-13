@@ -194,11 +194,28 @@ var PlatformAdminEndpoints = map[string]bool{
 }
 
 // HandlerEnforcedRaw are raw endpoints whose handler enforces the session kind itself
-// (PlatformAdminMe: MeAccess(MeAdmin) → 401; PlatformAdminLogin: portal check). The
+// (PlatformAdminMe: MeAccess(MeAdmin) → 401; PlatformAdminLogin: portal check; auth.Me /
+// auth.Reauth / auth.Logout: RawHandlerAccess). SECURITY BOUNDARY: see docs/ADMIN_AUTH.md. The
 // middleware defers to them because Encore drops middleware errors on raw endpoints.
 var HandlerEnforcedRaw = map[string]bool{
 	"auth.PlatformAdminMe":    true,
 	"auth.PlatformAdminLogin": true,
+	"auth.Me":                 true, // RawHandlerAccess: client + impersonation; admin → 401
+	"auth.Reauth":             true, // RawHandlerAccess: client + impersonation; admin → 401
+	"auth.Logout":             true, // RawHandlerAccess: any kind may end its own session
+}
+
+// RawHandlerAccess is the session-kind policy the client-portal raw auth handlers enforce
+// themselves (they are in HandlerEnforcedRaw, so the middleware does not). Admin sessions get
+// 401 on /auth/me and /auth/reauth (use /api/v1/platform-admin/*); logout ends any own session.
+func RawHandlerAccess(endpoint, kind string) error {
+	switch endpoint {
+	case "auth.Me", "auth.Reauth":
+		return MeAccess(MeClient, kind)
+	case "auth.Logout":
+		return nil // every (normalized) kind may end its own authenticated session
+	}
+	return ErrWrongTokenKind
 }
 
 // SessionlessEndpoints skip the session-kind check entirely (exact route identity): the admin

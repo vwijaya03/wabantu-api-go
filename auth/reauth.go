@@ -12,6 +12,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"encore.app/wabantu/audit"
+	"encore.app/wabantu/internal/adminauth"
 	"encore.app/wabantu/system"
 )
 
@@ -68,6 +69,12 @@ func Reauth(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if err := checkSessionKind(token, sess); err != nil {
+		writeError(w, http.StatusUnauthorized, "session tidak valid — silakan masuk ulang")
+		return
+	}
+	// Admin-portal sessions may not be re-issued here (checked before the password verify, so
+	// this is no password oracle for admin accounts). Handler-enforced: see HandlerEnforcedRaw.
+	if adminauth.RawHandlerAccess("auth.Reauth", sess.Kind) != nil {
 		writeError(w, http.StatusUnauthorized, "session tidak valid — silakan masuk ulang")
 		return
 	}

@@ -314,6 +314,10 @@ func Logout(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	if adminauth.RawHandlerAccess("auth.Logout", userData.SessionKind) != nil {
+		writeError(w, http.StatusUnauthorized, "not authenticated")
+		return
+	}
 	_ = destroySession(ctx, userData.AccountID, userData.SessionID)
 	audit.Log(ctx, userData.TenantID, userData.AccountID, "auth.logout", "account", userData.AccountID, nil)
 	revokeFirebaseAsync(ctx, userData.AccountID)
@@ -343,7 +347,7 @@ func serveMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Admin tokens are not accepted here; use GET /api/v1/platform-admin/me.
-	if adminauth.MeAccess(adminauth.MeClient, userData.SessionKind) != nil {
+	if adminauth.RawHandlerAccess("auth.Me", userData.SessionKind) != nil {
 		writeError(w, http.StatusUnauthorized, "not authenticated")
 		return
 	}

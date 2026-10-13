@@ -36,10 +36,64 @@ func TestPlatformAdminEndpointsComplete(t *testing.T) {
 	if found != len(PlatformAdminEndpoints) {
 		t.Errorf("found %d platform-admin endpoints in source, map has %d", found, len(PlatformAdminEndpoints))
 	}
-	// HandlerEnforcedRaw bypasses the middleware: it must stay a subset of the platform-admin routes.
+}
+
+// HandlerEnforcedRaw bypasses the middleware (security boundary): every entry must be a raw
+// endpoint in source, and either a platform-admin route (handler uses MeAccess/portal check) or
+// have an explicit RawHandlerAccess policy.
+func TestHandlerEnforcedRawIsBounded(t *testing.T) {
+	re := regexp.MustCompile(`//encore:api [^\n]*\braw\b[^\n]*\n(?://[^\n]*\n)*func (\w+)`)
+	raw := map[string]bool{}
+	root := filepath.Join("..", "..")
+	_ = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
+			return nil
+		}
+		b, _ := os.ReadFile(p)
+		for _, m := range re.FindAllStringSubmatch(string(b), -1) {
+			raw[filepath.Base(filepath.Dir(p))+"."+m[1]] = true
+		}
+		return nil
+	})
 	for id := range HandlerEnforcedRaw {
-		if !PlatformAdminEndpoints[id] {
-			t.Errorf("HandlerEnforcedRaw %s is not a platform-admin endpoint", id)
+		if !raw[id] {
+			t.Errorf("HandlerEnforcedRaw %s is not a raw endpoint in source", id)
+		}
+		if PlatformAdminEndpoints[id] {
+			continue
+		}
+		allowed := false
+		for _, k := range []string{KindClient, KindAdmin, KindImpersonation} {
+			if RawHandlerAccess(id, k) == nil {
+				allowed = true
+			}
+		}
+		if !allowed {
+			t.Errorf("HandlerEnforcedRaw %s has no RawHandlerAccess policy", id)
+		}
+	}
+}
+
+// Kind matrix for the client-portal raw auth handlers. Kind "" = legacy session (NormalizeKind →
+// client). No token at all: the handler's own
+// AuthenticateHTTP returns 401 before this policy (covered live).
+func TestRawHandlerAccessMatrix(t *testing.T) {
+	want := map[string]map[string]bool{ // endpoint → kind → allowed
+		"auth.Me":     {KindClient: true, KindImpersonation: true, KindAdmin: false, "": true},
+		"auth.Reauth": {KindClient: true, KindImpersonation: true, KindAdmin: false, "": true},
+		"auth.Logout": {KindClient: true, KindImpersonation: true, KindAdmin: true, "": true},
+		"auth.Other":  {KindClient: false, KindImpersonation: false, KindAdmin: false},
+	}
+	for ep, kinds := range want {
+		for k, ok := range kinds {
+			if got := RawHandlerAccess(ep, k) == nil; got != ok {
+				t.Errorf("RawHandlerAccess(%s, %q) allowed=%v, want %v", ep, k, got, ok)
+			}
+		}
+	}
+	for _, ep := range []string{"auth.Me", "auth.Reauth", "auth.Logout"} {
+		if !HandlerEnforcedRaw[ep] {
+			t.Errorf("%s must be handler-enforced (middleware errors are dropped on raw endpoints)", ep)
 		}
 	}
 }
@@ -115,9 +169,5 @@ func TestHandlerEnforcedRawMeRejectsNonAdmin(t *testing.T) {
 	if MeAccess(MeAdmin, KindAdmin) != nil {
 		t.Error("admin rejected by MeAccess")
 	}
-	for id := range HandlerEnforcedRaw {
-		if !PlatformAdminEndpoints[id] {
-			t.Errorf("%s handler-enforced but not a platform-admin endpoint", id)
-		}
-	}
+	// Non-platform-admin entries are bounded by TestHandlerEnforcedRawIsBounded.
 }
