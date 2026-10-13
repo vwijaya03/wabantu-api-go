@@ -131,7 +131,7 @@ Errors: `400` (bad sessionId/after), `401`, `403`.
 | Buyer sends transfer proof → OCR (Gemini, fallback Anthropic) → stored in `order.payment_proof_meta`, exposed as `proofCheck` | same POST with `image` | same | `ai/payment_proof.go` (`evaluatePaymentProofRules`, `applyPaymentProofResult`); derivation `internal/proofcheck` |
 | Owner approves → proof verified **and** order `completed` + finance income, one transaction | `POST /api/v1/orders/:id/approve` | auth; owner only (**Pantau/impersonation → 403**) | `order/approve.go` Approve; rules `internal/orderapprove` |
 
-Demo data: `go run ./scripts/cmd/demo-seed/` (DEMO ONLY; see header). Simulator session `reseller-demo` buys at the reseller price.
+Demo data: `go run ./scripts/cmd/demo-seed/` (DEMO ONLY; see header). Simulator session `reseller-demo` buys at the reseller price. The seed reads `accessToken` and `user.tenant.id` from the `{"success","data"}` envelope of `/auth/register` and `/auth/login` (a bare top-level body is still accepted). It also runs against a local `encore run` (`DEMO_BASE_URL=http://127.0.0.1:4000`).
 
 ---
 

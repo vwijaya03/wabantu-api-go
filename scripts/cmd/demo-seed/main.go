@@ -125,6 +125,27 @@ type authResp struct {
 	} `json:"user"`
 }
 
+// parseAuth reads register/login responses. The API wraps them in a
+// {"success":true,"data":{...}} envelope; a bare top-level body is still
+// accepted for older deployments.
+func parseAuth(b []byte) (token, tenantID string, err error) {
+	var env struct {
+		Data *authResp `json:"data"`
+		authResp
+	}
+	if err := json.Unmarshal(b, &env); err != nil {
+		return "", "", fmt.Errorf("decode auth response: %w", err)
+	}
+	ar := env.authResp
+	if env.Data != nil && env.Data.AccessToken != "" {
+		ar = *env.Data
+	}
+	if ar.AccessToken == "" || ar.User.Tenant == nil || ar.User.Tenant.ID == "" {
+		return "", "", errors.New("no token/tenant in auth response")
+	}
+	return ar.AccessToken, ar.User.Tenant.ID, nil
+}
+
 type priceType struct {
 	ID   string `json:"id"`
 	Code string `json:"code"`
@@ -164,23 +185,23 @@ func run() error {
 	c := &client{base: base, hc: &http.Client{Timeout: 30 * time.Second}}
 	email, pw := os.Getenv("DEMO_OWNER_EMAIL"), os.Getenv("DEMO_OWNER_PASSWORD")
 
-	var ar authResp
+	var ar json.RawMessage
 	st, err := c.do("POST", "/api/v1/auth/register", map[string]string{
 		"email": email, "password": pw, "name": "Owner Demo", "businessName": "Toko Demo WABantu", "slug": "toko-demo",
 	}, &ar)
 	if st == http.StatusConflict {
 		fmt.Println("tenant: already registered, logging in")
-		ar = authResp{}
+		ar = nil
 		_, err = c.do("POST", "/api/v1/auth/login", map[string]string{"email": email, "password": pw}, &ar)
 	}
 	if err != nil {
 		return err
 	}
-	if ar.AccessToken == "" || ar.User.Tenant == nil {
-		return errors.New("no token/tenant in auth response")
+	token, tenantID, err := parseAuth(ar)
+	if err != nil {
+		return err
 	}
-	c.token = ar.AccessToken
-	tenantID := ar.User.Tenant.ID
+	c.token = token
 	fmt.Println("tenant:", tenantID)
 
 	var pts struct{ Items []priceType }

@@ -41,3 +41,26 @@ func TestProductsTiered(t *testing.T) {
 		t.Fatal("missing tier must error")
 	}
 }
+
+func TestParseAuth(t *testing.T) {
+	cases := map[string]string{
+		"envelope":  `{"success":true,"data":{"accessToken":"tok","sessionType":"client","user":{"id":"u","tenant":{"id":"t1","slug":"s"}}}}`,
+		"top-level": `{"accessToken":"tok","user":{"tenant":{"id":"t1"}}}`,
+	}
+	for name, body := range cases {
+		tok, tid, err := parseAuth([]byte(body))
+		if err != nil || tok != "tok" || tid != "t1" {
+			t.Fatalf("%s: got %q %q %v", name, tok, tid, err)
+		}
+	}
+	for _, bad := range []string{
+		`{"success":true,"data":{"accessToken":"tok","user":{}}}`,
+		`{"success":true,"data":{"user":{"tenant":{"id":"t1"}}}}`,
+		`{}`,
+		`not json`,
+	} {
+		if _, _, err := parseAuth([]byte(bad)); err == nil {
+			t.Fatalf("expected error for %s", bad)
+		}
+	}
+}
