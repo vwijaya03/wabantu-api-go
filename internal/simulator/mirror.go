@@ -53,3 +53,15 @@ func Mirror(ctx context.Context, m *realtime.Mirror, q RowQuerier, qual Qualifie
 	}
 	m.State(ctx, tenantID, convoID, pricingAny, orderAny, orderID)
 }
+
+// MirrorBroadcast mirrors a broadcast stored in a simulator conversation. tenantID comes from
+// the broadcast job payload; jobs without it (queued before the field existed) skip the mirror.
+func MirrorBroadcast(ctx context.Context, m *realtime.Mirror, q RowQuerier, qual Qualifier,
+	tenantID, convoID, msgID, body string, at time.Time) bool {
+	if tenantID == "" || msgID == "" {
+		return false
+	}
+	Mirror(ctx, m, q, qual, tenantID, convoID,
+		&MirrorMsg{ID: msgID, Direction: "out", Author: "human", Type: "text", Text: body, Status: "sent", CreatedAt: at})
+	return true
+}

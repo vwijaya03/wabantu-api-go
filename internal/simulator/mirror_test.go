@@ -93,3 +93,26 @@ func TestMirrorSkipsNonSimulatorAndDisabled(t *testing.T) {
 		t.Fatalf("%v", f.docs)
 	}
 }
+
+func TestMirrorBroadcastUsesPayloadTenant(t *testing.T) {
+	f := &fw{docs: map[string]map[string]any{}}
+	m := &realtime.Mirror{W: f}
+	if !MirrorBroadcast(context.Background(), m, fakeDB(true), SchemaQualifier("t_abc"), "t1", "c1", "bm1", "Promo!", time.Now()) {
+		t.Fatal("expected mirror")
+	}
+	d := f.docs["tenants/t1/simConversations/c1/messages/bm1"]
+	if d == nil || d["text"] != "Promo!" || d["author"] != "human" || d["direction"] != "outbound" {
+		t.Fatalf("%v", f.docs)
+	}
+	// Legacy job without tenantId: delivered elsewhere, mirror skipped (no write, no panic).
+	f2 := &fw{docs: map[string]map[string]any{}}
+	if MirrorBroadcast(context.Background(), &realtime.Mirror{W: f2}, fakeDB(true), nil, "", "c1", "bm1", "x", time.Now()) || len(f2.docs) != 0 {
+		t.Fatal("must skip without tenantId")
+	}
+}
+
+func TestSchemaQualifier(t *testing.T) {
+	if SchemaQualifier("t_abc")("order") != `"t_abc"."order"` {
+		t.Fatal(SchemaQualifier("t_abc")("order"))
+	}
+}

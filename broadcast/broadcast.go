@@ -13,6 +13,8 @@ import (
 
 	appErrs "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/shared/entitlement"
+	"encore.app/wabantu/internal/realtime"
+	sim "encore.app/wabantu/internal/simulator"
 	"encore.app/wabantu/shared/pii"
 	"encore.app/wabantu/shared/whatsappchannel"
 	"encore.app/wabantu/shared/types"
@@ -30,6 +32,9 @@ const sendDelayMs = 200
 type BroadcastSendRequest struct {
 	TenantSchema string `json:"tenantSchema"`
 	CampaignID   string `json:"campaignId"`
+	// TenantID scopes the Firestore mirror (tenants/{tenantId}/...). Empty on jobs queued
+	// before this field existed: those still deliver, only the mirror is skipped.
+	TenantID string `json:"tenantId,omitempty"`
 }
 
 var BroadcastSendTopic = pubsub.NewTopic[BroadcastSendRequest]("broadcast-send", pubsub.TopicConfig{
@@ -150,6 +155,7 @@ func CreateCampaign(ctx context.Context, req *CreateCampaignRequest) (*CreateCam
 		_, _ = BroadcastSendTopic.Publish(ctx, BroadcastSendRequest{
 			TenantSchema: u.TenantSchema,
 			CampaignID:   camp.ID,
+			TenantID:     u.TenantID,
 		})
 	}
 
@@ -199,6 +205,7 @@ func SendCampaign(ctx context.Context, id string) error {
 	_, err = BroadcastSendTopic.Publish(ctx, BroadcastSendRequest{
 		TenantSchema: u.TenantSchema,
 		CampaignID:   id,
+		TenantID:     u.TenantID,
 	})
 	return err
 }
@@ -253,7 +260,7 @@ func handleBroadcastSend(ctx context.Context, req BroadcastSendRequest) error {
 		var sendErr error
 		if whatsappchannel.IsSimulatorPhone(phone) {
 			// Simulator buyer: store in its simulator conversation, never Meta.
-			sendErr = deliverSimulatorBroadcast(ctx, req.TenantSchema, phone, body, piiActive)
+			sendErr = deliverSimulatorBroadcast(ctx, req.TenantSchema, req.TenantID, phone, body, piiActive)
 		} else {
 			sendErr = sendToPhone(ctx, req.TenantSchema, phone, body)
 		}
@@ -350,7 +357,7 @@ func normalizePhone(p string) string {
 
 // deliverSimulatorBroadcast persists a broadcast to the buyer's simulator conversation so it
 // shows up via GET /api/v1/simulator/messages. It never calls Meta.
-func deliverSimulatorBroadcast(ctx context.Context, schema, phone, body string, piiActive bool) error {
+func deliverSimulatorBroadcast(ctx context.Context, schema, tenantID, phone, body string, piiActive bool) error {
 	var contactID string
 	var err error
 	if piiActive {
@@ -371,12 +378,17 @@ func deliverSimulatorBroadcast(ctx context.Context, schema, phone, body string, 
 		contactID, whatsappchannel.SimulatorProvider).Scan(&convID); err != nil {
 		return fmt.Errorf("simulator conversation not found")
 	}
-	if _, err := db.Exec(ctx, fmt.Sprintf(`
+	var msgID string
+	var createdAt time.Time
+	if err := db.QueryRow(ctx, fmt.Sprintf(`
 		INSERT INTO "%s".message (conversation_id, external_id, direction, author, type, body, metadata, status)
-		VALUES ($1, $2, 'out', 'human', 'text', $3, '{"source":"broadcast"}'::jsonb, 'sent')`, schema),
-		convID, whatsappchannel.SimulatorExternalID("bc"), body); err != nil {
+		VALUES ($1, $2, 'out', 'human', 'text', $3, '{"source":"broadcast"}'::jsonb, 'sent')
+		RETURNING id::text, created_at`, schema),
+		convID, whatsappchannel.SimulatorExternalID("bc"), body).Scan(&msgID, &createdAt); err != nil {
 		return fmt.Errorf("simulator store failed: %w", err)
 	}
+	sim.MirrorBroadcast(ctx, realtime.Default(realtime.LogfTo(rlog.Warn)), sim.SQLDB(db.Stdlib()),
+		sim.SchemaQualifier(schema), tenantID, convID, msgID, body, createdAt)
 	_, _ = db.Exec(ctx, fmt.Sprintf(`UPDATE "%s".conversation SET last_message_at=NOW(), last_message_preview=LEFT($1,280) WHERE id=$2`, schema), body, convID)
 	return nil
 }
