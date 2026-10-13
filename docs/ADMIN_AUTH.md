@@ -21,7 +21,14 @@ Token admin: JWT `typ:"admin"`, berlaku 60 menit; sesi Redis `kind:"admin"` deng
 
 ### Profil (`me`)
 - `GET /api/v1/platform-admin/me` — HANYA token admin (sesi `kind:admin`, belum lewat 2 jam) →
-  `200 {"id","email","name","role"}`. Token client/impersonation → `401 {"error":"not authenticated"}`.
+  `200 {"id","email","name","role"}`. Token client/impersonation → ditolak (middleware session-kind
+  `403 permission_denied`, atau `401` dari handler).
+- Klasifikasi: `/api/v1/platform-admin/*` = endpoint admin (prefix admin kedua, selain `/api/v1/admin/*`),
+  dicocokkan lewat identitas route Encore yang sudah di-match (`auth.PlatformAdminMe`, `auth.PlatformAdminLogin`;
+  `adminauth.PlatformAdminEndpoints`), bukan URL mentah — variasi `..`, `%2F`, huruf besar, trailing slash
+  tidak mengubah keputusan. Tanpa sesi (exact match): hanya `auth.PlatformAdminLogin` dan
+  `auth.BootstrapPlatformAdmin` (`adminauth.SessionlessEndpoints`). Bug sebelumnya: token admin ke `/me`
+  ditolak middleware sebagai "client session required" (asal: d37f17e, d495df0; master 0ad6b5a tidak terdampak).
 - `GET /api/v1/auth/me` — token client dan impersonation tetap jalan; token admin → `401`
   (tidak lagi dikecualikan).
 

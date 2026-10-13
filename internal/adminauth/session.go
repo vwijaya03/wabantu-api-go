@@ -178,7 +178,36 @@ func IsAdminEndpoint(path string, superAdminTag bool) bool {
 // RequestAccess is the global middleware decision. Private service-to-service endpoints
 // (/api/v1/internal/*, not externally routable) are exempt so admin handlers can call them.
 func RequestAccess(path string, superAdminTag bool, kind string) error {
-	admin := IsAdminEndpoint(path, superAdminTag)
+	return RequestAccessEndpoint("", path, superAdminTag, kind)
+}
+
+// PlatformAdminPathPrefix is the second admin prefix (platform-admin portal).
+const PlatformAdminPathPrefix = "/api/v1/platform-admin/"
+
+// PlatformAdminEndpoints are the endpoints routed under PlatformAdminPathPrefix, keyed by the
+// Encore route identity "service.Endpoint" (what the router matched, not the raw URL), so
+// path variants ("..", "%2F", case, trailing slash) can never change the classification.
+// TestPlatformAdminEndpointsComplete keeps this in sync with the source.
+var PlatformAdminEndpoints = map[string]bool{
+	"auth.PlatformAdminLogin": true,
+	"auth.PlatformAdminMe":    true,
+}
+
+// SessionlessEndpoints skip the session-kind check entirely (exact route identity): the admin
+// login and the one-time bootstrap. Both authenticate by their own means.
+var SessionlessEndpoints = map[string]bool{
+	"auth.PlatformAdminLogin":     true,
+	"auth.BootstrapPlatformAdmin": true,
+}
+
+// RequestAccessEndpoint is RequestAccess with the matched Encore endpoint ("service.Endpoint").
+// /api/v1/platform-admin/* endpoints are admin endpoints: only admin-kind sessions pass;
+// client and impersonation sessions are rejected.
+func RequestAccessEndpoint(endpoint, path string, superAdminTag bool, kind string) error {
+	if SessionlessEndpoints[endpoint] {
+		return nil
+	}
+	admin := IsAdminEndpoint(path, superAdminTag) || PlatformAdminEndpoints[endpoint]
 	if !admin && (strings.HasPrefix(path, "/api/v1/internal/") || PrivatePaths[path]) {
 		return nil
 	}
