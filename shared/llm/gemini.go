@@ -73,6 +73,9 @@ func (e *APIError) Error() string { return fmt.Sprintf("gemini: http %d: %s", e.
 // Retryable reports 429/5xx.
 func (e *APIError) Retryable() bool { return e.Status == 429 || e.Status >= 500 }
 
+// IsRetryable implements RetryClassifier for Gemini (HTTP status + transport errors).
+func (g *GeminiProvider) IsRetryable(err error) bool { return IsProviderRetryable(err) }
+
 func (g *GeminiProvider) model(m string) string {
 	if strings.TrimSpace(m) == "" {
 		return g.DefaultModel
@@ -106,7 +109,14 @@ func (g *GeminiProvider) generate(ctx context.Context, model string, body gReq) 
 		return "", u, fmt.Errorf("gemini: %w", err)
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	raw, rerr := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if rerr != nil {
+		// %w keeps io.ErrUnexpectedEOF / timeouts visible to IsProviderRetryable.
+		if resp.StatusCode/100 != 2 {
+			return "", u, fmt.Errorf("gemini: read error body (http %d): %w", resp.StatusCode, rerr)
+		}
+		return "", u, fmt.Errorf("gemini: read body: %w", rerr)
+	}
 	if resp.StatusCode/100 != 2 {
 		return "", u, &APIError{Status: resp.StatusCode, Body: string(raw)}
 	}

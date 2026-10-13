@@ -1,8 +1,11 @@
 package llm
 
-import "context"
+import (
+	"context"
+	"sync"
+)
 
-// MockProvider is a scripted Provider for tests across packages (QA-01).
+// MockProvider is a scripted Provider for tests across packages (QA-01). Safe for concurrent use.
 type MockProvider struct {
 	Name  string
 	Reply string
@@ -12,11 +15,22 @@ type MockProvider struct {
 	Unavailable bool
 	// Errs, if set, is consumed per call before Err.
 	Errs []error
+
+	mu sync.Mutex
 }
+
+func (m *MockProvider) ID() string { return m.Name }
 
 func (m *MockProvider) Available() bool { return !m.Unavailable }
 
-func (m *MockProvider) next() error {
+// next records a call and returns the scripted error; a done ctx wins (mock respects ctx).
+func (m *MockProvider) next(ctx context.Context) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.Calls++
+	if ctx != nil && ctx.Err() != nil {
+		return ctx.Err()
+	}
 	if len(m.Errs) > 0 {
 		e := m.Errs[0]
 		m.Errs = m.Errs[1:]
@@ -25,16 +39,24 @@ func (m *MockProvider) next() error {
 	return m.Err
 }
 
-func (m *MockProvider) ID() string { return m.Name }
-func (m *MockProvider) Chat(_ context.Context, r ChatRequest) (ChatResponse, error) {
-	m.Calls++
-	return ChatResponse{Text: m.Reply, Usage: Usage{Provider: m.Name, Model: r.Model}}, m.next()
+// CallCount returns Calls under the lock.
+func (m *MockProvider) CallCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.Calls
 }
-func (m *MockProvider) Complete(_ context.Context, model, _, _ string, _ int64) (string, Usage, error) {
-	m.Calls++
-	return m.Reply, Usage{Provider: m.Name, Model: model}, m.next()
+
+func (m *MockProvider) Chat(ctx context.Context, r ChatRequest) (ChatResponse, error) {
+	err := m.next(ctx)
+	return ChatResponse{Text: m.Reply, Usage: Usage{Provider: m.Name, Model: r.Model}}, err
 }
-func (m *MockProvider) Vision(_ context.Context, model string, _ []byte, _, _, _ string) (string, Usage, error) {
-	m.Calls++
-	return m.Reply, Usage{Provider: m.Name, Model: model, ImageCount: 1}, m.next()
+
+func (m *MockProvider) Complete(ctx context.Context, model, _, _ string, _ int64) (string, Usage, error) {
+	err := m.next(ctx)
+	return m.Reply, Usage{Provider: m.Name, Model: model}, err
+}
+
+func (m *MockProvider) Vision(ctx context.Context, model string, _ []byte, _, _, _ string) (string, Usage, error) {
+	err := m.next(ctx)
+	return m.Reply, Usage{Provider: m.Name, Model: model, ImageCount: 1}, err
 }
