@@ -17,7 +17,9 @@ type modelPricing struct {
 const defaultSonnetModel = "claude-sonnet-4-6"
 
 var pricingTable = map[string]modelPricing{
+	"claude-haiku-4-5":           {InputPer1M: 1.00, OutputPer1M: 5.00},
 	"claude-haiku-4-5-20251001":  {InputPer1M: 1.00, OutputPer1M: 5.00},
+	"claude-sonnet-4-5":          {InputPer1M: 3.00, OutputPer1M: 15.00},
 	"claude-sonnet-4-6":          {InputPer1M: 3.00, OutputPer1M: 15.00},
 	"claude-opus-4-7":            {InputPer1M: 5.00, OutputPer1M: 25.00},
 	"claude-sonnet-4-5-20250929": {InputPer1M: 3.00, OutputPer1M: 15.00},
@@ -27,7 +29,13 @@ var pricingTable = map[string]modelPricing{
 	"claude-3-opus-20240229":     {InputPer1M: 15.00, OutputPer1M: 75.00},
 	"claude-3-haiku-20240307":    {InputPer1M: 0.25, OutputPer1M: 1.25},
 	// Gemini Developer API paid tier, Standard, text (ai.google.dev/gemini-api/docs/pricing, 2026-10-09).
+	// 2.5 Pro uses the <=200k prompt tier; the long-context tier is not modeled.
 	"gemini-3.1-flash-lite": {InputPer1M: 0.25, OutputPer1M: 1.50},
+	"gemini-2.5-flash-lite": {InputPer1M: 0.10, OutputPer1M: 0.40},
+	"gemini-2.5-flash":      {InputPer1M: 0.30, OutputPer1M: 2.50},
+	"gemini-2.5-pro":        {InputPer1M: 1.25, OutputPer1M: 10.00},
+	// OpenAI embeddings: input only (platform.openai.com/docs/pricing).
+	"text-embedding-3-small": {InputPer1M: 0.02, OutputPer1M: 0},
 }
 
 // EstimateTokenCost returns the estimated USD cost for a given model and token counts.
