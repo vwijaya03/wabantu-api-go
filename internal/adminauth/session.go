@@ -203,7 +203,12 @@ var HandlerEnforcedRaw = map[string]bool{
 	"auth.Me":                 true, // RawHandlerAccess: client + impersonation; admin → 401
 	"auth.Reauth":             true, // RawHandlerAccess: client only; admin/impersonation → 401
 	"auth.Logout":             true, // RawHandlerAccess: any kind may end its own session
+	"auth.FirebaseToken":      true, // RawHandlerAccess: client only; admin → 401, impersonation → 403
 }
+
+// ErrImpersonationForbidden → 403: the endpoint exists for the token's portal but is not
+// available while impersonating (e.g. Firebase custom tokens: their uid is the admin account).
+var ErrImpersonationForbidden = errors.New("tidak tersedia saat pantau (impersonation)")
 
 // RawHandlerAccess is the session-kind policy the client-portal raw auth handlers enforce
 // themselves (they are in HandlerEnforcedRaw, so the middleware does not): /auth/me client +
@@ -221,6 +226,16 @@ func RawHandlerAccess(endpoint, kind string) error {
 		return nil
 	case "auth.Logout":
 		return nil // every (normalized) kind may end its own authenticated session
+	case "auth.FirebaseToken":
+		// Client only (CTO option B, 2026-10-13): an impersonation mint would carry the tenant
+		// claim under the admin's uid. Admin → 401 (wrong portal), impersonation → 403.
+		switch NormalizeKind(kind) {
+		case KindClient:
+			return nil
+		case KindImpersonation:
+			return ErrImpersonationForbidden
+		}
+		return ErrWrongTokenKind
 	}
 	return ErrWrongTokenKind
 }

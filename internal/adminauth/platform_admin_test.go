@@ -1,6 +1,7 @@
 package adminauth
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -79,10 +80,11 @@ func TestHandlerEnforcedRawIsBounded(t *testing.T) {
 // AuthenticateHTTP returns 401 before this policy (covered live).
 func TestRawHandlerAccessMatrix(t *testing.T) {
 	want := map[string]map[string]bool{ // endpoint → kind → allowed
-		"auth.Me":     {KindClient: true, KindImpersonation: true, KindAdmin: false, "": true},
-		"auth.Reauth": {KindClient: true, KindImpersonation: false, KindAdmin: false, "": true},
-		"auth.Logout": {KindClient: true, KindImpersonation: true, KindAdmin: true, "": true},
-		"auth.Other":  {KindClient: false, KindImpersonation: false, KindAdmin: false},
+		"auth.Me":            {KindClient: true, KindImpersonation: true, KindAdmin: false, "": true},
+		"auth.Reauth":        {KindClient: true, KindImpersonation: false, KindAdmin: false, "": true},
+		"auth.Logout":        {KindClient: true, KindImpersonation: true, KindAdmin: true, "": true},
+		"auth.FirebaseToken": {KindClient: true, KindImpersonation: false, KindAdmin: false, "": true},
+		"auth.Other":         {KindClient: false, KindImpersonation: false, KindAdmin: false},
 	}
 	for ep, kinds := range want {
 		for k, ok := range kinds {
@@ -91,7 +93,13 @@ func TestRawHandlerAccessMatrix(t *testing.T) {
 			}
 		}
 	}
-	for _, ep := range []string{"auth.Me", "auth.Reauth", "auth.Logout"} {
+	if !errors.Is(RawHandlerAccess("auth.FirebaseToken", KindImpersonation), ErrImpersonationForbidden) {
+		t.Error("firebase-token impersonation must be ErrImpersonationForbidden (403)")
+	}
+	if !errors.Is(RawHandlerAccess("auth.FirebaseToken", KindAdmin), ErrWrongTokenKind) {
+		t.Error("firebase-token admin must be ErrWrongTokenKind (401)")
+	}
+	for _, ep := range []string{"auth.Me", "auth.Reauth", "auth.Logout", "auth.FirebaseToken"} {
 		if !HandlerEnforcedRaw[ep] {
 			t.Errorf("%s must be handler-enforced (middleware errors are dropped on raw endpoints)", ep)
 		}
