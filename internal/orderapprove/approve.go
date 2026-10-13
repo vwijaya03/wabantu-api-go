@@ -40,6 +40,9 @@ var (
 	ErrCancelled = &Error{Kind: "conflict", Message: "pesanan sudah dibatalkan"}
 	ErrBlocked   = &Error{Kind: "conflict", Message: "bukti pembayaran diblokir; buka blokir dulu"}
 	ErrDraft     = &Error{Kind: "conflict", Message: "pesanan masih draft; konfirmasi pesanan dulu"}
+	// ErrStale: the caller's expectedUpdatedAt no longer matches (order changed since the panel
+	// loaded it). Raised from the atomic guarded UPDATE, never from a read-then-compare.
+	ErrStale = &Error{Kind: "conflict", Message: "pesanan berubah, muat ulang"}
 )
 
 // Decide applies the approve rules to a locked order row.
@@ -70,6 +73,7 @@ func Decide(s State) (Decision, *Error) {
 type Store interface {
 	LockOrder(ctx context.Context) (State, bool, error) // found=false → not found
 	// CompleteVerified sets payment_status=verified (keeping an earlier verifier) and status=completed.
+	// With an expected updated_at it must be ONE guarded UPDATE and return ErrStaleRow on 0 rows.
 	CompleteVerified(ctx context.Context) error
 	// RecordIncome inserts the finance income row (idempotent per order).
 	RecordIncome(ctx context.Context) error
@@ -80,6 +84,10 @@ type Store interface {
 }
 
 var ErrNotFound = errors.New("order not found")
+
+// ErrStaleRow is returned by Store.CompleteVerified when its guarded UPDATE
+// (WHERE id = $1 AND updated_at = $expected) affected 0 rows. Run maps it to ErrStale (409).
+var ErrStaleRow = errors.New("order changed (updated_at guard)")
 
 // Result reports what Run did.
 type Result struct {
@@ -114,6 +122,9 @@ func Run(ctx context.Context, st Store) (res Result, err error) {
 		return res, derr
 	}
 	if err := st.CompleteVerified(ctx); err != nil {
+		if errors.Is(err, ErrStaleRow) {
+			return res, ErrStale
+		}
 		return res, err
 	}
 	if err := st.RecordIncome(ctx); err != nil {

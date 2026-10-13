@@ -6,10 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	"encore.dev/beta/errs"
 	"encore.dev/rlog"
 
+	"encore.app/wabantu/audit"
 	"encore.app/wabantu/finance"
 	"encore.app/wabantu/internal/orderapprove"
 	"encore.app/wabantu/inventory"
@@ -24,14 +27,77 @@ import (
 // completed order returns 200 without writing (no duplicate income). An order without a
 // payment proof → 409. The Firestore mirror runs after commit. Contract: docs/API_AI_CONFIG.md §4.
 //
+// ApproveParams: optional query parameter ?expectedUpdatedAt= (a query field, not a JSON body,
+// so existing clients that POST without a body keep working: Encore rejects a missing body
+// when a params struct has body fields). ExpectedUpdatedAt (RFC3339Nano, the order's
+// updatedAt as returned by GET) arms the atomic stale guard: the completing UPDATE only
+// matches WHERE id = $1 AND updated_at = $expected; 0 rows → 409 "pesanan berubah, muat ulang".
+// Absent → previous behaviour.
+type ApproveParams struct {
+	ExpectedUpdatedAt string `query:"expectedUpdatedAt"`
+}
+
+// auditLog is a seam for tests.
+var auditLog = audit.Log
+
+// approveGate: owner only, never from a Pantau (impersonation) session.
+func approveGate(u *types.AuthUser) error {
+	if u != nil && u.Impersonating {
+		return appErrs.Forbidden("tidak tersedia saat pantau (impersonation)")
+	}
+	if !u.CanPerformOwnerActions() {
+		return appErrs.Forbidden("owner access required")
+	}
+	return nil
+}
+
+func parseExpectedUpdatedAt(p *ApproveParams) (*time.Time, error) {
+	if p == nil || strings.TrimSpace(p.ExpectedUpdatedAt) == "" {
+		return nil, nil
+	}
+	t, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(p.ExpectedUpdatedAt))
+	if err != nil {
+		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "expectedUpdatedAt harus RFC3339Nano"}
+	}
+	return &t, nil
+}
+
+func sessionKindOf(u *types.AuthUser) string {
+	if u != nil && u.Impersonating {
+		return "impersonation"
+	}
+	return "client"
+}
+
+// approveAuditChanges: ids and statuses only — no image, bank, amount or buyer PII.
+func approveAuditChanges(u *types.AuthUser, orderID string, prev orderapprove.State, after *Order) map[string]any {
+	m := map[string]any{
+		"account_id":            u.AccountID,
+		"session_kind":          sessionKindOf(u),
+		"order_id":              orderID,
+		"status_before":         prev.Status,
+		"payment_status_before": prev.PaymentStatus,
+		"proof_id":              prev.ProofMessageID,
+	}
+	if after != nil {
+		m["status_after"] = after.Status
+		m["payment_status_after"] = after.PaymentStatus
+	}
+	return m
+}
+
 //encore:api auth method=POST path=/api/v1/orders/:id/approve
-func Approve(ctx context.Context, id string) (*Order, error) {
+func Approve(ctx context.Context, id string, p *ApproveParams) (*Order, error) {
 	u, err := getUser()
 	if err != nil {
 		return nil, err
 	}
-	if !u.CanPerformOwnerActions() {
-		return nil, appErrs.Forbidden("owner access required")
+	if err := approveGate(u); err != nil {
+		return nil, err
+	}
+	expected, err := parseExpectedUpdatedAt(p)
+	if err != nil {
+		return nil, err
 	}
 	if err := finance.CheckCurrentPeriodUnlocked(ctx, u.TenantSchema); err != nil {
 		return nil, err
@@ -49,7 +115,7 @@ func Approve(ctx context.Context, id string) (*Order, error) {
 	if err != nil {
 		return nil, appErrs.Internal("begin transaction failed")
 	}
-	st := &approveTxStore{ctx: ctx, tx: tx, u: u, id: id}
+	st := &approveTxStore{ctx: ctx, tx: tx, u: u, id: id, expected: expected}
 	res, err := orderapprove.Run(ctx, st)
 	if err != nil {
 		var ae *orderapprove.Error
@@ -75,6 +141,7 @@ func Approve(ctx context.Context, id string) (*Order, error) {
 	}
 	if res.Decision == orderapprove.Proceed {
 		rlog.Info("order approved", "orderId", o.ID, "actor", u.AccountID, "prevStatus", res.Prev.Status, "prevPayment", res.Prev.PaymentStatus)
+		auditLog(ctx, u.TenantID, u.AccountID, "order.approve", "order", o.ID, approveAuditChanges(u, o.ID, res.Prev, o))
 	}
 	mirrorOrderState(ctx, u, o.ConversationID)
 	return o, nil
@@ -91,11 +158,12 @@ func loadOrderByID(ctx context.Context, schema, id string) (*Order, error) {
 
 // approveTxStore implements orderapprove.Store on one *sql.Tx.
 type approveTxStore struct {
-	ctx   context.Context
-	tx    *sql.Tx
-	u     *types.AuthUser
-	id    string
-	order Order
+	ctx      context.Context
+	tx       *sql.Tx
+	u        *types.AuthUser
+	id       string
+	expected *time.Time // optional stale guard (RFC3339Nano from the client)
+	order    Order
 }
 
 func (s *approveTxStore) LockOrder(ctx context.Context) (orderapprove.State, bool, error) {
@@ -126,8 +194,10 @@ func applyPaymentProofMetaTo(pm *PaymentProofMeta, raw []byte, st *orderapprove.
 	}
 }
 
-func (s *approveTxStore) CompleteVerified(ctx context.Context) error {
-	o, err := scanOrder(s.tx.QueryRowContext(ctx, fmt.Sprintf(`
+// completeVerifiedSQL is ONE statement: exactly the path id in the session tenant's schema,
+// plus (when $3 is non-NULL) the atomic updated_at guard. No read-then-compare.
+func completeVerifiedSQL(schema string) string {
+	return fmt.Sprintf(`
 		UPDATE "%s"."order" SET
 			payment_status = 'verified',
 			payment_proof_verified_at = COALESCE(payment_proof_verified_at, NOW()),
@@ -135,7 +205,19 @@ func (s *approveTxStore) CompleteVerified(ctx context.Context) error {
 			status = 'completed',
 			updated_at = NOW()
 		WHERE id::text = $1 AND deleted_at IS NULL
-		RETURNING %s`, s.u.TenantSchema, orderSelectCols("")), s.id, s.u.AccountID).Scan)
+		  AND ($3::timestamptz IS NULL OR updated_at = $3::timestamptz)
+		RETURNING %s`, schema, orderSelectCols(""))
+}
+
+func (s *approveTxStore) CompleteVerified(ctx context.Context) error {
+	var expected any
+	if s.expected != nil {
+		expected = s.expected.UTC()
+	}
+	o, err := scanOrder(s.tx.QueryRowContext(ctx, completeVerifiedSQL(s.u.TenantSchema), s.id, s.u.AccountID, expected).Scan)
+	if errors.Is(err, sql.ErrNoRows) {
+		return orderapprove.ErrStaleRow // row is locked FOR UPDATE and exists → guard mismatch
+	}
 	if err != nil {
 		return fmt.Errorf("approve order: %w", err)
 	}

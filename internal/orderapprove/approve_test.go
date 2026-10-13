@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -45,6 +46,7 @@ type fakeStore struct {
 	committedIncome    int
 	committedCompleted bool
 	pendingCompleted   bool
+	staleRow           bool
 }
 
 func (f *fakeStore) step(n string) error {
@@ -58,6 +60,10 @@ func (f *fakeStore) LockOrder(context.Context) (State, bool, error) {
 	return f.state, f.found, f.step("lock")
 }
 func (f *fakeStore) CompleteVerified(context.Context) error {
+	if f.staleRow {
+		f.calls = append(f.calls, "complete-stale")
+		return ErrStaleRow
+	}
 	f.pendingCompleted = true
 	return f.step("complete")
 }
@@ -122,5 +128,25 @@ func TestRunRejectsAndNotFound(t *testing.T) {
 	// Another tenant's order is invisible in this tenant's schema → not found.
 	if _, err := Run(context.Background(), &fakeStore{found: false}); !errors.Is(err, ErrNotFound) {
 		t.Fatal(err)
+	}
+}
+
+// Guarded UPDATE affected 0 rows → ErrStale (409 "pesanan berubah, muat ulang"), rolled back,
+// no income, no buyer message.
+func TestRunStaleGuardIs409AndRollsBack(t *testing.T) {
+	f := &fakeStore{state: State{Status: "draft", PaymentStatus: "proof_submitted", ProofMessageID: "m1"}, found: true, staleRow: true}
+	_, err := Run(context.Background(), f)
+	if err != ErrStale {
+		t.Fatalf("err = %v, want ErrStale", err)
+	}
+	if f.committedCompleted || f.committedIncome != 0 {
+		t.Fatal("stale approve must not commit")
+	}
+	want := []string{"lock", "complete-stale", "rollback"}
+	if strings.Join(f.calls, ",") != strings.Join(want, ",") {
+		t.Fatalf("calls %v want %v", f.calls, want)
+	}
+	if ErrStale.Message != "pesanan berubah, muat ulang" || ErrStale.Kind != "conflict" {
+		t.Fatal("ErrStale contract")
 	}
 }

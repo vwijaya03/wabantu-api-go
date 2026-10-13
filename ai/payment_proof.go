@@ -68,6 +68,10 @@ func processPaymentProofJob(ctx context.Context, job *PaymentProofJob) error {
 	}
 
 	target, payableCount, err := resolvePaymentTargetOrder(ctx, ts, job.TenantSchema, scope, job.InboundMessageID)
+	if ask, ok := asAskOrder(err); ok {
+		rlog.Info("payment proof target ambiguous: asking buyer", "conversationId", job.ConversationID, "refs", ask.Refs)
+		return sendPaymentProofOutbound(ctx, ts, job, paymentProofAskOrderReply(ask.Refs))
+	}
 	if err != nil {
 		return err
 	}
@@ -189,6 +193,19 @@ func resolvePaymentTargetOrder(ctx context.Context, ts tenantScopedQuerier, tena
 		return nil, 0, err
 	}
 	if target != nil {
+		// A previously rejected order is not a safe implicit target when a newer order exists or
+		// this burst starts a new order: ask the buyer instead (see payment_proof_route.go).
+		if strings.EqualFold(strings.TrimSpace(target.PaymentStatus), "rejected") {
+			latest, _ := loadLatestOrderForContact(ctx, ts, tenantSchema, scope)
+			imageAt := time.Now()
+			if msg != nil && !msg.CreatedAt.IsZero() {
+				imageAt = msg.CreatedAt
+			}
+			history, _ := loadHistory(ctx, ts, scope.ConversationID, 12)
+			if proofTargetSuperseded(target, latest, burstHasNewOrderIntent(history, imageAt)) {
+				return nil, count, &errPaymentProofAskOrder{Refs: askOrderRefs(target, latest)}
+			}
+		}
 		return target, count, nil
 	}
 	history, _ := loadHistory(ctx, ts, scope.ConversationID, 12)
