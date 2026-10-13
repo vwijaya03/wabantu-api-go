@@ -77,7 +77,7 @@ func (g *Registry) Candidates(ctx context.Context, tenantID string, fn Function)
 	if g.Resolver != nil {
 		c, err := g.Resolver.Resolve(ctx, fn, tenantID)
 		if err != nil {
-			Logf("llm: config resolve failed fn=%s tenant=%s, using code default: %v", fn, tenantID, err)
+			Logf("llm: config resolve failed fn=%s tenant=%s, using code default: %s", fn, tenantID, TrimForLog(errString(err), maxErrLog))
 		}
 		cfg = c
 	}
@@ -96,6 +96,10 @@ func (g *Registry) usable(chain []ChainLink, fn Function, tenantID string) []Can
 		p, ok := g.Get(l.Provider)
 		if !ok {
 			logSkip(l.Provider, fn, tenantID, "not registered")
+			continue
+		}
+		if err := ValidateModel(l.Provider, l.Model); err != nil {
+			logSkip(l.Provider, fn, tenantID, "configured with a non-allowlisted model")
 			continue
 		}
 		if a, ok := p.(Availability); ok && !a.Available() {
@@ -174,7 +178,7 @@ func (g *Registry) Run(ctx context.Context, tenantID string, fn Function,
 			return res, err
 		}
 		if i < len(cands)-1 {
-			Logf("llm: fn=%s tenant=%s provider %s failed (retryable), trying next: %v", fn, tenantID, c.Provider.ID(), err)
+			Logf("llm: fn=%s tenant=%s provider %s failed (retryable), trying next: %s", fn, tenantID, c.Provider.ID(), TrimForLog(errString(err), maxErrLog))
 		}
 	}
 	return res, err

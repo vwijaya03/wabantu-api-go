@@ -144,12 +144,12 @@ func TestPaymentOCRCodeDefaultIsAnthropic(t *testing.T) {
 func TestTenantOverrideForPaymentOCR(t *testing.T) {
 	st := NewMemoryStore()
 	st.Set(FunctionConfig{Function: FnPaymentOCR, Chain: demoChain})
-	st.Set(FunctionConfig{Function: FnPaymentOCR, TenantID: "t1", Chain: []ChainLink{{Provider: "anthropic", Model: "claude-sonnet"}}})
+	st.Set(FunctionConfig{Function: FnPaymentOCR, TenantID: "t1", Chain: []ChainLink{{Provider: "anthropic", Model: "claude-sonnet-4-5"}}})
 	r := NewRegistry(NewResolver(st, 0))
 	r.Register(&MockProvider{Name: "gemini"})
 	r.Register(&MockProvider{Name: "anthropic"})
 	p, m, _ := r.For(context.Background(), "t1", FnPaymentOCR)
-	if p.ID() != "anthropic" || m != "claude-sonnet" {
+	if p.ID() != "anthropic" || m != "claude-sonnet-4-5" {
 		t.Fatalf("%s %s", p.ID(), m)
 	}
 	p, _, _ = r.For(context.Background(), "t2", FnPaymentOCR)

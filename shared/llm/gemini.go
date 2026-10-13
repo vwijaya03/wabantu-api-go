@@ -68,7 +68,11 @@ type APIError struct {
 	Body   string
 }
 
-func (e *APIError) Error() string { return fmt.Sprintf("gemini: http %d: %s", e.Status, e.Body) }
+// Error trims the upstream body: Gemini error payloads can be large and may echo request
+// fragments, so logs only get a bounded prefix. The full body stays in e.Body.
+func (e *APIError) Error() string {
+	return fmt.Sprintf("gemini: http %d: %s", e.Status, TrimForLog(e.Body, maxErrBodyLog))
+}
 
 // Retryable reports 429/5xx.
 func (e *APIError) Retryable() bool { return e.Status == 429 || e.Status >= 500 }
@@ -86,6 +90,10 @@ func (g *GeminiProvider) model(m string) string {
 func (g *GeminiProvider) generate(ctx context.Context, model string, body gReq) (string, Usage, error) {
 	model = g.model(model)
 	u := Usage{Provider: g.ID(), Model: model}
+	// The model is interpolated into the URL path: only allowlisted ids are accepted.
+	if err := ValidateModel(g.ID(), model); err != nil {
+		return "", u, err
+	}
 	if strings.TrimSpace(g.APIKey) == "" {
 		return "", u, fmt.Errorf("gemini: API key not configured")
 	}
@@ -189,7 +197,8 @@ func (g *GeminiProvider) Vision(ctx context.Context, model string, img []byte, m
 			{Text: user},
 			{InlineData: &gInlined{MimeType: mime, Data: base64.StdEncoding.EncodeToString(img)}},
 		}}},
-		GenerationConfig: map[string]any{"temperature": 0.1},
+		// All vision prompts (payment proof, product match, imports) expect JSON.
+		GenerationConfig: map[string]any{"temperature": 0.1, "responseMimeType": "application/json"},
 	})
 	u.ImageCount = 1
 	return text, u, err

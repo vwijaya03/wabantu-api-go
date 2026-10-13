@@ -70,7 +70,7 @@ func CompleteViaRegistry(ctx context.Context, apiKey string, cfg AnthropicConfig
 		usage     CompletionUsage
 		usedModel = defaultModel
 	)
-	_, err := LLMRegistry(apiKey, cfg).Run(ctx, tenantID, fn, func(ctx context.Context, p llm.Provider, model string) error {
+	res, err := LLMRegistry(apiKey, cfg).Run(ctx, tenantID, fn, func(ctx context.Context, p llm.Provider, model string) error {
 		if ap, ok := p.(*AnthropicProvider); ok {
 			if strings.TrimSpace(model) == "" {
 				model = defaultModel
@@ -88,6 +88,11 @@ func CompleteViaRegistry(ctx context.Context, apiKey string, cfg AnthropicConfig
 		}
 		return err
 	})
+	rlog.Info("llm completion",
+		"fn", string(fn), "tenantId", tenantID,
+		"provider", res.Provider, "model", usedModel, "family", llm.ModelFamily(usedModel),
+		"attempts", res.Attempts, "inTok", usage.InputTokens, "outTok", usage.OutputTokens,
+		"ok", err == nil)
 	if err != nil {
 		return "", usage, usedModel, err
 	}
