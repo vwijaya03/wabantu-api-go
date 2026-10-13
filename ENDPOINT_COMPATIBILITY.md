@@ -167,10 +167,12 @@ Detail RAG: [docs/RAG_VECTOR_RETRIEVAL.md](./docs/RAG_VECTOR_RETRIEVAL.md) · sh
 
 | Method | Path | Pemanggil |
 |--------|------|-----------|
-| POST | `/api/v1/internal/ai/auto-reply` | Pub/Sub subscriber (default) |
-| POST | `/api/v1/internal/ai/auto-reply/fallback` | retry/fallback |
+| POST | `/api/v1/internal/ai/auto-reply` | private — Pub/Sub subscriber in-process (`ai/inbound_jobs.go:36`) |
+| POST | `/api/v1/internal/ai/auto-reply/fallback` | private — retry/fallback in-process (`ai/jobs.go:31`) |
 
-Header: `X-Ai-Internal-Token` = secret `AiInternalToken`.
+**Private (SEC-01)** — tidak bisa diakses dari internet. Dipanggil in-process lewat Pub/Sub: `ai/inbound_jobs.go:36` (subscription `ai-auto-reply`) dan `ai/jobs.go:31` (`FallbackAutoReplyJob`). Token `X-Ai-Internal-Token` tetap dicek sebagai defense in depth (`AiInternalToken`, min 32 karakter, constant-time, fail closed).
+
+Webhook Meta: `X-Hub-Signature-256` **wajib** (lihat `webhook/webhook_signature.go`).
 
 **Tidak perlu** `ai-worker/` Node saat memakai api-go — job di `encore run`.
 

@@ -20,7 +20,7 @@ sequenceDiagram
   participant WA as whatsapp_SendText
 
   Meta->>WH: POST /api/v1/webhook/whatsapp
-  WH->>WH: verify signature optional
+  WH->>WH: verify signature (wajib)
   WH->>WH: whatsapp.ParseWebhook
   WH->>DB: upsert contact conversation message
   WH->>WF: TryRun keyword rules
@@ -59,7 +59,7 @@ Urutan di `webhook.ingestMessage` (`webhook/webhook.go`):
 
 | # | Langkah | Detail |
 |---|---------|--------|
-| 1 | Verifikasi signature | Header `X-Hub-Signature-256` vs `meta_app_secret` channel (jika header ada) |
+| 1 | Verifikasi signature | Header `X-Hub-Signature-256` **wajib**; HMAC vs `meta_app_secret` channel, fallback Encore secret `MetaAppSecret`. Header kosong/invalid, channel tak dikenal, atau tidak ada secret → 401 (tanpa bypass) |
 | 2 | Parse payload | `whatsapp.ParseWebhook(body)` → slice `InboundMessage` |
 | 3 | Resolve tenant | `resolveInboundChannel` via `system.whatsapp_inbound_map` (`meta_phone_number_id` → schema `t_<slug>`) |
 | 4 | Idempotent insert | Skip jika `message.external_id` sudah ada |
@@ -321,14 +321,9 @@ Cari baris:
 
 ### 3. Trigger manual (dev)
 
-```bash
-curl -X POST http://localhost:4000/api/v1/internal/ai/auto-reply \
-  -H "Content-Type: application/json" \
-  -H "X-Ai-Internal-Token: $AI_INTERNAL_TOKEN" \
-  -d '{"tenantId":"...","tenantSchema":"t_slug","conversationId":"...","inboundMessageId":"..."}'
-```
+Endpoint ini **private** (SEC-01): `curl` dari luar tidak lagi bisa. Untuk trigger manual, kirim pesan lewat simulator/webhook (ditandatangani) atau publish `InboundAIJob` ke topic `ai-jobs`; di `encore run` bisa dipanggil lewat Local Dev Dashboard (API Explorer) yang mendukung endpoint private.
 
-Secret: `AiInternalToken` (sama dengan `AI_INTERNAL_TOKEN` di `api/.env`).
+**Private (SEC-01)** — tidak bisa diakses dari internet. Dipanggil in-process lewat Pub/Sub: `ai/inbound_jobs.go:36` (subscription `ai-auto-reply`) dan `ai/jobs.go:31` (`FallbackAutoReplyJob`). Token `X-Ai-Internal-Token` tetap dicek sebagai defense in depth (`AiInternalToken`, min 32 karakter, constant-time, fail closed).
 
 ### 4. Simulator tanpa DB penuh
 
