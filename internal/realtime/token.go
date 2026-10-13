@@ -42,6 +42,7 @@ func MintCustomToken(cfg *Config, uid string, claims map[string]any, now time.Ti
 type tokenSource struct {
 	cfg      *Config
 	tokenURL string
+	scope    string // default datastoreScope
 	hc       *http.Client
 	mu       sync.Mutex
 	tok      string
@@ -55,8 +56,12 @@ func (s *tokenSource) Token(ctx context.Context) (string, error) {
 		return s.tok, nil
 	}
 	now := time.Now()
+	scope := s.scope
+	if scope == "" {
+		scope = datastoreScope
+	}
 	assertion, err := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"iss": s.cfg.ClientEmail, "scope": datastoreScope, "aud": s.tokenURL,
+		"iss": s.cfg.ClientEmail, "scope": scope, "aud": s.tokenURL,
 		"iat": now.Unix(), "exp": now.Add(time.Hour).Unix(),
 	}).SignedString(s.cfg.Key)
 	if err != nil {

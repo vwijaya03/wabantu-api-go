@@ -40,6 +40,8 @@ const (
 const (
 	PortalClient = "client" // POST /api/v1/auth/login
 	PortalAdmin  = "admin"  // POST /api/v1/platform-admin/login
+	// PortalBootstrap: POST /api/v1/internal/platform-admin/bootstrap
+	PortalBootstrap = "bootstrap"
 )
 
 const RoleSuperAdmin = "super_admin"

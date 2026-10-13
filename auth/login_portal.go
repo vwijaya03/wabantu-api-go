@@ -31,9 +31,15 @@ func PlatformAdminLogin(w http.ResponseWriter, req *http.Request) {
 }
 
 // redisCounters implements adminauth.CounterStore.
+// A nil client returns errNoRedis so fail-closed policies answer 503 instead of panicking.
 type redisCounters struct{ c *redis.Client }
 
+var errNoRedis = errors.New("auth: redis unavailable")
+
 func (r redisCounters) Incr(ctx context.Context, key string, window time.Duration) (int64, error) {
+	if r.c == nil {
+		return 0, errNoRedis
+	}
 	pipe := r.c.TxPipeline()
 	incr := pipe.Incr(ctx, key)
 	pipe.ExpireNX(ctx, key, window)
@@ -44,15 +50,24 @@ func (r redisCounters) Incr(ctx context.Context, key string, window time.Duratio
 }
 
 func (r redisCounters) SetLock(ctx context.Context, key string, ttl time.Duration) error {
+	if r.c == nil {
+		return errNoRedis
+	}
 	return r.c.Set(ctx, key, 1, ttl).Err()
 }
 
 func (r redisCounters) Locked(ctx context.Context, key string) (bool, error) {
+	if r.c == nil {
+		return false, errNoRedis
+	}
 	n, err := r.c.Exists(ctx, key).Result()
 	return n > 0, err
 }
 
 func (r redisCounters) Del(ctx context.Context, keys ...string) error {
+	if r.c == nil {
+		return errNoRedis
+	}
 	return r.c.Del(ctx, keys...).Err()
 }
 

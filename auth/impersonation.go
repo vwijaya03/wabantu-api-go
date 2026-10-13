@@ -135,5 +135,7 @@ func StopImpersonation(ctx context.Context, accountID, sessionID string) error {
 	if err := updateSession(ctx, accountID, sessionID, *sess); err != nil {
 		return errs.Internal(fmt.Sprintf("update session: %v", err))
 	}
+	// The impersonated Firebase token was minted for accountID with the tenant claim.
+	revokeFirebaseAsync(ctx, accountID)
 	return nil
 }

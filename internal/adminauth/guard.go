@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
+	"net/http"
 	"strings"
 	"time"
 )
@@ -32,12 +34,39 @@ type Policy struct {
 	AccountMax           int64
 	Window, LockFor      time.Duration
 	IPPerMin, AcctPerMin int64
+	// FailClosed denies on store (Redis) errors. Always on for PortalAdmin.
+	FailClosed bool
 }
 
 func AdminPolicy() Policy {
 	return Policy{Portal: PortalAdmin, PairMax: 5, IPMax: 10, AccountMax: 20,
 		Window: 15 * time.Minute, LockFor: 15 * time.Minute, IPPerMin: 10, AcctPerMin: 5}
 }
+
+// BootstrapPolicy guards POST /internal/platform-admin/bootstrap. Fail-closed (Security L-1):
+// without a working Redis the endpoint answers 503 instead of skipping the rate limit.
+func BootstrapPolicy() Policy {
+	return Policy{Portal: PortalBootstrap, PairMax: 5, IPMax: 5, AccountMax: 20,
+		Window: 15 * time.Minute, LockFor: 15 * time.Minute, IPPerMin: 5, AcctPerMin: 5, FailClosed: true}
+}
+
+// ErrStoreUnavailable is returned by Check when the counter store is missing (nil).
+var ErrStoreUnavailable = errors.New("adminauth: counter store unavailable")
+
+// CheckStatus maps a Check result to HTTP: 0 = proceed, 503 = store unavailable on a
+// fail-closed policy, 429 = rate limited/locked.
+func (g Guard) CheckStatus(ok bool, err error) int {
+	switch {
+	case ok:
+		return 0
+	case err != nil && g.failClosed():
+		return http.StatusServiceUnavailable
+	default:
+		return http.StatusTooManyRequests
+	}
+}
+
+func (g Guard) failClosed() bool { return g.P.FailClosed || g.P.Portal == PortalAdmin }
 
 func ClientPolicy() Policy {
 	return Policy{Portal: PortalClient, PairMax: 5, IPMax: 30, AccountMax: 50,
@@ -72,7 +101,10 @@ func (g Guard) k(parts ...string) string {
 // Check runs before the password check. ok=false → respond 429 with the generic message.
 // Store errors fail closed for the admin portal and open for the client portal.
 func (g Guard) Check(ctx context.Context, ip, acct string) (ok bool, reason string, err error) {
-	failClosed := g.P.Portal == PortalAdmin
+	failClosed := g.failClosed()
+	if g.S == nil {
+		return !failClosed, "store_error", ErrStoreUnavailable
+	}
 	for _, l := range []struct{ key, reason string }{
 		{g.k("lock", "pair", acct, ip), ReasonLockedPair},
 		{g.k("lock", "ip", ip), ReasonLockedIP},
@@ -106,6 +138,9 @@ func (g Guard) Check(ctx context.Context, ip, acct string) (ok bool, reason stri
 // Fail records a failed attempt (unknown account, wrong password, wrong portal alike) and
 // sets locks when thresholds are crossed.
 func (g Guard) Fail(ctx context.Context, ip, acct string) error {
+	if g.S == nil {
+		return ErrStoreUnavailable
+	}
 	for _, c := range []struct {
 		counter, lock string
 		max           int64
@@ -130,5 +165,8 @@ func (g Guard) Fail(ctx context.Context, ip, acct string) error {
 // Success clears the pair counter (not IP/account counters: a success must not reset a
 // distributed attack's budget).
 func (g Guard) Success(ctx context.Context, ip, acct string) error {
+	if g.S == nil {
+		return ErrStoreUnavailable
+	}
 	return g.S.Del(ctx, g.k("fail", "pair", acct, ip))
 }

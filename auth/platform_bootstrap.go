@@ -7,7 +7,6 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-	"time"
 
 	"encore.dev/rlog"
 	"golang.org/x/crypto/bcrypt"
@@ -41,6 +40,7 @@ type BootstrapPlatformAdminResponse struct {
 //   - secret: header X-Platform-Bootstrap-Secret vs Encore secret PlatformAdminBootstrapKey
 //     (SHA-256 + constant-time compare). Unset/empty/<32 chars or mismatch → 403 (same body).
 //   - one-time: advisory xact lock + "platform admin exists?" + insert in ONE transaction → 409.
+//   - Redis unavailable/erroring → 503 (fail-closed, Security L-1).
 //   - rate limited (5/min/IP + lockout after 5 failures/15 min); every attempt audited
 //     (auth_login_attempt, portal=bootstrap) without the secret or password.
 //
@@ -48,16 +48,19 @@ type BootstrapPlatformAdminResponse struct {
 func BootstrapPlatformAdmin(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
 	ip := ratelimit.ClientIP(req)
-	guard := adminauth.Guard{S: redisCounters{getRedis()}, P: adminauth.Policy{
-		Portal: portalBootstrap, PairMax: 5, IPMax: 5, AccountMax: 20,
-		Window: 15 * time.Minute, LockFor: 15 * time.Minute, IPPerMin: 5, AcctPerMin: 5,
-	}}
+	// Fail-closed (Security L-1): Redis missing/erroring → 503, never an unthrottled attempt.
+	guard := adminauth.Guard{S: redisCounters{getRedis()}, P: adminauth.BootstrapPolicy()}
 	const acct = "bootstrap"
 	ok, reason, gerr := guard.Check(ctx, ip, acct)
 	if gerr != nil {
 		rlog.Warn("bootstrap guard store error", "err", gerr)
 	}
-	if !ok {
+	switch guard.CheckStatus(ok, gerr) {
+	case http.StatusServiceUnavailable:
+		recordLoginAttempt(ctx, req, portalBootstrap, "", "", adminauth.ResultBlocked, "store_unavailable")
+		writeError(w, http.StatusServiceUnavailable, "temporarily unavailable")
+		return
+	case http.StatusTooManyRequests:
 		recordLoginAttempt(ctx, req, portalBootstrap, "", "", adminauth.ResultBlocked, reason)
 		writeError(w, http.StatusTooManyRequests, "too many attempts")
 		return

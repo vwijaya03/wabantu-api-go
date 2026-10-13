@@ -316,6 +316,7 @@ func Logout(w http.ResponseWriter, req *http.Request) {
 
 	_ = destroySession(ctx, userData.AccountID, userData.SessionID)
 	audit.Log(ctx, userData.TenantID, userData.AccountID, "auth.logout", "account", userData.AccountID, nil)
+	revokeFirebaseAsync(ctx, userData.AccountID)
 
 	writeJSON(w, http.StatusOK, LogoutResponse{OK: true})
 }
