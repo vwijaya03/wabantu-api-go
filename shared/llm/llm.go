@@ -25,6 +25,8 @@ type Usage struct {
 	Provider, Model           string
 	InputTokens, OutputTokens int64
 	ImageCount                int64
+	// Anthropic prompt-cache counters (0 for other providers).
+	CacheReadInputTokens, CacheCreationInputTokens int64
 }
 
 type Message struct {

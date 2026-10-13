@@ -40,7 +40,7 @@ func CodeDefaults(fn Function) FunctionConfig {
 	case FnEmbedding:
 		return FunctionConfig{Function: fn, Chain: []ChainLink{{Provider: "openai", Model: "text-embedding-3-small"}}, MaxRetries: 1}
 	case FnOCR, FnVision:
-		return FunctionConfig{Function: fn, Chain: []ChainLink{{Provider: "anthropic", Model: "claude-haiku-4-5"}}, MaxRetries: 1}
+		return FunctionConfig{Function: fn, Chain: []ChainLink{{Provider: "anthropic", Model: ""}}, MaxRetries: 1} // "" = provider default (legacy Haiku snapshot)
 	default:
 		return FunctionConfig{Function: fn, Chain: []ChainLink{{Provider: "anthropic", Model: ""}}, MaxRetries: 1} // "" = legacy model routing
 	}

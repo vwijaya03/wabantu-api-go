@@ -2,6 +2,7 @@ package business
 
 import (
 	"context"
+	"encore.app/wabantu/shared/llm"
 	"fmt"
 	"strings"
 
@@ -72,12 +73,13 @@ func SuggestProfileField(ctx context.Context, req *ProfileAISuggestRequest) (*Pr
 		return nil, apperr.Internal("AI belum dikonfigurasi")
 	}
 	model := resolveInterviewModel()
-	client := ai.NewAnthropicClient(apiKey, ai.AnthropicConfig{Model: model, MaxTokens: 512})
+	profileCfg := ai.AnthropicConfig{Model: model, MaxTokens: 512}
 
 	systemPrompt := profileAISuggestSystemPrompt(field)
 	userPrompt := buildProfileAISuggestPrompt(field, p, hint, catalogHint)
 
-	raw, compUsage, err := client.CompleteText(ctx, model, systemPrompt, userPrompt, 512)
+	raw, compUsage, usedModel, err := ai.CompleteViaRegistry(ctx, apiKey, profileCfg, user.TenantID, llm.FnChat,
+		model, systemPrompt, userPrompt, 512)
 	if err != nil {
 		return nil, apperr.Internal("AI gagal membuat saran: " + err.Error())
 	}
@@ -95,7 +97,7 @@ func SuggestProfileField(ctx context.Context, req *ProfileAISuggestRequest) (*Pr
 			Purpose:      "profile_suggest",
 			Path:         "profile_ai_suggest",
 			Reason:       string(field),
-			Model:        model,
+			Model:        usedModel,
 			Tier:         "haiku",
 			LLMUsed:      true,
 			InputTokens:  compUsage.InputTokens,

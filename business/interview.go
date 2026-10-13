@@ -3,14 +3,15 @@ package business
 import (
 	"context"
 	"encoding/json"
+	"encore.app/wabantu/shared/llm"
 	"fmt"
 	"strings"
 	"time"
 
 	"encore.dev/rlog"
 
-	appauth "encore.app/wabantu/auth"
 	"encore.app/wabantu/ai"
+	appauth "encore.app/wabantu/auth"
 	"encore.app/wabantu/kb"
 	apperr "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/usage"
@@ -94,8 +95,8 @@ type SetupInterviewPublishFAQItem struct {
 }
 
 type SetupInterviewPublishRequest struct {
-	Profile *UpdateProfileRequest            `json:"profile,omitempty"`
-	FAQ     []SetupInterviewPublishFAQItem   `json:"faq"`
+	Profile *UpdateProfileRequest          `json:"profile,omitempty"`
+	FAQ     []SetupInterviewPublishFAQItem `json:"faq"`
 }
 
 type SetupInterviewPublishResponse struct {
@@ -276,13 +277,11 @@ func SendSetupInterviewMessage(ctx context.Context, sessionId string, req *Setup
 	if apiKey == "" {
 		return nil, apperr.Internal("AI belum dikonfigurasi")
 	}
-	client := ai.NewAnthropicClient(apiKey, ai.AnthropicConfig{
-		Model:     resolveInterviewModel(),
-		MaxTokens: 1024,
-	})
+	interviewCfg := ai.AnthropicConfig{Model: resolveInterviewModel(), MaxTokens: 1024}
 
 	userPrompt := buildInterviewUserPrompt(session, msg)
-	raw, compUsage, err := client.CompleteText(ctx, resolveInterviewModel(), setupInterviewSystemPrompt, userPrompt, 1024)
+	raw, compUsage, _, err := ai.CompleteViaRegistry(ctx, apiKey, interviewCfg, user.TenantID, llm.FnChat,
+		resolveInterviewModel(), setupInterviewSystemPrompt, userPrompt, 1024)
 	if err != nil {
 		return nil, apperr.Internal("AI setup gagal: " + err.Error())
 	}

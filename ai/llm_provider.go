@@ -25,7 +25,8 @@ func NewAnthropicProvider(apiKey string, cfg AnthropicConfig) *AnthropicProvider
 func (p *AnthropicProvider) ID() string { return "anthropic" }
 
 func toLLMUsage(model string, u CompletionUsage) llm.Usage {
-	return llm.Usage{Provider: "anthropic", Model: model, InputTokens: int64(u.InputTokens), OutputTokens: int64(u.OutputTokens)}
+	return llm.Usage{Provider: "anthropic", Model: model, InputTokens: int64(u.InputTokens), OutputTokens: int64(u.OutputTokens),
+		CacheReadInputTokens: int64(u.CacheReadInputTokens), CacheCreationInputTokens: int64(u.CacheCreationInputTokens)}
 }
 
 // Complete delegates to AnthropicClient.CompleteText (same model resolution + fallback list).

@@ -33,7 +33,7 @@ var svc *AutoReplyService
 
 func init() {
 	rdb := newRedisClient()
-	client := NewAnthropicClient(secrets.AnthropicAPIKey, AnthropicConfig{
+	client := ChatClientViaRegistry(secrets.AnthropicAPIKey, AnthropicConfig{
 		Model:     defaultAnthropicModel,
 		MaxTokens: defaultAnthropicMaxToks,
 	})

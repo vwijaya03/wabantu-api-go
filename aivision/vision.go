@@ -3,6 +3,8 @@
 package aivision
 
 import (
+	"encore.app/wabantu/shared/llm"
+
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -167,7 +169,7 @@ func ExtractProductMatchFromImage(ctx context.Context, apiKey string, imageBytes
 
 // ExtractPaymentProofFromImage calls Claude vision for payment proof OCR.
 func ExtractPaymentProofFromImage(ctx context.Context, apiKey string, imageBytes []byte, mediaType string) (PaymentProofExtract, Usage, error) {
-	raw, usage, err := visionExtract(ctx, apiKey, imageBytes, mediaType, paymentProofVisionSystem, paymentProofVisionUser)
+	raw, usage, err := visionViaRegistry(ctx, llm.FnOCR, apiKey, imageBytes, mediaType, paymentProofVisionSystem, paymentProofVisionUser)
 	var out PaymentProofExtract
 	if err != nil {
 		return out, usage, err
@@ -184,7 +186,7 @@ func SanitizeVisionJSON(text string) string {
 }
 
 func visionExtract(ctx context.Context, apiKey string, imageBytes []byte, mediaType, system, user string) (string, Usage, error) {
-	return visionExtractModel(ctx, apiKey, haikuModelID, imageBytes, mediaType, system, user)
+	return visionViaRegistry(ctx, llm.FnVision, apiKey, imageBytes, mediaType, system, user)
 }
 
 func visionExtractModel(ctx context.Context, apiKey, model string, imageBytes []byte, mediaType, system, user string) (string, Usage, error) {

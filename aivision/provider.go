@@ -2,6 +2,8 @@ package aivision
 
 import (
 	"context"
+	"fmt"
+	"sync"
 
 	"encore.app/wabantu/shared/llm"
 )
@@ -39,4 +41,62 @@ func VisionWith(ctx context.Context, p llm.Provider, model string, img []byte, m
 		return "", u, err
 	}
 	return SanitizeVisionJSON(text), u, nil
+}
+
+// visionRegistry holds non-Anthropic vision providers (e.g. Gemini, registered at startup in BE-04)
+// and the config resolver. Anthropic is bound per call because callers pass the API key.
+var (
+	visionMu       sync.RWMutex
+	visionExtra    = map[string]llm.Provider{}
+	visionResolver = llm.NewResolver(nil, 0) // nil store = code defaults (Anthropic) until BE-03 store is wired
+)
+
+// RegisterVisionProvider adds a provider usable by vision/OCR config chains.
+func RegisterVisionProvider(p llm.Provider) {
+	visionMu.Lock()
+	visionExtra[p.ID()] = p
+	visionMu.Unlock()
+}
+
+// SetVisionResolver swaps the config resolver (e.g. DB-backed).
+func SetVisionResolver(r *llm.Resolver) {
+	visionMu.Lock()
+	visionResolver = r
+	visionMu.Unlock()
+}
+
+func visionRegistry(apiKey string) *llm.Registry {
+	visionMu.RLock()
+	defer visionMu.RUnlock()
+	reg := llm.NewRegistry(visionResolver)
+	for _, p := range visionExtra {
+		reg.Register(p)
+	}
+	reg.Register(AnthropicVision{APIKey: apiKey})
+	return reg
+}
+
+// visionViaRegistry resolves provider+model for fn and runs the vision prompt.
+// With empty config this is exactly the legacy path (Anthropic Haiku snapshot).
+func visionViaRegistry(ctx context.Context, fn llm.Function, apiKey string, img []byte, mime, system, user string) (string, Usage, error) {
+	p, model, err := visionRegistry(apiKey).For(ctx, "", fn)
+	if err != nil {
+		return "", Usage{}, err
+	}
+	var text string
+	var u llm.Usage
+	if av, ok := p.(AnthropicVision); ok {
+		// Legacy error messages / validation preserved verbatim.
+		if model == "" {
+			model = haikuModelID
+		}
+		var lu Usage
+		text, lu, err = visionExtractModel(ctx, av.APIKey, model, img, mime, system, user)
+		return text, lu, err
+	}
+	if len(img) == 0 {
+		return "", Usage{}, fmt.Errorf("empty image")
+	}
+	text, u, err = VisionWith(ctx, p, model, img, mime, system, user)
+	return text, Usage{InputTokens: int(u.InputTokens), OutputTokens: int(u.OutputTokens)}, err
 }
