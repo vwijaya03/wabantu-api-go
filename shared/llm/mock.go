@@ -8,18 +8,33 @@ type MockProvider struct {
 	Reply string
 	Err   error
 	Calls int
+	// Unavailable makes Available() false (simulates missing key).
+	Unavailable bool
+	// Errs, if set, is consumed per call before Err.
+	Errs []error
+}
+
+func (m *MockProvider) Available() bool { return !m.Unavailable }
+
+func (m *MockProvider) next() error {
+	if len(m.Errs) > 0 {
+		e := m.Errs[0]
+		m.Errs = m.Errs[1:]
+		return e
+	}
+	return m.Err
 }
 
 func (m *MockProvider) ID() string { return m.Name }
 func (m *MockProvider) Chat(_ context.Context, r ChatRequest) (ChatResponse, error) {
 	m.Calls++
-	return ChatResponse{Text: m.Reply, Usage: Usage{Provider: m.Name, Model: r.Model}}, m.Err
+	return ChatResponse{Text: m.Reply, Usage: Usage{Provider: m.Name, Model: r.Model}}, m.next()
 }
 func (m *MockProvider) Complete(_ context.Context, model, _, _ string, _ int64) (string, Usage, error) {
 	m.Calls++
-	return m.Reply, Usage{Provider: m.Name, Model: model}, m.Err
+	return m.Reply, Usage{Provider: m.Name, Model: model}, m.next()
 }
 func (m *MockProvider) Vision(_ context.Context, model string, _ []byte, _, _, _ string) (string, Usage, error) {
 	m.Calls++
-	return m.Reply, Usage{Provider: m.Name, Model: model, ImageCount: 1}, m.Err
+	return m.Reply, Usage{Provider: m.Name, Model: model, ImageCount: 1}, m.next()
 }

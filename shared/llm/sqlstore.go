@@ -6,7 +6,7 @@ import (
 	"errors"
 )
 
-// Querier is satisfied by *sqldb.Database (encore) via a thin adapter and by *sql.DB.
+// Querier is satisfied by *sql.DB (e.g. encore sqldb.Database.Stdlib()).
 type Querier interface {
 	QueryRowContext(ctx context.Context, q string, args ...any) *sql.Row
 	QueryContext(ctx context.Context, q string, args ...any) (*sql.Rows, error)
@@ -14,6 +14,14 @@ type Querier interface {
 
 // SQLStore reads ai_providers / ai_function_config from the system DB.
 type SQLStore struct{ DB Querier }
+
+// NewSQLStore returns nil (→ code defaults) when db is nil.
+func NewSQLStore(db Querier) ConfigStore {
+	if db == nil {
+		return nil
+	}
+	return SQLStore{DB: db}
+}
 
 func (s SQLStore) LoadFunctionConfig(ctx context.Context, fn Function, tenantID string) (FunctionConfig, bool, error) {
 	var (

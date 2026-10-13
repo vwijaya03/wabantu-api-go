@@ -18,6 +18,9 @@ const (
 	FnVision    Function = "vision"
 	FnMemory    Function = "memory"
 	FnEmbedding Function = "embedding"
+	// FnPaymentOCR is payment-proof (bukti transfer) OCR, separate from generic vision so it
+	// can be routed to Gemini for the demo independently of product-image matching.
+	FnPaymentOCR Function = "payment_ocr"
 )
 
 // Usage reports real provider/model so usage accounting is not hardcoded.

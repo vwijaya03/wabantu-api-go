@@ -32,6 +32,9 @@ func NewGeminiProvider(apiKey string) *GeminiProvider {
 
 func (g *GeminiProvider) ID() string { return "gemini" }
 
+// Available is false without an API key, so chains skip Gemini and fall back (logged).
+func (g *GeminiProvider) Available() bool { return g != nil && strings.TrimSpace(g.APIKey) != "" }
+
 type gPart struct {
 	Text       string    `json:"text,omitempty"`
 	InlineData *gInlined `json:"inlineData,omitempty"`
