@@ -61,6 +61,13 @@ dengan password salah). Response bertambah `sessionType:"client"`.
 dan sebaliknya) → 401 bila tidak cocok. `GET /api/v1/audit/logs` dan `GET/POST/PATCH /api/v1/flags`
 kini ber-`tag:super_admin` (admin-only). `GET /api/v1/flags/check/:key` tetap client.
 
+### Aturan keamanan: `HandlerEnforcedRaw` adalah bagian dari security boundary
+
+- `adminauth.HandlerEnforcedRaw` membuat middleware `SessionKind` **melewatkan** pengecekan kind untuk endpoint raw tertentu (Encore membuang error middleware di endpoint raw → klien dapat 200 kosong). Endpoint di map ini **tidak** dilindungi middleware.
+- Endpoint raw baru di bawah `/api/v1/platform-admin/` **hanya boleh** ditambahkan ke map ini bila handler-nya sendiri menegakkan sesi admin (mis. memanggil `adminauth.MeAccess` / validasi token `typ:admin` + kind sesi Redis, dan menolak client & impersonation dengan 401) — atau bila endpoint itu memang sessionless (`SessionlessEndpoints`, exact match: login & bootstrap saja).
+- Menambah entri tanpa enforcement di handler = bypass otorisasi. Perubahan map ini wajib review Security.
+- `TestPlatformAdminEndpointsComplete` menjaga sinkron: setiap route raw `/api/v1/platform-admin/*` harus terdaftar di `PlatformAdminEndpoints`, dan entri `HandlerEnforcedRaw` harus termasuk di sana; test gagal bila ada yang terlewat.
+
 ## Lockout & rate limit (Redis, `adminauth.Guard`)
 
 Dihitung per **(akun,IP)**, per **IP**, dan per **akun** (email di-hash; akun yang tidak ada
