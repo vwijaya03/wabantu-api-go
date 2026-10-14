@@ -79,9 +79,10 @@ type dbConversation struct {
 }
 
 type dbContact struct {
-	ID          string
-	PhoneNumber string
-	DisplayName *string
+	ID                string
+	PhoneNumber       string
+	DisplayName       *string
+	PreferredLanguage *string
 }
 
 type dbChannel struct {
@@ -226,6 +227,18 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		rlog.Warn("AI job: missing contact or channel")
 		return false, nil
 	}
+	popBuyerLang := PushSavedBuyerLang(contactPreferredLanguage(contact))
+	defer popBuyerLang()
+	defer func() {
+		s.applyBuyerLanguageFromMessage(ctx, ts, contact, userText)
+	}()
+	if contact.PreferredLanguage == nil {
+		if pref, perr := loadContactPreferredLanguage(ctx, ts, contact.ID); perr == nil && pref != nil {
+			contact.PreferredLanguage = pref
+			SetSavedBuyerLang(*pref)
+		}
+	}
+
 	if route, why := autoReplyRoute(channel); route == routeNone {
 		rlog.Warn("AI job: unsupported/invalid channel",
 			"provider", channel.Provider,
@@ -270,6 +283,10 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		IsOrderShippingDataConfirmation(userText)) &&
 		!wantsOrderContextFromHistory(userText) && !IsCartLineCorrectionIntent(userText) && !IsCheckoutMergeIntent(userText) {
 		return s.handleCustomerOrderStatus(ctx, ts, payload.TenantSchema, payload, convo, channel, contact, userText, nil)
+	}
+
+	if handled, err := s.handleBuyerLanguageRouting(ctx, ts, payload, convo, channel, contact, userText); handled || err != nil {
+		return handled, err
 	}
 
 	if IsGreetingLike(userText) {
@@ -745,7 +762,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 
 	toolExec := NewCatalogToolExecutor(catalog)
 	llmTaskHint := "Balas dalam bahasa yang sama dengan pesan pembeli. Jika tidak bisa menjawab dari katalog/KB/fakta pesanan, katakan tim akan melanjutkan — jangan mengarang harga, stok, atau estimasi hari kirim."
-	if IsEnglishBuyerMessage(userText) {
+	if ResolveBuyerLanguage(userText, contactPreferredLanguage(contact)) == LangEN {
 		llmTaskHint = "Reply in the buyer's language (English). If you cannot answer from catalog/KB/order facts, say a teammate will continue — do not invent prices, stock, or delivery-day estimates."
 	}
 	reply, compUsage, usedTools, chatProvider, chatModel, err := s.generateChatReply(

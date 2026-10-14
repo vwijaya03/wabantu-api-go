@@ -97,14 +97,14 @@ func englishDefaultOrderTemplates(formal bool) orderFlowTemplates {
 }
 
 func defaultOrderTemplatesForBuyer(formal bool, userText string) orderFlowTemplates {
-	if IsEnglishBuyerMessage(userText) {
+	if ResolveBuyerLanguage(userText, CurrentSavedBuyerLang()) == LangEN {
 		return englishDefaultOrderTemplates(formal)
 	}
 	return defaultOrderTemplates(formal)
 }
 
 func catalogExampleProductsLabel(userText string) string {
-	if IsEnglishBuyerMessage(userText) {
+	if ResolveBuyerLanguage(userText, CurrentSavedBuyerLang()) == LangEN {
 		return "Example products:\n"
 	}
 	return "Contoh produk:\n"

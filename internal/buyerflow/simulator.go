@@ -1,5 +1,7 @@
 package buyerflow
 
+import "strings"
+
 // Simulator — multi-turn WhatsApp buyer flow tanpa Redis/DB.
 type Simulator struct {
 	Profile *BusinessProfile
@@ -10,6 +12,8 @@ type Simulator struct {
 	ScopeKW []string
 	// SimOrderRefStatus — opsional harness tes: ref → status DB (non-draft tanpa DB).
 	SimOrderRefStatus map[string]string
+	// SavedBuyerLang mirrors contact.preferred_language (id|en).
+	SavedBuyerLang string
 }
 
 // TurnOutcome — hasil satu pesan masuk pembeli.
@@ -43,6 +47,20 @@ func (s *Simulator) appendHistory(in, out string) {
 
 // Turn memproses satu pesan pembeli (routing + FSM).
 func (s *Simulator) Turn(userText string) TurnOutcome {
+	pop := PushSavedBuyerLang(s.SavedBuyerLang)
+	defer pop()
+	defer s.persistBuyerLangFromMessage(userText)
+	return s.turnOnce(userText)
+}
+
+func (s *Simulator) persistBuyerLangFromMessage(userText string) {
+	if lang, ok := LanguageToPersist(userText, s.SavedBuyerLang); ok {
+		s.SavedBuyerLang = lang
+		SetSavedBuyerLang(lang)
+	}
+}
+
+func (s *Simulator) turnOnce(userText string) TurnOutcome {
 	out := TurnOutcome{}
 
 	// Match autoreply.go: third-party buyer lookup denied before other routing.
@@ -75,6 +93,26 @@ func (s *Simulator) Turn(userText string) TurnOutcome {
 			s.appendHistory(userText, "")
 			return out
 		}
+	}
+
+	if lang, ok := ParseLanguagePreferenceAnswer(userText); ok && strings.TrimSpace(s.SavedBuyerLang) == "" {
+		s.SavedBuyerLang = lang
+		SetSavedBuyerLang(lang)
+	}
+	if lang, ok := ParseExplicitLanguageSwitch(userText); ok {
+		s.SavedBuyerLang = lang
+		SetSavedBuyerLang(lang)
+		if !ExplicitLanguageSwitchHasShoppingRequest(userText) {
+			out.Path = PathBuyerLanguage
+			out.Reply = LanguageSwitchConfirmReply(lang)
+			s.appendHistory(userText, out.Reply)
+			return out
+		}
+	} else if ShouldAskBuyerLanguagePreference(userText, s.SavedBuyerLang) {
+		out.Path = PathBuyerLanguage
+		out.Reply = LanguagePreferenceAskReply()
+		s.appendHistory(userText, out.Reply)
+		return out
 	}
 
 	// Match autoreply.go: greetings always win (clear draft order), tidak perlu in-scope.

@@ -120,7 +120,7 @@ func englishGreetingPhrase(period GreetingPeriod) string {
 }
 
 func isEnglishGreetingContext(userText string) bool {
-	if IsEnglishBuyerMessage(userText) {
+	if ResolveBuyerLanguage(userText, CurrentSavedBuyerLang()) == LangEN {
 		return true
 	}
 	text := strings.ToLower(strings.TrimSpace(userText))

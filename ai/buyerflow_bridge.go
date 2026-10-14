@@ -50,6 +50,7 @@ const (
 const (
 	PathProfileIncomplete = bf.PathProfileIncomplete
 	PathGreeting          = bf.PathGreeting
+	PathBuyerLanguage     = bf.PathBuyerLanguage
 	PathInjectionGuard    = bf.PathInjectionGuard
 	PathEscalate          = bf.PathEscalate
 	PathHumanHandoff      = bf.PathHumanHandoff
@@ -95,6 +96,11 @@ var (
 	HumanHandoffReplyFor                   = bf.HumanHandoffReplyFor
 	NoAnswerHandoffReply                   = bf.NoAnswerHandoffReply
 	IsEnglishBuyerMessage                  = bf.IsEnglishBuyerMessage
+	LangEN                                 = bf.LangEN
+	LangID                                 = bf.LangID
+	PushSavedBuyerLang                     = bf.PushSavedBuyerLang
+	SetSavedBuyerLang                      = bf.SetSavedBuyerLang
+	ResolveBuyerLanguage                   = bf.ResolveBuyerLanguage
 	ShouldHandoffForCatalogMiss            = bf.ShouldHandoffForCatalogMiss
 	ShouldNoAnswerHandoff                  = bf.ShouldNoAnswerHandoff
 	IsCatalogNotFoundReply                 = bf.IsCatalogNotFoundReply

@@ -125,6 +125,7 @@ CREATE TABLE IF NOT EXISTS workflow_rule (
 ALTER TABLE whatsapp_channel ADD COLUMN IF NOT EXISTS branch_id UUID;
 ALTER TABLE conversation ADD COLUMN IF NOT EXISTS branch_id UUID;
 ALTER TABLE contact ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active';
+ALTER TABLE contact ADD COLUMN IF NOT EXISTS preferred_language VARCHAR(8);
 
 DROP INDEX IF EXISTS idx_catalog_source_code;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_source_code
