@@ -71,7 +71,7 @@ go run scripts/gen-api-catalog.go
 go test ./internal/apiregistry/ -count=1 -v
 ```
 
-## Roadmap regression HTTP (per domain)
+## HTTP smoke (`internal/apitest`)
 
 | Fase | Modul | Contoh |
 |------|-------|--------|

@@ -15,6 +15,7 @@ func TestIsHumanEscalationRequest_positive(t *testing.T) {
 		"hubungi admin",
 		"sambungkan ke manusia",
 		"customer service dong",
+		"hubungkan ke customer service",
 	}
 	for _, msg := range positive {
 		if !IsHumanEscalationRequest(msg) {
@@ -31,6 +32,9 @@ func TestIsHumanEscalationRequest_negative(t *testing.T) {
 		"Cadbury biscoff bar 130 gram 1 pcs",
 		"estimasi sampai kapan ya?",
 		"bisa order 1 pcs?",
+		"mau beli atas nama orang lain bisa ya ?",
+		"mau beli human hair",
+		"customer service buka jam berapa",
 	}
 	for _, msg := range negative {
 		if IsHumanEscalationRequest(msg) {
