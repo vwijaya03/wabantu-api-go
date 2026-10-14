@@ -5,6 +5,15 @@ import (
 	"testing"
 )
 
+func TestIsQuestionLikeEnglishWholeWordOnly(t *testing.T) {
+	if IsQuestionLike("maggi tandoori 1 pcs") {
+		t.Fatal("product name must not count as question because of substring do")
+	}
+	if !IsQuestionLike("how long is shipping") {
+		t.Fatal("expected English shipping question")
+	}
+}
+
 func TestEnglishShopIntentInScope(t *testing.T) {
 	sim := newOmahSimulator()
 	msg := "hi i want to shop"

@@ -27,9 +27,10 @@ var questionKeywords = []string{
 	"apa", "apakah", "berapa", "gimana", "bagaimana",
 	"kapan", "bisa", "stok", "size", "ukuran",
 	"harga", "ongkir", "dimana", "lokasi", "mana",
-	"how", "what", "where", "when", "why", "which",
-	"can", "could", "does", "do", "is", "are",
 }
+
+// Whole-word English cues only (substring "do" must not match "tandoori").
+var englishQuestionWordRe = regexp.MustCompile(`(?i)\b(how|what|where|when|why|which|can|could|does|do|is|are)\b`)
 
 var greetingPrefixes = []string{
 	"selamat pagi", "selamat siang", "selamat sore", "selamat malam",
@@ -113,6 +114,9 @@ func IsQuestionLike(raw string) bool {
 		return false
 	}
 	if strings.Contains(text, "?") {
+		return true
+	}
+	if englishQuestionWordRe.MatchString(text) {
 		return true
 	}
 	for _, kw := range questionKeywords {
