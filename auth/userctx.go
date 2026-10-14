@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"encore.app/wabantu/internal/adminauth"
 	"encore.app/wabantu/shared/types"
 	"encore.app/wabantu/tenantaccess"
 )
@@ -18,6 +19,7 @@ func buildAuthUser(sess *SessionData, sessionID string) *types.AuthUser {
 		Email:            sess.Email,
 		Name:             sess.Name,
 		SessionID:        sessionID,
+		SessionKind:      adminauth.NormalizeKind(sess.Kind),
 		HomeTenantID:     sess.TenantID,
 		HomeTenantSchema: sess.TenantSchema,
 	}
@@ -39,7 +41,7 @@ func buildAuthUser(sess *SessionData, sessionID string) *types.AuthUser {
 		return u
 	}
 
-	if sess.Role == roleSuperAdmin && sess.TenantID == "" {
+	if sess.Role == roleSuperAdmin && sess.TenantID == "" && u.SessionKind == adminauth.KindAdmin {
 		u.IsPlatformSession = true
 		return u
 	}

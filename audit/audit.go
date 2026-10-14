@@ -83,7 +83,7 @@ func nullUUID(s string) any {
 	return s
 }
 
-//encore:api auth method=GET path=/api/v1/audit/logs
+//encore:api auth method=GET path=/api/v1/audit/logs tag:super_admin
 func ListAuditLogs(ctx context.Context, p *ListAuditParams) (*ListAuditResponse, error) {
 	u, _ := auth.Data().(*types.AuthUser)
 	if u == nil || u.Role != "super_admin" {

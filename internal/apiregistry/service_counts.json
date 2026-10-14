@@ -1,12 +1,12 @@
 {
   "total_services": 29,
-  "total_endpoints": 369,
+  "total_endpoints": 371,
   "services": {
     "admin": 39,
     "ai": 3,
     "analytics": 1,
     "audit": 2,
-    "auth": 10,
+    "auth": 12,
     "billing": 5,
     "branch": 2,
     "broadcast": 3,

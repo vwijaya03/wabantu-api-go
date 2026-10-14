@@ -402,7 +402,7 @@ Ringkasan cepat:
 | `JWTSecret` | `auth` | Ya |
 | `RedisURL` | `auth` | Ya |
 | `DataEncryptionKey` | `auth` | Ya |
-| `PlatformAdminBootstrapSecret` | `auth` | Hanya untuk bootstrap platform admin ([Bagian 8.1](#81-platform-admin-internal-operator-wabantu-owner)) |
+| `PlatformAdminBootstrapKey` | `auth` | Hanya untuk bootstrap platform admin ([Bagian 8.1](#81-platform-admin-internal-operator-wabantu-owner)) |
 | `AnthropicAPIKey` | `ai`, `business`, `finance`, `events`, `inventory` | AI auto-reply, vision, import gambar |
 | `AiInternalToken` | `ai` | Defense-in-depth untuk endpoint internal AI (private), min 32 karakter |
 | `AiTriageInternalToken` | `admin` | Callback GHA `/api/v1/internal/ai-triage/*`, min 32 karakter |
@@ -490,7 +490,7 @@ Contoh output (perhatikan kolom **Local**):
 ```
 Secret Key                     Production   Development   Local   Preview
 JWTSecret                      ✗            ✗             ✓       ✗
-PlatformAdminBootstrapSecret   ✗            ✓             ✗       ✗   ← salah: hanya Development, Local kosong!
+PlatformAdminBootstrapKey   ✗            ✓             ✗       ✗   ← salah: hanya Development, Local kosong!
 ```
 
 Untuk development lokal, semua secret yang dipakai **`encore run`** harus punya **✓ di kolom Local**.
@@ -544,7 +544,7 @@ encore secret list
 
 | Encore secret | Alasan |
 |---------------|--------|
-| `PlatformAdminBootstrapSecret` | Khusus internal WABantu; tidak ada di Nest `.env` |
+| `PlatformAdminBootstrapKey` | Khusus internal WABantu; tidak ada di Nest `.env` |
 | `MetaAppSecret` (fallback) | `webhook` | Verifikasi **wajib** `X-Hub-Signature-256` memakai `whatsapp_channel.meta_app_secret`, fallback `MetaAppSecret` |
 
 ---
@@ -570,7 +570,7 @@ printf '%s' 'redis://localhost:6379' | encore secret set --type local RedisURL
 **Platform admin bootstrap** (min. 32 karakter — **bukan** password login):
 
 ```bash
-printf '%s' 'wabantu-internal-bootstrap-2026-sangat-rahasia' | encore secret set --type local PlatformAdminBootstrapSecret
+openssl rand -base64 48 | tr -d '\n' | encore secret set --type local PlatformAdminBootstrapKey   # KEY BARU, min 32 karakter
 ```
 
 Header curl harus **sama persis** dengan string di atas:
@@ -610,7 +610,7 @@ Secret tidak hot-reload. Lupa restart = perilaku aneh (nilai lama/kosong).
 | `JWTSecret` | `auth/auth.go` | Tanda tangan JWT login | Ya |
 | `DataEncryptionKey` | `auth/auth.go` | Enkripsi field sensitif | Ya |
 | `RedisURL` | `auth/auth.go`, `ai/api.go` | Session, rate limit, SSE, AI retry counter | Ya |
-| `PlatformAdminBootstrapSecret` | `auth/auth.go` | Header bootstrap akun `super_admin` internal | Hanya jika pakai bootstrap |
+| `PlatformAdminBootstrapKey` | `auth/auth.go` | Header bootstrap akun `super_admin` internal | Hanya jika pakai bootstrap |
 | `AnthropicAPIKey` | `ai/api.go`, `business/business.go`, `finance/transaction_image.go`, … | Model AI + vision import | Untuk fitur AI |
 | `AiInternalToken` | `ai/api.go` | `X-Ai-Internal-Token` (defense in depth, endpoint private), min 32 karakter | Ya |
 | `AiTriageInternalToken` | `admin/ai_triage_internal.go` | `X-Ai-Internal-Token` dari GHA ke `/internal/ai-triage/*`, min 32 karakter | Jika pakai AI triage |
@@ -641,7 +641,7 @@ Detail persist media: [docs-development-shipped/inbox-media-s3.md](./docs-develo
 
 ```bash
 encore secret set --type prod JWTSecret
-encore secret set --type prod PlatformAdminBootstrapSecret
+encore secret set --type prod PlatformAdminBootstrapKey
 # ... secret lain ...
 ```
 
@@ -653,8 +653,8 @@ Jangan pakai nilai dev di prod. Rotate secret jika pernah bocor.
 
 | Gejala | Penyebab | Solusi |
 |--------|----------|--------|
-| `invalid bootstrap secret` | Header curl ≠ nilai di Encore, atau secret hanya di `dev` bukan **`local`** | `printf '%s' '...' \| encore secret set --type **local** PlatformAdminBootstrapSecret` lalu restart `encore run` |
-| `PlatformAdminBootstrapSecret not configured (min 32 chars)` | Secret kosong atau &lt; 32 karakter di environment aktif | Set string ≥ 32 char, `--type local`, restart |
+| `invalid bootstrap secret` | Header curl ≠ nilai di Encore, atau secret hanya di `dev` bukan **`local`** | `printf '%s' '...' \| encore secret set --type **local** PlatformAdminBootstrapKey` lalu restart `encore run` |
+| `PlatformAdminBootstrapKey not configured (min 32 chars)` | Secret kosong atau &lt; 32 karakter di environment aktif | Set string ≥ 32 char, `--type local`, restart |
 | `fetch secrets ... failed` / login aneh | Secret belum di-set | `./scripts/setup-secrets-from-env.sh` atau set manual |
 | `not logged in: run encore auth login` | CLI Encore belum login | `encore auth login` |
 | `app_not_found` | App belum link ke cloud | `encore app link` / `encore app init` |
@@ -672,7 +672,7 @@ Jangan pakai nilai dev di prod. Rotate secret jika pernah bocor.
 encore auth login
 cd api-go
 ./scripts/setup-secrets-from-env.sh
-printf '%s' 'bootstrap-secret-min-32-chars........' | encore secret set --type local PlatformAdminBootstrapSecret
+printf '%s' 'bootstrap-secret-min-32-chars........' | encore secret set --type local PlatformAdminBootstrapKey
 encore secret list    # semua yang dipakai harus ✓ di Local
 encore run
 ```
@@ -1063,7 +1063,7 @@ Inbox/SSE: `user.CanAccessInbox()` (owner, staff, or impersonating platform admi
 ```mermaid
 flowchart LR
   subgraph bootstrap [Sekali saja]
-    SEC[Encore secret PlatformAdminBootstrapSecret]
+    SEC[Encore secret PlatformAdminBootstrapKey]
     API[POST /internal/platform-admin/bootstrap]
     DB[(tenant_account role=super_admin tenant_id=NULL)]
     SEC --> API --> DB
@@ -1105,9 +1105,9 @@ Dari folder `api-go`:
 ./scripts/setup-secrets-from-env.sh
 
 # Bootstrap platform admin — min. 32 karakter, BUKAN password login
-printf '%s' 'wabantu-internal-bootstrap-2026-sangat-rahasia' | encore secret set --type local PlatformAdminBootstrapSecret
+openssl rand -base64 48 | tr -d '\n' | encore secret set --type local PlatformAdminBootstrapKey   # KEY BARU, min 32 karakter
 
-encore secret list   # PlatformAdminBootstrapSecret harus ✓ di kolom Local
+encore secret list   # PlatformAdminBootstrapKey harus ✓ di kolom Local
 ```
 
 | Environment | `--type` untuk `encore secret set` |
@@ -1149,7 +1149,7 @@ curl -s -X POST http://localhost:4000/api/v1/internal/platform-admin/bootstrap \
 
 | Field / header | Wajib | Keterangan |
 |----------------|-------|------------|
-| `X-Platform-Bootstrap-Secret` | Ya | Harus **sama persis** dengan `PlatformAdminBootstrapSecret` di Encore |
+| `X-Platform-Bootstrap-Secret` | Ya | Harus **sama persis** dengan `PlatformAdminBootstrapKey` di Encore |
 | `email` | Ya | Dipakai untuk **login web** |
 | `password` | Ya | Min. **10** karakter — dipakai untuk login web |
 | `name` | Ya | Nama tampilan |
@@ -1244,7 +1244,7 @@ Key: `session:{accountId}:{sessionId}`
 
 **Production checklist:**
 
-- [ ] Set `PlatformAdminBootstrapSecret` hanya di Encore prod; rotate jika pernah bocor
+- [ ] Set `PlatformAdminBootstrapKey` hanya di Encore prod; rotate jika pernah bocor
 - [ ] Batasi siapa yang tahu secret bootstrap (founder/DevOps saja)
 - [ ] Jangan commit secret ke git / chat publik
 - [ ] Pertimbangkan nonaktifkan bootstrap di prod setelah akun operator dibuat (secret bisa di-rotate; endpoint tetap ada tapi secret tidak dibagikan)
@@ -1254,7 +1254,7 @@ Key: `session:{accountId}:{sessionId}`
 | Gejala | Penyebab umum | Solusi |
 |--------|---------------|--------|
 | `invalid bootstrap secret` | Header curl ≠ secret, atau secret hanya `--type dev` bukan **`local`** | [Bagian 4.1](#41-encore-secrets--panduan-developer): `encore secret set --type local`, restart `encore run` |
-| `PlatformAdminBootstrapSecret not configured` | Secret kosong / &lt; 32 char di environment **local** | Set dengan `printf` + `--type local`, restart |
+| `PlatformAdminBootstrapKey not configured` | Secret kosong / &lt; 32 char di environment **local** | Set dengan `printf` + `--type local`, restart |
 | `Email sudah terdaftar` | Email sudah dipakai owner lain | Login dengan email itu, atau pakai email baru |
 | Login OK tapi 403 di inbox | Belum impersonate tenant | Admin → **Pantau** tenant |
 | `encore check` gagal di `admin/` | Compile error | Pull terbaru; pastikan `requireSuperAdmin` dipanggil `_, err :=` |

@@ -100,6 +100,7 @@ Peta navigasi untuk menjawab pertanyaan tentang backend WABantu. Mulai dari sini
 | File | Isi |
 |------|-----|
 | [DEPLOY_ENCORE_CLOUD.md](./DEPLOY_ENCORE_CLOUD.md) | Deploy Encore Cloud (+ hot-fix `business_profile` dynamic grants) |
+| [PROD_READINESS.md](./PROD_READINESS.md) | Checklist pra-merge PR #216/#217 (belum rilis) |
 | [20260901_143000_rag-staging-rollout-hotfixes.md](../docs-development-shipped/20260901_143000_rag-staging-rollout-hotfixes.md) | Troubleshooting deploy RAG staging (PR #146–#150) |
 | [DEPLOY_REDIS.md](./DEPLOY_REDIS.md) | Redis production |
 | [STAGING_ACCESS.md](./STAGING_ACCESS.md) | Akses staging |
