@@ -18,6 +18,8 @@ type AuthUser struct {
 	HomeTenantSchema string `json:"-"`
 
 	IsPlatformSession       bool   `json:"-"`
+	// SessionKind is "admin" (platform-admin portal) or "client"; set from the server-side session.
+	SessionKind string `json:"-"`
 	Impersonating           bool   `json:"-"`
 	ImpersonationTenantName string `json:"-"`
 	ImpersonationTenantSlug string `json:"-"`

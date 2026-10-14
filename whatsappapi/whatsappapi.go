@@ -125,6 +125,7 @@ func ListChannels(ctx context.Context) (*ListChannelsResponse, error) {
 		       meta_phone_number_id, meta_waba_id, meta_app_id,
 		       status, last_error, connected_at
 		FROM whatsapp_channel
+		WHERE `+whatsappchannel.ListableChannelSQL+`
 		ORDER BY created_at ASC`)
 	if err != nil {
 		return nil, apperr.Internal("failed to list channels")
@@ -311,7 +312,7 @@ func DisconnectChannel(ctx context.Context, id string) (*Channel, error) {
 	err = ts.QueryRowContext(ctx, `
 		UPDATE whatsapp_channel
 		SET status = 'disconnected', connected_at = NULL, updated_at = NOW()
-		WHERE id = $1
+		WHERE id = $1 AND `+whatsappchannel.ListableChannelSQL+`
 		RETURNING id, provider, display_name, phone_number,
 		          meta_phone_number_id, meta_waba_id, meta_app_id,
 		          status, last_error, connected_at`,
@@ -364,7 +365,7 @@ func DeleteChannelPermanent(ctx context.Context, id string) (*DeleteChannelRespo
 
 	var exists bool
 	if err := tTx.QueryRowContext(ctx,
-		`SELECT EXISTS(SELECT 1 FROM whatsapp_channel WHERE id = $1)`, id,
+		`SELECT EXISTS(SELECT 1 FROM whatsapp_channel WHERE id = $1 AND `+whatsappchannel.ListableChannelSQL+`)`, id,
 	).Scan(&exists); err != nil {
 		return nil, apperr.Internal("failed to check channel")
 	}

@@ -1,0 +1,25 @@
+rules_version = '2';
+// WABantu realtime mirror (simulator + order status). Server writes via the Admin/REST API
+// with a service account, which bypasses these rules; clients are read-only.
+// Clients sign in with the custom token from POST /api/v1/auth/firebase-token, whose
+// developer claims (tenantId, role) are set by the server from the auth session.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isTenant(tenantId) {
+      return request.auth != null
+        && request.auth.token.tenantId is string
+        && request.auth.token.tenantId == tenantId
+        && request.auth.token.role in ['owner', 'staff', 'super_admin'];
+    }
+
+    match /tenants/{tenantId}/{document=**} {
+      allow read: if isTenant(tenantId);
+      allow write: if false;
+    }
+
+    // Everything else is closed.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

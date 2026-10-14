@@ -62,6 +62,8 @@ type CatalogItem struct {
 	StockTracked     bool
 	StockAvailable   float64
 	StockByWarehouse []CatalogStockLine
+	// PriceTier is the price-type code SellPrice was resolved for (e.g. "umum", "reseller").
+	PriceTier string
 }
 
 // OrderLineState — one line in a multi-item order (Redis JSON).

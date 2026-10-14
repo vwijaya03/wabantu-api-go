@@ -402,9 +402,11 @@ Ringkasan cepat:
 | `JWTSecret` | `auth` | Ya |
 | `RedisURL` | `auth` | Ya |
 | `DataEncryptionKey` | `auth` | Ya |
-| `PlatformAdminBootstrapSecret` | `auth` | Hanya untuk bootstrap platform admin ([Bagian 8.1](#81-platform-admin-internal-operator-wabantu-owner)) |
+| `PlatformAdminBootstrapKey` | `auth` | Hanya untuk bootstrap platform admin ([Bagian 8.1](#81-platform-admin-internal-operator-wabantu-owner)) |
 | `AnthropicAPIKey` | `ai`, `business`, `finance`, `events`, `inventory` | AI auto-reply, vision, import gambar |
-| `AiInternalToken` | `ai` | Untuk internal AI HTTP |
+| `AiInternalToken` | `ai` | Defense-in-depth untuk endpoint internal AI (private), min 32 karakter |
+| `AiTriageInternalToken` | `admin` | Callback GHA `/api/v1/internal/ai-triage/*`, min 32 karakter |
+| `MetaAppSecret` | `webhook` | Fallback verifikasi `X-Hub-Signature-256` jika channel tanpa `meta_app_secret` |
 | `OpenAIApiKey` | `shared/retrieval` | Embedding RAG (`text-embedding-3-small`) — opsional; tanpa ini = lexical |
 | `PineconeApiKey` | `shared/retrieval` | Vector index Pinecone — opsional |
 | `PineconeIndexHost` | `shared/retrieval` | Host index tanpa `https://` — opsional |
@@ -488,7 +490,7 @@ Contoh output (perhatikan kolom **Local**):
 ```
 Secret Key                     Production   Development   Local   Preview
 JWTSecret                      ✗            ✗             ✓       ✗
-PlatformAdminBootstrapSecret   ✗            ✓             ✗       ✗   ← salah: hanya Development, Local kosong!
+PlatformAdminBootstrapKey   ✗            ✓             ✗       ✗   ← salah: hanya Development, Local kosong!
 ```
 
 Untuk development lokal, semua secret yang dipakai **`encore run`** harus punya **✓ di kolom Local**.
@@ -525,6 +527,8 @@ encore secret list
 | `RedisURL` | `redis://{REDIS_HOST}:{REDIS_PORT}` (default `localhost:6379`) |
 | `AnthropicAPIKey` | `ANTHROPIC_API_KEY` |
 | `AiInternalToken` | `AI_INTERNAL_TOKEN` |
+| `AiTriageInternalToken` | `AI_TRIAGE_INTERNAL_TOKEN` |
+| `MetaAppSecret` | `META_APP_SECRET` |
 | `OpenAIApiKey` | `OPENAI_API_KEY` |
 | `PineconeApiKey` | `PINECONE_API_KEY` |
 | `PineconeIndexHost` | `PINECONE_INDEX_HOST` (host saja, tanpa `https://`) |
@@ -540,8 +544,8 @@ encore secret list
 
 | Encore secret | Alasan |
 |---------------|--------|
-| `PlatformAdminBootstrapSecret` | Khusus internal WABantu; tidak ada di Nest `.env` |
-| *(tidak ada Encore secret)* | `webhook` | Verifikasi `X-Hub-Signature-256` memakai `whatsapp_channel.meta_app_secret` dari OAuth connect |
+| `PlatformAdminBootstrapKey` | Khusus internal WABantu; tidak ada di Nest `.env` |
+| `MetaAppSecret` (fallback) | `webhook` | Verifikasi **wajib** `X-Hub-Signature-256` memakai `whatsapp_channel.meta_app_secret`, fallback `MetaAppSecret` |
 
 ---
 
@@ -566,7 +570,7 @@ printf '%s' 'redis://localhost:6379' | encore secret set --type local RedisURL
 **Platform admin bootstrap** (min. 32 karakter — **bukan** password login):
 
 ```bash
-printf '%s' 'wabantu-internal-bootstrap-2026-sangat-rahasia' | encore secret set --type local PlatformAdminBootstrapSecret
+openssl rand -base64 48 | tr -d '\n' | encore secret set --type local PlatformAdminBootstrapKey   # KEY BARU, min 32 karakter
 ```
 
 Header curl harus **sama persis** dengan string di atas:
@@ -577,7 +581,7 @@ Header curl harus **sama persis** dengan string di atas:
 
 Detail bootstrap: [Bagian 8.1](#81-platform-admin-internal-operator-wabantu-owner).
 
-**Webhook signature Meta:** tidak perlu secret Encore terpisah. Saat owner menghubungkan WhatsApp (`meta/connect`), `meta_app_secret` disimpan di tabel `whatsapp_channel` per tenant. Webhook POST memverifikasi signature dari secret channel tersebut.
+**Webhook signature Meta (wajib, SEC-02):** saat owner menghubungkan WhatsApp (`meta/connect`), `meta_app_secret` disimpan di `whatsapp_channel` per tenant. Setiap webhook POST **harus** membawa `X-Hub-Signature-256` valid; secret diambil dari channel, fallback Encore secret `MetaAppSecret`. Header kosong/invalid, channel tidak dikenal, atau tidak ada secret sama sekali → 401. Tidak ada bypass flag. `WebhookVerifyToken` wajib diisi (challenge GET ditolak jika kosong).
 
 ---
 
@@ -606,14 +610,16 @@ Secret tidak hot-reload. Lupa restart = perilaku aneh (nilai lama/kosong).
 | `JWTSecret` | `auth/auth.go` | Tanda tangan JWT login | Ya |
 | `DataEncryptionKey` | `auth/auth.go` | Enkripsi field sensitif | Ya |
 | `RedisURL` | `auth/auth.go`, `ai/api.go` | Session, rate limit, SSE, AI retry counter | Ya |
-| `PlatformAdminBootstrapSecret` | `auth/auth.go` | Header bootstrap akun `super_admin` internal | Hanya jika pakai bootstrap |
+| `PlatformAdminBootstrapKey` | `auth/auth.go` | Header bootstrap akun `super_admin` internal | Hanya jika pakai bootstrap |
 | `AnthropicAPIKey` | `ai/api.go`, `business/business.go`, `finance/transaction_image.go`, … | Model AI + vision import | Untuk fitur AI |
-| `AiInternalToken` | `ai/api.go` | `X-Ai-Internal-Token` pada internal AI HTTP | Jika panggil internal AI |
+| `AiInternalToken` | `ai/api.go` | `X-Ai-Internal-Token` (defense in depth, endpoint private), min 32 karakter | Ya |
+| `AiTriageInternalToken` | `admin/ai_triage_internal.go` | `X-Ai-Internal-Token` dari GHA ke `/internal/ai-triage/*`, min 32 karakter | Jika pakai AI triage |
+| `MetaAppSecret` | `webhook/webhook_signature.go` | Fallback HMAC `X-Hub-Signature-256` | Disarankan prod |
 | `OpenAIApiKey` | `shared/retrieval/config.go` | Embedding query + batch indexing | Untuk RAG vector (opsional) |
 | `PineconeApiKey` | `shared/retrieval/config.go` | Upsert/query vector Pinecone | Untuk RAG vector (opsional) |
 | `PineconeIndexHost` | `shared/retrieval/config.go` | Host index serverless Pinecone | Untuk RAG vector (opsional) |
 | `WebhookVerifyToken` | `webhook/webhook.go` | Verifikasi GET challenge Meta | Untuk webhook WA |
-| *(per channel)* `meta_app_secret` | `whatsapp_channel` (tenant DB) | `X-Hub-Signature-256` setelah OAuth connect | Disarankan prod |
+| *(per channel)* `meta_app_secret` | `whatsapp_channel` (tenant DB) | `X-Hub-Signature-256` setelah OAuth connect | Wajib (atau `MetaAppSecret`) |
 | `MidtransServerKey` | `payment/payment.go` | QRIS | Untuk payment |
 | `MidtransClientKey` | `payment/payment.go` | Client Midtrans | Untuk payment |
 | `MidtransIsProduction` | `payment/payment.go` | `"true"` / `"false"` | Untuk payment |
@@ -635,7 +641,7 @@ Detail persist media: [docs-development-shipped/inbox-media-s3.md](./docs-develo
 
 ```bash
 encore secret set --type prod JWTSecret
-encore secret set --type prod PlatformAdminBootstrapSecret
+encore secret set --type prod PlatformAdminBootstrapKey
 # ... secret lain ...
 ```
 
@@ -647,12 +653,13 @@ Jangan pakai nilai dev di prod. Rotate secret jika pernah bocor.
 
 | Gejala | Penyebab | Solusi |
 |--------|----------|--------|
-| `invalid bootstrap secret` | Header curl ≠ nilai di Encore, atau secret hanya di `dev` bukan **`local`** | `printf '%s' '...' \| encore secret set --type **local** PlatformAdminBootstrapSecret` lalu restart `encore run` |
-| `PlatformAdminBootstrapSecret not configured (min 32 chars)` | Secret kosong atau &lt; 32 karakter di environment aktif | Set string ≥ 32 char, `--type local`, restart |
+| `invalid bootstrap secret` | Header curl ≠ nilai di Encore, atau secret hanya di `dev` bukan **`local`** | `printf '%s' '...' \| encore secret set --type **local** PlatformAdminBootstrapKey` lalu restart `encore run` |
+| `PlatformAdminBootstrapKey not configured (min 32 chars)` | Secret kosong atau &lt; 32 karakter di environment aktif | Set string ≥ 32 char, `--type local`, restart |
 | `fetch secrets ... failed` / login aneh | Secret belum di-set | `./scripts/setup-secrets-from-env.sh` atau set manual |
 | `not logged in: run encore auth login` | CLI Encore belum login | `encore auth login` |
 | `app_not_found` | App belum link ke cloud | `encore app link` / `encore app init` |
-| AI / internal 401 | `AiInternalToken` kosong atau beda dengan caller | Samakan dengan `AI_INTERNAL_TOKEN` di `.env` |
+| AI / internal 401 | `AiInternalToken`/`AiTriageInternalToken` kosong, < 32 karakter, atau beda dengan caller | Set token acak >= 32 karakter; samakan dengan `.env` / GitHub secret |
+| Webhook Meta 401 | Signature tidak ada/invalid atau tidak ada `meta_app_secret`/`MetaAppSecret` | Isi secret; request harus ditandatangani |
 | Session selalu expired | `RedisURL` salah / Redis mati | `docker compose up -d redis`; set `redis://localhost:6379` |
 | Secret sudah di-set tapi masih gagal | `encore run` belum di-restart | Ctrl+C → `encore run` lagi |
 | Kolom **Local** ✗ di `secret list` | Hanya set `--type dev` | Ulangi dengan `--type local` |
@@ -665,7 +672,7 @@ Jangan pakai nilai dev di prod. Rotate secret jika pernah bocor.
 encore auth login
 cd api-go
 ./scripts/setup-secrets-from-env.sh
-printf '%s' 'bootstrap-secret-min-32-chars........' | encore secret set --type local PlatformAdminBootstrapSecret
+printf '%s' 'bootstrap-secret-min-32-chars........' | encore secret set --type local PlatformAdminBootstrapKey
 encore secret list    # semua yang dipakai harus ✓ di Local
 encore run
 ```
@@ -734,8 +741,8 @@ encore run
 
 | Method | Path | Auth |
 |--------|------|------|
-| POST | `/api/v1/internal/ai/auto-reply` | public (token in practice) |
-| POST | `/api/v1/internal/ai/auto-reply/fallback` | public |
+| POST | `/api/v1/internal/ai/auto-reply` | private (SEC-01; in-process `ai/inbound_jobs.go:36`) |
+| POST | `/api/v1/internal/ai/auto-reply/fallback` | private (SEC-01; in-process `ai/jobs.go:31`) |
 
 Production path: **Pub/Sub** `ai-jobs`, not HTTP.
 
@@ -1056,7 +1063,7 @@ Inbox/SSE: `user.CanAccessInbox()` (owner, staff, or impersonating platform admi
 ```mermaid
 flowchart LR
   subgraph bootstrap [Sekali saja]
-    SEC[Encore secret PlatformAdminBootstrapSecret]
+    SEC[Encore secret PlatformAdminBootstrapKey]
     API[POST /internal/platform-admin/bootstrap]
     DB[(tenant_account role=super_admin tenant_id=NULL)]
     SEC --> API --> DB
@@ -1098,9 +1105,9 @@ Dari folder `api-go`:
 ./scripts/setup-secrets-from-env.sh
 
 # Bootstrap platform admin — min. 32 karakter, BUKAN password login
-printf '%s' 'wabantu-internal-bootstrap-2026-sangat-rahasia' | encore secret set --type local PlatformAdminBootstrapSecret
+openssl rand -base64 48 | tr -d '\n' | encore secret set --type local PlatformAdminBootstrapKey   # KEY BARU, min 32 karakter
 
-encore secret list   # PlatformAdminBootstrapSecret harus ✓ di kolom Local
+encore secret list   # PlatformAdminBootstrapKey harus ✓ di kolom Local
 ```
 
 | Environment | `--type` untuk `encore secret set` |
@@ -1142,7 +1149,7 @@ curl -s -X POST http://localhost:4000/api/v1/internal/platform-admin/bootstrap \
 
 | Field / header | Wajib | Keterangan |
 |----------------|-------|------------|
-| `X-Platform-Bootstrap-Secret` | Ya | Harus **sama persis** dengan `PlatformAdminBootstrapSecret` di Encore |
+| `X-Platform-Bootstrap-Secret` | Ya | Harus **sama persis** dengan `PlatformAdminBootstrapKey` di Encore |
 | `email` | Ya | Dipakai untuk **login web** |
 | `password` | Ya | Min. **10** karakter — dipakai untuk login web |
 | `name` | Ya | Nama tampilan |
@@ -1237,7 +1244,7 @@ Key: `session:{accountId}:{sessionId}`
 
 **Production checklist:**
 
-- [ ] Set `PlatformAdminBootstrapSecret` hanya di Encore prod; rotate jika pernah bocor
+- [ ] Set `PlatformAdminBootstrapKey` hanya di Encore prod; rotate jika pernah bocor
 - [ ] Batasi siapa yang tahu secret bootstrap (founder/DevOps saja)
 - [ ] Jangan commit secret ke git / chat publik
 - [ ] Pertimbangkan nonaktifkan bootstrap di prod setelah akun operator dibuat (secret bisa di-rotate; endpoint tetap ada tapi secret tidak dibagikan)
@@ -1247,7 +1254,7 @@ Key: `session:{accountId}:{sessionId}`
 | Gejala | Penyebab umum | Solusi |
 |--------|---------------|--------|
 | `invalid bootstrap secret` | Header curl ≠ secret, atau secret hanya `--type dev` bukan **`local`** | [Bagian 4.1](#41-encore-secrets--panduan-developer): `encore secret set --type local`, restart `encore run` |
-| `PlatformAdminBootstrapSecret not configured` | Secret kosong / &lt; 32 char di environment **local** | Set dengan `printf` + `--type local`, restart |
+| `PlatformAdminBootstrapKey not configured` | Secret kosong / &lt; 32 char di environment **local** | Set dengan `printf` + `--type local`, restart |
 | `Email sudah terdaftar` | Email sudah dipakai owner lain | Login dengan email itu, atau pakai email baru |
 | Login OK tapi 403 di inbox | Belum impersonate tenant | Admin → **Pantau** tenant |
 | `encore check` gagal di `admin/` | Compile error | Pull terbaru; pastikan `requireSuperAdmin` dipanggil `_, err :=` |
@@ -1259,7 +1266,7 @@ Ulangi **Langkah 3** dengan **email berbeda** (secret bootstrap sama). Tidak ada
 
 ### Hubungan dengan `ai` internal token
 
-`POST /api/v1/internal/ai/*` memakai header **`X-Ai-Internal-Token`** — **bukan** login platform admin. Itu service-to-service / worker, bukan UI dashboard.
+`POST /api/v1/internal/ai/*` kini **private** (hanya service-to-service in-process) dan tetap mengecek **`X-Ai-Internal-Token`** (`AiInternalToken`). `/api/v1/internal/ai-triage/*` (GHA) memakai token terpisah `AiTriageInternalToken`. Keduanya **bukan** login platform admin.
 
 ---
 
@@ -1270,13 +1277,13 @@ Ulangi **Langkah 3** dengan **email berbeda** (secret bootstrap sama). Tidak ada
 | Passwords | bcrypt cost 12 |
 | Email lookup | SHA-256 `email_hash` |
 | JWT | Short TTL; session revocable via Redis delete on logout |
-| Webhook | `X-Hub-Signature-256` with per-channel `meta_app_secret` (from OAuth) |
+| Webhook | Mandatory `X-Hub-Signature-256` with per-channel `meta_app_secret`, fallback `MetaAppSecret` |
 | Rate limit | Redis sliding window |
 | Encryption | `DataEncryptionKey` for sensitive fields (`shared/crypto`) |
 
 ## Risks / gaps
 
-- `public` internal AI endpoints should verify `AiInternalToken` (check handlers before prod).
+- Internal AI endpoints are `private` (SEC-01); triage GHA endpoints are `public` + `AiTriageInternalToken` (>=32 chars, fail closed).
 - Raw SQL — watch for injection; use `$n` params and `QuoteIdent` for schema names only.
 - `withTenantDB` pool `search_path` — see Bagian 6.
 - CORS on SSE — origins reflected from request `Origin` header.
@@ -1402,7 +1409,7 @@ Secrets per Encore environment name (`staging`, etc.) via `encore secret set --e
 | No sqlc/ORM | Low | SQL string drift (e.g. past `messages` vs `message` bug) |
 | AI outbound delivery | — | `sendAiMessage` calls `whatsapp.SendText` (Meta Cloud API) before persisting `message` |
 | Webhook tenant routing | — | `system.whatsapp_inbound_map`: satu `meta_phone_number_id` → satu `tenant_schema`; duplikat ditolak saat OAuth connect |
-| Internal AI endpoints `public` | High for prod | Protect with `AiInternalToken` |
+| Internal AI endpoints | Resolved (SEC-01) | `private` + `AiInternalToken`; triage uses `AiTriageInternalToken` |
 | Limited automated tests | Medium | Regression risk on schema patches |
 
 **Non-idiomatic Go:** `autoreply.go` remains large; pipeline stages are partially split (`order_flow.go`, `greeting.go`, `product_scope.go`).
@@ -1472,7 +1479,7 @@ Secrets per Encore environment name (`staging`, etc.) via `encore secret set --e
 | Step | Location |
 |------|----------|
 | Handler | `webhook.handleWhatsAppWebhook` → `receiveWebhook` |
-| Auth | Signature optional (`MetaAppSecret`) |
+| Auth | Signature **mandatory** (channel `meta_app_secret`, fallback `MetaAppSecret`) |
 | Parse | `whatsapp.ParseWebhook` |
 | Per message | `ingestMessage` |
 | Resolve tenant | `resolveInboundChannel` |
@@ -1533,7 +1540,7 @@ flowchart LR
 ## Assumptions & uncertainty
 
 - Production deploy target (Encore Cloud vs k8s Docker) — confirm with team
-- Whether `AiInternalToken` is enforced on all internal routes — verify before prod
+- `AiInternalToken` / `AiTriageInternalToken` enforced on all internal routes (SEC-01, verified)
 - Exact Midtrans/RajaOngkir env mapping — see `scripts/setup-secrets-from-env.sh`
 
 ---

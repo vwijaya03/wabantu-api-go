@@ -1,12 +1,12 @@
 {
   "total_services": 29,
-  "total_endpoints": 361,
+  "total_endpoints": 371,
   "services": {
-    "admin": 35,
+    "admin": 39,
     "ai": 3,
     "analytics": 1,
     "audit": 2,
-    "auth": 9,
+    "auth": 12,
     "billing": 5,
     "branch": 2,
     "broadcast": 3,
@@ -22,13 +22,13 @@
     "kb": 6,
     "leads": 3,
     "notification": 2,
-    "order": 13,
+    "order": 14,
     "payment": 3,
     "shipping": 3,
     "tenant": 6,
     "tenantaccess": 5,
     "usage": 5,
-    "webhook": 1,
+    "webhook": 3,
     "whatsappapi": 6,
     "workflow": 4
   }

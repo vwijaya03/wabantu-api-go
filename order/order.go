@@ -14,6 +14,7 @@ import (
 	"encore.dev/storage/sqldb"
 
 	"encore.app/wabantu/finance"
+	"encore.app/wabantu/internal/proofcheck"
 	"encore.app/wabantu/inventory"
 	appdb "encore.app/wabantu/shared/db"
 	appErrs "encore.app/wabantu/shared/errs"
@@ -105,6 +106,9 @@ type Order struct {
 	PaymentProofVerifiedAt     *time.Time        `json:"paymentProofVerifiedAt,omitempty"`
 	PaymentProofVerifiedBy     string            `json:"paymentProofVerifiedBy,omitempty"`
 	PaymentProofMeta           *PaymentProofMeta `json:"paymentProofMeta,omitempty"`
+	// ProofCheck is derived from PaymentProofMeta: "" (no proof) | "cocok" | "perlu_dicek".
+	ProofCheck        string   `json:"proofCheck,omitempty"`
+	ProofCheckReasons []string `json:"proofCheckReasons,omitempty"`
 	Subtotal                   float64           `json:"subtotal"`
 	ShippingCost         float64          `json:"shippingCost"`
 	Total                float64          `json:"total"`
@@ -552,6 +556,7 @@ func Update(ctx context.Context, id string, req *UpdateOrderParams) (*Order, err
 			return nil, err
 		}
 	}
+	mirrorOrderState(ctx, u, o.ConversationID)
 	return &o, nil
 }
 
@@ -586,6 +591,7 @@ func Cancel(ctx context.Context, id string) (*Order, error) {
 	if err := inventory.SyncOrderStock(ctx, u.TenantSchema, o.ID, "cancelled", orderStockItems(o.Items), u.AccountID); err != nil {
 		return nil, err
 	}
+	mirrorOrderState(ctx, u, o.ConversationID)
 	return &o, nil
 }
 
@@ -1020,6 +1026,7 @@ func applyPaymentProofMeta(o *Order, raw []byte) {
 	var meta PaymentProofMeta
 	if json.Unmarshal(raw, &meta) == nil {
 		o.PaymentProofMeta = &meta
+		o.ProofCheck, o.ProofCheckReasons = proofcheck.Result(true, meta.Amount, meta.Flags, meta.ProofBlocked)
 	}
 }
 

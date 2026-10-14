@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"encore.app/wabantu/audit"
+	"encore.app/wabantu/internal/adminauth"
 	"errors"
 	"fmt"
 	"strings"
@@ -66,6 +68,10 @@ type TenantDetailResponse struct {
 type ImpersonateResponse struct {
 	OK     bool   `json:"ok"`
 	Tenant Tenant `json:"tenant"`
+	// AccessToken is a separate impersonation token (typ "impersonation", 30 min). Use it for
+	// tenant endpoints; it is rejected at /admin/*. The admin token is unchanged.
+	AccessToken string `json:"accessToken"`
+	ExpiresAt   string `json:"expiresAt"` // RFC3339
 }
 
 type StopImpersonationResponse struct {
@@ -263,7 +269,8 @@ func Impersonate(ctx context.Context, tenantId string) (*ImpersonateResponse, er
 		return nil, err
 	}
 
-	if err := appauth.StartImpersonation(ctx, userData.AccountID, userData.SessionID, tenantId); err != nil {
+	imp, err := appauth.StartImpersonation(ctx, userData.AccountID, userData.SessionID, tenantId)
+	if err != nil {
 		return nil, toEncoreErr(err)
 	}
 
@@ -300,8 +307,10 @@ func Impersonate(ctx context.Context, tenantId string) (*ImpersonateResponse, er
 	).Scan(&t.ID, &t.CompanyName, &t.SchemaName, &status, &t.CreatedAt, &t.OwnerEmail)
 	t.IsActive = status == "active"
 
+	audit.Log(ctx, tenantId, adminID, "admin.impersonate.start", "tenant", tenantId,
+		adminauth.ImpersonationAudit(adminID, userData.Email, tenantId, imp.GrantID, imp.SessionID))
 	rlog.Info("impersonation started", "adminId", adminID, "tenantId", tenantId)
-	return &ImpersonateResponse{OK: true, Tenant: t}, nil
+	return &ImpersonateResponse{OK: true, Tenant: t, AccessToken: imp.AccessToken, ExpiresAt: imp.ExpiresAt.Format(time.RFC3339)}, nil
 }
 
 // StopImpersonation ends tenant view mode for the current session.
@@ -320,13 +329,13 @@ func StopImpersonation(ctx context.Context) (*StopImpersonationResponse, error) 
 	uid, _ := auth.UserID()
 	adminID := string(uid)
 
-	var sessionID string
+	var sessionID, stoppedTenantID string
 	err = db.QueryRow(ctx, `
 		UPDATE admin_session SET ended_at = NOW()
 		WHERE admin_account_id = $1 AND ended_at IS NULL
-		RETURNING id`,
+		RETURNING id, COALESCE(impersonated_tenant_id::text, '')`,
 		adminID,
-	).Scan(&sessionID)
+	).Scan(&sessionID, &stoppedTenantID)
 	if err == sql.ErrNoRows {
 		return &StopImpersonationResponse{OK: true, Message: "Impersonation ended"}, nil
 	}
@@ -340,6 +349,8 @@ func StopImpersonation(ctx context.Context) (*StopImpersonationResponse, error) 
 			sessionID, details)
 	}
 
+	audit.Log(ctx, stoppedTenantID, adminID, "admin.impersonate.stop", "tenant", stoppedTenantID,
+		adminauth.ImpersonationAudit(adminID, userData.Email, stoppedTenantID, "", sessionID))
 	rlog.Info("impersonation stopped", "adminId", adminID)
 	return &StopImpersonationResponse{OK: true, Message: "Impersonation ended"}, nil
 }
@@ -541,6 +552,9 @@ func requireSuperAdmin(ctx context.Context) (*types.AuthUser, error) {
 	}
 	if userData.Role != "super_admin" {
 		return nil, &errs.Error{Code: errs.PermissionDenied, Message: "super admin access required"}
+	}
+	if userData.SessionKind != adminauth.KindAdmin { // defense in depth; middleware enforces too
+		return nil, &errs.Error{Code: errs.PermissionDenied, Message: "admin session required"}
 	}
 	return userData, nil
 }

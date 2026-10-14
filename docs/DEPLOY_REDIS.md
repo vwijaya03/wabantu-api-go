@@ -171,3 +171,7 @@ Jika login mengembalikan `{"message":"db error"}` (bukan salah password), itu ma
 ```
 
 Detail: [DEPLOY_ENCORE_CLOUD.md](./DEPLOY_ENCORE_CLOUD.md) Langkah 7.
+
+## Cloud Run: Redis WAJIB (Security L-1, 2026-10-13)
+
+Bootstrap platform admin sekarang fail-closed: tanpa Redis endpoint `POST /api/v1/internal/platform-admin/bootstrap` menjawab 503. Login dan lockout juga butuh Redis. Deploy Cloud Run harus menyertakan `RedisURL` yang valid. Detail: `docs/ADMIN_AUTH.md`.

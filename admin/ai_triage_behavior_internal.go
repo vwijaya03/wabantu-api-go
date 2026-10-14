@@ -26,6 +26,11 @@ type InternalGetBehaviorJobResponse struct {
 
 // GetInternalAITriageBehaviorJob is fetched by GHA (internal token).
 //
+// SEC-01 justification for `public`: the caller is GitHub Actions (outside the
+// Encore network), so the route cannot be private. It is protected by the
+// dedicated AiTriageInternalToken (>=32 chars, constant-time compare, fail
+// closed when unset) and only exposes sanitized job data.
+//
 //encore:api public raw method=GET path=/api/v1/internal/ai-triage/behavior-jobs/:id
 func GetInternalAITriageBehaviorJob(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()

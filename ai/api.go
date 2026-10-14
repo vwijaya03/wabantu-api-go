@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"crypto/subtle"
+	"strings"
 
 	"encore.dev/beta/errs"
 	"encore.dev/rlog"
@@ -32,11 +33,12 @@ var svc *AutoReplyService
 
 func init() {
 	rdb := newRedisClient()
-	client := NewAnthropicClient(secrets.AnthropicAPIKey, AnthropicConfig{
+	client := ChatClientViaRegistry(secrets.AnthropicAPIKey, AnthropicConfig{
 		Model:     defaultAnthropicModel,
 		MaxTokens: defaultAnthropicMaxToks,
 	})
 	svc = NewAutoReplyService(rdb, client)
+	WireLLMConfig(llmConfigDB())
 	rlog.Info("ai model catalog",
 		"haiku", DefaultHaikuAPIID(),
 		"sonnet", DefaultSonnetAPIID(),
@@ -85,7 +87,7 @@ type InternalFallbackResponse struct {
 
 // ─── Endpoints ───────────────────────────────────────────────────────────────
 
-//encore:api public method=POST path=/api/v1/internal/ai/auto-reply
+//encore:api private method=POST path=/api/v1/internal/ai/auto-reply
 func InternalProcessAutoReply(ctx context.Context, req *InternalAutoReplyRequest) (*InternalAutoReplyResponse, error) {
 	if err := assertInternalToken(req.InternalToken); err != nil {
 		return nil, err
@@ -115,7 +117,7 @@ func InternalProcessAutoReply(ctx context.Context, req *InternalAutoReplyRequest
 	return &InternalAutoReplyResponse{Sent: sent}, nil
 }
 
-//encore:api public method=POST path=/api/v1/internal/ai/auto-reply/fallback
+//encore:api private method=POST path=/api/v1/internal/ai/auto-reply/fallback
 func InternalProcessFallback(ctx context.Context, req *InternalFallbackRequest) (*InternalFallbackResponse, error) {
 	if err := assertInternalToken(req.InternalToken); err != nil {
 		return nil, err
@@ -146,9 +148,15 @@ func InternalProcessFallback(ctx context.Context, req *InternalFallbackRequest) 
 
 // ─── Token validation ────────────────────────────────────────────────────────
 
+// minInternalTokenLen rejects weak/placeholder tokens (fail closed).
+const minInternalTokenLen = 32
+
 func assertInternalToken(token string) error {
-	expected := secrets.AiInternalToken
-	if expected == "" || token == "" {
+	return checkInternalToken(token, strings.TrimSpace(secrets.AiInternalToken))
+}
+
+func checkInternalToken(token, expected string) error {
+	if len(expected) < minInternalTokenLen || token == "" {
 		return &errs.Error{Code: errs.Unauthenticated, Message: "Unauthorized internal request"}
 	}
 	if subtle.ConstantTimeCompare([]byte(token), []byte(expected)) != 1 {

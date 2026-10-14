@@ -206,6 +206,7 @@ const ConnectedTokenQuerySuffix = `
 		COALESCE(meta_phone_number_id, '')
 		FROM whatsapp_channel
 		WHERE status = 'connected'
+		  AND provider <> 'simulator'
 		  AND (
 		    NULLIF(TRIM(access_token_enc), '') IS NOT NULL
 		    OR (NULLIF(TRIM(access_token), '') IS NOT NULL AND access_token <> $1)

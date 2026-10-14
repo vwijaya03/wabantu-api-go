@@ -27,8 +27,28 @@ func RecordOrderCompletedIncome(ctx context.Context, tenantSchema, createdBy, or
 	if err != nil {
 		return appErrs.Internal(err.Error())
 	}
-	pool := tenantPool()
+	return recordOrderIncome(ctx, sch, tenantPool(), createdBy, orderID, amount, walletID)
+}
 
+// RecordOrderCompletedIncomeTx is RecordOrderCompletedIncome inside the caller's transaction
+// (same tenant database), so an order status change and its income commit or roll back together.
+// Idempotent per order (reference_no, ON CONFLICT DO NOTHING).
+func RecordOrderCompletedIncomeTx(ctx context.Context, tx *sql.Tx, tenantSchema, createdBy, orderID string, amount float64, walletID string) error {
+	if amount <= 0 {
+		return nil
+	}
+	orderID = strings.TrimSpace(orderID)
+	if orderID == "" || tx == nil {
+		return nil
+	}
+	sch, err := prepareTenant(ctx, tenantSchema)
+	if err != nil {
+		return appErrs.Internal(err.Error())
+	}
+	return recordOrderIncome(ctx, sch, tx, createdBy, orderID, amount, walletID)
+}
+
+func recordOrderIncome(ctx context.Context, sch appdb.SchemaSQL, pool finQuerier, createdBy, orderID string, amount float64, walletID string) error {
 	resolvedWalletID, err := resolveIncomeWallet(ctx, sch, pool, walletID)
 	if err != nil {
 		return err

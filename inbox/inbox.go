@@ -21,6 +21,9 @@ import (
 	"encore.app/wabantu/shared/tenantschema"
 	"encore.app/wabantu/shared/strutil"
 	"encore.app/wabantu/shared/types"
+	"encore.app/wabantu/shared/whatsappchannel"
+	"encore.app/wabantu/internal/realtime"
+	sim "encore.app/wabantu/internal/simulator"
 	"encore.app/wabantu/tenant"
 	"encore.app/wabantu/whatsapp"
 	"encore.dev"
@@ -630,26 +633,50 @@ func SendMessage(ctx context.Context, id string, p *SendMessageParams) (*SendMes
 	).Scan(&chStatus, &tokenEnc, &tokenLegacy, &chProvider, &chMetaPhoneNumberID); err != nil {
 		return nil, apperr.NotFound("Channel tidak ditemukan")
 	}
+	// Simulator channel: persist only (visible via GET /api/v1/simulator/messages); never Meta.
+	var extID string
+	if whatsappchannel.IsSimulator(chProvider) || whatsappchannel.IsSimulatorPhone(contactPhone) {
+		extID = whatsappchannel.SimulatorExternalID("human")
+	} else {
+		var err error
+		if extID, err = sendViaMeta(ctx, chStatus, chProvider, tokenEnc, tokenLegacy, chMetaPhoneNumberID, contactPhone, text); err != nil {
+			return nil, err
+		}
+	}
+	resp, err := insertManualReply(ctx, ts, id, extID, text)
+	if err == nil && strings.HasPrefix(extID, "sim-") {
+		m := resp.Message
+		sim.Mirror(ctx, realtime.Default(realtime.LogfTo(rlog.Warn)),
+			func(ctx context.Context, q string, a ...any) sim.Scanner { return ts.QueryRowContext(ctx, q, a...) },
+			nil, user.TenantID, id,
+			&sim.MirrorMsg{ID: m.ID, Direction: "out", Author: "human", Type: "text", Text: text, Status: "sent", CreatedAt: m.CreatedAt})
+	}
+	return resp, err
+}
+
+func sendViaMeta(ctx context.Context, chStatus, chProvider, tokenEnc, tokenLegacy string, chMetaPhoneNumberID *string, contactPhone, text string) (string, error) {
 	chAccessToken, err := pii.DecryptOrLegacy(tokenEnc, tokenLegacy, encKey())
 	if err != nil {
-		return nil, apperr.Internal("failed to decrypt channel token")
+		return "", apperr.Internal("failed to decrypt channel token")
 	}
 	if chStatus != "connected" || chAccessToken == "" {
-		return nil, apperr.BadRequest("Channel WhatsApp belum terhubung. Silakan reconnect.")
+		return "", apperr.BadRequest("Channel WhatsApp belum terhubung. Silakan reconnect.")
 	}
 	if chProvider != "meta_cloud" {
-		return nil, apperr.BadRequest("Provider channel belum didukung")
+		return "", apperr.BadRequest("Provider channel belum didukung")
 	}
 	if chMetaPhoneNumberID == nil || *chMetaPhoneNumberID == "" {
-		return nil, apperr.BadRequest("Channel belum memiliki meta_phone_number_id")
+		return "", apperr.BadRequest("Channel belum memiliki meta_phone_number_id")
 	}
-
 	extID, err := whatsapp.SendText(ctx, chAccessToken, *chMetaPhoneNumberID, contactPhone, text)
 	if err != nil {
 		rlog.Error("send whatsapp message failed", "err", err)
-		return nil, apperr.Unavailable("Gagal mengirim pesan WhatsApp")
+		return "", apperr.Unavailable("Gagal mengirim pesan WhatsApp")
 	}
+	return extID, nil
+}
 
+func insertManualReply(ctx context.Context, ts appdb.TenantScope, id, extID, text string) (*SendMessageResponse, error) {
 	var m MessageItem
 	if err := ts.QueryRowContext(ctx,
 		`INSERT INTO message (conversation_id, external_id, direction, author, type, body, metadata, status)

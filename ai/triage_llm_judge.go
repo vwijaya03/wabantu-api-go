@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"encore.app/wabantu/shared/llm"
 	"fmt"
 	"strings"
 
@@ -31,10 +32,7 @@ type llmJudgeVerdict struct {
 }
 
 func judgeTriageTurn(ctx context.Context, businessName string, catalog []dbCatalogItem, turn AITriageTurn) (llmJudgeVerdict, CompletionUsage, error) {
-	client := NewAnthropicClient(secrets.AnthropicAPIKey, AnthropicConfig{
-		Model:     DefaultHaikuAPIID(),
-		MaxTokens: 256,
-	})
+	judgeCfg := AnthropicConfig{Model: DefaultHaikuAPIID(), MaxTokens: 256}
 
 	biz := businessName
 	if biz == "" {
@@ -43,7 +41,8 @@ func judgeTriageTurn(ctx context.Context, businessName string, catalog []dbCatal
 	compact := relevantCatalogForTurn(turn, catalog)
 	userPrompt := buildJudgeUserPrompt(biz, compact, turn)
 
-	text, usage, err := client.CompleteText(ctx, DefaultHaikuAPIID(), triageJudgeSystemPrompt, userPrompt, 256)
+	text, usage, _, err := CompleteViaRegistry(ctx, secrets.AnthropicAPIKey, judgeCfg, "", llm.FnIntent,
+		DefaultHaikuAPIID(), triageJudgeSystemPrompt, userPrompt, 256)
 	if err != nil {
 		return llmJudgeVerdict{}, usage, err
 	}

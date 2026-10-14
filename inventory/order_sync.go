@@ -11,6 +11,7 @@ import (
 
 	"encore.app/wabantu/finance"
 	appErrs "encore.app/wabantu/shared/errs"
+	"encore.app/wabantu/shared/tenantschema"
 )
 
 // OrderStockItem is a tenant-agnostic view of an order line, used by the order
@@ -84,14 +85,27 @@ func SyncOrderStock(ctx context.Context, tenantSchema, orderID, status string, i
 		return err
 	}
 
+	// Serialize per order: the reconcile (required − already issued) is computed and posted
+	// under a row lock on the order, so concurrent syncs (approve, PATCH status, AI flow) can
+	// never both see "nothing issued yet" and deduct twice. The same tx maintains the
+	// stock_applied_at marker (set while stock is issued, cleared when fully restored).
+	tx, terr := pool.BeginTx(ctx, nil)
+	if terr != nil {
+		return appErrs.Internal(terr.Error())
+	}
+	defer tx.Rollback()
+	if _, lerr := tx.ExecContext(ctx, fmt.Sprintf(`SELECT 1 FROM %s WHERE id::text = $1 FOR UPDATE`, sch.T("order")), orderID); lerr != nil {
+		return appErrs.Internal(lerr.Error())
+	}
+
 	required := map[reqKey]float64{}
 	if IsCommittedOrderStatus(status) {
-		required, err = resolveOrderRequirements(ctx, sch, pool, items, defaultWarehouse)
+		required, err = resolveOrderRequirements(ctx, sch, tx, items, defaultWarehouse)
 		if err != nil {
 			return err
 		}
 	}
-	netIssued, err := orderNetIssued(ctx, sch, pool, orderID)
+	netIssued, err := orderNetIssued(ctx, sch, tx, orderID)
 	if err != nil {
 		return err
 	}
@@ -104,53 +118,48 @@ func SyncOrderStock(ctx context.Context, tenantSchema, orderID, status string, i
 		keys[k] = struct{}{}
 	}
 
-	if len(keys) > 0 {
-		tx, terr := pool.BeginTx(ctx, nil)
-		if terr != nil {
-			return appErrs.Internal(terr.Error())
-		}
-		defer tx.Rollback()
-
-		for k := range keys {
-			delta := round4(required[k] - netIssued[k].qty)
-			if delta > epsilon {
-				cc, cerr := loadCostingContext(ctx, sch, tx, k.item)
-				if cerr != nil {
-					return cerr
-				}
-				if _, merr := PostMovement(ctx, sch, tx, MovementInput{
-					CatalogItemID: k.item, WarehouseID: k.warehouse,
-					Type: MovementSaleIssue, Direction: dirOut, Qty: delta,
-					CostingMethod: cc.method, BlockNegative: cc.blockNegative,
-					RefType: "order", RefID: orderID, CreatedBy: createdBy,
-					Note: "Stok keluar pesanan",
-				}); merr != nil {
-					return merr
-				}
-			} else if delta < -epsilon {
-				restoreQty := round4(-delta)
-				unitCost := 0.0
-				if netIssued[k].qty > epsilon {
-					unitCost = round4(netIssued[k].cost / netIssued[k].qty)
-				}
-				cc, cerr := loadCostingContext(ctx, sch, tx, k.item)
-				if cerr != nil {
-					return cerr
-				}
-				if _, merr := PostMovement(ctx, sch, tx, MovementInput{
-					CatalogItemID: k.item, WarehouseID: k.warehouse,
-					Type: MovementSaleCancelRestore, Direction: dirIn, Qty: restoreQty,
-					UnitCost: unitCost, CostingMethod: cc.method, BlockNegative: false,
-					RefType: "order", RefID: orderID, CreatedBy: createdBy,
-					Note: "Stok kembali (pesanan batal)",
-				}); merr != nil {
-					return merr
-				}
+	for k := range keys {
+		delta := round4(required[k] - netIssued[k].qty)
+		if delta > epsilon {
+			cc, cerr := loadCostingContext(ctx, sch, tx, k.item)
+			if cerr != nil {
+				return cerr
+			}
+			if _, merr := PostMovement(ctx, sch, tx, MovementInput{
+				CatalogItemID: k.item, WarehouseID: k.warehouse,
+				Type: MovementSaleIssue, Direction: dirOut, Qty: delta,
+				CostingMethod: cc.method, BlockNegative: cc.blockNegative,
+				RefType: "order", RefID: orderID, CreatedBy: createdBy,
+				Note: "Stok keluar pesanan",
+			}); merr != nil {
+				return merr
+			}
+		} else if delta < -epsilon {
+			restoreQty := round4(-delta)
+			unitCost := 0.0
+			if netIssued[k].qty > epsilon {
+				unitCost = round4(netIssued[k].cost / netIssued[k].qty)
+			}
+			cc, cerr := loadCostingContext(ctx, sch, tx, k.item)
+			if cerr != nil {
+				return cerr
+			}
+			if _, merr := PostMovement(ctx, sch, tx, MovementInput{
+				CatalogItemID: k.item, WarehouseID: k.warehouse,
+				Type: MovementSaleCancelRestore, Direction: dirIn, Qty: restoreQty,
+				UnitCost: unitCost, CostingMethod: cc.method, BlockNegative: false,
+				RefType: "order", RefID: orderID, CreatedBy: createdBy,
+				Note: "Stok kembali (pesanan batal)",
+			}); merr != nil {
+				return merr
 			}
 		}
-		if err := tx.Commit(); err != nil {
-			return appErrs.Internal(err.Error())
-		}
+	}
+	if err := setStockAppliedMarker(ctx, sch, tx, orderID, IsCommittedOrderStatus(status)); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return appErrs.Internal(err.Error())
 	}
 
 	return resyncOrderCOGS(ctx, tenantSchema, sch, pool, orderID, postExpense, createdBy)
@@ -422,4 +431,22 @@ func sortStockShortages(lines []StockShortageLine) {
 		}
 		return lines[i].WarehouseName < lines[j].WarehouseName
 	})
+}
+
+// setStockAppliedMarker keeps order.stock_applied_at in sync inside the stock tx: set while
+// the order holds issued stock, NULL after a full restore (draft/cancelled). Tolerates
+// tenant schemas where the column does not exist yet (migration not applied).
+func setStockAppliedMarker(ctx context.Context, sch appdb.SchemaSQL, tx *sql.Tx, orderID string, applied bool) error {
+	ok, err := tenantschema.ColumnExists(ctx, tx, sch.Schema, "order", "stock_applied_at")
+	if err != nil || !ok {
+		return nil
+	}
+	q := fmt.Sprintf(`UPDATE %s SET stock_applied_at = now() WHERE id::text = $1`, sch.T("order"))
+	if !applied {
+		q = fmt.Sprintf(`UPDATE %s SET stock_applied_at = NULL WHERE id::text = $1`, sch.T("order"))
+	}
+	if _, err := tx.ExecContext(ctx, q, orderID); err != nil {
+		return appErrs.Internal(err.Error())
+	}
+	return nil
 }

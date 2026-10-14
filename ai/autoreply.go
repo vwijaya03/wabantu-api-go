@@ -109,6 +109,38 @@ func NewAutoReplyService(rdb *redis.Client, anthropicClient *AnthropicClient) *A
 	}
 }
 
+// Outbound seams (swapped in tests only).
+var (
+	metaSendText      = whatsapp.SendText
+	simulatorOutbound = (*AutoReplyService).sendSimulatorMessage
+)
+
+type outboundRoute int
+
+const (
+	routeNone outboundRoute = iota
+	routeMeta
+	routeSimulator
+)
+
+// autoReplyRoute decides whether an AI reply can be delivered on this channel and how.
+// Simulator channels never need (or use) Meta credentials.
+func autoReplyRoute(ch *dbChannel) (outboundRoute, string) {
+	switch {
+	case ch == nil:
+		return routeNone, "no channel"
+	case ch.Status != "connected":
+		return routeNone, "channel not connected"
+	case whatsappchannel.IsSimulator(ch.Provider):
+		return routeSimulator, ""
+	case ch.Provider != "meta_cloud":
+		return routeNone, "unsupported provider"
+	case ch.AccessToken == nil || ch.MetaPhoneNumberID == nil:
+		return routeNone, "channel missing accessToken or metaPhoneNumberId"
+	}
+	return routeMeta, ""
+}
+
 // ProcessAutoReply is the main AI auto-reply pipeline.
 func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReplyJobPayload) (bool, error) {
 	rlog.Info("AI job start",
@@ -194,15 +226,12 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		rlog.Warn("AI job: missing contact or channel")
 		return false, nil
 	}
-	if channel.Provider != "meta_cloud" || channel.Status != "connected" {
+	if route, why := autoReplyRoute(channel); route == routeNone {
 		rlog.Warn("AI job: unsupported/invalid channel",
 			"provider", channel.Provider,
 			"status", channel.Status,
+			"reason", why,
 		)
-		return false, nil
-	}
-	if channel.AccessToken == nil || channel.MetaPhoneNumberID == nil {
-		rlog.Warn("AI job: channel missing accessToken or metaPhoneNumberId")
 		return false, nil
 	}
 
@@ -290,6 +319,9 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		rlog.Warn("AI job: catalog load failed", "err", catLoadErr)
 	}
 	enrichCatalogStock(ctx, ts, catalog)
+	if contact != nil {
+		applyContactTierPrices(ctx, ts, catalog, contact.ID)
+	}
 
 	if IsPaymentQuestion(userText) {
 		if ans, ok := tryPaymentFAQAnswer(userText, kbEntries); ok {
@@ -691,8 +723,9 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	)
 
 	toolExec := NewCatalogToolExecutor(catalog)
-	reply, compUsage, usedTools, err := s.anthropic.GenerateSalesReplyWithCatalogTools(
+	reply, compUsage, usedTools, chatProvider, chatModel, err := s.generateChatReply(
 		ctx,
+		payload.TenantID,
 		route.Model,
 		SalesReplyRequest{
 			System:   sys,
@@ -705,9 +738,11 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		toolExec,
 	)
 	if err != nil {
-		rlog.Error("AI job: anthropic sales reply failed",
+		rlog.Error("AI job: sales reply failed",
 			"err", err,
-			"model", route.Model,
+			"provider", chatProvider,
+			"model", chatModel,
+			"routeModel", route.Model,
 			"tenantId", payload.TenantID,
 			"convoId", convo.ID,
 		)
@@ -716,6 +751,10 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 		sendErr := s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, fallbackText, "ai", payload.InboundMessageID, out)
 		return sendErr == nil, sendErr
+	}
+
+	if chatModel != "" {
+		route.Model = chatModel // record the model actually used (may be Gemini or a fallback)
 	}
 
 	groundedReply, wasGrounded, groundReason := groundLLMReply(reply, userText, profile, catalog, history,
@@ -1428,6 +1467,11 @@ func (s *AutoReplyService) sendAiMessage(
 	if channel == nil || contact == nil {
 		return fmt.Errorf("missing channel or contact")
 	}
+	// Simulator branches away here, before any Meta code path: replies are only
+	// stored in the simulator conversation (never sent to graph.facebook.com).
+	if whatsappchannel.IsSimulator(channel.Provider) {
+		return simulatorOutbound(s, ctx, ts, tenantID, convo, text, author, inboundMessageID, meta)
+	}
 	if channel.Provider != "meta_cloud" {
 		return fmt.Errorf("unsupported channel provider %q", channel.Provider)
 	}
@@ -1477,7 +1521,7 @@ func (s *AutoReplyService) sendAiMessage(
 		}
 	}
 
-	extID, err := whatsapp.SendText(
+	extID, err := metaSendText(
 		ctx,
 		*channel.AccessToken,
 		*channel.MetaPhoneNumberID,

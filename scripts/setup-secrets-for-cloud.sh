@@ -123,7 +123,7 @@ set_cloud_secret MidtransIsProduction "${MIDTRANS_IS_PRODUCTION:-false}" true
 set_cloud_secret RajaOngkirAPIKey "$RAJAONGKIR_API_KEY" true
 set_cloud_secret RajaOngkirAccountType "${RAJAONGKIR_ACCOUNT_TYPE:-starter}" true
 set_cloud_secret SentryDSN "$SENTRY_DSN" true
-set_cloud_secret PlatformAdminBootstrapSecret "$PLATFORM_ADMIN_BOOTSTRAP"
+set_cloud_secret PlatformAdminBootstrapKey "$PLATFORM_ADMIN_BOOTSTRAP"
 set_cloud_secret GitHubActionsToken "$GITHUB_ACTIONS_TOKEN" true
 
 # RAG (wajib terdefinisi di Encore agar deploy lolos; runtime fallback lexical jika kosong)

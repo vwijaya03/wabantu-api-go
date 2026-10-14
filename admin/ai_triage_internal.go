@@ -55,9 +55,14 @@ func requireTriageUUID(id string) (string, error) {
 	return parsed, nil
 }
 
+const minTriageTokenLen = 32
+
 func assertTriageInternalToken(token string) error {
-	expected := strings.TrimSpace(secrets.AiInternalToken)
-	if expected == "" || token == "" {
+	return checkTriageToken(token, strings.TrimSpace(secrets.AiTriageInternalToken))
+}
+
+func checkTriageToken(token, expected string) error {
+	if len(expected) < minTriageTokenLen || token == "" {
 		return &errs.Error{Code: errs.Unauthenticated, Message: "Unauthorized internal request"}
 	}
 	if subtle.ConstantTimeCompare([]byte(token), []byte(expected)) != 1 {

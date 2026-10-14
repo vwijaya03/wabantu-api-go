@@ -3,6 +3,9 @@ package ai
 import (
 	"context"
 	"fmt"
+
+	bf "encore.app/wabantu/internal/buyerflow"
+	"encore.dev/rlog"
 )
 
 // enrichCatalogStock annotates catalog items with per-warehouse available stock when the
@@ -106,4 +109,42 @@ func loadActiveCatalog(ctx context.Context, ts tenantScopedQuerier, limit int) (
 		out = append(out, it)
 	}
 	return out, rows.Err()
+}
+
+// applyContactTierPrices re-prices the catalog for the buyer: the contact's active price
+// type (business_price_type via contact.price_type_id) or the tenant default. Errors are
+// logged and leave sell_price (umum) in place so replies never break on pricing.
+func applyContactTierPrices(ctx context.Context, ts tenantScopedQuerier, catalog []dbCatalogItem, contactID string) {
+	if len(catalog) == 0 {
+		return
+	}
+	pt, cip, ct := ts.T("business_price_type"), ts.T("business_catalog_item_price"), ts.T("contact")
+	var tierID, tierCode string
+	err := ts.QueryRowContext(ctx, fmt.Sprintf(`
+		SELECT t.id::text, t.code FROM %[1]s t
+		WHERE t.deleted_at IS NULL AND t.is_active = true
+		  AND (t.id = (SELECT c.price_type_id FROM %[2]s c WHERE c.id::text = $1 AND c.deleted_at IS NULL)
+		       OR t.is_default = true)
+		ORDER BY (t.id = (SELECT c.price_type_id FROM %[2]s c WHERE c.id::text = $1)) IS TRUE DESC,
+		         t.is_default DESC, t.display_order
+		LIMIT 1`, pt, ct), contactID).Scan(&tierID, &tierCode)
+	if err != nil {
+		rlog.Debug("AI: no price tier resolved, using sell_price", "err", err)
+		return
+	}
+	rows, err := ts.QueryContext(ctx, fmt.Sprintf(`SELECT catalog_item_id::text, price FROM %s WHERE price_type_id = $1::uuid`, cip), tierID)
+	if err != nil {
+		rlog.Warn("AI: tier price load failed", "err", err)
+		return
+	}
+	defer rows.Close()
+	prices := map[string]float64{}
+	for rows.Next() {
+		var id string
+		var p float64
+		if rows.Scan(&id, &p) == nil {
+			prices[id] = p
+		}
+	}
+	bf.ApplyTierPrices(catalog, prices, tierCode)
 }

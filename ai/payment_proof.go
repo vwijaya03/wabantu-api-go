@@ -20,6 +20,7 @@ import (
 	"encore.app/wabantu/order"
 	appdb "encore.app/wabantu/shared/db"
 	"encore.app/wabantu/shared/inboxrealtime"
+	"encore.app/wabantu/shared/llm"
 	"encore.app/wabantu/usage"
 )
 
@@ -67,6 +68,10 @@ func processPaymentProofJob(ctx context.Context, job *PaymentProofJob) error {
 	}
 
 	target, payableCount, err := resolvePaymentTargetOrder(ctx, ts, job.TenantSchema, scope, job.InboundMessageID)
+	if ask, ok := asAskOrder(err); ok {
+		rlog.Info("payment proof target ambiguous: asking buyer", "conversationId", job.ConversationID, "refs", ask.Refs)
+		return sendPaymentProofOutbound(ctx, ts, job, paymentProofAskOrderReply(ask.Refs))
+	}
 	if err != nil {
 		return err
 	}
@@ -106,7 +111,7 @@ func processPaymentProofJob(ctx context.Context, job *PaymentProofJob) error {
 		return applyPaymentProofResult(ctx, ts, job, target, "proof_submitted", target.Status, meta, true, "")
 	}
 
-	ocr, ocrUsage, ocrErr := aivision.ExtractPaymentProofFromImage(ctx, secrets.AnthropicAPIKey, imageBytes, mime)
+	ocr, ocrUsage, ocrErr := aivision.ExtractPaymentProofFromImageForTenant(ctx, secrets.AnthropicAPIKey, job.TenantID, imageBytes, mime)
 	_ = usage.RecordAIActivity(ctx, usage.AIActivityParams{
 		TenantSchema:   job.TenantSchema,
 		TenantID:       job.TenantID,
@@ -114,7 +119,8 @@ func processPaymentProofJob(ctx context.Context, job *PaymentProofJob) error {
 		InboundID:      job.InboundMessageID,
 		Purpose:        usage.PurposePaymentProofOCR,
 		Path:           "payment_proof_ocr",
-		Model:          "claude-haiku-4-5",
+		Model:          paymentOCRModelForUsage(ocrUsage),
+		Tier:           llm.ModelFamily(paymentOCRModelForUsage(ocrUsage)),
 		LLMUsed:        ocrErr == nil,
 		InputTokens:    ocrUsage.InputTokens,
 		OutputTokens:   ocrUsage.OutputTokens,
@@ -187,6 +193,19 @@ func resolvePaymentTargetOrder(ctx context.Context, ts tenantScopedQuerier, tena
 		return nil, 0, err
 	}
 	if target != nil {
+		// A previously rejected order is not a safe implicit target when a newer order exists or
+		// this burst starts a new order: ask the buyer instead (see payment_proof_route.go).
+		if strings.EqualFold(strings.TrimSpace(target.PaymentStatus), "rejected") {
+			latest, _ := loadLatestOrderForContact(ctx, ts, tenantSchema, scope)
+			imageAt := time.Now()
+			if msg != nil && !msg.CreatedAt.IsZero() {
+				imageAt = msg.CreatedAt
+			}
+			history, _ := loadHistory(ctx, ts, scope.ConversationID, 12)
+			if proofTargetSuperseded(target, latest, burstHasNewOrderIntent(history, imageAt)) {
+				return nil, count, &errPaymentProofAskOrder{Refs: askOrderRefs(target, latest)}
+			}
+		}
 		return target, count, nil
 	}
 	history, _ := loadHistory(ctx, ts, scope.ConversationID, 12)

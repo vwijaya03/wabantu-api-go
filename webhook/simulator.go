@@ -1,0 +1,304 @@
+package webhook
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/redis/go-redis/v9"
+
+	"encore.dev/beta/auth"
+	"encore.dev/beta/errs"
+	"encore.dev/rlog"
+
+	appauth "encore.app/wabantu/auth"
+	"encore.app/wabantu/inbox"
+	"encore.app/wabantu/internal/realtime"
+	sim "encore.app/wabantu/internal/simulator"
+	appdb "encore.app/wabantu/shared/db"
+	"encore.app/wabantu/shared/ratelimit"
+	"encore.app/wabantu/shared/types"
+	"encore.app/wabantu/shared/whatsappchannel"
+	"encore.app/wabantu/whatsapp"
+)
+
+// ─── Judge chat simulator (BE-09) — contract: docs/API_AI_CONFIG.md §2 ──────
+// Same ingest pipeline as the Meta webhook (ingestResolved), on a per-tenant
+// whatsapp_channel with provider "simulator": outbound is stored, never sent to Meta.
+
+const simConvTTL = 7 * 24 * time.Hour
+
+type SimulatorImage struct {
+	Base64   string `json:"base64"`
+	MimeType string `json:"mimeType"`
+}
+
+// SimulatorSendParams: buyer message only — no price/status/order fields by design.
+type SimulatorSendParams struct {
+	SessionID string          `json:"sessionId"`
+	BuyerName string          `json:"buyerName"`
+	Text      string          `json:"text"`
+	Image     *SimulatorImage `json:"image"`
+}
+
+type SimulatorSendResponse struct {
+	ConversationID string `json:"conversationId"`
+	MessageID      string `json:"messageId"`
+	Status         string `json:"status"`
+}
+
+// SimulatorSend accepts a buyer message for the session tenant.
+//
+//encore:api auth method=POST path=/api/v1/simulator/messages
+func SimulatorSend(ctx context.Context, p *SimulatorSendParams) (*SimulatorSendResponse, error) {
+	user, err := simulatorUser()
+	if err != nil {
+		return nil, err
+	}
+	raw := sim.Input{SessionID: p.SessionID, BuyerName: p.BuyerName, Text: p.Text}
+	if p.Image != nil {
+		raw.Image = &sim.Image{Base64: p.Image.Base64, MimeType: p.Image.MimeType}
+	}
+	in, err := sim.Validate(raw)
+	if err != nil {
+		return nil, &errs.Error{Code: errs.InvalidArgument, Message: err.Error()}
+	}
+	if !simulatorRateOK(ctx, appauth.RedisClient(), simMemLimiter, user.TenantID, in.SessionID) {
+		return nil, &errs.Error{Code: errs.ResourceExhausted, Message: "terlalu banyak pesan simulator, coba lagi sebentar"}
+	}
+	ts, err := openTenantScope(ctx, user.TenantSchema)
+	if err != nil {
+		return nil, &errs.Error{Code: errs.Internal, Message: "database connection failed"}
+	}
+	channelID, err := ensureSimulatorChannel(ctx, ts)
+	if err != nil {
+		rlog.Error("simulator channel", "err", err, "tenantId", user.TenantID)
+		return nil, &errs.Error{Code: errs.Internal, Message: "gagal menyiapkan channel simulator"}
+	}
+
+	extID := whatsappchannel.SimulatorExternalID("in")
+	msg := whatsapp.InboundMessage{
+		ExternalID:      extID,
+		FromPhone:       sim.BuyerPhone(user.TenantID, in.SessionID),
+		ToDisplayPhone:  sim.ChannelPhone,
+		FromDisplayName: in.BuyerName,
+		Type:            in.Type(),
+		Body:            in.Text,
+		ReceivedAt:      time.Now().UTC(),
+	}
+	opt := ingestOptions{out: &ingestResult{}}
+	if in.Type() == "image" {
+		rawJSON, _ := json.Marshal(map[string]any{"image": map[string]string{"id": extID, "mime_type": in.ImageMime, "caption": in.Text}})
+		msg.Raw = rawJSON
+		opt.skipMediaPersist = true
+		opt.afterInsert = func(ctx context.Context, messageID string) error {
+			inbox.CacheMessageMedia(ctx, user.TenantSchema, messageID, in.ImageMime, in.ImageData)
+			return nil
+		}
+	} else {
+		rawJSON, _ := json.Marshal(map[string]any{"text": map[string]string{"body": in.Text}})
+		msg.Raw = rawJSON
+	}
+	if _, err := ingestResolved(ctx, user.TenantSchema, channelID, msg, opt); err != nil {
+		rlog.Error("simulator ingest", "err", err, "tenantId", user.TenantID)
+		return nil, &errs.Error{Code: errs.Internal, Message: "gagal memproses pesan simulator"}
+	}
+	if rdb := appauth.RedisClient(); rdb != nil {
+		_ = rdb.Set(ctx, simConvKey(user.TenantID, in.SessionID), opt.out.ConversationID, simConvTTL).Err()
+	}
+	sim.Mirror(ctx, realtime.Default(realtime.LogfTo(rlog.Warn)), tsQuerier(ts), nil, user.TenantID, opt.out.ConversationID,
+		&sim.MirrorMsg{ID: opt.out.MessageID, Direction: "in", Author: "contact", Type: in.Type(), Text: in.Text, Status: "received", CreatedAt: msg.ReceivedAt})
+	rlog.Info("simulator message queued", "tenantId", user.TenantID, "actor", user.AccountID, "type", in.Type(), "convoId", opt.out.ConversationID)
+	return &SimulatorSendResponse{ConversationID: opt.out.ConversationID, MessageID: opt.out.MessageID, Status: "queued"}, nil
+}
+
+type SimulatorListParams struct {
+	SessionID string `query:"sessionId"`
+	After     string `query:"after"`
+}
+
+type SimulatorMessage struct {
+	ID        string `json:"id"`
+	Direction string `json:"direction"`
+	Author    string `json:"author"`
+	Type      string `json:"type"`
+	Text      string `json:"text"`
+	CreatedAt string `json:"createdAt"`
+	Status    string `json:"status"`
+	// ImageURL is set for image messages: authenticated GET (Bearer), served from the media cache.
+	ImageURL *string `json:"imageUrl"`
+}
+
+type SimulatorListResponse struct {
+	ConversationID *string            `json:"conversationId"`
+	Messages       []SimulatorMessage `json:"messages"`
+	// Pricing is the tier the AI quotes to this buyer; null before the first message.
+	Pricing *sim.PricingView `json:"pricing"`
+	// Order is the latest order of this conversation (status + proof check); null if none.
+	Order *sim.OrderView `json:"order"`
+}
+
+// SimulatorMessages polls the simulator conversation for the session tenant.
+//
+//encore:api auth method=GET path=/api/v1/simulator/messages
+func SimulatorMessages(ctx context.Context, p *SimulatorListParams) (*SimulatorListResponse, error) {
+	user, err := simulatorUser()
+	if err != nil {
+		return nil, err
+	}
+	sid := strings.TrimSpace(p.SessionID)
+	if err := sim.ValidateSession(sid); err != nil {
+		return nil, &errs.Error{Code: errs.InvalidArgument, Message: err.Error()}
+	}
+	var after *time.Time
+	if a := strings.TrimSpace(p.After); a != "" {
+		t, err := time.Parse(time.RFC3339Nano, a)
+		if err != nil {
+			return nil, &errs.Error{Code: errs.InvalidArgument, Message: "after harus RFC3339"}
+		}
+		after = &t
+	}
+	out := &SimulatorListResponse{Messages: []SimulatorMessage{}}
+	rdb := appauth.RedisClient()
+	if rdb == nil {
+		return out, nil
+	}
+	convoID, err := rdb.Get(ctx, simConvKey(user.TenantID, sid)).Result()
+	if err != nil || convoID == "" {
+		return out, nil
+	}
+	ts, err := openTenantScope(ctx, user.TenantSchema)
+	if err != nil {
+		return nil, &errs.Error{Code: errs.Internal, Message: "database connection failed"}
+	}
+	// Defense in depth: the conversation must be on this tenant's simulator channel.
+	var ok bool
+	if err := ts.QueryRowContext(ctx, `
+		SELECT EXISTS(SELECT 1 FROM conversation c JOIN whatsapp_channel w ON w.id = c.channel_id
+		              WHERE c.id = $1 AND w.provider = $2)`, convoID, whatsappchannel.SimulatorProvider).Scan(&ok); err != nil || !ok {
+		return out, nil
+	}
+	rows, err := ts.QueryContext(ctx, `
+		SELECT id, direction, author, type, COALESCE(body, ''), created_at, status
+		FROM message
+		WHERE conversation_id = $1 AND ($2::timestamptz IS NULL OR created_at > $2)
+		ORDER BY created_at ASC
+		LIMIT 200`, convoID, after)
+	if err != nil {
+		return nil, &errs.Error{Code: errs.Internal, Message: "gagal memuat pesan"}
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var m SimulatorMessage
+		var created time.Time
+		if err := rows.Scan(&m.ID, &m.Direction, &m.Author, &m.Type, &m.Text, &created, &m.Status); err != nil {
+			return nil, &errs.Error{Code: errs.Internal, Message: "gagal membaca pesan"}
+		}
+		if m.Direction == "in" {
+			m.Direction = "inbound"
+		} else {
+			m.Direction = "outbound"
+		}
+		if m.Type == "image" && m.Text == "" {
+			m.Text = "[gambar]"
+		}
+		if m.Type == "image" {
+			u := sim.ImageURL(m.ID)
+			m.ImageURL = &u
+		}
+		m.CreatedAt = created.UTC().Format(time.RFC3339Nano)
+		out.Messages = append(out.Messages, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, &errs.Error{Code: errs.Internal, Message: "gagal membaca pesan"}
+	}
+	out.ConversationID = &convoID
+	out.Pricing, out.Order = loadSimulatorState(ctx, ts, convoID)
+	return out, nil
+}
+
+func loadSimulatorState(ctx context.Context, ts appdb.TenantScope, convoID string) (*sim.PricingView, *sim.OrderView) {
+	return sim.LoadState(ctx, tsQuerier(ts), nil, convoID)
+}
+
+func simulatorUser() (*types.AuthUser, error) {
+	u, ok := auth.Data().(*types.AuthUser)
+	if !ok || u == nil {
+		return nil, &errs.Error{Code: errs.Unauthenticated, Message: "not authenticated"}
+	}
+	switch u.Role {
+	case "owner", "staff", "super_admin":
+	default:
+		return nil, &errs.Error{Code: errs.PermissionDenied, Message: "role tidak diizinkan"}
+	}
+	if strings.TrimSpace(u.TenantID) == "" || strings.TrimSpace(u.TenantSchema) == "" {
+		return nil, &errs.Error{Code: errs.PermissionDenied, Message: "sesi tidak punya tenant (superadmin: pilih tenant dulu)"}
+	}
+	if err := simulatorTenantGate(u, sim.ParseAllowlist(os.Getenv(sim.AllowlistEnv))); err != nil {
+		return nil, err
+	}
+	return u, nil
+}
+
+func init() {
+	sim.OnLoadError = func(part, convoID string, err error) {
+		rlog.Warn("simulator state query failed", "part", part, "convoId", convoID, "err", err.Error())
+	}
+}
+
+// simulatorTenantGate: simulator only for demo tenants. Tenant comes from the
+// server-side session (AuthUser), never from the request body.
+func simulatorTenantGate(u *types.AuthUser, allow map[string]bool) error {
+	if u == nil || !sim.TenantAllowed(allow, u.TenantID, u.TenantSchema) {
+		return &errs.Error{Code: errs.PermissionDenied, Message: "simulator hanya untuk tenant demo"}
+	}
+	return nil
+}
+
+// simMemLimiter backs the simulator rate limit per instance so a Redis outage
+// never means unlimited paid LLM calls.
+var simMemLimiter = sim.NewMemLimiter(nil)
+
+// simulatorRateOK applies the per-tenant and per-session limits in Redis and,
+// always, the same limits in memory (enforced even when Redis is down; the
+// Redis limiter alone fails open).
+func simulatorRateOK(ctx context.Context, rdb *redis.Client, mem *sim.MemLimiter, tenantID, sessionID string) bool {
+	tk := ratelimit.Key("simulator", tenantID)
+	sk := ratelimit.Key("simulator-session", tenantID+":"+sessionID)
+	if !mem.Allow(tk, sim.RatePerMinute, time.Minute) || !mem.Allow(sk, sim.RatePerMinute, time.Minute) {
+		return false
+	}
+	return ratelimit.Allow(ctx, rdb, tk, sim.RatePerMinute, time.Minute) &&
+		ratelimit.Allow(ctx, rdb, sk, sim.RatePerMinute, time.Minute)
+}
+
+func simConvKey(tenantID, sessionID string) string {
+	return "simulator:conv:" + tenantID + ":" + sessionID
+}
+
+// ensureSimulatorChannel returns (creating once) the tenant's simulator channel.
+func ensureSimulatorChannel(ctx context.Context, ts appdb.TenantScope) (string, error) {
+	var id string
+	err := ts.QueryRowContext(ctx, `
+		SELECT id FROM whatsapp_channel WHERE provider = $1 ORDER BY created_at ASC LIMIT 1`,
+		whatsappchannel.SimulatorProvider).Scan(&id)
+	if err == nil {
+		return id, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return "", err
+	}
+	err = ts.QueryRowContext(ctx, `
+		INSERT INTO whatsapp_channel (provider, display_name, phone_number, status, connected_at)
+		VALUES ($1, $2, $3, 'connected', now())
+		RETURNING id`, whatsappchannel.SimulatorProvider, sim.ChannelName, sim.ChannelPhone).Scan(&id)
+	return id, err
+}
+
+func tsQuerier(ts appdb.TenantScope) sim.RowQuerier {
+	return func(ctx context.Context, q string, a ...any) sim.Scanner { return ts.QueryRowContext(ctx, q, a...) }
+}

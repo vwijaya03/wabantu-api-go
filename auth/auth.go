@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"encore.app/wabantu/internal/adminauth"
 	"errors"
 	"fmt"
 	"net/http"
@@ -35,10 +36,12 @@ import (
 // ---------- Encore secrets ----------
 
 var secrets struct {
-	JWTSecret                    string
-	DataEncryptionKey            string
-	RedisURL                     string
-	PlatformAdminBootstrapSecret string
+	JWTSecret         string
+	DataEncryptionKey string
+	RedisURL          string
+	// PlatformAdminBootstrapKey replaces PlatformAdminBootstrapSecret (retired; its old value
+	// must not be reused). Unset/empty/<32 chars → bootstrap disabled (403).
+	PlatformAdminBootstrapKey string
 }
 
 // ---------- constants ----------
@@ -66,10 +69,19 @@ type LoginRequest struct {
 	Password string `json:"password"`
 }
 
+// AdminLoginResponse is the platform-admin login body: {accessToken, expiresAt(RFC3339)}.
+// No cookie is set; send it as Authorization: Bearer.
+type AdminLoginResponse struct {
+	AccessToken string `json:"accessToken"`
+	ExpiresAt   string `json:"expiresAt"`
+}
+
 type AuthResponse struct {
 	AccessToken      string       `json:"accessToken"`
 	User             UserResponse `json:"user"`
 	ExpiresInSeconds int          `json:"expiresInSeconds"`
+	// SessionType is "admin" for platform-admin portal tokens, "client" otherwise.
+	SessionType string `json:"sessionType,omitempty"`
 }
 
 type UserResponse struct {
@@ -126,6 +138,10 @@ func AuthHandler(ctx context.Context, token string) (encoreAuth.UID, *types.Auth
 		return "", nil, errs.Unauthenticated("session invalid")
 	}
 	if err := reconcileImpersonationGrant(ctx, accountID, sessionID, sess); err != nil {
+		return "", nil, errs.Unauthenticated("session invalid")
+	}
+
+	if err := checkSessionKind(token, sess); err != nil {
 		return "", nil, errs.Unauthenticated("session invalid")
 	}
 
@@ -283,103 +299,7 @@ func Login(w http.ResponseWriter, req *http.Request) {
 }
 
 func serveLogin(w http.ResponseWriter, req *http.Request) {
-	ctx := req.Context()
-	if !allowAuthRate(ctx, req) {
-		writeError(w, http.StatusTooManyRequests, "too many attempts — coba lagi nanti")
-		return
-	}
-
-	body, err := parseLoginRequest(req)
-	if err != nil {
-		rlog.Warn("login decode failed", "err", err, "contentType", req.Header.Get("Content-Type"))
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if body.Email == "" || body.Password == "" {
-		writeError(w, http.StatusBadRequest, "email and password are required")
-		return
-	}
-
-	emailLower := normalizeEmail(body.Email)
-	emailHash := hashForLookup(emailLower)
-
-	var accountID, storedHash, email string
-	var accountName sql.NullString
-	var accountRole string
-	var accountTenantID sql.NullString
-	err = system.DB.QueryRow(ctx,
-		`SELECT id, password_hash, email, name, role, tenant_id
-		 FROM tenant_account
-		 WHERE email_hash = $1 AND deleted_at IS NULL`,
-		emailHash,
-	).Scan(&accountID, &storedHash, &email, &accountName, &accountRole, &accountTenantID)
-
-	if errors.Is(err, sql.ErrNoRows) {
-		// Constant-time compare against a dummy hash to prevent timing attacks.
-		bcrypt.CompareHashAndPassword(
-			[]byte("$2b$12$invalidsaltinvalidsaltinvalidsaltinvalidsaltinv"),
-			[]byte(body.Password),
-		)
-		writeError(w, http.StatusUnauthorized, "Email atau password salah")
-		return
-	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db error")
-		return
-	}
-
-	if err := bcrypt.CompareHashAndPassword([]byte(storedHash), []byte(body.Password)); err != nil {
-		writeError(w, http.StatusUnauthorized, "Email atau password salah")
-		return
-	}
-
-	system.DB.Exec(ctx,
-		"UPDATE tenant_account SET last_login_at = $1 WHERE id = $2",
-		time.Now(), accountID,
-	)
-
-	// Internal platform operator — no customer tenant required.
-	if accountRole == roleSuperAdmin && (!accountTenantID.Valid || accountTenantID.String == "") {
-		completeLogin(w, req, ctx, accountID, email, nullStr(accountName), accountRole,
-			"", "", "", "", http.StatusOK)
-		return
-	}
-
-	if !accountTenantID.Valid || accountTenantID.String == "" {
-		writeError(w, http.StatusForbidden, "Akun tidak terhubung ke bisnis")
-		return
-	}
-
-	var tenantSlug, tenantName, tenantStatus string
-	err = system.DB.QueryRow(ctx,
-		`SELECT slug, name, status FROM tenant WHERE id = $1 AND deleted_at IS NULL`,
-		accountTenantID.String,
-	).Scan(&tenantSlug, &tenantName, &tenantStatus)
-	if errors.Is(err, sql.ErrNoRows) {
-		writeError(w, http.StatusUnauthorized, "Tenant tidak ditemukan")
-		return
-	}
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "db error")
-		return
-	}
-	if tenantStatus != "active" {
-		writeError(w, http.StatusForbidden, "Akun bisnis tidak aktif")
-		return
-	}
-
-	var schemaName string
-	err = system.DB.QueryRow(ctx,
-		`SELECT schema_name FROM tenant_company WHERE tenant_id = $1`,
-		accountTenantID.String,
-	).Scan(&schemaName)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "company not found")
-		return
-	}
-
-	completeLogin(w, req, ctx, accountID, email, nullStr(accountName), accountRole,
-		accountTenantID.String, tenantSlug, tenantName, schemaName, http.StatusOK)
+	serveLoginPortal(w, req, adminauth.PortalClient)
 }
 
 // Logout destroys the current session (Bearer token required).
@@ -394,10 +314,27 @@ func Logout(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	_ = destroySession(ctx, userData.AccountID, userData.SessionID)
+	if err := logoutSession(ctx, userData); err != nil {
+		writeError(w, http.StatusUnauthorized, "not authenticated")
+		return
+	}
 	audit.Log(ctx, userData.TenantID, userData.AccountID, "auth.logout", "account", userData.AccountID, nil)
+	revokeFirebaseAsync(ctx, userData.AccountID)
 
 	writeJSON(w, http.StatusOK, LogoutResponse{OK: true})
+}
+
+// logoutSession revokes exactly the session behind the presented token (any kind). For an
+// impersonation token that is only the impersonation session: the parent admin session (and
+// its token) stays valid; it may still reference the destroyed id, which is harmless.
+func logoutSession(ctx context.Context, u *types.AuthUser) error {
+	if u == nil || adminauth.RawHandlerAccess("auth.Logout", u.SessionKind) != nil {
+		return adminauth.ErrWrongTokenKind
+	}
+	if err := destroySession(ctx, u.AccountID, u.SessionID); err != nil {
+		return err
+	}
+	return nil
 }
 
 // MeEnvelopeResponse matches NestJS { success, data } for GET /auth/me.
@@ -421,6 +358,11 @@ func serveMe(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "not authenticated")
 		return
 	}
+	// Admin tokens are not accepted here; use GET /api/v1/platform-admin/me.
+	if adminauth.RawHandlerAccess("auth.Me", userData.SessionKind) != nil {
+		writeError(w, http.StatusUnauthorized, "not authenticated")
+		return
+	}
 
 	writeJSON(w, http.StatusOK, profileResponse(userData))
 }
@@ -428,19 +370,27 @@ func serveMe(w http.ResponseWriter, r *http.Request) {
 // ---------- JWT helpers ----------
 
 func signJWT(accountID, sessionID string) (string, int, error) {
+	return signJWTKind(accountID, sessionID, adminauth.KindClient)
+}
+
+// signJWTKind signs a token whose "typ" claim marks the portal (client|admin); the lifetime
+// follows the kind (admin tokens are short-lived).
+func signJWTKind(accountID, sessionID, kind string) (string, int, error) {
 	now := time.Now()
+	ttl := adminauth.TokenTTL(kind)
 	claims := jwt.MapClaims{
 		"sub": accountID,
 		"sid": sessionID,
+		"typ": adminauth.NormalizeKind(kind),
 		"iat": now.Unix(),
-		"exp": now.Add(jwtTTL).Unix(),
+		"exp": now.Add(ttl).Unix(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	signed, err := token.SignedString([]byte(secrets.JWTSecret))
 	if err != nil {
 		return "", 0, err
 	}
-	return signed, int(jwtTTL.Seconds()), nil
+	return signed, int(ttl.Seconds()), nil
 }
 
 func parseJWT(tokenString string) (accountID, sessionID string, err error) {
@@ -489,6 +439,19 @@ func completeLogin(
 	tenantID, tenantSlug, tenantName, schemaName string,
 	statusCode int,
 ) {
+	completeLoginKind(w, r, ctx, accountID, email, name, role, tenantID, tenantSlug, tenantName, schemaName, statusCode, adminauth.KindClient)
+}
+
+func completeLoginKind(
+	w http.ResponseWriter, r *http.Request, ctx context.Context,
+	accountID, email, name, role,
+	tenantID, tenantSlug, tenantName, schemaName string,
+	statusCode int, kind string,
+) {
+	sessKind := ""
+	if kind == adminauth.KindAdmin {
+		sessKind = adminauth.KindAdmin
+	}
 	sess, err := createSession(ctx, SessionData{
 		AccountID:    accountID,
 		TenantID:     tenantID,
@@ -496,13 +459,15 @@ func completeLogin(
 		Role:         role,
 		Email:        email,
 		Name:         name,
+		Kind:         sessKind,
+		IssuedAt:     time.Now().Unix(),
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "create session failed")
 		return
 	}
 
-	accessToken, expiresIn, err := signJWT(accountID, sess.SessionID)
+	accessToken, expiresIn, err := signJWTKind(accountID, sess.SessionID, kind)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "sign jwt failed")
 		return
@@ -512,11 +477,21 @@ func completeLogin(
 		"email": email, "role": role,
 	})
 
+	if kind == adminauth.KindAdmin {
+		// Fixed CTO contract for POST /api/v1/platform-admin/login.
+		writeJSON(w, statusCode, AdminLoginResponse{
+			AccessToken: accessToken,
+			ExpiresAt:   time.Now().Add(time.Duration(expiresIn) * time.Second).UTC().Format(time.RFC3339),
+		})
+		return
+	}
+
 	authUser := buildAuthUser(&sess.Data, sess.SessionID)
 	writeJSON(w, statusCode, AuthResponse{
 		AccessToken:      accessToken,
 		ExpiresInSeconds: expiresIn,
 		User:             profileResponse(authUser),
+		SessionType:      adminauth.NormalizeKind(kind),
 	})
 }
 

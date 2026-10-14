@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"database/sql"
+	"encore.app/wabantu/shared/llm"
 	"fmt"
 	"strings"
 	"time"
@@ -160,10 +161,7 @@ func SummarizeConversation(ctx context.Context, tenantSchema, convoID string) er
 		)
 	}
 
-	client := NewAnthropicClient(secrets.AnthropicAPIKey, AnthropicConfig{
-		Model:     DefaultHaikuAPIID(),
-		MaxTokens: 300,
-	})
+	memCfg := AnthropicConfig{Model: DefaultHaikuAPIID(), MaxTokens: 300}
 	systemPrompt := "Kamu merangkum percakapan customer service WhatsApp. Jangan tulis bahwa pelanggan berhasil memesan barang yang tidak ada di katalog bisnis tenant."
 	userPrompt := fmt.Sprintf(
 		"%sRangkum percakapan ini dalam 3-5 kalimat bahasa Indonesia. Fokus topik yang relevan dengan bisnis tenant. Jika pelanggan minta produk di luar katalog, sebutkan itu di luar scope.\n\nPercakapan:\n%s",
@@ -171,8 +169,8 @@ func SummarizeConversation(ctx context.Context, tenantSchema, convoID string) er
 		conversationText,
 	)
 
-	model := DefaultHaikuAPIID()
-	summary, compUsage, err := client.CompleteText(ctx, model, systemPrompt, userPrompt, 300)
+	summary, compUsage, model, err := CompleteViaRegistry(ctx, secrets.AnthropicAPIKey, memCfg, "", llm.FnMemory,
+		DefaultHaikuAPIID(), systemPrompt, userPrompt, 300)
 	if err != nil {
 		return err
 	}

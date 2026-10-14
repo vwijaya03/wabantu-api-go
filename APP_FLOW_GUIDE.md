@@ -362,10 +362,12 @@ Verify token: secret `WebhookVerifyToken`. Saat daftar app Meta, pilih path yang
 
 | Method | Path | Auth |
 |--------|------|------|
-| POST | `/api/v1/internal/ai/auto-reply` | public + header token |
-| POST | `/api/v1/internal/ai/auto-reply/fallback` | public + header token |
+| POST | `/api/v1/internal/ai/auto-reply` | private |
+| POST | `/api/v1/internal/ai/auto-reply/fallback` | private |
 
-Header wajib: `X-Ai-Internal-Token: <AiInternalToken secret>`.
+**Private (SEC-01)** — tidak bisa diakses dari internet. Dipanggil in-process lewat Pub/Sub: `ai/inbound_jobs.go:36` (subscription `ai-auto-reply`) dan `ai/jobs.go:31` (`FallbackAutoReplyJob`). Token `X-Ai-Internal-Token` tetap dicek sebagai defense in depth (`AiInternalToken`, min 32 karakter, constant-time, fail closed).
+
+Endpoint triage GHA (`/api/v1/internal/ai-triage/*`) tetap public (dipanggil GitHub Actions) dan memakai token terpisah `AiTriageInternalToken` (min 32 karakter; GitHub secret `AI_TRIAGE_INTERNAL_TOKEN`).
 
 ### Leads, billing, analytics, orders, payment, shipping, flags, admin, import
 
@@ -437,7 +439,7 @@ Meta Cloud API
     │ POST /api/v1/webhook/whatsapp
     ▼
 webhook.HandleWhatsAppWebhook (raw)
-    │ verify signature (meta_app_secret per channel, opsional)
+    │ verify signature WAJIB (meta_app_secret per channel, fallback MetaAppSecret; tanpa/invalid → 401)
     │ parse payload
     ▼
 ingestMessage()
@@ -469,14 +471,9 @@ File: `webhook/webhook.go`, `whatsapp/whatsapp.go`.
 
 Debug manual (opsional):
 
-```bash
-curl -X POST http://localhost:4000/api/v1/internal/ai/auto-reply \
-  -H "Content-Type: application/json" \
-  -H "X-Ai-Internal-Token: $AI_INTERNAL_TOKEN" \
-  -d '{"tenantId":"...","tenantSchema":"t_slug","conversationId":"...","inboundMessageId":"..."}'
-```
+Endpoint ini **private** (SEC-01): `curl` dari luar tidak lagi bisa. Untuk trigger manual, kirim pesan lewat simulator/webhook (ditandatangani) atau publish `InboundAIJob` ke topic `ai-jobs`; di `encore run` bisa dipanggil lewat Local Dev Dashboard (API Explorer) yang mendukung endpoint private.
 
-Secret: `AiInternalToken` (sama nilai `AI_INTERNAL_TOKEN` di `api/.env`).
+Secret: `AiInternalToken` (sama nilai `AI_INTERNAL_TOKEN` di `api/.env`, **min 32 karakter**).
 
 **Stack lama:** `ai-worker/` + Nest — **jangan** dijalankan bersamaan untuk dev FE baru.
 
@@ -619,7 +616,9 @@ Hapus volume Docker yang dibuat Encore untuk Postgres, atau gunakan perintah res
 | `DATA_ENCRYPTION_KEY` | `DataEncryptionKey` |
 | `REDIS_HOST` + `REDIS_PORT` | `RedisURL` → `redis://host:port` |
 | `ANTHROPIC_API_KEY` | `AnthropicAPIKey` |
-| `AI_INTERNAL_TOKEN` | `AiInternalToken` |
+| `AI_INTERNAL_TOKEN` | `AiInternalToken` (min 32 karakter) |
+| `AI_TRIAGE_INTERNAL_TOKEN` | `AiTriageInternalToken` (min 32 karakter) |
+| `META_APP_SECRET` | `MetaAppSecret` (fallback verifikasi webhook) |
 | `META_WEBHOOK_VERIFY_TOKEN` | `WebhookVerifyToken` |
 | *(opsional, Fase 1b)* `AWSS3_BUCKET` / `AWSS3_REGION` / `AWSS3_ACCESS_KEY_ID` / `AWSS3_SECRET_ACCESS_KEY` | `AWSS3Bucket`, `AWSS3Region`, `AWSS3AccessKeyID`, `AWSS3SecretAccessKey` |
 
@@ -757,7 +756,7 @@ sequenceDiagram
 2. Register user baru lewat curl atau API Explorer.
 3. `GET /auth/me` dengan token.
 4. `PATCH /business/profile` — lengkapi profil.
-5. Uji `POST /api/v1/internal/ai/auto-reply` dengan token internal (opsional).
+5. Uji AI auto-reply lewat simulator / API Explorer Local Dev Dashboard (endpoint internal AI kini private).
 6. Jalankan `web-frontend` (`npm run dev`) — login owner untuk flow tenant, atau login akun bootstrap platform admin untuk `/dashboard/admin`.
 
 Plan subscription: `starter` | `business` | `pro` (alias `basic` = business, tidak di UI). **Trial** (`is_trial`): semua fitur entitlement aktif, kuota di [LIMITS_AND_QUOTAS.md](./LIMITS_AND_QUOTAS.md). Berbayar: broadcast/workflow = business+, multi-branch = pro.

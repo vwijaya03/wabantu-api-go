@@ -103,7 +103,7 @@ func scanFlag(scan func(dest ...any) error) (FeatureFlag, error) {
 
 // ---------- endpoints ----------
 
-//encore:api auth method=GET path=/api/v1/flags
+//encore:api auth method=GET path=/api/v1/flags tag:super_admin
 func ListFlags(ctx context.Context) (*ListFlagsResponse, error) {
 	if _, err := requireSuperAdmin(); err != nil {
 		return nil, err
@@ -128,7 +128,7 @@ func ListFlags(ctx context.Context) (*ListFlagsResponse, error) {
 	return &ListFlagsResponse{Flags: flags}, nil
 }
 
-//encore:api auth method=POST path=/api/v1/flags
+//encore:api auth method=POST path=/api/v1/flags tag:super_admin
 func CreateFlag(ctx context.Context, p *CreateFlagParams) (*FeatureFlag, error) {
 	if _, err := requireSuperAdmin(); err != nil {
 		return nil, err
@@ -158,7 +158,7 @@ func CreateFlag(ctx context.Context, p *CreateFlagParams) (*FeatureFlag, error) 
 	return &f, nil
 }
 
-//encore:api auth method=PATCH path=/api/v1/flags/:key
+//encore:api auth method=PATCH path=/api/v1/flags/:key tag:super_admin
 func UpdateFlag(ctx context.Context, key string, req *UpdateFlagParams) (*FeatureFlag, error) {
 	if _, err := requireSuperAdmin(); err != nil {
 		return nil, err

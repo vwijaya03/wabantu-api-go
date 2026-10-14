@@ -5,6 +5,7 @@ package webhook
 
 import (
 	"context"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -41,6 +42,9 @@ func openTenantScope(ctx context.Context, schema string) (appdb.TenantScope, err
 var secrets struct {
 	WebhookVerifyToken string
 	DataEncryptionKey  string
+	// MetaAppSecret is the app-wide Meta App Secret used to verify
+	// X-Hub-Signature-256 when a channel has no per-channel meta_app_secret.
+	MetaAppSecret string
 }
 
 // ---------------------------------------------------------------------------
@@ -68,7 +72,10 @@ func handleWhatsAppWebhook(w http.ResponseWriter, r *http.Request) {
 
 func verifyChallenge(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	if q.Get("hub.mode") == "subscribe" && q.Get("hub.verify_token") == secrets.WebhookVerifyToken {
+	expected := strings.TrimSpace(secrets.WebhookVerifyToken)
+	got := q.Get("hub.verify_token")
+	if q.Get("hub.mode") == "subscribe" && expected != "" && got != "" &&
+		subtle.ConstantTimeCompare([]byte(got), []byte(expected)) == 1 {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(q.Get("hub.challenge")))
 		return
@@ -115,12 +122,31 @@ func ingestMessage(ctx context.Context, msg whatsapp.InboundMessage) error {
 	if err != nil {
 		return fmt.Errorf("resolve tenant: %w", err)
 	}
-	schema := resolved.Schema
-	channelID := resolved.ChannelID
+	_, err = ingestResolved(ctx, resolved.Schema, resolved.ChannelID, msg, ingestOptions{})
+	return err
+}
 
+// ingestOptions lets the simulator reuse the webhook pipeline.
+type ingestOptions struct {
+	// afterInsert runs after the inbound row exists, before AI jobs are published.
+	afterInsert func(ctx context.Context, messageID string) error
+	// skipMediaPersist skips the Meta media → S3 persist job (simulator media is cached locally).
+	skipMediaPersist bool
+	// out receives ids of the stored message.
+	out *ingestResult
+}
+
+type ingestResult struct {
+	ConversationID string
+	MessageID      string
+}
+
+// ingestResolved is the shared inbound pipeline (webhook + simulator).
+// Returns false when the message was a duplicate.
+func ingestResolved(ctx context.Context, schema, channelID string, msg whatsapp.InboundMessage, opt ingestOptions) (bool, error) {
 	ts, err := openTenantScope(ctx, schema)
 	if err != nil {
-		return fmt.Errorf("tenant scope: %w", err)
+		return false, fmt.Errorf("tenant scope: %w", err)
 	}
 
 	// Idempotent: skip if message already stored
@@ -128,25 +154,33 @@ func ingestMessage(ctx context.Context, msg whatsapp.InboundMessage) error {
 	if err := ts.QueryRowContext(ctx,
 		`SELECT EXISTS(SELECT 1 FROM message WHERE external_id = $1)`,
 		msg.ExternalID).Scan(&exists); err != nil {
-		return fmt.Errorf("dup check: %w", err)
+		return false, fmt.Errorf("dup check: %w", err)
 	}
 	if exists {
-		return nil
+		return false, nil
 	}
 
 	contactID, err := upsertContact(ctx, ts, schema, msg)
 	if err != nil {
-		return fmt.Errorf("upsert contact: %w", err)
+		return false, fmt.Errorf("upsert contact: %w", err)
 	}
 
 	convoID, err := upsertConversation(ctx, ts, channelID, contactID)
 	if err != nil {
-		return fmt.Errorf("upsert conversation: %w", err)
+		return false, fmt.Errorf("upsert conversation: %w", err)
 	}
 
 	messageID, err := insertMessage(ctx, ts, convoID, msg)
 	if err != nil {
-		return fmt.Errorf("insert message: %w", err)
+		return false, fmt.Errorf("insert message: %w", err)
+	}
+	if opt.out != nil {
+		opt.out.ConversationID, opt.out.MessageID = convoID, messageID
+	}
+	if opt.afterInsert != nil {
+		if err := opt.afterInsert(ctx, messageID); err != nil {
+			return false, err
+		}
 	}
 
 	preview := whatsapp.InboundMessagePreview(msg.Type, msg.Body)
@@ -159,7 +193,7 @@ func ingestMessage(ctx context.Context, msg whatsapp.InboundMessage) error {
 		     status = 'open'
 		 WHERE id = $2`,
 		preview, convoID); err != nil {
-		return fmt.Errorf("update conversation: %w", err)
+		return false, fmt.Errorf("update conversation: %w", err)
 	}
 
 	handled, wfErr := workflow.TryRun(ctx, schema, convoID, msg.Body)
@@ -191,7 +225,7 @@ func ingestMessage(ctx context.Context, msg whatsapp.InboundMessage) error {
 		})
 	}
 
-	if inbox.IsPersistableMediaType(msg.Type) {
+	if !opt.skipMediaPersist && inbox.IsPersistableMediaType(msg.Type) {
 		publishJobWithRetry(ctx, "inbox-media-persist", func(ctx context.Context) error {
 			return inbox.PublishInboxMediaPersistJob(ctx, &inbox.InboxMediaPersistJob{
 				TenantSchema: schema,
@@ -220,7 +254,7 @@ func ingestMessage(ctx context.Context, msg whatsapp.InboundMessage) error {
 		Body:           msg.Body,
 	})
 
-	return nil
+	return true, nil
 }
 
 // ---------------------------------------------------------------------------

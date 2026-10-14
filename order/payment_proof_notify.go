@@ -10,6 +10,7 @@ import (
 	appdb "encore.app/wabantu/shared/db"
 	"encore.app/wabantu/shared/pii"
 	"encore.app/wabantu/shared/strutil"
+	"encore.app/wabantu/shared/whatsappchannel"
 	"encore.app/wabantu/tenant"
 	"encore.app/wabantu/whatsapp"
 )
@@ -56,25 +57,8 @@ func sendPaymentProofConversationMessage(ctx context.Context, tenantSchema, conv
 	if err != nil {
 		return fmt.Errorf("channel not found: %w", err)
 	}
-	chAccessToken, err := pii.DecryptOrLegacy(tokenEnc, tokenLegacy, strings.TrimSpace(secrets.DataEncryptionKey))
+	extID, err := sendPaymentProofNotifyText(ctx, chStatus, chProvider, tokenEnc, tokenLegacy, chMetaPhoneNumberID, contactPhone, conversationID, text)
 	if err != nil {
-		return fmt.Errorf("decrypt channel token: %w", err)
-	}
-	if chStatus != "connected" || chAccessToken == "" || chProvider != "meta_cloud" {
-		return fmt.Errorf("whatsapp channel not ready")
-	}
-	if chMetaPhoneNumberID == nil || strings.TrimSpace(*chMetaPhoneNumberID) == "" {
-		return fmt.Errorf("whatsapp channel missing meta_phone_number_id")
-	}
-
-	phone := whatsapp.NormalizeRecipient(contactPhone)
-	if phone == "" {
-		return fmt.Errorf("invalid contact phone")
-	}
-
-	extID, err := whatsapp.SendText(ctx, chAccessToken, *chMetaPhoneNumberID, phone, text)
-	if err != nil {
-		rlog.Warn("payment proof notify SendText failed", "err", err, "conversationId", conversationID)
 		return err
 	}
 
@@ -91,4 +75,31 @@ func sendPaymentProofConversationMessage(ctx context.Context, tenantSchema, conv
 		`UPDATE %s SET last_message_at = NOW(), last_message_preview = $1, status = 'open' WHERE id = $2::uuid`,
 		sch.T("conversation")), preview, conversationID)
 	return nil
+}
+
+// sendPaymentProofNotifyText sends via Meta, or (simulator channel) only returns a synthetic id.
+func sendPaymentProofNotifyText(ctx context.Context, chStatus, chProvider, tokenEnc, tokenLegacy string, chMetaPhoneNumberID *string, contactPhone, conversationID, text string) (string, error) {
+	if whatsappchannel.IsSimulator(chProvider) {
+		return whatsappchannel.SimulatorExternalID("notify"), nil
+	}
+	chAccessToken, err := pii.DecryptOrLegacy(tokenEnc, tokenLegacy, strings.TrimSpace(secrets.DataEncryptionKey))
+	if err != nil {
+		return "", fmt.Errorf("decrypt channel token: %w", err)
+	}
+	if chStatus != "connected" || chAccessToken == "" || chProvider != "meta_cloud" {
+		return "", fmt.Errorf("whatsapp channel not ready")
+	}
+	if chMetaPhoneNumberID == nil || strings.TrimSpace(*chMetaPhoneNumberID) == "" {
+		return "", fmt.Errorf("whatsapp channel missing meta_phone_number_id")
+	}
+	phone := whatsapp.NormalizeRecipient(contactPhone)
+	if phone == "" {
+		return "", fmt.Errorf("invalid contact phone")
+	}
+	extID, err := whatsapp.SendText(ctx, chAccessToken, *chMetaPhoneNumberID, phone, text)
+	if err != nil {
+		rlog.Warn("payment proof notify SendText failed", "err", err, "conversationId", conversationID)
+		return "", err
+	}
+	return extID, nil
 }

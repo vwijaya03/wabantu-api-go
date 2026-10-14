@@ -706,6 +706,7 @@ CREATE TABLE IF NOT EXISTS "order" (
     payment_proof_verified_at TIMESTAMPTZ,
     payment_proof_verified_by UUID,
     payment_proof_meta     JSONB        NOT NULL DEFAULT '{}',
+    stock_applied_at       TIMESTAMPTZ,
     created_by             UUID,
     created_at             TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at             TIMESTAMPTZ  NOT NULL DEFAULT now(),

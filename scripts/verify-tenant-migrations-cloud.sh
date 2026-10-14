@@ -72,6 +72,9 @@ while IFS= read -r schema; do
   if [[ "$(table_exists "$schema" order)" == "t" && "$(col_exists "$schema" order payment_status)" != "t" ]]; then
     issues+=("missing order.payment_status (run ./scripts/apply-tenant-schema-cloud.sh $ENV_NAME)")
   fi
+  if [[ "$(table_exists "$schema" order)" == "t" && "$(col_exists "$schema" order stock_applied_at)" != "t" ]]; then
+    issues+=("missing order.stock_applied_at (run ./scripts/apply-tenant-schema-cloud.sh $ENV_NAME)")
+  fi
   if [[ "$(table_exists "$schema" business_profile)" == "t" && "$(col_exists "$schema" business_profile payment_verification_mode)" != "t" ]]; then
     issues+=("missing business_profile.payment_verification_mode (run ./scripts/apply-tenant-schema-cloud.sh $ENV_NAME)")
   fi

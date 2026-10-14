@@ -3,8 +3,10 @@ package auth
 import (
 	"context"
 	"database/sql"
+	"encore.app/wabantu/internal/adminauth"
 	"errors"
 	"fmt"
+	"time"
 
 	"encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/system"
@@ -13,16 +15,33 @@ import (
 
 // StartImpersonation switches the Redis session to act as the given tenant (super_admin only).
 // Requires an active owner-approved grant (tenant access consent).
-func StartImpersonation(ctx context.Context, accountID, sessionID, tenantID string) error {
+// ImpersonationToken is returned by StartImpersonation; the admin session is NOT modified.
+type ImpersonationToken struct {
+	AccessToken string
+	ExpiresAt   time.Time
+	SessionID   string
+	GrantID     string
+	AdminEmail  string
+}
+
+// StartImpersonation validates the approved grant and mints a SEPARATE short-lived
+// impersonation session+token (typ "impersonation", 30 min < admin 2 h). That token acts
+// as the tenant on client endpoints and is rejected at /admin/*.
+func StartImpersonation(ctx context.Context, accountID, sessionID, tenantID string) (*ImpersonationToken, error) {
+	tok, err := startImpersonation(ctx, accountID, sessionID, tenantID)
+	return tok, err
+}
+
+func startImpersonation(ctx context.Context, accountID, sessionID, tenantID string) (*ImpersonationToken, error) {
 	sess, err := getSession(ctx, accountID, sessionID)
 	if err != nil {
-		return errs.Internal("session lookup failed")
+		return nil, errs.Internal("session lookup failed")
 	}
 	if sess == nil {
-		return errs.Unauthenticated("session expired")
+		return nil, errs.Unauthenticated("session expired")
 	}
 	if sess.Role != roleSuperAdmin {
-		return errs.Forbidden("super admin required")
+		return nil, errs.Forbidden("super admin required")
 	}
 
 	var slug, name, schema, status string
@@ -34,40 +53,57 @@ func StartImpersonation(ctx context.Context, accountID, sessionID, tenantID stri
 		tenantID,
 	).Scan(&slug, &name, &schema, &status)
 	if errors.Is(err, sql.ErrNoRows) {
-		return errs.NotFound("tenant not found")
+		return nil, errs.NotFound("tenant not found")
 	}
 	if err != nil {
-		return errs.Internal("tenant lookup failed")
+		return nil, errs.Internal("tenant lookup failed")
 	}
 	if status != "active" {
-		return errs.Forbidden("tenant is not active")
+		return nil, errs.Forbidden("tenant is not active")
 	}
 
 	grant, err := tenantaccess.ActiveGrant(ctx, accountID, tenantID)
 	if err != nil {
-		return errs.Internal("grant lookup failed")
+		return nil, errs.Internal("grant lookup failed")
 	}
 	if grant == nil {
-		return errs.Forbidden("minta persetujuan owner tenant terlebih dahulu sebelum pantau")
+		return nil, errs.Forbidden("minta persetujuan owner tenant terlebih dahulu sebelum pantau")
 	}
 
-	sess.Impersonating = true
-	sess.ActAsTenantID = tenantID
-	sess.ActAsTenantSchema = schema
-	sess.ActAsTenantName = name
-	sess.ActAsTenantSlug = slug
-	sess.ActAsScope = grant.Scope
-	sess.ActAsModules = grant.Modules
-	sess.ActAsGrantID = grant.RequestID
+	if adminauth.NormalizeKind(sess.Kind) != adminauth.KindAdmin {
+		return nil, errs.Forbidden("admin session required")
+	}
+	imp := SessionData{
+		AccountID: sess.AccountID, Role: sess.Role, Email: sess.Email, Name: sess.Name,
+		Kind: adminauth.KindImpersonation, IssuedAt: time.Now().Unix(),
+		Impersonating: true, ActAsTenantID: tenantID, ActAsTenantSchema: schema,
+		ActAsTenantName: name, ActAsTenantSlug: slug, ActAsScope: grant.Scope,
+		ActAsModules: grant.Modules, ActAsGrantID: grant.RequestID,
+	}
 	if grant.ExpiresAt != nil {
-		sess.ActAsGrantExpiresAt = grant.ExpiresAt.Unix()
-	} else {
-		sess.ActAsGrantExpiresAt = 0
+		imp.ActAsGrantExpiresAt = grant.ExpiresAt.Unix()
 	}
+	created, err := createSession(ctx, imp)
+	if err != nil {
+		return nil, errs.Internal("create impersonation session failed")
+	}
+	if sess.ImpersonationSessionID != "" {
+		_ = destroySession(ctx, accountID, sess.ImpersonationSessionID)
+	}
+	sess.ImpersonationSessionID = created.SessionID
 	if err := updateSession(ctx, accountID, sessionID, *sess); err != nil {
-		return errs.Internal(fmt.Sprintf("update session: %v", err))
+		_ = destroySession(ctx, accountID, created.SessionID)
+		return nil, errs.Internal("update session failed")
 	}
-	return nil
+	token, expiresIn, err := signJWTKind(accountID, created.SessionID, adminauth.KindImpersonation)
+	if err != nil {
+		_ = destroySession(ctx, accountID, created.SessionID)
+		return nil, errs.Internal("sign token failed")
+	}
+	return &ImpersonationToken{
+		AccessToken: token, ExpiresAt: time.Now().Add(time.Duration(expiresIn) * time.Second).UTC(),
+		SessionID: created.SessionID, GrantID: grant.RequestID, AdminEmail: sess.Email,
+	}, nil
 }
 
 // StopImpersonation clears impersonation on the current Redis session.
@@ -83,6 +119,10 @@ func StopImpersonation(ctx context.Context, accountID, sessionID string) error {
 		return errs.Forbidden("super admin required")
 	}
 
+	if sess.ImpersonationSessionID != "" {
+		_ = destroySession(ctx, accountID, sess.ImpersonationSessionID)
+		sess.ImpersonationSessionID = ""
+	}
 	sess.Impersonating = false
 	sess.ActAsTenantID = ""
 	sess.ActAsTenantSchema = ""
@@ -95,5 +135,7 @@ func StopImpersonation(ctx context.Context, accountID, sessionID string) error {
 	if err := updateSession(ctx, accountID, sessionID, *sess); err != nil {
 		return errs.Internal(fmt.Sprintf("update session: %v", err))
 	}
+	// The impersonated Firebase token was minted for accountID with the tenant claim.
+	revokeFirebaseAsync(ctx, accountID)
 	return nil
 }

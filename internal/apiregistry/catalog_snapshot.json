@@ -1,5 +1,5 @@
 {
-  "count": 361,
+  "count": 371,
   "endpoints": [
     {
       "service": "admin",
@@ -203,8 +203,48 @@
     },
     {
       "service": "admin",
+      "file": "admin/ai_config.go",
+      "line": 201,
+      "access": "auth",
+      "method": "GET",
+      "path": "/api/v1/admin/ai/catalog",
+      "tag": "super_admin",
+      "annotation": "auth method=GET path=/api/v1/admin/ai/catalog tag:super_admin"
+    },
+    {
+      "service": "admin",
+      "file": "admin/ai_config.go",
+      "line": 46,
+      "access": "auth",
+      "method": "GET",
+      "path": "/api/v1/admin/ai/function-config",
+      "tag": "super_admin",
+      "annotation": "auth method=GET path=/api/v1/admin/ai/function-config tag:super_admin"
+    },
+    {
+      "service": "admin",
+      "file": "admin/ai_config.go",
+      "line": 158,
+      "access": "auth",
+      "method": "DELETE",
+      "path": "/api/v1/admin/ai/function-config/:function",
+      "tag": "super_admin",
+      "annotation": "auth method=DELETE path=/api/v1/admin/ai/function-config/:function tag:super_admin"
+    },
+    {
+      "service": "admin",
+      "file": "admin/ai_config.go",
+      "line": 98,
+      "access": "auth",
+      "method": "PUT",
+      "path": "/api/v1/admin/ai/function-config/:function",
+      "tag": "super_admin",
+      "annotation": "auth method=PUT path=/api/v1/admin/ai/function-config/:function tag:super_admin"
+    },
+    {
+      "service": "admin",
       "file": "admin/admin.go",
-      "line": 259,
+      "line": 265,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/admin/impersonate/:tenantId",
@@ -214,7 +254,7 @@
     {
       "service": "admin",
       "file": "admin/admin.go",
-      "line": 464,
+      "line": 475,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/admin/migrate-tenant-schemas",
@@ -224,7 +264,7 @@
     {
       "service": "admin",
       "file": "admin/admin.go",
-      "line": 503,
+      "line": 514,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/admin/migrate-tenant-schemas/active-jobs",
@@ -234,7 +274,7 @@
     {
       "service": "admin",
       "file": "admin/admin.go",
-      "line": 482,
+      "line": 493,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/admin/migrate-tenant-schemas/jobs/:jobId",
@@ -244,7 +284,7 @@
     {
       "service": "admin",
       "file": "admin/admin.go",
-      "line": 517,
+      "line": 528,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/admin/migrate-tenant-schemas/jobs/:jobId/cancel",
@@ -254,7 +294,7 @@
     {
       "service": "admin",
       "file": "admin/admin.go",
-      "line": 309,
+      "line": 318,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/admin/stop-impersonation",
@@ -284,7 +324,7 @@
     {
       "service": "admin",
       "file": "admin/admin.go",
-      "line": 408,
+      "line": 419,
       "access": "auth",
       "method": "DELETE",
       "path": "/api/v1/admin/tenant/:id",
@@ -294,7 +334,7 @@
     {
       "service": "admin",
       "file": "admin/admin.go",
-      "line": 210,
+      "line": 216,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/admin/tenant/:id",
@@ -324,7 +364,7 @@
     {
       "service": "admin",
       "file": "admin/admin.go",
-      "line": 352,
+      "line": 363,
       "access": "auth",
       "method": "PUT",
       "path": "/api/v1/admin/tenant/:id/plan",
@@ -334,7 +374,7 @@
     {
       "service": "admin",
       "file": "admin/admin.go",
-      "line": 103,
+      "line": 109,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/admin/tenants",
@@ -375,12 +415,23 @@
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/audit/logs",
-      "annotation": "auth method=GET path=/api/v1/audit/logs"
+      "tag": "super_admin",
+      "annotation": "auth method=GET path=/api/v1/audit/logs tag:super_admin"
+    },
+    {
+      "service": "auth",
+      "file": "auth/firebase_token.go",
+      "line": 15,
+      "access": "public",
+      "method": "POST",
+      "path": "/api/v1/auth/firebase-token",
+      "raw": true,
+      "annotation": "public raw method=POST path=/api/v1/auth/firebase-token"
     },
     {
       "service": "auth",
       "file": "auth/auth.go",
-      "line": 280,
+      "line": 296,
       "access": "public",
       "method": "POST",
       "path": "/api/v1/auth/login",
@@ -390,7 +441,7 @@
     {
       "service": "auth",
       "file": "auth/auth.go",
-      "line": 387,
+      "line": 307,
       "access": "public",
       "method": "POST",
       "path": "/api/v1/auth/logout",
@@ -400,7 +451,7 @@
     {
       "service": "auth",
       "file": "auth/auth.go",
-      "line": 412,
+      "line": 332,
       "access": "public",
       "method": "GET",
       "path": "/api/v1/auth/me",
@@ -420,7 +471,7 @@
     {
       "service": "auth",
       "file": "auth/auth.go",
-      "line": 140,
+      "line": 156,
       "access": "public",
       "method": "POST",
       "path": "/api/v1/auth/register",
@@ -494,7 +545,7 @@
     {
       "service": "broadcast",
       "file": "broadcast/broadcast.go",
-      "line": 158,
+      "line": 165,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/broadcast/campaigns",
@@ -503,7 +554,7 @@
     {
       "service": "broadcast",
       "file": "broadcast/broadcast.go",
-      "line": 74,
+      "line": 80,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/broadcast/campaigns",
@@ -513,7 +564,7 @@
     {
       "service": "broadcast",
       "file": "broadcast/broadcast.go",
-      "line": 188,
+      "line": 195,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/broadcast/campaigns/:id/send",
@@ -690,7 +741,7 @@
     {
       "service": "business",
       "file": "business/profile_ai.go",
-      "line": 32,
+      "line": 33,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/business/profile/ai-suggest",
@@ -709,7 +760,7 @@
     {
       "service": "business",
       "file": "business/interview.go",
-      "line": 222,
+      "line": 223,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/business/setup-interview/session/:sessionId",
@@ -719,7 +770,7 @@
     {
       "service": "business",
       "file": "business/interview.go",
-      "line": 239,
+      "line": 240,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/business/setup-interview/session/:sessionId/message",
@@ -729,7 +780,7 @@
     {
       "service": "business",
       "file": "business/interview.go",
-      "line": 401,
+      "line": 400,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/business/setup-interview/session/:sessionId/publish",
@@ -739,7 +790,7 @@
     {
       "service": "business",
       "file": "business/interview.go",
-      "line": 172,
+      "line": 173,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/business/setup-interview/start",
@@ -1858,7 +1909,8 @@
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/flags",
-      "annotation": "auth method=GET path=/api/v1/flags"
+      "tag": "super_admin",
+      "annotation": "auth method=GET path=/api/v1/flags tag:super_admin"
     },
     {
       "service": "flag",
@@ -1867,7 +1919,8 @@
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/flags",
-      "annotation": "auth method=POST path=/api/v1/flags"
+      "tag": "super_admin",
+      "annotation": "auth method=POST path=/api/v1/flags tag:super_admin"
     },
     {
       "service": "flag",
@@ -1876,7 +1929,8 @@
       "access": "auth",
       "method": "PATCH",
       "path": "/api/v1/flags/:key",
-      "annotation": "auth method=PATCH path=/api/v1/flags/:key"
+      "tag": "super_admin",
+      "annotation": "auth method=PATCH path=/api/v1/flags/:key tag:super_admin"
     },
     {
       "service": "flag",
@@ -2010,7 +2064,7 @@
     {
       "service": "inbox",
       "file": "inbox/inbox.go",
-      "line": 957,
+      "line": 984,
       "access": "auth",
       "method": "PATCH",
       "path": "/api/v1/inbox-contact-status/batch",
@@ -2019,7 +2073,7 @@
     {
       "service": "inbox",
       "file": "inbox/inbox.go",
-      "line": 994,
+      "line": 1021,
       "access": "auth",
       "method": "PATCH",
       "path": "/api/v1/inbox-contacts/batch-delete",
@@ -2028,7 +2082,7 @@
     {
       "service": "inbox",
       "file": "inbox/inbox.go",
-      "line": 678,
+      "line": 705,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/inbox/contacts",
@@ -2037,7 +2091,7 @@
     {
       "service": "inbox",
       "file": "inbox/inbox.go",
-      "line": 746,
+      "line": 773,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/inbox/contacts",
@@ -2046,7 +2100,7 @@
     {
       "service": "inbox",
       "file": "inbox/inbox.go",
-      "line": 926,
+      "line": 953,
       "access": "auth",
       "method": "DELETE",
       "path": "/api/v1/inbox/contacts/:id",
@@ -2055,7 +2109,7 @@
     {
       "service": "inbox",
       "file": "inbox/inbox.go",
-      "line": 791,
+      "line": 818,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/inbox/contacts/:id",
@@ -2064,7 +2118,7 @@
     {
       "service": "inbox",
       "file": "inbox/inbox.go",
-      "line": 814,
+      "line": 841,
       "access": "auth",
       "method": "PATCH",
       "path": "/api/v1/inbox/contacts/:id",
@@ -2073,7 +2127,7 @@
     {
       "service": "inbox",
       "file": "inbox/inbox.go",
-      "line": 278,
+      "line": 281,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/inbox/conversations",
@@ -2100,7 +2154,7 @@
     {
       "service": "inbox",
       "file": "inbox/inbox.go",
-      "line": 418,
+      "line": 421,
       "access": "auth",
       "method": "PATCH",
       "path": "/api/v1/inbox/conversations/:id",
@@ -2127,7 +2181,7 @@
     {
       "service": "inbox",
       "file": "inbox/inbox.go",
-      "line": 486,
+      "line": 489,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/inbox/conversations/:id/messages",
@@ -2136,7 +2190,7 @@
     {
       "service": "inbox",
       "file": "inbox/inbox.go",
-      "line": 594,
+      "line": 597,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/inbox/conversations/:id/messages",
@@ -2201,7 +2255,7 @@
     {
       "service": "admin",
       "file": "admin/ai_triage_behavior_internal.go",
-      "line": 29,
+      "line": 34,
       "access": "public",
       "method": "GET",
       "path": "/api/v1/internal/ai-triage/behavior-jobs/:id",
@@ -2211,7 +2265,7 @@
     {
       "service": "admin",
       "file": "admin/ai_triage_behavior_internal.go",
-      "line": 92,
+      "line": 97,
       "access": "public",
       "method": "POST",
       "path": "/api/v1/internal/ai-triage/behavior-jobs/:id/complete",
@@ -2230,20 +2284,20 @@
     {
       "service": "ai",
       "file": "ai/api.go",
-      "line": 88,
-      "access": "public",
+      "line": 90,
+      "access": "private",
       "method": "POST",
       "path": "/api/v1/internal/ai/auto-reply",
-      "annotation": "public method=POST path=/api/v1/internal/ai/auto-reply"
+      "annotation": "private method=POST path=/api/v1/internal/ai/auto-reply"
     },
     {
       "service": "ai",
       "file": "ai/api.go",
-      "line": 118,
-      "access": "public",
+      "line": 120,
+      "access": "private",
       "method": "POST",
       "path": "/api/v1/internal/ai/auto-reply/fallback",
-      "annotation": "public method=POST path=/api/v1/internal/ai/auto-reply/fallback"
+      "annotation": "private method=POST path=/api/v1/internal/ai/auto-reply/fallback"
     },
     {
       "service": "business",
@@ -2284,7 +2338,7 @@
     {
       "service": "auth",
       "file": "auth/platform_bootstrap.go",
-      "line": 36,
+      "line": 47,
       "access": "public",
       "method": "POST",
       "path": "/api/v1/internal/platform-admin/bootstrap",
@@ -2946,7 +3000,7 @@
     {
       "service": "order",
       "file": "order/order.go",
-      "line": 762,
+      "line": 768,
       "access": "auth",
       "method": "PATCH",
       "path": "/api/v1/order-delete/batch",
@@ -2955,7 +3009,7 @@
     {
       "service": "order",
       "file": "order/order.go",
-      "line": 611,
+      "line": 617,
       "access": "auth",
       "method": "PATCH",
       "path": "/api/v1/order-status/batch",
@@ -2964,7 +3018,7 @@
     {
       "service": "order",
       "file": "order/order.go",
-      "line": 215,
+      "line": 219,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/orders",
@@ -2973,7 +3027,7 @@
     {
       "service": "order",
       "file": "order/order.go",
-      "line": 312,
+      "line": 316,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/orders",
@@ -2982,7 +3036,7 @@
     {
       "service": "order",
       "file": "order/order.go",
-      "line": 727,
+      "line": 733,
       "access": "auth",
       "method": "DELETE",
       "path": "/api/v1/orders/:id",
@@ -2991,7 +3045,7 @@
     {
       "service": "order",
       "file": "order/order.go",
-      "line": 291,
+      "line": 295,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/orders/:id",
@@ -3000,7 +3054,7 @@
     {
       "service": "order",
       "file": "order/order.go",
-      "line": 392,
+      "line": 396,
       "access": "auth",
       "method": "PATCH",
       "path": "/api/v1/orders/:id",
@@ -3008,8 +3062,17 @@
     },
     {
       "service": "order",
+      "file": "order/approve.go",
+      "line": 27,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/orders/:id/approve",
+      "annotation": "auth method=POST path=/api/v1/orders/:id/approve"
+    },
+    {
+      "service": "order",
       "file": "order/order.go",
-      "line": 558,
+      "line": 563,
       "access": "auth",
       "method": "PATCH",
       "path": "/api/v1/orders/:id/cancel",
@@ -3018,7 +3081,7 @@
     {
       "service": "order",
       "file": "order/payment_proof.go",
-      "line": 85,
+      "line": 86,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/orders/:id/payment-proof/reject",
@@ -3027,7 +3090,7 @@
     {
       "service": "order",
       "file": "order/payment_proof.go",
-      "line": 130,
+      "line": 132,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/orders/:id/payment-proof/unblock",
@@ -3069,6 +3132,26 @@
       "path": "/api/v1/payment/webhook/midtrans",
       "raw": true,
       "annotation": "public raw method=POST path=/api/v1/payment/webhook/midtrans"
+    },
+    {
+      "service": "auth",
+      "file": "auth/login_portal.go",
+      "line": 28,
+      "access": "public",
+      "method": "POST",
+      "path": "/api/v1/platform-admin/login",
+      "raw": true,
+      "annotation": "public raw method=POST path=/api/v1/platform-admin/login"
+    },
+    {
+      "service": "auth",
+      "file": "auth/login_portal.go",
+      "line": 211,
+      "access": "public",
+      "method": "GET",
+      "path": "/api/v1/platform-admin/me",
+      "raw": true,
+      "annotation": "public raw method=GET path=/api/v1/platform-admin/me"
     },
     {
       "service": "events",
@@ -3159,6 +3242,24 @@
       "method": "GET",
       "path": "/api/v1/shipping/provinces",
       "annotation": "auth method=GET path=/api/v1/shipping/provinces"
+    },
+    {
+      "service": "webhook",
+      "file": "webhook/simulator.go",
+      "line": 144,
+      "access": "auth",
+      "method": "GET",
+      "path": "/api/v1/simulator/messages",
+      "annotation": "auth method=GET path=/api/v1/simulator/messages"
+    },
+    {
+      "service": "webhook",
+      "file": "webhook/simulator.go",
+      "line": 53,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/simulator/messages",
+      "annotation": "auth method=POST path=/api/v1/simulator/messages"
     },
     {
       "service": "auth",
@@ -3277,7 +3378,7 @@
     {
       "service": "webhook",
       "file": "webhook/webhook.go",
-      "line": 53,
+      "line": 57,
       "access": "public",
       "method": "*",
       "path": "/api/v1/webhook/whatsapp",
@@ -3296,7 +3397,7 @@
     {
       "service": "whatsappapi",
       "file": "whatsappapi/whatsappapi.go",
-      "line": 295,
+      "line": 296,
       "access": "auth",
       "method": "DELETE",
       "path": "/api/v1/whatsapp/channels/:id",
@@ -3305,7 +3406,7 @@
     {
       "service": "whatsappapi",
       "file": "whatsappapi/whatsappapi.go",
-      "line": 343,
+      "line": 344,
       "access": "auth",
       "method": "DELETE",
       "path": "/api/v1/whatsapp/channels/:id/permanent",
@@ -3315,7 +3416,7 @@
     {
       "service": "whatsappapi",
       "file": "whatsappapi/whatsappapi.go",
-      "line": 602,
+      "line": 603,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/whatsapp/channels/:id/test-message",
@@ -3325,7 +3426,7 @@
     {
       "service": "whatsappapi",
       "file": "whatsappapi/whatsappapi.go",
-      "line": 220,
+      "line": 221,
       "access": "public",
       "method": "POST",
       "path": "/api/v1/whatsapp/meta/connect/callback",
@@ -3334,7 +3435,7 @@
     {
       "service": "whatsappapi",
       "file": "whatsappapi/whatsappapi.go",
-      "line": 166,
+      "line": 167,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/whatsapp/meta/connect/init",

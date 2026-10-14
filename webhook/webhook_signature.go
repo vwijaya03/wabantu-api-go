@@ -3,6 +3,7 @@ package webhook
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"encore.dev/rlog"
 
@@ -11,6 +12,14 @@ import (
 
 type appSecretLookup func(ctx context.Context, phoneNumberID, displayPhone string) (string, error)
 
+// globalMetaAppSecret returns the app-wide Meta App Secret (Encore secret
+// MetaAppSecret). It is used when a channel has no per-channel meta_app_secret.
+var globalMetaAppSecret = func() string { return strings.TrimSpace(secrets.MetaAppSecret) }
+
+// verifyInboundWebhookSignature enforces X-Hub-Signature-256 (HMAC-SHA256 over
+// the raw body) on every inbound Meta webhook. It fails closed: a missing
+// header, missing secret, unknown channel or bad signature are all rejected.
+// There is intentionally no bypass flag (SEC-02 / AUDIT S3).
 func verifyInboundWebhookSignature(
 	ctx context.Context,
 	body []byte,
@@ -21,6 +30,11 @@ func verifyInboundWebhookSignature(
 	if lookup == nil {
 		lookup = lookupChannelMetaAppSecret
 	}
+	sigHeader = strings.TrimSpace(sigHeader)
+	if sigHeader == "" {
+		rlog.Warn("webhook signature rejected: X-Hub-Signature-256 missing")
+		return fmt.Errorf("signature required")
+	}
 
 	phoneNumberID := whatsapp.WebhookPhoneNumberID(body)
 	if phoneNumberID == "" && len(messages) > 0 {
@@ -30,30 +44,22 @@ func verifyInboundWebhookSignature(
 	if displayPhone == "" && len(messages) > 0 {
 		displayPhone = messages[0].ToDisplayPhone
 	}
-	if phoneNumberID == "" {
-		if sigHeader != "" {
-			rlog.Warn("webhook signature present but phone_number_id missing in payload")
-			return fmt.Errorf("phone_number_id missing")
-		}
-		return nil
-	}
 
-	appSecret, err := lookup(ctx, phoneNumberID, displayPhone)
-	if err != nil {
-		rlog.Warn("webhook signature rejected: channel not found", "phoneNumberId", phoneNumberID, "err", err)
-		return fmt.Errorf("channel not found")
+	appSecret := ""
+	if phoneNumberID != "" {
+		s, err := lookup(ctx, phoneNumberID, displayPhone)
+		if err != nil {
+			rlog.Warn("webhook signature rejected: channel not found", "phoneNumberId", phoneNumberID, "err", err)
+			return fmt.Errorf("channel not found")
+		}
+		appSecret = strings.TrimSpace(s)
 	}
 	if appSecret == "" {
-		if sigHeader != "" {
-			rlog.Warn("webhook signature rejected: no app secret configured", "phoneNumberId", phoneNumberID)
-			return fmt.Errorf("no app secret")
-		}
-		return nil
+		appSecret = globalMetaAppSecret()
 	}
-
-	if sigHeader == "" {
-		rlog.Warn("webhook signature required but missing", "phoneNumberId", phoneNumberID)
-		return fmt.Errorf("signature required")
+	if appSecret == "" {
+		rlog.Warn("webhook signature rejected: no app secret configured", "phoneNumberId", phoneNumberID)
+		return fmt.Errorf("no app secret")
 	}
 	if !whatsapp.VerifyWebhookSignature(body, sigHeader, appSecret) {
 		rlog.Warn("webhook signature verification failed", "phoneNumberId", phoneNumberID)
