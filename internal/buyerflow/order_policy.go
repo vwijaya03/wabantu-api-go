@@ -48,11 +48,15 @@ func AddMoreItemsPolicyReply(formal bool, st *OrderState, userText string) strin
 	return base + "\n\n" + summary
 }
 
-func checkoutItemAddedAck(formal bool) string {
+func checkoutItemAddedAck(formal bool, userText string) string {
+	idCasual := "Siap kak, sudah ditambahkan ke pesanan ✅"
+	idFormal := "Baik kak, item sudah ditambahkan ke pesanan."
+	enCasual := "Got it — added to your order ✅"
+	enFormal := "Done — the item has been added to your order."
 	if formal {
-		return "Baik kak, item sudah ditambahkan ke pesanan."
+		return PickBuyerLanguageReply(userText, true, idFormal, enFormal)
 	}
-	return "Siap kak, sudah ditambahkan ke pesanan ✅"
+	return PickBuyerLanguageReply(userText, false, idCasual, enCasual)
 }
 
 func checkoutAddItemsPolicyReplyIfNeeded(st OrderState, userText string, catalog []CatalogItem, formal bool) (string, bool) {

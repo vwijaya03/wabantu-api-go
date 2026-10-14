@@ -430,7 +430,7 @@ func orderLexicalBrandPickerReply(formal bool, userText string, catalog []Catalo
 	if brand == "" {
 		return "", false
 	}
-	reply := buildBrandVariantListReply(formal, brand, catalog, 10)
+	reply := buildBrandVariantListReply(formal, brand, catalog, 10, userText)
 	if reply == "" {
 		return "", false
 	}
@@ -498,7 +498,7 @@ func sameProductLine(a, b CatalogItem) bool {
 	return ca == cb
 }
 
-func buildBrandVariantListReply(formal bool, brandToken string, catalog []CatalogItem, max int) string {
+func buildBrandVariantListReply(formal bool, brandToken string, catalog []CatalogItem, max int, userText string) string {
 	if max <= 0 || max > 10 {
 		max = 10
 	}
@@ -506,10 +506,10 @@ func buildBrandVariantListReply(formal bool, brandToken string, catalog []Catalo
 	if len(items) == 0 {
 		return ""
 	}
-	return formatBrandVariantListBody(formal, brandToken, items, max)
+	return formatBrandVariantListBody(formal, brandToken, items, max, userText)
 }
 
-func buildBrandVariantListFromVectorHits(formal bool, brandToken string, catalog []CatalogItem, hits []retrievalHit, max int) string {
+func buildBrandVariantListFromVectorHits(formal bool, brandToken string, catalog []CatalogItem, hits []retrievalHit, max int, userText string) string {
 	if max <= 0 || max > 10 {
 		max = 10
 	}
@@ -539,7 +539,7 @@ func buildBrandVariantListFromVectorHits(formal bool, brandToken string, catalog
 		return ""
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })
-	return formatBrandVariantListBody(formal, brandToken, items, max)
+	return formatBrandVariantListBody(formal, brandToken, items, max, userText)
 }
 
 type retrievalHit struct {
@@ -557,15 +557,13 @@ func catalogVectorHitsEntryIDs(hits []retrieval.Hit) []retrievalHit {
 	return out
 }
 
-func formatBrandVariantListBody(formal bool, brandToken string, items []CatalogItem, max int) string {
+func formatBrandVariantListBody(formal bool, brandToken string, items []CatalogItem, max int, userText string) string {
 	if len(items) == 0 {
 		return ""
 	}
 	displayBrand := normalizeBrandToken(brandToken)
 	if displayBrand != "" {
 		displayBrand = strings.ToUpper(displayBrand[:1]) + displayBrand[1:]
-	} else {
-		displayBrand = "produk ini"
 	}
 	shown := items
 	extra := 0
@@ -573,25 +571,44 @@ func formatBrandVariantListBody(formal bool, brandToken string, items []CatalogI
 		extra = len(shown) - max
 		shown = shown[:max]
 	}
-	var head string
-	if formal {
-		head = fmt.Sprintf("Berikut varian %s yang tersedia:\n", displayBrand)
-	} else {
-		head = fmt.Sprintf("Ini varian %s yang ada ya kak:\n", displayBrand)
+	idBrand := displayBrand
+	if idBrand == "" {
+		idBrand = "produk ini"
 	}
+	enBrand := displayBrand
+	if enBrand == "" {
+		enBrand = "this product"
+	}
+	var idHead, enHead string
+	if formal {
+		idHead = fmt.Sprintf("Berikut varian %s yang tersedia:\n", idBrand)
+		enHead = fmt.Sprintf("Here are the available %s variants:\n", enBrand)
+	} else {
+		idHead = fmt.Sprintf("Ini varian %s yang ada ya kak:\n", idBrand)
+		enHead = fmt.Sprintf("Here are the %s variants we have:\n", enBrand)
+	}
+	head := PickBuyerLanguageReply(userText, formal, idHead, enHead)
 	var lines []string
 	for i, it := range shown {
 		lines = append(lines, fmt.Sprintf("%d. %s\n%s", i+1, shortDisplayName(it.Name), formatCatalogPrice(&it)))
 	}
 	body := strings.Join(lines, "\n\n")
 	if extra > 0 {
-		body += fmt.Sprintf("\n\n…dan %d varian lainnya. Sebut nama varian yang kakak mau ya.", extra)
+		idExtra := fmt.Sprintf("\n\n…dan %d varian lainnya. Sebut nama varian yang kakak mau ya.", extra)
+		enExtra := fmt.Sprintf("\n\n…and %d more variants. Tell me which one you want.", extra)
+		body += PickBuyerLanguageReply(userText, formal, idExtra, enExtra)
 	} else {
-		cta := "Mau varian yang mana? Sebut nama lengkapnya ya kak."
+		idCtaCasual := "Mau varian yang mana? Sebut nama lengkapnya ya kak."
+		idCtaFormal := "Silakan sebut varian yang diinginkan."
+		enCtaCasual := "Which variant would you like? Send the full product name."
+		enCtaFormal := "Please tell me which variant you want."
+		var idCta, enCta string
 		if formal {
-			cta = "Silakan sebut varian yang diinginkan."
+			idCta, enCta = idCtaFormal, enCtaFormal
+		} else {
+			idCta, enCta = idCtaCasual, enCtaCasual
 		}
-		body += "\n\n" + cta
+		body += "\n\n" + PickBuyerLanguageReply(userText, formal, idCta, enCta)
 	}
 	return strings.TrimSpace(head + "\n" + body)
 }
@@ -611,12 +628,12 @@ func tryBrandVariantReply(
 	if brand == "" {
 		return "", false
 	}
-	if reply := buildBrandVariantListReply(formal, brand, catalog, 10); reply != "" {
+	if reply := buildBrandVariantListReply(formal, brand, catalog, 10, userText); reply != "" {
 		return reply, true
 	}
 	if vctx != nil && len(vctx.Hits) > 0 {
 		ids := catalogVectorHitsEntryIDs(vctx.Hits)
-		if reply := buildBrandVariantListFromVectorHits(formal, brand, catalog, ids, 10); reply != "" {
+		if reply := buildBrandVariantListFromVectorHits(formal, brand, catalog, ids, 10, userText); reply != "" {
 			return reply, true
 		}
 	}

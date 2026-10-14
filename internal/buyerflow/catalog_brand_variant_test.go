@@ -32,7 +32,7 @@ func TestIsBrandVariantInquiryNotStoreList(t *testing.T) {
 }
 
 func TestBuildBrandVariantListReplyFourMaggi(t *testing.T) {
-	reply := buildBrandVariantListReply(false, "magi", maggiCatalog(), 10)
+	reply := buildBrandVariantListReply(false, "magi", maggiCatalog(), 10, "")
 	if reply == "" {
 		t.Fatal("expected reply")
 	}
