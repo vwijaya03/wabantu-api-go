@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"encore.app/wabantu/internal/adminauth"
 	"encore.app/wabantu/shared/types"
 	"encore.app/wabantu/system"
 
@@ -34,6 +35,7 @@ func (f *SuperAdminFixture) AuthUser() *types.AuthUser {
 		Name:              f.Name,
 		Role:              superAdminRole,
 		SessionID:         "apitest-super-admin",
+		SessionKind:       adminauth.KindAdmin,
 		IsPlatformSession: true,
 	}
 }
