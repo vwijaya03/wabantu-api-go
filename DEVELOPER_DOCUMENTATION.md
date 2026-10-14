@@ -406,7 +406,6 @@ Ringkasan cepat:
 | `AnthropicAPIKey` | `ai`, `business`, `finance`, `events`, `inventory` | AI auto-reply, vision, import gambar |
 | `AiInternalToken` | `ai` | Defense-in-depth untuk endpoint internal AI (private), min 32 karakter |
 | `AiTriageInternalToken` | `admin` | Callback GHA `/api/v1/internal/ai-triage/*`, min 32 karakter |
-| `MetaAppSecret` | `webhook` | Fallback verifikasi `X-Hub-Signature-256` jika channel tanpa `meta_app_secret` |
 | `OpenAIApiKey` | `shared/retrieval` | Embedding RAG (`text-embedding-3-small`) — opsional; tanpa ini = lexical |
 | `PineconeApiKey` | `shared/retrieval` | Vector index Pinecone — opsional |
 | `PineconeIndexHost` | `shared/retrieval` | Host index tanpa `https://` — opsional |
@@ -528,7 +527,6 @@ encore secret list
 | `AnthropicAPIKey` | `ANTHROPIC_API_KEY` |
 | `AiInternalToken` | `AI_INTERNAL_TOKEN` |
 | `AiTriageInternalToken` | `AI_TRIAGE_INTERNAL_TOKEN` |
-| `MetaAppSecret` | `META_APP_SECRET` |
 | `OpenAIApiKey` | `OPENAI_API_KEY` |
 | `PineconeApiKey` | `PINECONE_API_KEY` |
 | `PineconeIndexHost` | `PINECONE_INDEX_HOST` (host saja, tanpa `https://`) |
@@ -545,7 +543,6 @@ encore secret list
 | Encore secret | Alasan |
 |---------------|--------|
 | `PlatformAdminBootstrapKey` | Khusus internal WABantu; tidak ada di Nest `.env` |
-| `MetaAppSecret` (fallback) | `webhook` | Verifikasi **wajib** `X-Hub-Signature-256` memakai `whatsapp_channel.meta_app_secret`, fallback `MetaAppSecret` |
 
 ---
 
@@ -581,7 +578,7 @@ Header curl harus **sama persis** dengan string di atas:
 
 Detail bootstrap: [Bagian 8.1](#81-platform-admin-internal-operator-wabantu-owner).
 
-**Webhook signature Meta (wajib, SEC-02):** saat owner menghubungkan WhatsApp (`meta/connect`), `meta_app_secret` disimpan di `whatsapp_channel` per tenant. Setiap webhook POST **harus** membawa `X-Hub-Signature-256` valid; secret diambil dari channel, fallback Encore secret `MetaAppSecret`. Header kosong/invalid, channel tidak dikenal, atau tidak ada secret sama sekali → 401. Tidak ada bypass flag. `WebhookVerifyToken` wajib diisi (challenge GET ditolak jika kosong).
+**Webhook signature Meta (wajib, SEC-02):** saat owner menghubungkan WhatsApp (`meta/connect`), `meta_app_secret` disimpan di `whatsapp_channel` per tenant. Setiap webhook POST **harus** membawa `X-Hub-Signature-256` yang HMAC-nya cocok dengan secret channel itu. Tidak ada secret Encore cadangan. Channel yang kolomnya kosong ditolak sampai owner connect ulang. Header kosong/invalid, channel tidak dikenal, atau secret channel kosong → 401. Tidak ada bypass flag. `WebhookVerifyToken` hanya untuk challenge GET, dan wajib diisi (GET ditolak jika kosong).
 
 ---
 
@@ -614,12 +611,11 @@ Secret tidak hot-reload. Lupa restart = perilaku aneh (nilai lama/kosong).
 | `AnthropicAPIKey` | `ai/api.go`, `business/business.go`, `finance/transaction_image.go`, … | Model AI + vision import | Untuk fitur AI |
 | `AiInternalToken` | `ai/api.go` | `X-Ai-Internal-Token` (defense in depth, endpoint private), min 32 karakter | Ya |
 | `AiTriageInternalToken` | `admin/ai_triage_internal.go` | `X-Ai-Internal-Token` dari GHA ke `/internal/ai-triage/*`, min 32 karakter | Jika pakai AI triage |
-| `MetaAppSecret` | `webhook/webhook_signature.go` | Fallback HMAC `X-Hub-Signature-256` | Disarankan prod |
 | `OpenAIApiKey` | `shared/retrieval/config.go` | Embedding query + batch indexing | Untuk RAG vector (opsional) |
 | `PineconeApiKey` | `shared/retrieval/config.go` | Upsert/query vector Pinecone | Untuk RAG vector (opsional) |
 | `PineconeIndexHost` | `shared/retrieval/config.go` | Host index serverless Pinecone | Untuk RAG vector (opsional) |
 | `WebhookVerifyToken` | `webhook/webhook.go` | Verifikasi GET challenge Meta | Untuk webhook WA |
-| *(per channel)* `meta_app_secret` | `whatsapp_channel` (tenant DB) | `X-Hub-Signature-256` setelah OAuth connect | Wajib (atau `MetaAppSecret`) |
+| *(per channel)* `meta_app_secret` | `whatsapp_channel` (tenant DB) | HMAC `X-Hub-Signature-256` setelah OAuth connect. Bukan `WebhookVerifyToken` | Wajib per toko |
 | `MidtransServerKey` | `payment/payment.go` | QRIS | Untuk payment |
 | `MidtransClientKey` | `payment/payment.go` | Client Midtrans | Untuk payment |
 | `MidtransIsProduction` | `payment/payment.go` | `"true"` / `"false"` | Untuk payment |
@@ -659,7 +655,7 @@ Jangan pakai nilai dev di prod. Rotate secret jika pernah bocor.
 | `not logged in: run encore auth login` | CLI Encore belum login | `encore auth login` |
 | `app_not_found` | App belum link ke cloud | `encore app link` / `encore app init` |
 | AI / internal 401 | `AiInternalToken`/`AiTriageInternalToken` kosong, < 32 karakter, atau beda dengan caller | Set token acak >= 32 karakter; samakan dengan `.env` / GitHub secret |
-| Webhook Meta 401 | Signature tidak ada/invalid atau tidak ada `meta_app_secret`/`MetaAppSecret` | Isi secret; request harus ditandatangani |
+| Webhook Meta 401 | Signature tidak ada/invalid, channel tidak dikenal, atau `meta_app_secret` channel kosong | Connect ulang WhatsApp supaya App Secret toko tersimpan; request harus ditandatangani |
 | Session selalu expired | `RedisURL` salah / Redis mati | `docker compose up -d redis`; set `redis://localhost:6379` |
 | Secret sudah di-set tapi masih gagal | `encore run` belum di-restart | Ctrl+C → `encore run` lagi |
 | Kolom **Local** ✗ di `secret list` | Hanya set `--type dev` | Ulangi dengan `--type local` |
@@ -1277,7 +1273,7 @@ Ulangi **Langkah 3** dengan **email berbeda** (secret bootstrap sama). Tidak ada
 | Passwords | bcrypt cost 12 |
 | Email lookup | SHA-256 `email_hash` |
 | JWT | Short TTL; session revocable via Redis delete on logout |
-| Webhook | Mandatory `X-Hub-Signature-256` with per-channel `meta_app_secret`, fallback `MetaAppSecret` |
+| Webhook | Mandatory `X-Hub-Signature-256` with that channel's `meta_app_secret` only |
 | Rate limit | Redis sliding window |
 | Encryption | `DataEncryptionKey` for sensitive fields (`shared/crypto`) |
 
@@ -1479,7 +1475,7 @@ Secrets per Encore environment name (`staging`, etc.) via `encore secret set --e
 | Step | Location |
 |------|----------|
 | Handler | `webhook.handleWhatsAppWebhook` → `receiveWebhook` |
-| Auth | Signature **mandatory** (channel `meta_app_secret`, fallback `MetaAppSecret`) |
+| Auth | Signature **mandatory** (that channel's `meta_app_secret` only) |
 | Parse | `whatsapp.ParseWebhook` |
 | Per message | `ingestMessage` |
 | Resolve tenant | `resolveInboundChannel` |

@@ -439,7 +439,7 @@ Meta Cloud API
     │ POST /api/v1/webhook/whatsapp
     ▼
 webhook.HandleWhatsAppWebhook (raw)
-    │ verify signature WAJIB (meta_app_secret per channel, fallback MetaAppSecret; tanpa/invalid → 401)
+    │ verify signature WAJIB (hanya meta_app_secret channel itu; kolom kosong/invalid → 401)
     │ parse payload
     ▼
 ingestMessage()
@@ -618,8 +618,7 @@ Hapus volume Docker yang dibuat Encore untuk Postgres, atau gunakan perintah res
 | `ANTHROPIC_API_KEY` | `AnthropicAPIKey` |
 | `AI_INTERNAL_TOKEN` | `AiInternalToken` (min 32 karakter) |
 | `AI_TRIAGE_INTERNAL_TOKEN` | `AiTriageInternalToken` (min 32 karakter) |
-| `META_APP_SECRET` | `MetaAppSecret` (fallback verifikasi webhook) |
-| `META_WEBHOOK_VERIFY_TOKEN` | `WebhookVerifyToken` |
+| `META_WEBHOOK_VERIFY_TOKEN` | `WebhookVerifyToken` (GET `hub.verify_token` saja, bukan HMAC) |
 | *(opsional, Fase 1b)* `AWSS3_BUCKET` / `AWSS3_REGION` / `AWSS3_ACCESS_KEY_ID` / `AWSS3_SECRET_ACCESS_KEY` | `AWSS3Bucket`, `AWSS3Region`, `AWSS3AccessKeyID`, `AWSS3SecretAccessKey` |
 
 Kosong di lokal = skip persist S3; proxy Meta tetap jalan. Detail: [`docs-development-shipped/inbox-media-s3.md`](./docs-development-shipped/inbox-media-s3.md).

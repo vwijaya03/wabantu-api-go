@@ -42,9 +42,6 @@ func openTenantScope(ctx context.Context, schema string) (appdb.TenantScope, err
 var secrets struct {
 	WebhookVerifyToken string
 	DataEncryptionKey  string
-	// MetaAppSecret is the app-wide Meta App Secret used to verify
-	// X-Hub-Signature-256 when a channel has no per-channel meta_app_secret.
-	MetaAppSecret string
 }
 
 // ---------------------------------------------------------------------------
