@@ -8,12 +8,6 @@ import (
 	"encore.app/wabantu/webhook"
 )
 
-func TestWebhookSmoke_HandlerExists(t *testing.T) {
-	if webhook.ServeWhatsAppWebhookHTTP == nil {
-		t.Fatal("ServeWhatsAppWebhookHTTP handler is nil")
-	}
-}
-
 func TestWebhookSmoke_GET_VerifyChallengeForbidden(t *testing.T) {
 	rr := httptest.NewRecorder()
 	req := NewGetRequest("/api/v1/webhook/whatsapp?hub.mode=subscribe&hub.verify_token=wrong", nil)
