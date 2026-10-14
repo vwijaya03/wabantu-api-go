@@ -23,12 +23,23 @@ func isWholeOrderCancelPhrase(text string) bool {
 	for _, p := range []string{
 		"batalkan pesanan", "batal pesanan", "cancel order", "batalkan order",
 		"cancel pesanan", "batal order", "batal pesan",
+		"cancel the order", "cancel my order",
+		"cancel the whole order", "cancel my whole order",
 	} {
 		if strings.Contains(text, p) {
 			return true
 		}
 	}
 	return false
+}
+
+func isEnglishOrderCancelTail(tail string) bool {
+	switch strings.ToLower(strings.TrimSpace(tail)) {
+	case "order", "whole order":
+		return true
+	default:
+		return false
+	}
 }
 
 var skuCancelFiller = map[string]struct{}{
