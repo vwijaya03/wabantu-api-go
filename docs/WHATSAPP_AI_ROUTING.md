@@ -59,7 +59,7 @@ Urutan di `webhook.ingestMessage` (`webhook/webhook.go`):
 
 | # | Langkah | Detail |
 |---|---------|--------|
-| 1 | Verifikasi signature | Header `X-Hub-Signature-256` **wajib**; HMAC vs `meta_app_secret` channel, fallback Encore secret `MetaAppSecret`. Header kosong/invalid, channel tak dikenal, atau tidak ada secret → 401 (tanpa bypass) |
+| 1 | Verifikasi signature | Header `X-Hub-Signature-256` **wajib**; HMAC hanya vs `whatsapp_channel.meta_app_secret` channel itu. Tidak ada secret global. Header kosong/invalid, channel tak dikenal, atau kolom secret kosong → 401 (tanpa bypass). `WebhookVerifyToken` hanya untuk GET `hub.verify_token` |
 | 2 | Parse payload | `whatsapp.ParseWebhook(body)` → slice `InboundMessage` |
 | 3 | Resolve tenant | `resolveInboundChannel` via `system.whatsapp_inbound_map` (`meta_phone_number_id` → schema `t_<slug>`) |
 | 4 | Idempotent insert | Skip jika `message.external_id` sudah ada |
