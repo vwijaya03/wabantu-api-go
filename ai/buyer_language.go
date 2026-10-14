@@ -63,12 +63,17 @@ func (s *AutoReplyService) handleBuyerLanguageRouting(
 ) (handled bool, err error) {
 	saved := contactPreferredLanguage(contact)
 
-	if lang, ok := bf.ParseLanguagePreferenceAnswer(userText); ok && saved == "" {
+	if lang, ok := bf.ParseLanguagePreferenceAnswer(userText); ok {
 		if err := saveContactPreferredLanguage(ctx, ts, contact.ID, lang); err != nil {
 			return false, err
 		}
 		contact.PreferredLanguage = strPtr(lang)
 		bf.SetSavedBuyerLang(lang)
+		out := metaNoLLM(reasonNonQuestion, PathBuyerLanguage)
+		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
+		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact,
+			bf.LanguageSwitchConfirmReply(lang), "ai", payload.InboundMessageID, out)
+		return err == nil, err
 	}
 
 	if lang, ok := bf.ParseExplicitLanguageSwitch(userText); ok {

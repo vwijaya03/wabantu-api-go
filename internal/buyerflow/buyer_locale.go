@@ -43,6 +43,9 @@ var englishWordRe = regexp.MustCompile(`[a-z]+`)
 
 var explicitEnglishSwitchPhrases = []string{
 	"in english", "please use english", "use english", "english please",
+	"speak in english", "talk in english", "can i speak in english", "can i speak english",
+	"cant read indonesian", "can't read indonesian", "cannot read indonesian",
+	"i cant read indonesian", "i can't read indonesian",
 	"pakai bahasa inggris", "bahasa inggris", "inggris saja",
 }
 var explicitIndonesianSwitchPhrases = []string{

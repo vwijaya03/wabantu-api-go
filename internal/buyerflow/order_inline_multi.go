@@ -427,12 +427,12 @@ func TryAppendItemsDuringCheckout(st *OrderState, userText string, catalog []Cat
 	if !st.StructuredLinesReady() {
 		if checkoutLinesNeedApparelVariant(*st) {
 			st.Step = "ask_variant"
-			return true, checkoutItemAddedAck(formal) + "\n\n" + buildOrderFlowReply(*st, tmpl.AskVariant, catalog)
+			return true, checkoutItemAddedAck(formal, userText) + "\n\n" + buildOrderFlowReply(*st, tmpl.AskVariant, catalog)
 		}
 		st.Step = "ask_qty"
-		return true, checkoutItemAddedAck(formal) + "\n\n" + buildOrderFlowReply(*st, tmpl.AskQty, catalog)
+		return true, checkoutItemAddedAck(formal, userText) + "\n\n" + buildOrderFlowReply(*st, tmpl.AskQty, catalog)
 	}
-	return true, checkoutItemAddedAck(formal) + "\n\n" + buildOrderFlowReply(*st, tmpl.AskRecipient, catalog)
+	return true, checkoutItemAddedAck(formal, userText) + "\n\n" + buildOrderFlowReply(*st, tmpl.AskRecipient, catalog)
 }
 
 func checkoutLinesNeedApparelVariant(st OrderState) bool {

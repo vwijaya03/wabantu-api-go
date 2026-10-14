@@ -189,7 +189,7 @@ func orderVectorVariantPickerReply(formal bool, userText string, catalog []Catal
 	brand := brandTokenFromText(userText, catalog)
 	if brand != "" {
 		ids := catalogVectorHitsEntryIDs(vctx.Hits)
-		if reply := buildBrandVariantListFromVectorHits(formal, brand, catalog, ids, 10); reply != "" {
+		if reply := buildBrandVariantListFromVectorHits(formal, brand, catalog, ids, 10, userText); reply != "" {
 			return reply, true
 		}
 	}
@@ -218,7 +218,7 @@ func orderVectorVariantPickerReply(formal bool, userText string, catalog []Catal
 	if token == "" {
 		token = "produk"
 	}
-	return formatBrandVariantListBody(formal, token, items, 6), true
+	return formatBrandVariantListBody(formal, token, items, 6, userText), true
 }
 
 func catalogExcludeHints(text string) []string {
