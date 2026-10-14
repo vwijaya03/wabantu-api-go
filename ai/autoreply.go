@@ -325,7 +325,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	}
 
 	if IsHumanEscalationRequest(userText) {
-		return s.handleBuyerHumanHandoff(ctx, ts, payload, convo, channel, contact, profile)
+		return s.handleBuyerHumanHandoff(ctx, ts, payload, convo, channel, contact, profile, userText)
 	}
 
 	if IsPaymentQuestion(userText) {
@@ -548,6 +548,9 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	// ── Katalog WABantu (business_catalog_item) — prioritas sebelum FAQ/LLM ──
 	if inScope {
 		if catReply, ok := s.replyFromBusinessCatalogHybrid(ctx, payload.TenantID, payload.TenantSchema, userText, ts, profile, catalog, history); ok {
+			if ShouldHandoffForCatalogMiss(userText) && IsCatalogNotFoundReply(catReply) {
+				return s.handleAiNoAnswerHandoff(ctx, ts, payload, convo, channel, contact, profile, userText)
+			}
 			if clearedOrderForCorrection {
 				catReply = prependSalesCorrection(strOrEmpty(profile.Tone) == "formal", catReply)
 			}
@@ -592,18 +595,10 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return true, pauseAI(ctx, ts, convo.ID, "Sensitive/escalate detected")
 	}
 
-	// ── Handle: out of scope ─────────────────────────────────────────────
+	// ── Handle: out of scope → no-answer handoff (no scolding) ───────────
 	if classifier.Label == "out_of_scope" {
-		c, _ := s.bumpCounter(ctx, payload.TenantID, convo.ID, "offscope")
-		rlog.Warn("AI job: out-of-business-scope", "count", c)
-		text := outOfScopeReply(profile)
-		if c >= 3 {
-			text = nonAiDefaultReply(profile)
-		}
-		out := metaNoLLM(reasonOutOfScope, PathOutOfScope)
-		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, text, "system", payload.InboundMessageID, out)
-		return err == nil, err
+		rlog.Warn("AI job: out-of-business-scope → ai_no_answer handoff")
+		return s.handleAiNoAnswerHandoff(ctx, ts, payload, convo, channel, contact, profile, userText)
 	}
 
 	// ── Handle: in-scope non-question ────────────────────────────────────
@@ -620,13 +615,9 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return err == nil, err
 	}
 
-	// ── Handle: low-confidence question ──────────────────────────────────
+	// ── Handle: low-confidence question → handoff ──────────────────────────
 	if classifier.Label == "in_scope_question" && classifier.Confidence < llmConfidenceThreshold {
-		out := metaNoLLM(reasonNonQuestion, PathLowConfidence)
-		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact,
-			scopeDirectionReply(profile), "system", payload.InboundMessageID, out)
-		return err == nil, err
+		return s.handleAiNoAnswerHandoff(ctx, ts, payload, convo, channel, contact, profile, userText)
 	}
 
 	// ── Handle: order intent state machine ───────────────────────────────
@@ -753,6 +744,10 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	)
 
 	toolExec := NewCatalogToolExecutor(catalog)
+	llmTaskHint := "Balas dalam bahasa yang sama dengan pesan pembeli. Jika tidak bisa menjawab dari katalog/KB/fakta pesanan, katakan tim akan melanjutkan — jangan mengarang harga, stok, atau estimasi hari kirim."
+	if IsEnglishBuyerMessage(userText) {
+		llmTaskHint = "Reply in the buyer's language (English). If you cannot answer from catalog/KB/order facts, say a teammate will continue — do not invent prices, stock, or delivery-day estimates."
+	}
 	reply, compUsage, usedTools, chatProvider, chatModel, err := s.generateChatReply(
 		ctx,
 		payload.TenantID,
@@ -764,6 +759,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 			Summary:  summary,
 			History:  histForPrompt,
 			UserText: userText,
+			TaskHint: llmTaskHint,
 		},
 		toolExec,
 	)
@@ -776,11 +772,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 			"tenantId", payload.TenantID,
 			"convoId", convo.ID,
 		)
-		fallbackText := applyOutputPolicy(scopeDirectionReply(profile))
-		out := metaNoLLM(reasonAIGenerated, PathAutoFallback)
-		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		sendErr := s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, fallbackText, "ai", payload.InboundMessageID, out)
-		return sendErr == nil, sendErr
+		return s.handleAiNoAnswerHandoff(ctx, ts, payload, convo, channel, contact, profile, userText)
 	}
 
 	if chatModel != "" {
@@ -1590,9 +1582,10 @@ func (s *AutoReplyService) handleBuyerHumanHandoff(
 	channel *dbChannel,
 	contact *dbContact,
 	profile *dbBusinessProfile,
+	userText string,
 ) (bool, error) {
 	formal := strOrEmpty(profile.Tone) == "formal"
-	finalReply := applyOutputPolicy(HumanHandoffReply(formal))
+	finalReply := applyOutputPolicy(HumanHandoffReplyFor(userText, formal))
 	out := metaNoLLM(reasonAIGenerated, PathHumanHandoff)
 	out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 	err := s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, finalReply, "system", payload.InboundMessageID, out)
@@ -1600,6 +1593,27 @@ func (s *AutoReplyService) handleBuyerHumanHandoff(
 		return false, err
 	}
 	return true, pauseAI(ctx, ts, convo.ID, "buyer_requested_human")
+}
+
+func (s *AutoReplyService) handleAiNoAnswerHandoff(
+	ctx context.Context,
+	ts tenantScopedQuerier,
+	payload AiReplyJobPayload,
+	convo *dbConversation,
+	channel *dbChannel,
+	contact *dbContact,
+	profile *dbBusinessProfile,
+	userText string,
+) (bool, error) {
+	formal := strOrEmpty(profile.Tone) == "formal"
+	finalReply := applyOutputPolicy(NoAnswerHandoffReply(formal, userText))
+	out := metaNoLLM(reasonAIGenerated, PathHumanHandoff)
+	out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
+	err := s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, finalReply, "system", payload.InboundMessageID, out)
+	if err != nil {
+		return false, err
+	}
+	return true, pauseAI(ctx, ts, convo.ID, AiNoAnswerPauseReason)
 }
 
 func pauseAI(ctx context.Context, ts tenantScopedQuerier, convoID, reason string) error {

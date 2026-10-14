@@ -26,7 +26,7 @@ func IsCatalogExclusionQuestion(userText string) bool {
 
 func buildCatalogListReplyFiltered(formal bool, bizName string, catalog []CatalogItem, profile *BusinessProfile, userText string) string {
 	filtered := filterCatalogByExcludeHints(catalog, catalogExcludeHints(userText))
-	return buildCatalogListReply(formal, bizName, filtered, profile)
+	return buildCatalogListReply(userText, formal, bizName, filtered, profile)
 }
 
 func filterCatalogByExcludeHints(catalog []CatalogItem, exclude []string) []CatalogItem {

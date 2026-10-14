@@ -289,6 +289,14 @@ func (s *Simulator) Turn(userText string) TurnOutcome {
 	}
 
 	if catReply, ok := replyFromBusinessCatalog(userText, s.Profile, s.Catalog, s.History, nil); ok {
+		if ShouldHandoffForCatalogMiss(userText) && IsCatalogNotFoundReply(catReply) {
+			formal := strOrEmpty(s.Profile.Tone) == "formal"
+			out.Path = PathAiNoAnswer
+			out.Reply = NoAnswerHandoffReply(formal, userText)
+			out.Order = s.Order
+			s.appendHistory(userText, out.Reply)
+			return out
+		}
 		out.Path = PathCatalogDB
 		out.Reply = catReply
 		s.appendHistory(userText, out.Reply)

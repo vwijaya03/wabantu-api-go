@@ -18,6 +18,9 @@ func IsShippingFAQQuestion(userText string) bool {
 		"kapan barang", "lama kirim",
 		"luar kota", "wilayah pengiriman", "area kirim", "delivery",
 		"bisa kirim", "kirim nggak", "kirim gak", "kirim tidak",
+		"how long is shipping", "how long does shipping", "how many days until",
+		"when will it arrive", "when will my order arrive", "shipping time", "delivery time",
+		"how long until it arrives", "days until it arrives",
 	}
 	for _, s := range signals {
 		if strings.Contains(text, s) {
@@ -38,10 +41,13 @@ func TryShippingFAQReply(userText string, profile *BusinessProfile, kb []KBEntry
 	if IsShippingQuoteQuestion(userText) {
 		return buildShippingQuoteReply(userText, profile, kb, formal), true
 	}
+	if ans, ok := tryFAQDirectAnswer(userText, kb); ok {
+		return ans, true
+	}
 	if ans, ok := tryShippingKBFAQ(userText, kb); ok {
 		return ans, true
 	}
-	return buildShippingDefaultReply(profile, formal), true
+	return buildShippingDefaultReply(userText, profile, formal), true
 }
 
 func tryShippingKBFAQ(userText string, kb []KBEntry) (string, bool) {
@@ -51,12 +57,18 @@ func tryShippingKBFAQ(userText string, kb []KBEntry) (string, bool) {
 	qTokens := tokenize(userText)
 	var best KBEntry
 	var bestScore float64
+	minScore := 0.35
+	if IsEnglishBuyerMessage(userText) {
+		minScore = 0.12
+	}
 	for _, entry := range kb {
 		cat := ""
 		if entry.Category != nil {
 			cat = *entry.Category
 		}
-		if !strings.Contains(strings.ToLower(cat), "pengiriman") && !strings.Contains(strings.ToLower(cat), "shipping") {
+		catLower := strings.ToLower(cat)
+		if !strings.Contains(catLower, "pengiriman") && !strings.Contains(catLower, "shipping") &&
+			!strings.Contains(catLower, "delivery") {
 			continue
 		}
 		text := entry.Question + " " + entry.Answer
@@ -66,7 +78,7 @@ func tryShippingKBFAQ(userText string, kb []KBEntry) (string, bool) {
 			best = entry
 		}
 	}
-	if bestScore >= 0.35 && strings.TrimSpace(best.Answer) != "" {
+	if bestScore >= minScore && strings.TrimSpace(best.Answer) != "" {
 		return strings.TrimSpace(best.Answer), true
 	}
 	return "", false
@@ -77,30 +89,44 @@ func buildShippingQuoteReply(userText string, profile *BusinessProfile, kb []KBE
 		return ans
 	}
 	area := deliveryAreaLabel(profile)
+	idFormalArea := "Ongkir dihitung setelah alamat lengkap dikonfirmasi. Area pengiriman kami: " + area +
+		". Mohon kirim alamat lengkap (kecamatan/kota) agar kami bisa hitungkan ongkirnya."
+	idFormal := "Ongkir dihitung setelah alamat lengkap dikonfirmasi. Mohon kirim alamat lengkap (kecamatan/kota) agar kami bisa hitungkan ongkirnya."
+	idCasualArea := "Ongkirnya nanti dihitung setelah alamat lengkap ya kak. Area kirim kami: " + area +
+		". Boleh kirim alamat lengkap (kecamatan/kota) biar bisa dihitung ongkirnya?"
+	idCasual := "Ongkirnya nanti dihitung setelah alamat lengkap ya kak. Boleh kirim alamat lengkap (kecamatan/kota) biar bisa dihitung ongkirnya?"
+	enFormalArea := "Shipping cost is calculated after we confirm your full address. We deliver to: " + area +
+		". Please send your full address (district/city) so we can quote shipping."
+	enFormal := "Shipping cost is calculated after we confirm your full address. Please send your full address (district/city) so we can quote shipping."
+	enCasualArea := "We'll calculate shipping after your full address is confirmed. We ship to: " + area +
+		". Could you send your full address (district/city) so we can quote shipping?"
+	enCasual := "We'll calculate shipping after your full address is confirmed. Could you send your full address (district/city) so we can quote shipping?"
 	if formal {
 		if area != "" {
-			return "Ongkir dihitung setelah alamat lengkap dikonfirmasi. Area pengiriman kami: " + area +
-				". Mohon kirim alamat lengkap (kecamatan/kota) agar kami bisa hitungkan ongkirnya."
+			return PickBuyerLanguageReply(userText, formal, idFormalArea, enFormalArea)
 		}
-		return "Ongkir dihitung setelah alamat lengkap dikonfirmasi. Mohon kirim alamat lengkap (kecamatan/kota) agar kami bisa hitungkan ongkirnya."
+		return PickBuyerLanguageReply(userText, formal, idFormal, enFormal)
 	}
 	if area != "" {
-		return "Ongkirnya nanti dihitung setelah alamat lengkap ya kak. Area kirim kami: " + area +
-			". Boleh kirim alamat lengkap (kecamatan/kota) biar bisa dihitung ongkirnya?"
+		return PickBuyerLanguageReply(userText, formal, idCasualArea, enCasualArea)
 	}
-	return "Ongkirnya nanti dihitung setelah alamat lengkap ya kak. Boleh kirim alamat lengkap (kecamatan/kota) biar bisa dihitung ongkirnya?"
+	return PickBuyerLanguageReply(userText, formal, idCasual, enCasual)
 }
 
-func buildShippingDefaultReply(profile *BusinessProfile, formal bool) string {
+func buildShippingDefaultReply(userText string, profile *BusinessProfile, formal bool) string {
 	area := deliveryAreaLabel(profile)
-	base := shippingETAGenericReply(formal)
+	base := shippingETAGenericReplyFor(userText, formal)
 	if area == "" {
 		return base
 	}
+	idFormal := "Kami melayani pengiriman ke " + area + ". " + base
+	idCasual := "Kami kirim ke " + area + " ya kak. " + base
+	enFormal := "We deliver to " + area + ". " + base
+	enCasual := "We ship to " + area + ". " + base
 	if formal {
-		return "Kami melayani pengiriman ke " + area + ". " + base
+		return PickBuyerLanguageReply(userText, formal, idFormal, enFormal)
 	}
-	return "Kami kirim ke " + area + " ya kak. " + base
+	return PickBuyerLanguageReply(userText, formal, idCasual, enCasual)
 }
 
 func deliveryAreaLabel(profile *BusinessProfile) string {

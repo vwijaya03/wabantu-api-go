@@ -70,7 +70,7 @@ func TestTryShippingFAQReply_kbETA(t *testing.T) {
 func TestBuildShippingDefaultReplyETAWithoutAddressAsk(t *testing.T) {
 	area := "Seluruh Indonesia"
 	profile := &BusinessProfile{DeliveryArea: &area}
-	reply := buildShippingDefaultReply(profile, false)
+	reply := buildShippingDefaultReply("berapa lama pengiriman?", profile, false)
 	if strings.Contains(strings.ToLower(reply), "alamat lengkap") {
 		t.Fatalf("ETA default must not ask full address: %q", reply)
 	}

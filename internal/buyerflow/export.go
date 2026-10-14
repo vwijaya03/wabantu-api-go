@@ -39,7 +39,7 @@ const CatalogEmptyMarker = catalogEmptyMarker
 func FormatStockLabel(qty float64) string { return formatStockLabel(qty) }
 
 func BuildCatalogListReply(formal bool, bizName string, catalog []CatalogItem, profile *BusinessProfile) string {
-	return buildCatalogListReply(formal, bizName, catalog, profile)
+	return buildCatalogListReply("", formal, bizName, catalog, profile)
 }
 
 func WarehouseBuyerLabel(customerLabel, warehouseName string) string {

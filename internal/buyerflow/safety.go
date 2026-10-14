@@ -27,6 +27,8 @@ var questionKeywords = []string{
 	"apa", "apakah", "berapa", "gimana", "bagaimana",
 	"kapan", "bisa", "stok", "size", "ukuran",
 	"harga", "ongkir", "dimana", "lokasi", "mana",
+	"how", "what", "where", "when", "why", "which",
+	"can", "could", "does", "do", "is", "are",
 }
 
 var greetingPrefixes = []string{
@@ -48,7 +50,8 @@ var retailIntentKeywords = []string{
 	"pcs", "pc", "biji", "buah", "qty", "jumlah", "unit", "saja",
 	"harga", "stok", "stock", "ready", "tersedia", "ada", "jual", "jualan",
 	"catalog", "menu", "rekomend", "minimum", "minimal", "min order",
-	"shop", "shopping",
+	"shop", "shopping", "want to shop", "i want to",
+	"shipping", "delivery", "track", "payment", "pay",
 	"ukuran", "size", "warna", "model", "varian", "katalog", "produk", "barang",
 	"kirim", "ongkir", "pengiriman", "berapa", "apakah", "bisa", "cari", "butuh", "minat",
 	"toko", "tokonya", "dimana", "lokasi", "alamat", "terima kasih", "makasih",

@@ -3,6 +3,8 @@ package buyerflow
 import "strings"
 
 var recipientPolicyPhrases = []string{
+	"buy for someone else", "order for someone else", "purchase for someone else",
+	"ship to someone else", "on behalf of someone else",
 	"atas nama orang lain",
 	"beli untuk orang lain",
 	"pesan untuk orang lain",

@@ -68,9 +68,9 @@ func TryCheckoutActiveShippingFAQReply(userText, step string, profile *BusinessP
 	} else if ans, ok := tryShippingKBFAQ(userText, kb); ok {
 		base = ans
 	} else {
-		base = checkoutActiveShippingETABase(formal)
+		base = checkoutActiveShippingETABase(userText, formal)
 	}
-	cta := checkoutShippingStepContinueCTA(step, formal)
+	cta := checkoutShippingStepContinueCTA(userText, step, formal)
 	if cta == "" {
 		return base, true
 	}
@@ -94,32 +94,45 @@ func checkoutActiveShippingQuoteBase(profile *BusinessProfile, kb []KBEntry, for
 	return "Ongkirnya nanti dihitung setelah alamat lengkap ya kak."
 }
 
-func checkoutActiveShippingETABase(formal bool) string {
-	if formal {
-		return "Estimasi sampainya tergantung kurir dan alamat tujuan ya kak. Tim kami yang konfirmasi setelah alamat lengkap."
-	}
-	return "Estimasi sampainya tergantung kurir dan alamat tujuan ya kak. Nanti tim kami konfirmasi setelah alamat lengkap."
+func checkoutActiveShippingETABase(userText string, formal bool) string {
+	return shippingETAGenericReplyFor(userText, formal)
 }
 
 func shippingETAGenericReply(formal bool) string {
-	if formal {
-		return "Estimasi sampainya tergantung kurir dan alamat tujuan ya kak. Tim kami konfirmasi begitu pesanan diproses."
-	}
-	return "Estimasi sampainya tergantung kurir dan alamat tujuan ya kak. Nanti tim kami kabari setelah pesanan diproses ya."
+	return shippingETAGenericReplyFor("", formal)
 }
 
-func checkoutShippingStepContinueCTA(step string, formal bool) string {
+func shippingETAGenericReplyFor(userText string, formal bool) string {
+	idFormal := "Estimasi sampainya tergantung kurir dan alamat tujuan ya kak. Tim kami konfirmasi begitu pesanan diproses."
+	idCasual := "Estimasi sampainya tergantung kurir dan alamat tujuan ya kak. Nanti tim kami kabari setelah pesanan diproses ya."
+	enFormal := "Delivery timing depends on the courier and destination. Our team confirms once your order is processed."
+	enCasual := "Delivery timing depends on the courier and your address. We'll update you after the order is processed."
+	if formal {
+		return PickBuyerLanguageReply(userText, formal, idFormal, enFormal)
+	}
+	return PickBuyerLanguageReply(userText, formal, idCasual, enCasual)
+}
+
+func checkoutShippingStepContinueCTA(userText, step string, formal bool) string {
 	switch step {
 	case "ask_recipient":
+		idFormal := "Mohon kirim nama penerima dan nomor HP terlebih dahulu."
+		idCasual := "Sekarang kirim nama penerima + no HP dulu ya."
+		enFormal := "Please send the recipient's name and mobile number first."
+		enCasual := "Next, please send the recipient's name and phone number."
 		if formal {
-			return "Mohon kirim nama penerima dan nomor HP terlebih dahulu."
+			return PickBuyerLanguageReply(userText, formal, idFormal, enFormal)
 		}
-		return "Sekarang kirim nama penerima + no HP dulu ya."
+		return PickBuyerLanguageReply(userText, formal, idCasual, enCasual)
 	case "ask_address", "ask_address_full":
+		idFormal := "Mohon kirim alamat lengkap pengiriman (jalan, RT/RW, kelurahan, kecamatan, kota, kode pos)."
+		idCasual := "Kirim alamat lengkap pengiriman ya kak (jalan, RT/RW, kelurahan, kecamatan, kota, kode pos)."
+		enFormal := "Please send the full shipping address (street, district, city, postal code)."
+		enCasual := "Please send your full shipping address (street, district, city, postal code)."
 		if formal {
-			return "Mohon kirim alamat lengkap pengiriman (jalan, RT/RW, kelurahan, kecamatan, kota, kode pos)."
+			return PickBuyerLanguageReply(userText, formal, idFormal, enFormal)
 		}
-		return "Kirim alamat lengkap pengiriman ya kak (jalan, RT/RW, kelurahan, kecamatan, kota, kode pos)."
+		return PickBuyerLanguageReply(userText, formal, idCasual, enCasual)
 	default:
 		return ""
 	}
