@@ -73,11 +73,13 @@ func VerifyPaymentProof(ctx context.Context, id string) (*Order, error) {
 	}
 	if o.ConversationID != "" {
 		ref := FormatOrderNumber(o.ID)
+		metaJSON := orderPaymentNotifyMetadataJSON()
 		_, _ = db.Exec(ctx, fmt.Sprintf(`
 			INSERT INTO "%s".message (conversation_id, direction, author, type, body, metadata, status)
-			VALUES ($1, 'out', 'system', 'text', $2, '{}'::jsonb, 'sent')`,
+			VALUES ($1, 'out', 'system', 'text', $2, $3::jsonb, 'sent')`,
 			u.TenantSchema), o.ConversationID,
-			fmt.Sprintf("Pembayaran pesanan %s terverifikasi. Pesanan sedang diproses.", ref))
+			fmt.Sprintf("Pembayaran pesanan %s terverifikasi. Pesanan sedang diproses.", ref),
+			string(metaJSON))
 	}
 	mirrorOrderState(ctx, u, o.ConversationID)
 	return &o, nil

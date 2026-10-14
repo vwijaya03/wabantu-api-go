@@ -233,11 +233,13 @@ func (s *approveTxStore) NotifyBuyer(ctx context.Context) error {
 	if s.order.ConversationID == "" {
 		return nil
 	}
+	metaJSON := orderPaymentNotifyMetadataJSON()
 	_, err := s.tx.ExecContext(ctx, fmt.Sprintf(`
 		INSERT INTO "%s".message (conversation_id, direction, author, type, body, metadata, status)
-		VALUES ($1, 'out', 'system', 'text', $2, '{}'::jsonb, 'sent')`, s.u.TenantSchema),
+		VALUES ($1, 'out', 'system', 'text', $2, $3::jsonb, 'sent')`, s.u.TenantSchema),
 		s.order.ConversationID,
-		fmt.Sprintf("Pembayaran pesanan %s terverifikasi dan pesanan selesai. Terima kasih!", FormatOrderNumber(s.order.ID)))
+		fmt.Sprintf("Pembayaran pesanan %s terverifikasi dan pesanan selesai. Terima kasih!", FormatOrderNumber(s.order.ID)),
+		string(metaJSON))
 	return err
 }
 

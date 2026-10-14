@@ -43,7 +43,7 @@ func conversationRegressionAutoGenCases_6c43985f() []regressionCase {
 				"Abon sapi wes aku luweh", "Saya mau beli abon sapi yang 500 gr",
 				"Sy mau beli abon sapi yg 500 gr", "2",
 			},
-			wantPath: PathConsulting,
+			wantPath: PathShippingFAQ,
 		},
 	}
 }

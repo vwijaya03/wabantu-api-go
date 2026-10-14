@@ -20,8 +20,12 @@ func TestShouldBreakOrderFlowImplicitAppend(t *testing.T) {
 	if ShouldBreakOrderFlow("hello kitty L 1 pcs", "ask_recipient", apparelCatalog()) {
 		t.Fatal("apparel second SKU must not break checkout")
 	}
-	if !ShouldBreakOrderFlow("berapa ongkir ke bandung?", "ask_recipient", catalog) {
-		t.Fatal("shipping question should break flow at ask_recipient")
+	sim := NewOmahSimulator()
+	sim.Turn("mau beli abon sapi 2 pcs")
+	out := sim.Turn("berapa ongkir ke bandung?")
+	if out.Path != PathShippingFAQ || sim.Order == nil || out.BrokeFlow {
+		t.Fatalf("ongkir mid-checkout should intercept without clearing cart: path=%s broke=%v order=%v reply=%q",
+			out.Path, out.BrokeFlow, sim.Order, out.Reply)
 	}
 }
 

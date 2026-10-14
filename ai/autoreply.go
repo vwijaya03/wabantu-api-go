@@ -402,6 +402,16 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 			err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, reply, "system", payload.InboundMessageID, out)
 			return err == nil, err
 		}
+		if handled, err := s.handleOrderRefCheckoutContinuation(ctx, ts, payload, convo, channel, contact, userText, profile, kbEntries, history, catalog); handled || err != nil {
+			return handled, err
+		}
+		if shipReply, ok := bf.TryCheckoutActiveShippingFAQReply(userText, orderSt.Step, profileToBF(profile), kbToBF(kbEntries), formal); ok {
+			finalReply := applyOutputPolicy(shipReply)
+			out := metaNoLLM(reasonAIGenerated, PathShippingFAQ)
+			out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
+			err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, finalReply, "ai", payload.InboundMessageID, out)
+			return err == nil, err
+		}
 		if ShouldBreakOrderFlow(userText, orderSt.Step, catalog) {
 			if ShouldKeepCartOnExplicitNewOrder(orderSt, userText) {
 				sent, oErr := s.handleOrderFlow(ctx, ts, payload.TenantSchema, payload.TenantID, convo, channel, contact,
@@ -513,6 +523,12 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 
 	if inScope && IsOrderAmendMessage(userText) {
 		return s.handleOrderAmend(ctx, ts, payload, convo, channel, contact, userText, profile, history)
+	}
+
+	if inScope {
+		if handled, err := s.handleOrderRefCheckoutContinuation(ctx, ts, payload, convo, channel, contact, userText, profile, kbEntries, history, catalog); handled || err != nil {
+			return handled, err
+		}
 	}
 
 	// ── Katalog WABantu (business_catalog_item) — prioritas sebelum FAQ/LLM ──

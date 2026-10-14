@@ -145,13 +145,16 @@ flowchart TD
   greeting -->|no| inject{IsPromptInjectionLikely?}
   inject -->|yes| guard[path injection_guard]
   inject -->|no| loadHist[Load history + KB]
-  loadHist --> cancel{IsOrderCancelRequest?}
+  loadHist --> payProof{IsPaymentProofInbound?}
+  payProof -->|yes| proofPath[payment_proof pipeline]
+  payProof -->|no| cancel{IsOrderCancelRequest?}
   cancel -->|draft Redis| cancelDraft[path order_cancel cancel_draft]
   cancel -->|status inquiry| orderStatus
   cancel -->|persisted cancel| orderCancel[path order_cancel]
   cancel -->|no| status2{Order status / self buyer?}
   status2 -->|yes| orderStatus
   status2 -->|no| redisOrder{Redis order flow aktif?}
+  redisOrder -->|shipping FAQ murni| shipIntercept[path shipping_faq tanpa clear]
   redisOrder -->|lanjut checkout| orderFlow[path order_flow]
   redisOrder -->|break intent| classifier[Scope + ResolveSalesIntent]
   classifier --> orderEarly{order_intent atau structured list?}
@@ -192,8 +195,10 @@ flowchart TD
 9. **History-backed purchase:** `mau beli 2 lusin` + stok? tanpa nama produk di pesan, tapi outbound terakhir menyebut satu produk (mis. Abon) → `order_intent` / `order_flow`, bukan retail policy.
 10. **Sell inquiry:** `jual abon sapi?` → `catalog_db` (`IsProductSellInquiry`), bukan LLM.
 11. **Stock follow-up:** `stoknya ada?` / `ada ga?` pendek → resolve produk dari `matchCatalogFromFocusedHistory` — skip outbound list katalog.
-12. **Shipping FAQ** (`ai/shipping_reply.go`): ongkir, estimasi kirim, area kirim → path `shipping_faq` **setelah** katalog, **sebelum** FAQ umum/LLM. `catalog_reply.go` early-return `false` untuk `IsShippingFAQQuestion` agar tidak hijack.
-13. **LLM gagal:** langsung `scopeDirectionReply` dengan path `auto_fallback` — tidak menunggu retry Pub/Sub job habis.
+12. **Shipping FAQ** (`internal/buyerflow/shipping_reply.go`, bridge `ai/buyerflow_bridge.go`): ongkir / estimasi kirim / area kirim → path `shipping_faq`. **Saat Redis checkout aktif**, ongkir dan ETA **murni** (tanpa negasi promo/bayar/stok, tanpa alamat/nama/HP di pesan yang sama) di-intercept **sebelum** `ShouldBreakOrderFlow` — jawaban shipping + ajakan lanjut step (`ask_recipient` → nama+HP dulu, bukan minta alamat dulu); **tidak** `clearOrderState`. Di luar checkout, shipping FAQ tetap **setelah** katalog, **sebelum** FAQ umum/LLM. `catalog_reply.go` early-return `false` untuk `IsShippingFAQQuestion`. Simulator parity: `internal/buyerflow/simulator.go`.
+13. **WB-ref + data checkout** (`internal/buyerflow/order_ref_checkout.go`): ref + alamat/penerima/HP → `handleOrderFlow` via `loadOrderByRefForContact` (hanya status `draft`); dicek **setelah** amend, **sebelum** katalog — bukan `catalog_db`. Multi-ref → minta pilih satu, tanpa write.
+14. **Gambar bukti bayar** (`ai/payment_proof.go`, #216): `IsPaymentProofInbound` menghentikan auto-reply generik; hanya pipeline bukti transfer.
+15. **LLM gagal:** langsung `scopeDirectionReply` dengan path `auto_fallback` — tidak menunggu retry Pub/Sub job habis.
 
 ### Retrieval vector (RAG)
 
@@ -232,7 +237,8 @@ Katalog: `MatchCatalogItemSemantic` (vector top-3 → rules); ambigu → klarifi
 | `IsGreetingFeedback` | `ai/greeting.go` | `makasih min` setelah sapaan | `greeting` | Tidak |
 | `IsPromptInjectionLikely` | `ai/safety.go` | Upaya manipulasi sistem | `injection_guard` | Tidak |
 | `replyFromBusinessCatalog` | `ai/catalog_reply.go` | `list produk`, `listkan semua jualan`, `harga kaos L`, caption foto produk | `catalog_db` | Tidak |
-| `tryShippingFAQReply` | `ai/shipping_reply.go` | `berapa ongkir`, `berapa lama pengiriman`, `bisa kirim ke luar kota` | `shipping_faq` | Tidak |
+| `tryShippingFAQReply` / `TryCheckoutActiveShippingFAQReply` | `internal/buyerflow/shipping_reply.go` | `berapa ongkir`, `kapan barang sampai`, `bisa kirim ke luar kota`; negasi `promo`/`bayar`/… → bukan shipping FAQ | `shipping_faq` | Tidak |
+| `IsOrderRefCheckoutContinuation` | `internal/buyerflow/order_ref_checkout.go` | `WB-…` + alamat lengkap / nama+HP (draft only di `ai/`) | `order_flow` | Tidak |
 | `IsProductSellInquiry` | `ai/catalog_reply.go` | `jual abon sapi?`, `kalian jualan abon?` | `catalog_db` | Tidak |
 | `isHistoryBackedPurchaseIntent` | `ai/sales_state.go` | `mau beli 2 lusin` + produk dari outbound terakhir | `order_flow` (via intent) | Tidak |
 | `IsStructuredOrderList` | `ai/order_structured.go` | `mau buat pesanan baru` + baris `1. Produk qty ukuran` | `order_flow` | Tidak |
