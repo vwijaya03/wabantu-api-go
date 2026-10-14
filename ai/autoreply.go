@@ -323,6 +323,10 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		applyContactTierPrices(ctx, ts, catalog, contact.ID)
 	}
 
+	if IsHumanEscalationRequest(userText) {
+		return s.handleBuyerHumanHandoff(ctx, ts, payload, convo, channel, contact, profile)
+	}
+
 	if IsPaymentQuestion(userText) {
 		if ans, ok := tryPaymentFAQAnswer(userText, kbEntries); ok {
 			finalReply := applyOutputPolicy(ans)
@@ -1566,6 +1570,26 @@ func (s *AutoReplyService) sendAiMessage(
 
 	s.markAiSendDone(ctx, inboundMessageID)
 	return nil
+}
+
+func (s *AutoReplyService) handleBuyerHumanHandoff(
+	ctx context.Context,
+	ts tenantScopedQuerier,
+	payload AiReplyJobPayload,
+	convo *dbConversation,
+	channel *dbChannel,
+	contact *dbContact,
+	profile *dbBusinessProfile,
+) (bool, error) {
+	formal := strOrEmpty(profile.Tone) == "formal"
+	finalReply := applyOutputPolicy(HumanHandoffReply(formal))
+	out := metaNoLLM(reasonAIGenerated, PathHumanHandoff)
+	out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
+	err := s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, finalReply, "system", payload.InboundMessageID, out)
+	if err != nil {
+		return false, err
+	}
+	return true, pauseAI(ctx, ts, convo.ID, "buyer_requested_human")
 }
 
 func pauseAI(ctx context.Context, ts tenantScopedQuerier, convoID, reason string) error {

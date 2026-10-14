@@ -114,6 +114,16 @@ func (s *Simulator) Turn(userText string) TurnOutcome {
 		return out
 	}
 
+	if IsHumanEscalationRequest(userText) {
+		formal := strOrEmpty(s.Profile.Tone) == "formal"
+		out.Path = PathHumanHandoff
+		out.Intent = SalesIntent{State: SalesStateConsulting, Topic: SalesTopicGeneral, Confidence: 0.95}
+		out.Reply = HumanHandoffReply(formal)
+		out.Order = s.Order
+		s.appendHistory(userText, out.Reply)
+		return out
+	}
+
 	orderActive := s.Order != nil
 	inScope := s.inScope(userText) || isCommerceDominant(userText)
 

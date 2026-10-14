@@ -85,23 +85,6 @@ func IsComplaintLike(userText string) bool {
 	return false
 }
 
-// IsHumanEscalationRequest — minta CS/manusia.
-func IsHumanEscalationRequest(userText string) bool {
-	text := strings.ToLower(strings.TrimSpace(userText))
-	if text == "" {
-		return false
-	}
-	if strings.Contains(text, "hubungi admin") || strings.Contains(text, "chat cs") ||
-		strings.Contains(text, "customer service") || strings.Contains(text, "sambungkan") {
-		return true
-	}
-	human := strings.Contains(text, "manusia") || strings.Contains(text, "operator") ||
-		strings.Contains(text, "admin") || strings.Contains(text, " cs") || strings.HasPrefix(text, "cs ") ||
-		strings.Contains(text, " cs ") || strings.HasSuffix(text, " cs") || strings.Contains(text, "sama cs")
-	return human && (strings.Contains(text, "?") || strings.Contains(text, "mau") || strings.Contains(text, "hubung") ||
-		strings.Contains(text, "chat") || strings.Contains(text, "sambung"))
-}
-
 // IsPaymentQuestion — pembayaran / transfer / COD.
 func IsPaymentQuestion(userText string) bool {
 	text := strings.ToLower(strings.TrimSpace(userText))

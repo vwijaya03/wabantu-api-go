@@ -138,7 +138,7 @@ func detectResponseBehavior(c WABuyerCase, out TurnOutcome) ResponseBehavior {
 		return BehaviorCorrection
 	case IsComplaintLike(c.InputUser):
 		return BehaviorComplaint
-	case IsHumanEscalationRequest(c.InputUser):
+	case out.Path == PathHumanHandoff, IsHumanEscalationRequest(c.InputUser):
 		return BehaviorHumanEscalation
 	}
 	if out.Order != nil && c.CurrentState != nil && out.Order.Qty != c.CurrentState.Qty && out.Order.Qty > 0 {
