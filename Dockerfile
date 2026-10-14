@@ -1,14 +1,5 @@
-# Encore builds are done via `encore build docker wabantu`
-# which produces an optimized image. This file is for reference / custom builds.
-FROM golang:1.24-alpine AS builder
-WORKDIR /app
-COPY go.mod go.sum ./
-RUN go mod download
-COPY . .
-RUN CGO_ENABLED=0 go build -o api-server ./...
-
+# Image Cloud Run tidak dibuat dari Dockerfile ini.
+# Binary Encore yang benar hanya keluar dari `encore build docker`.
+# Pakai ./scripts/cloudrun/build-image.sh
 FROM alpine:3.21
-RUN apk add --no-cache ca-certificates
-COPY --from=builder /app/api-server /usr/local/bin/
-EXPOSE 4000
-CMD ["api-server"]
+RUN echo "Jangan docker build file ini. Pakai ./scripts/cloudrun/build-image.sh" && exit 1

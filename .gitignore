@@ -11,3 +11,7 @@ scripts/node_modules/
 .db-migrate/
 .env.local
 .DS_Store
+
+# Cloud Run lomba: hasil render, berisi host DB/Redis
+deploy/cloudrun/infra.config.json
+deploy/cloudrun/.env
