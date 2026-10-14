@@ -32,7 +32,7 @@ if ! gcloud iam service-accounts describe "$SA_EMAIL" >/dev/null 2>&1; then
   gcloud iam service-accounts create "$SA" --display-name="WABantu Cloud Run lomba"
 fi
 
-for role in roles/pubsub.publisher roles/secretmanager.secretAccessor; do
+for role in roles/pubsub.publisher roles/pubsub.viewer roles/pubsub.subscriber roles/secretmanager.secretAccessor; do
   gcloud projects add-iam-policy-binding "$PROJECT" \
     --member="serviceAccount:${SA_EMAIL}" \
     --role="$role" \
