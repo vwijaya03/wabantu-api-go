@@ -357,7 +357,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 			out.OrderAction = "cancel_draft"
 			out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 			err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact,
-				orderFlowCancelReply(tone), "system", payload.InboundMessageID, out)
+				orderFlowCancelReply(tone, userText), "system", payload.InboundMessageID, out)
 			return err == nil, err
 		}
 		// Tanpa draft aktif: "ga jadi beli + ada nomor pesanan?" → jawab status, jangan cancel order lama.
@@ -371,7 +371,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		out.OrderAction = "cancel"
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact,
-			orderNoneToCancelReply(), "system", payload.InboundMessageID, out)
+			orderNoneToCancelReply(userText), "system", payload.InboundMessageID, out)
 		return err == nil, err
 	}
 	if IsThirdPartyBuyerLookup(userText) {
@@ -410,7 +410,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		tone := strOrEmpty(profile.Tone)
 		formal := tone == "formal"
 		if IsStandaloneAddMoreItemsPolicyQuestion(userText, catalog) {
-			reply := applyOutputPolicy(AddMoreItemsPolicyReply(formal, orderSt))
+			reply := applyOutputPolicy(AddMoreItemsPolicyReply(formal, orderSt, userText))
 			out := metaNoLLM(reasonNonQuestion, PathOrderFlow)
 			out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 			err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, reply, "system", payload.InboundMessageID, out)
@@ -528,7 +528,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	if inScope && IsStandaloneAddMoreItemsPolicyQuestion(userText, catalog) {
 		formal := strOrEmpty(profile.Tone) == "formal"
 		orderSt, _ := s.getOrderState(ctx, payload.TenantID, convo.ID)
-		reply := applyOutputPolicy(AddMoreItemsPolicyReply(formal, orderSt))
+		reply := applyOutputPolicy(AddMoreItemsPolicyReply(formal, orderSt, userText))
 		out := metaNoLLM(reasonAIGenerated, PathConsulting)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, reply, "ai", payload.InboundMessageID, out)
@@ -639,7 +639,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		out := metaNoLLM(reasonAIGenerated, PathConsulting)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact,
-			casualPraiseReply(formal), "ai", payload.InboundMessageID, out)
+			casualPraiseReply(formal, userText), "ai", payload.InboundMessageID, out)
 		return err == nil, err
 	}
 
@@ -895,7 +895,7 @@ func (s *AutoReplyService) handleCustomerOrderCancel(
 	if o == nil {
 		meta := metaNoLLM(reasonNonQuestion, PathOrderCancel)
 		meta.OrderAction = "cancel"
-		return send(orderNoneToCancelReply(), meta)
+		return send(orderNoneToCancelReply(userText), meta)
 	}
 	if contact != nil && !OrderChatAccessAllowed(o, scope, contact.PhoneNumber, contact.PhoneNumber) {
 		meta := metaNoLLM(reasonNonQuestion, PathOrderCancel)
@@ -931,7 +931,7 @@ func (s *AutoReplyService) handleCustomerOrderCancel(
 	meta := metaNoLLM(reasonNonQuestion, PathOrderCancel)
 	meta.OrderID = o.ID
 	meta.OrderAction = "cancel"
-	return send(orderCancelCustomerReply(tone, ref), meta)
+	return send(orderCancelCustomerReply(userText, tone, ref), meta)
 }
 
 func (s *AutoReplyService) handleThirdPartyBuyerLookupDenied(

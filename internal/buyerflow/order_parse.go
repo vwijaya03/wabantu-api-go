@@ -700,13 +700,6 @@ func normalizeOrderState(st OrderState) OrderState {
 	return st
 }
 
-func orderFlowCancelReply(tone string) string {
-	if tone == "formal" {
-		return "Baik kak, ordernya kami batalkan dulu ya. Silakan tanya produk, harga, atau stok jika ada yang dibutuhkan."
-	}
-	return "Oke kak, ordernya dibatalkan dulu ya 😊 Mau tanya produk atau harga, langsung chat aja."
-}
-
 var embedQueryQtyRe = regexp.MustCompile(`(?i)\b\d+\s*(pcs|pc|buah|biji|pack|paket|lusin)\b`)
 
 // ExtractProductQueryForEmbed strips checkout intent noise for catalog embedding queries.

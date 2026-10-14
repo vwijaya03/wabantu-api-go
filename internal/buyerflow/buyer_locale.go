@@ -12,6 +12,7 @@ var englishStrongPhrases = []string{
 	"i want to pay", "how do i pay", "talk to a human", "speak to a human",
 	"connect me to", "can i buy for someone else", "buy for someone else",
 	"order for someone else",
+	"cancel order", "cancel my order", "please cancel",
 }
 
 var englishFunctionWords = map[string]struct{}{

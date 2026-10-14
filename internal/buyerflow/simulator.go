@@ -108,7 +108,7 @@ func (s *Simulator) Turn(userText string) TurnOutcome {
 		out.Canceled = true
 		out.Path = PathOrderCancel
 		if hadOrder {
-			out.Reply = orderFlowCancelReply(strOrEmpty(s.Profile.Tone))
+			out.Reply = orderFlowCancelReply(strOrEmpty(s.Profile.Tone), userText)
 		}
 		s.appendHistory(userText, out.Reply)
 		return out
@@ -133,7 +133,7 @@ func (s *Simulator) Turn(userText string) TurnOutcome {
 			formal := strOrEmpty(s.Profile.Tone) == "formal"
 			out.Path = PathOrderFlow
 			out.Intent = SalesIntent{State: SalesStateCheckout, Topic: SalesTopicGeneral, Confidence: 0.9}
-			out.Reply = AddMoreItemsPolicyReply(formal, s.Order)
+			out.Reply = AddMoreItemsPolicyReply(formal, s.Order, userText)
 			out.Order = s.Order
 			s.appendHistory(userText, out.Reply)
 			return out
@@ -266,7 +266,7 @@ func (s *Simulator) Turn(userText string) TurnOutcome {
 		formal := strOrEmpty(s.Profile.Tone) == "formal"
 		out.Path = PathConsulting
 		out.Intent = SalesIntent{State: SalesStateConsulting, Topic: SalesTopicGeneral, Confidence: 0.9}
-		out.Reply = AddMoreItemsPolicyReply(formal, s.Order)
+		out.Reply = AddMoreItemsPolicyReply(formal, s.Order, userText)
 		s.appendHistory(userText, out.Reply)
 		return out
 	}

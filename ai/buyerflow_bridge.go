@@ -142,6 +142,8 @@ var (
 	ApplyDraftLineMutations                = bf.ApplyDraftLineMutations
 	CartRecapReply                         = bf.CartRecapReply
 	AddMoreItemsPolicyReply                = bf.AddMoreItemsPolicyReply
+	OrderCancelCustomerReply               = bf.OrderCancelCustomerReply
+	OrderNoneToCancelReply                 = bf.OrderNoneToCancelReply
 	IsOrderStatusInquiry                   = bf.IsOrderStatusInquiry
 	IsOrderShippingDataConfirmation      = bf.IsOrderShippingDataConfirmation
 	IsOrderTotalRequest                    = bf.IsOrderTotalRequest
@@ -234,7 +236,7 @@ func sensitiveEscalateReply(userText string, profile *dbBusinessProfile) string 
 
 func thirdPartyBuyerLookupDeniedReply() string { return bf.ThirdPartyBuyerLookupDeniedReply() }
 
-func orderFlowCancelReply(tone string) string { return bf.OrderFlowCancelReply(tone) }
+func orderFlowCancelReply(tone, userText string) string { return bf.OrderFlowCancelReply(tone, userText) }
 
 func orderFlowLoopBreakReply(formal bool) string { return bf.OrderFlowLoopBreakReply(formal) }
 
@@ -264,7 +266,7 @@ func mentionsOrderQty(text string) bool { return bf.MentionsOrderQty(text) }
 
 func hasOrderIntentText(userText string) bool { return bf.HasOrderIntentText(userText) }
 
-func casualPraiseReply(formal bool) string { return bf.CasualPraiseReply(formal) }
+func casualPraiseReply(formal bool, userText string) string { return bf.CasualPraiseReply(formal, userText) }
 
 func topKBMatchScore(query string, kb []dbKBEntry) float64 { return bf.TopKBMatchScore(query, kb) }
 

@@ -15,6 +15,8 @@ func IsAddMoreItemsPolicyQuestion(userText string) bool {
 		"nambah pesanan", "mau nambah", "tambah pesanan", "bisa nambah",
 		"mau tambah", "tambah lagi", "nambah lagi", "mau nambah pesanan",
 		"bisa tambah lagi", "masih bisa tambah",
+		"can i add more items", "add more items", "can i add another item",
+		"add another item", "order more items", "add more to my order",
 	}
 	for _, p := range phrases {
 		if strings.Contains(text, p) {
@@ -25,10 +27,16 @@ func IsAddMoreItemsPolicyQuestion(userText string) bool {
 }
 
 // AddMoreItemsPolicyReply explains how to append items during active checkout.
-func AddMoreItemsPolicyReply(formal bool, st *OrderState) string {
-	base := "Siap kak, boleh tambah item lagi 😊 Cukup sebut nama produk + jumlahnya ya (contoh: nama SKU 1 pcs)."
+func AddMoreItemsPolicyReply(formal bool, st *OrderState, userText string) string {
+	idCasual := "Siap kak, boleh tambah item lagi 😊 Cukup sebut nama produk + jumlahnya ya (contoh: nama SKU 1 pcs)."
+	idFormal := "Baik kak, silakan tambah item lagi. Sebut nama produk dan jumlahnya (contoh: nama SKU 1 pcs)."
+	enCasual := "Sure — you can add more items 😊 Just send the product name and quantity (e.g. product name 1 pc)."
+	enFormal := "Of course — you can add more items. Send the product name and quantity (e.g. product name 1 pc)."
+	var base string
 	if formal {
-		base = "Baik kak, silakan tambah item lagi. Sebut nama produk dan jumlahnya (contoh: nama SKU 1 pcs)."
+		base = PickBuyerLanguageReply(userText, true, idFormal, enFormal)
+	} else {
+		base = PickBuyerLanguageReply(userText, false, idCasual, enCasual)
 	}
 	if st == nil || !st.ProductComplete() {
 		return base
@@ -51,7 +59,7 @@ func checkoutAddItemsPolicyReplyIfNeeded(st OrderState, userText string, catalog
 	if !IsStandaloneAddMoreItemsPolicyQuestion(userText, catalog) {
 		return "", false
 	}
-	return AddMoreItemsPolicyReply(formal, &st), true
+	return AddMoreItemsPolicyReply(formal, &st, userText), true
 }
 
 // IsStandaloneAddMoreItemsPolicyQuestion — "boleh nambah?" tanpa menyebut SKU/merek.

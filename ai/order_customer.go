@@ -552,20 +552,16 @@ func orderStatusLabelID(status string) string {
 	}
 }
 
-func orderCancelCustomerReply(tone string, ref string) string {
-	base := fmt.Sprintf("Baik kak, pesanan %s sudah kami batalkan.", ref)
-	if tone == "formal" {
-		return base + " Silakan tanya produk, harga, atau stok jika ada yang dibutuhkan."
-	}
-	return base + " Mau tanya produk atau harga, langsung chat aja 😊"
+func orderCancelCustomerReply(userText, tone, ref string) string {
+	return OrderCancelCustomerReply(userText, tone, ref)
 }
 
 func orderAlreadyCancelledReply(ref string) string {
 	return fmt.Sprintf("Pesanan %s sudah dalam status dibatalkan ya kak.", ref)
 }
 
-func orderNoneToCancelReply() string {
-	return "Saat ini tidak ada pesanan aktif yang bisa dibatalkan dari chat ini. Kalau mau order baru, sebut produk dari katalog ya kak."
+func orderNoneToCancelReply(userText string) string {
+	return OrderNoneToCancelReply(userText)
 }
 
 func orderNoneFoundReply() string {

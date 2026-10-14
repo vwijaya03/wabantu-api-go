@@ -96,7 +96,7 @@ func ReplyRecipientPolicyQuestion(userText string, kb []KBEntry, formal bool) st
 
 func ThirdPartyBuyerLookupDeniedReply() string { return thirdPartyBuyerLookupDeniedReply() }
 
-func OrderFlowCancelReply(tone string) string { return orderFlowCancelReply(tone) }
+func OrderFlowCancelReply(tone, userText string) string { return orderFlowCancelReply(tone, userText) }
 
 func OrderFlowLoopBreakReply(formal bool) string { return orderFlowLoopBreakReply(formal) }
 
@@ -122,7 +122,7 @@ func MentionsOrderQty(text string) bool { return mentionsOrderQty(text) }
 
 func HasOrderIntentText(userText string) bool { return hasOrderIntentText(userText) }
 
-func CasualPraiseReply(formal bool) string { return casualPraiseReply(formal) }
+func CasualPraiseReply(formal bool, userText string) string { return casualPraiseReply(formal, userText) }
 
 func TopKBMatchScore(query string, kb []KBEntry) float64 { return topKBMatchScore(query, kb) }
 
