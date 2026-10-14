@@ -67,6 +67,25 @@ func TestTryShippingFAQReply_kbETA(t *testing.T) {
 	}
 }
 
+func TestBuildShippingDefaultReplyETAWithoutAddressAsk(t *testing.T) {
+	area := "Seluruh Indonesia"
+	profile := &BusinessProfile{DeliveryArea: &area}
+	reply := buildShippingDefaultReply(profile, false)
+	if strings.Contains(strings.ToLower(reply), "alamat lengkap") {
+		t.Fatalf("ETA default must not ask full address: %q", reply)
+	}
+	if !strings.Contains(reply, "Estimasi") {
+		t.Fatalf("expected ETA guidance: %q", reply)
+	}
+}
+
+func TestIsShippingFAQQuestionBerapaHari(t *testing.T) {
+	msg := `iyaaaa, dari WB-239488D0 kan aku sudah melampirkan alamatku, lalu barangnya kira" sampai di rumahku berapa hari ?`
+	if !IsShippingFAQQuestion(msg) {
+		t.Fatal("expected shipping FAQ for berapa hari + sampai di rumah")
+	}
+}
+
 func TestTryCheckoutActiveShippingFAQReplyAskRecipient(t *testing.T) {
 	sim := newWB239488Sim()
 	reply, ok := TryCheckoutActiveShippingFAQReply("berapa ongkir ke bandung?", sim.Order.Step, sim.Profile, sim.KB, false)

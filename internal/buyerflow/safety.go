@@ -48,6 +48,7 @@ var retailIntentKeywords = []string{
 	"pcs", "pc", "biji", "buah", "qty", "jumlah", "unit", "saja",
 	"harga", "stok", "stock", "ready", "tersedia", "ada", "jual", "jualan",
 	"catalog", "menu", "rekomend", "minimum", "minimal", "min order",
+	"shop", "shopping",
 	"ukuran", "size", "warna", "model", "varian", "katalog", "produk", "barang",
 	"kirim", "ongkir", "pengiriman", "berapa", "apakah", "bisa", "cari", "butuh", "minat",
 	"toko", "tokonya", "dimana", "lokasi", "alamat", "terima kasih", "makasih",

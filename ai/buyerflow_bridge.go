@@ -135,6 +135,7 @@ var (
 	CartRecapReply                         = bf.CartRecapReply
 	AddMoreItemsPolicyReply                = bf.AddMoreItemsPolicyReply
 	IsOrderStatusInquiry                   = bf.IsOrderStatusInquiry
+	IsOrderShippingDataConfirmation      = bf.IsOrderShippingDataConfirmation
 	IsOrderTotalRequest                    = bf.IsOrderTotalRequest
 	IsPaymentQuestion                      = bf.IsPaymentQuestion
 	IsPaymentRejectionInquiry              = bf.IsPaymentRejectionInquiry

@@ -693,9 +693,9 @@ func buildCatalogEmptyReply(formal bool, bizName string, profile *BusinessProfil
 func buildCatalogNotFoundReply(formal bool, bizName string, catalog []CatalogItem, profile *BusinessProfile) string {
 	var head string
 	if formal {
-		head = fmt.Sprintf("Maaf kak, produk yang Kakak sebut belum kami temukan di katalog WABantu %s.\n\nBerikut produk yang tersedia:\n\n", bizName)
+		head = fmt.Sprintf("Maaf kak, produk yang Kakak sebut belum kami temukan di katalog %s.\n\nBerikut produk yang tersedia:\n\n", bizName)
 	} else {
-		head = fmt.Sprintf("Maaf kak, produknya belum ketemu di katalog WABantu %s.\n\nIni yang ada sekarang:\n\n", bizName)
+		head = fmt.Sprintf("Maaf kak, produknya belum ketemu di katalog %s.\n\nIni yang ada sekarang:\n\n", bizName)
 	}
 	body := formatCatalogListBody(catalog, 6)
 	footer := catalogExternalFooter(profile, false)

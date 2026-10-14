@@ -20,11 +20,16 @@ func IsOrderAmendMessage(userText string) bool {
 			return true
 		}
 	}
-	if parseOrderRefFromMessage(userText) == "" {
-		return false
+	if ref := parseOrderRefFromMessage(userText); ref != "" {
+		if strings.Contains(text, "pada pesanan") || strings.Contains(text, "di pesanan") ||
+			strings.Contains(text, "pada order") || strings.Contains(text, "di order") {
+			return mentionsOrderQty(text) || strings.Contains(text, "nambah") ||
+				strings.Contains(text, "tambah") || strings.Contains(text, "pcs")
+		}
+		return strings.Contains(text, "nambah") || strings.Contains(text, "tambah") ||
+			strings.Contains(text, "1 lagi")
 	}
-	return strings.Contains(text, "nambah") || strings.Contains(text, "tambah") ||
-		strings.Contains(text, "1 lagi")
+	return false
 }
 
 // IsCheckoutMergeIntent — gabungkan/pulihkan item ke keranjang chat, bukan recap-only atau status DB.

@@ -312,6 +312,7 @@ func IsPaymentStatusInquiry(userText string) bool {
 	}
 	for _, p := range []string{
 		"sudah bayar", "sudah dibayar", "sudah transfer", "sudah tf",
+		"mau bayar", "ingin bayar", "pengen bayar",
 		"bukti bayar", "bukti transfer", "bukti pembayaran",
 		"status bayar", "status pembayaran", "pembayaran sudah",
 		"yang sudah bayar", "sudah lunas", "sudah kirim bukti",
@@ -326,6 +327,20 @@ func IsPaymentStatusInquiry(userText string) bool {
 		return true
 	}
 	return false
+}
+
+// IsOrderShippingDataConfirmation — buyer asks whether shipping/contact data on an order is complete.
+func IsOrderShippingDataConfirmation(userText string) bool {
+	text := strings.ToLower(strings.TrimSpace(userText))
+	if text == "" {
+		return false
+	}
+	hasData := strings.Contains(text, "data pengiriman") || strings.Contains(text, "data kontak") ||
+		strings.Contains(text, "data penerima") ||
+		(strings.Contains(text, "pengiriman") && strings.Contains(text, "kontak"))
+	hasCheck := strings.Contains(text, "clear") || strings.Contains(text, "lengkap") ||
+		strings.Contains(text, "sudah") || strings.Contains(text, "ok") || strings.Contains(text, "oke")
+	return hasData && hasCheck && strings.Contains(text, "?")
 }
 
 // IsOrderStatusInquiry — customer asks about their existing order.

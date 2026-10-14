@@ -13,8 +13,8 @@ func IsShippingFAQQuestion(userText string) bool {
 	}
 	signals := []string{
 		"pengiriman", "ongkir", "ongkos kirim", "kirim ke",
-		"estimasi sampai", "berapa lama", "lama sampai", "waktu kirim",
-		"kapan sampai", "sampai kapan", "sampai dirumah", "barang sampai",
+		"estimasi sampai", "estimasi pengiriman", "berapa lama", "berapa hari", "lama sampai", "waktu kirim",
+		"kapan sampai", "sampai kapan", "sampai dirumah", "sampai di rumah", "sampai rumah", "barang sampai",
 		"kapan barang", "lama kirim",
 		"luar kota", "wilayah pengiriman", "area kirim", "delivery",
 		"bisa kirim", "kirim nggak", "kirim gak", "kirim tidak",
@@ -93,16 +93,14 @@ func buildShippingQuoteReply(userText string, profile *BusinessProfile, kb []KBE
 
 func buildShippingDefaultReply(profile *BusinessProfile, formal bool) string {
 	area := deliveryAreaLabel(profile)
+	base := shippingETAGenericReply(formal)
+	if area == "" {
+		return base
+	}
 	if formal {
-		if area != "" {
-			return "Kami melayani pengiriman ke " + area + ". Untuk estimasi ongkir, mohon sertakan alamat lengkap (kecamatan/kota)."
-		}
-		return "Kami melayani pengiriman. Untuk estimasi ongkir, mohon sertakan alamat lengkap (kecamatan/kota)."
+		return "Kami melayani pengiriman ke " + area + ". " + base
 	}
-	if area != "" {
-		return "Kami kirim ke " + area + " ya kak. Kalau mau hitung ongkir, kirim alamat lengkap (kecamatan/kota) aja."
-	}
-	return "Kami layani pengiriman ya kak. Kalau mau hitung ongkir, kirim alamat lengkap (kecamatan/kota) aja."
+	return "Kami kirim ke " + area + " ya kak. " + base
 }
 
 func deliveryAreaLabel(profile *BusinessProfile) string {

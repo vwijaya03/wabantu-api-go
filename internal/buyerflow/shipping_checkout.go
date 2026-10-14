@@ -101,6 +101,13 @@ func checkoutActiveShippingETABase(formal bool) string {
 	return "Estimasi sampainya tergantung kurir dan alamat tujuan ya kak. Nanti tim kami konfirmasi setelah alamat lengkap."
 }
 
+func shippingETAGenericReply(formal bool) string {
+	if formal {
+		return "Estimasi sampainya tergantung kurir dan alamat tujuan ya kak. Tim kami konfirmasi begitu pesanan diproses."
+	}
+	return "Estimasi sampainya tergantung kurir dan alamat tujuan ya kak. Nanti tim kami kabari setelah pesanan diproses ya."
+}
+
 func checkoutShippingStepContinueCTA(step string, formal bool) string {
 	switch step {
 	case "ask_recipient":

@@ -266,7 +266,8 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, reply, "system", payload.InboundMessageID, out)
 		return err == nil, err
 	}
-	if (IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) || IsOrderRefStatusLookup(userText)) &&
+	if (IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) || IsOrderRefStatusLookup(userText) ||
+		IsOrderShippingDataConfirmation(userText)) &&
 		!wantsOrderContextFromHistory(userText) && !IsCartLineCorrectionIntent(userText) && !IsCheckoutMergeIntent(userText) {
 		return s.handleCustomerOrderStatus(ctx, ts, payload.TenantSchema, payload, convo, channel, contact, userText, nil)
 	}
@@ -388,7 +389,8 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 			return err == nil, err
 		}
 	}
-	if (IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) || IsOrderRefStatusLookup(userText)) &&
+	if (IsOrderStatusInquiry(userText) || IsSelfBuyerOrderLookup(userText) || IsOrderRefStatusLookup(userText) ||
+		IsOrderShippingDataConfirmation(userText)) &&
 		!IsCartLineCorrectionIntent(userText) && !IsNegatedFullOrderCancel(userText) && !IsCheckoutMergeIntent(userText) {
 		return s.handleCustomerOrderStatus(ctx, ts, payload.TenantSchema, payload, convo, channel, contact, userText, history)
 	}
@@ -396,6 +398,14 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	clearedOrderForCorrection := false
 
 	// Active order flow — only when message is really continuing checkout (not greeting/harga/batal).
+	if orderSt, _ := s.getOrderState(ctx, payload.TenantID, convo.ID); orderSt != nil {
+		if !CheckoutStateHasRecap(orderSt) &&
+			(bf.IsCheckoutShippingFAQQuestion(userText) || IsOrderShippingDataConfirmation(userText) ||
+				IsOrderStatusInquiry(userText) || IsPaymentStatusInquiry(userText)) {
+			s.clearOrderState(ctx, payload.TenantID, convo.ID)
+			orderSt = nil
+		}
+	}
 	if orderSt, _ := s.getOrderState(ctx, payload.TenantID, convo.ID); orderSt != nil {
 		tone := strOrEmpty(profile.Tone)
 		formal := tone == "formal"
