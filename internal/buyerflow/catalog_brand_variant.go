@@ -299,6 +299,9 @@ func uniqueBrandSKUFromText(userText string, catalog []CatalogItem) *CatalogItem
 	if hit := uniqueItemByDistinctiveUserTokens(userText, brand, items); hit != nil {
 		return hit
 	}
+	if hit := uniqueItemByBrandScopedNameToken(userText, brand, items); hit != nil {
+		return hit
+	}
 	if sz, _ := parseSizeAndColor(userText); sz != "" {
 		var sized []CatalogItem
 		for _, it := range items {
@@ -351,6 +354,41 @@ func uniqueSizedSKUFromText(userText string, catalog []CatalogItem) *CatalogItem
 		return nil
 	}
 	return best
+}
+
+var brandScopedOrderNoise = map[string]bool{
+	"tambah": true, "tambahkan": true, "nambah": true, "nambahin": true,
+	"sekalian": true, "plus": true, "pcs": true, "piece": true, "pieces": true,
+	"lalu": true, "dan": true, "juga": true, "sama": true, "beli": true,
+	"order": true, "mau": true, "pesan": true, "pesen": true, "the": true,
+	"make": true, "please": true, "pack": true, "paket": true,
+}
+
+// uniqueItemByBrandScopedNameToken — within one brand line, a flavor/name token
+// (e.g. "ayam" for Maggi) may identify a single SKU even when it is filtered
+// from distinctive-token scoring.
+func uniqueItemByBrandScopedNameToken(userText, brand string, items []CatalogItem) *CatalogItem {
+	brand = normalizeBrandToken(brand)
+	for _, tok := range tokenize(strings.ToLower(userText)) {
+		tok = strings.Trim(tok, "-()")
+		if len(tok) < 3 || brandScopedOrderNoise[tok] || tok == brand {
+			continue
+		}
+		if isNumericSizeToken(tok) {
+			continue
+		}
+		var matched []CatalogItem
+		for _, it := range items {
+			if strings.Contains(strings.ToLower(it.Name), tok) {
+				matched = append(matched, it)
+			}
+		}
+		if len(matched) == 1 {
+			hit := matched[0]
+			return &hit
+		}
+	}
+	return nil
 }
 
 func itemsHitByUniqueDistinctiveTokens(userText, brand string, items []CatalogItem) []CatalogItem {

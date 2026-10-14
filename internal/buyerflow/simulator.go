@@ -164,6 +164,18 @@ func (s *Simulator) turnOnce(userText string) TurnOutcome {
 		return out
 	}
 
+	// Match autoreply.go: payment FAQ before active checkout FSM.
+	if IsPaymentQuestion(userText) {
+		if ans, ok := tryPaymentFAQAnswer(userText, s.KB); ok {
+			out.Path = PathPaymentFAQ
+			out.Intent = SalesIntent{State: SalesStateConsulting, Topic: SalesTopicGeneral, Confidence: 0.9}
+			out.Reply = ans
+			out.Order = s.Order
+			s.appendHistory(userText, out.Reply)
+			return out
+		}
+	}
+
 	orderActive := s.Order != nil
 	inScope := s.inScope(userText) || isCommerceDominant(userText)
 
@@ -187,6 +199,14 @@ func (s *Simulator) turnOnce(userText string) TurnOutcome {
 			out.Path = PathShippingFAQ
 			out.Intent = SalesIntent{State: SalesStateCheckout, Topic: SalesTopicShipping, Confidence: 0.92}
 			out.Reply = shipReply
+			out.Order = s.Order
+			s.appendHistory(userText, out.Reply)
+			return out
+		}
+		if IsRecipientPolicyQuestion(userText) {
+			out.Path = PathRecipientPolicy
+			out.Intent = SalesIntent{State: SalesStateCheckout, Topic: SalesTopicGeneral, Confidence: 0.9}
+			out.Reply = replyRecipientPolicyQuestion(userText, s.KB, formal)
 			out.Order = s.Order
 			s.appendHistory(userText, out.Reply)
 			return out

@@ -6,18 +6,46 @@ import (
 )
 
 func TestEnglishDraftOrderCancelReply(t *testing.T) {
-	sim := newWB239488Sim()
-	out := sim.Turn("cancel order")
-	if out.Path != PathOrderCancel {
-		t.Fatalf("path=%s want %s", out.Path, PathOrderCancel)
+	t.Parallel()
+	assertFullDraftCancel := func(t *testing.T, msg string) {
+		t.Helper()
+		sim := newWB239488Sim()
+		out := sim.Turn(msg)
+		if out.Path != PathOrderCancel {
+			t.Fatalf("%q path=%s want %s", msg, out.Path, PathOrderCancel)
+		}
+		if !out.Canceled || out.Order != nil {
+			t.Fatalf("%q cart must be cleared: canceled=%v order=%v", msg, out.Canceled, out.Order)
+		}
+		low := strings.ToLower(out.Reply)
+		if strings.Contains(low, "ordernya dibatalkan") || strings.Contains(low, "pesanan") {
+			t.Fatalf("%q English cancel should not be Indonesian-only: %q", msg, out.Reply)
+		}
+		if !strings.Contains(low, "cancel") {
+			t.Fatalf("%q expected English cancel ack: %q", msg, out.Reply)
+		}
 	}
-	low := strings.ToLower(out.Reply)
-	if strings.Contains(low, "ordernya dibatalkan") || strings.Contains(low, "pesanan") {
-		t.Fatalf("English cancel should not be Indonesian-only: %q", out.Reply)
+	for _, msg := range []string{"cancel order", "cancel the order", "cancel my order"} {
+		msg := msg
+		t.Run(msg, func(t *testing.T) {
+			t.Parallel()
+			assertFullDraftCancel(t, msg)
+		})
 	}
-	if !strings.Contains(low, "cancel") {
-		t.Fatalf("expected English cancel ack: %q", out.Reply)
-	}
+	t.Run("cancel_the_maggi_line", func(t *testing.T) {
+		t.Parallel()
+		sim := newWB239488Sim()
+		out := sim.Turn("cancel the maggi")
+		if out.Canceled || out.Path == PathOrderCancel {
+			t.Fatalf("line cancel must not void draft: path=%s canceled=%v", out.Path, out.Canceled)
+		}
+		if cartHasSKU(out.Order, "maggi-berempah") {
+			t.Fatalf("Maggi line should be removed, cart=%+v", out.Order.Items)
+		}
+		if !cartHasSKU(out.Order, "cad-bar") || !cartHasSKU(out.Order, "durian-biscuit") {
+			t.Fatalf("other lines must stay, cart=%+v", out.Order.Items)
+		}
+	})
 }
 
 func TestEnglishOrderFlowCancelReplyTemplate(t *testing.T) {

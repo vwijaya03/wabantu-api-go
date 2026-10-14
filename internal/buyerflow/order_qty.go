@@ -18,7 +18,8 @@ func orderRevisionSignals(text, userText string) bool {
 	}
 	hasRevisionVerb := strings.Contains(text, "ubah") || strings.Contains(text, "rubah") ||
 		strings.Contains(text, "revisi") || strings.Contains(text, "ganti") ||
-		strings.Contains(text, "gantiin")
+		strings.Contains(text, "gantiin") || strings.Contains(text, "make it") ||
+		strings.Contains(text, "change it to") || strings.Contains(text, "change to")
 	if hasRevisionVerb {
 		if _, ok := parseOrderQty(userText); ok {
 			return true
@@ -53,6 +54,16 @@ func tryApplyQtyRevision(st *OrderState, userText string) bool {
 		return false
 	}
 	st.Qty = q
+	if len(st.Items) == 1 {
+		st.Items[0].Qty = q
+	} else if st.CatalogItemID != "" {
+		for i := range st.Items {
+			if st.Items[i].CatalogItemID == st.CatalogItemID {
+				st.Items[i].Qty = q
+				break
+			}
+		}
+	}
 	return true
 }
 
