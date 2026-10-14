@@ -1,7 +1,5 @@
 package buyerflow
 
-import "strings"
-
 // Simulator — multi-turn WhatsApp buyer flow tanpa Redis/DB.
 type Simulator struct {
 	Profile *BusinessProfile
@@ -95,9 +93,13 @@ func (s *Simulator) turnOnce(userText string) TurnOutcome {
 		}
 	}
 
-	if lang, ok := ParseLanguagePreferenceAnswer(userText); ok && strings.TrimSpace(s.SavedBuyerLang) == "" {
+	if lang, ok := ParseLanguagePreferenceAnswer(userText); ok {
 		s.SavedBuyerLang = lang
 		SetSavedBuyerLang(lang)
+		out.Path = PathBuyerLanguage
+		out.Reply = LanguageSwitchConfirmReply(lang)
+		s.appendHistory(userText, out.Reply)
+		return out
 	}
 	if lang, ok := ParseExplicitLanguageSwitch(userText); ok {
 		s.SavedBuyerLang = lang

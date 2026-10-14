@@ -284,9 +284,10 @@ func IsOrderTotalRequest(userText string) bool {
 }
 
 func formatOrderSummary(st OrderState) string {
+	en := ResolveBuyerLanguage("", CurrentSavedBuyerLang()) == LangEN
 	st = normalizeOrderState(st)
 	if st.HasMultiItems() {
-		return formatMultiOrderSummary(st)
+		return formatMultiOrderSummary(st, en)
 	}
 	if !st.ProductComplete() {
 		return ""
@@ -300,6 +301,9 @@ func formatOrderSummary(st OrderState) string {
 		unit = "pcs"
 	}
 	priceLine := "belum di-set"
+	if en {
+		priceLine = "not set yet"
+	}
 	if st.UnitPrice > 0 {
 		priceLine = fmt.Sprintf("%s/%s", formatMoney(st.UnitPrice), unit)
 	}
@@ -309,32 +313,53 @@ func formatOrderSummary(st OrderState) string {
 	needsVariant := catalogItemNeedsVariant(it)
 
 	var b strings.Builder
-	b.WriteString("🛒 Ringkasan Pesanan\n\n")
-	b.WriteString("Produk:\n")
+	if en {
+		b.WriteString("🛒 Order Summary\n\n")
+		b.WriteString("Product:\n")
+	} else {
+		b.WriteString("🛒 Ringkasan Pesanan\n\n")
+		b.WriteString("Produk:\n")
+	}
 	b.WriteString(st.ProductName + "\n\n")
 	b.WriteString(fmt.Sprintf("Qty: %d\n", qty))
-	b.WriteString(fmt.Sprintf("Harga: %s\n\n", priceLine))
+	if en {
+		b.WriteString(fmt.Sprintf("Price: %s\n\n", priceLine))
+	} else {
+		b.WriteString(fmt.Sprintf("Harga: %s\n\n", priceLine))
+	}
 	if needsVariant {
-		if variant := buildVariantLabel(st.Size, st.Color); variant != "" {
+		if variant := buildVariantLabelLocalized(st.Size, st.Color, en); variant != "" {
 			b.WriteString(variant + "\n\n")
 		} else if sz := extractSizeFromProductName(st.ProductName); sz != "" && st.Size == "" {
-			b.WriteString("Ukuran: " + sz + "\n\n")
+			if en {
+				b.WriteString("Size: " + sz + "\n\n")
+			} else {
+				b.WriteString("Ukuran: " + sz + "\n\n")
+			}
 		}
 	}
 	if st.UnitPrice > 0 {
 		b.WriteString("Subtotal:\n")
 		b.WriteString(formatMoney(subtotal))
-		b.WriteString("\n\nBelum termasuk ongkir.")
+		if en {
+			b.WriteString("\n\nShipping not included yet.")
+		} else {
+			b.WriteString("\n\nBelum termasuk ongkir.")
+		}
 	}
 	return strings.TrimSpace(b.String())
 }
 
-func formatMultiOrderSummary(st OrderState) string {
+func formatMultiOrderSummary(st OrderState, en bool) string {
 	if len(st.Items) == 0 {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("🛒 Ringkasan Pesanan\n\n")
+	if en {
+		b.WriteString("🛒 Order Summary\n\n")
+	} else {
+		b.WriteString("🛒 Ringkasan Pesanan\n\n")
+	}
 	var subtotal float64
 	for i, ln := range st.Items {
 		qty := ln.Qty
@@ -347,7 +372,7 @@ func formatMultiOrderSummary(st OrderState) string {
 		}
 		b.WriteString(fmt.Sprintf("%d. %s\n", i+1, ln.ProductName))
 		b.WriteString(fmt.Sprintf("   Qty: %d", qty))
-		if variant := buildVariantLabel(ln.Size, ln.Color); variant != "" {
+		if variant := buildVariantLabelLocalized(ln.Size, ln.Color, en); variant != "" {
 			b.WriteString(" · " + variant)
 		}
 		b.WriteString("\n")
@@ -361,9 +386,32 @@ func formatMultiOrderSummary(st OrderState) string {
 	if subtotal > 0 {
 		b.WriteString("Subtotal:\n")
 		b.WriteString(formatMoney(subtotal))
-		b.WriteString("\n\nBelum termasuk ongkir.")
+		if en {
+			b.WriteString("\n\nShipping not included yet.")
+		} else {
+			b.WriteString("\n\nBelum termasuk ongkir.")
+		}
 	}
 	return strings.TrimSpace(b.String())
+}
+
+func buildVariantLabelLocalized(size, color string, en bool) string {
+	var parts []string
+	if size != "" {
+		if en {
+			parts = append(parts, "Size: "+size)
+		} else {
+			parts = append(parts, "Ukuran: "+size)
+		}
+	}
+	if color != "" {
+		if en {
+			parts = append(parts, "Color: "+color)
+		} else {
+			parts = append(parts, "Warna: "+color)
+		}
+	}
+	return strings.Join(parts, " | ")
 }
 
 func cartCatalogIDs(st OrderState) map[string]struct{} {
