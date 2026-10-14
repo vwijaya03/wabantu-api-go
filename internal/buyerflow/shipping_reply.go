@@ -4,21 +4,26 @@ import "strings"
 
 // IsShippingFAQQuestion — ongkir, estimasi kirim, wilayah pengiriman (bukan langkah order).
 func IsShippingFAQQuestion(userText string) bool {
-	if IsShippingQuoteQuestion(userText) {
-		return true
-	}
 	text := strings.ToLower(strings.TrimSpace(userText))
+	if IsShippingQuoteQuestion(userText) {
+		return !isShippingFAQNegated(text)
+	}
 	if text == "" {
 		return false
 	}
 	signals := []string{
 		"pengiriman", "ongkir", "ongkos kirim", "kirim ke",
 		"estimasi sampai", "berapa lama", "lama sampai", "waktu kirim",
+		"kapan sampai", "sampai kapan", "sampai dirumah", "barang sampai",
+		"kapan barang", "lama kirim",
 		"luar kota", "wilayah pengiriman", "area kirim", "delivery",
 		"bisa kirim", "kirim nggak", "kirim gak", "kirim tidak",
 	}
 	for _, s := range signals {
 		if strings.Contains(text, s) {
+			if isShippingFAQNegated(text) {
+				return false
+			}
 			return true
 		}
 	}

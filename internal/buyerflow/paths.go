@@ -6,6 +6,7 @@ const (
 	PathGreeting          = "greeting"
 	PathInjectionGuard    = "injection_guard"
 	PathEscalate          = "sensitive_escalate"
+	PathHumanHandoff      = "human_handoff"
 	PathOutOfScope        = "out_of_scope"
 	PathNonQuestion       = "in_scope_non_question"
 	PathLowConfidence     = "low_confidence"

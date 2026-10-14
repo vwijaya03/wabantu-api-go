@@ -8,6 +8,8 @@ type Simulator struct {
 	KB      []KBEntry
 	Order   *OrderState
 	ScopeKW []string
+	// SimOrderRefStatus — opsional harness tes: ref → status DB (non-draft tanpa DB).
+	SimOrderRefStatus map[string]string
 }
 
 // TurnOutcome — hasil satu pesan masuk pembeli.
@@ -112,6 +114,16 @@ func (s *Simulator) Turn(userText string) TurnOutcome {
 		return out
 	}
 
+	if IsHumanEscalationRequest(userText) {
+		formal := strOrEmpty(s.Profile.Tone) == "formal"
+		out.Path = PathHumanHandoff
+		out.Intent = SalesIntent{State: SalesStateConsulting, Topic: SalesTopicGeneral, Confidence: 0.95}
+		out.Reply = HumanHandoffReply(formal)
+		out.Order = s.Order
+		s.appendHistory(userText, out.Reply)
+		return out
+	}
+
 	orderActive := s.Order != nil
 	inScope := s.inScope(userText) || isCommerceDominant(userText)
 
@@ -122,6 +134,19 @@ func (s *Simulator) Turn(userText string) TurnOutcome {
 			out.Path = PathOrderFlow
 			out.Intent = SalesIntent{State: SalesStateCheckout, Topic: SalesTopicGeneral, Confidence: 0.9}
 			out.Reply = AddMoreItemsPolicyReply(formal, s.Order)
+			out.Order = s.Order
+			s.appendHistory(userText, out.Reply)
+			return out
+		}
+		formal := strOrEmpty(s.Profile.Tone) == "formal"
+		if refOut, handled := s.handleOrderRefCheckoutContinuation(userText); handled {
+			s.appendHistory(userText, refOut.Reply)
+			return refOut
+		}
+		if shipReply, ok := TryCheckoutActiveShippingFAQReply(userText, step, s.Profile, s.KB, formal); ok {
+			out.Path = PathShippingFAQ
+			out.Intent = SalesIntent{State: SalesStateCheckout, Topic: SalesTopicShipping, Confidence: 0.92}
+			out.Reply = shipReply
 			out.Order = s.Order
 			s.appendHistory(userText, out.Reply)
 			return out
@@ -253,6 +278,13 @@ func (s *Simulator) Turn(userText string) TurnOutcome {
 			out.Reply = ans
 			s.appendHistory(userText, out.Reply)
 			return out
+		}
+	}
+
+	if inScope {
+		if refOut, handled := s.handleOrderRefCheckoutContinuation(userText); handled {
+			s.appendHistory(userText, refOut.Reply)
+			return refOut
 		}
 	}
 

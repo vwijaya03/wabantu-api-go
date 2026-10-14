@@ -62,10 +62,11 @@ func sendPaymentProofConversationMessage(ctx context.Context, tenantSchema, conv
 		return err
 	}
 
+	metaJSON := orderPaymentNotifyMetadataJSON()
 	_, err = pool.ExecContext(ctx, fmt.Sprintf(`
 		INSERT INTO %s (conversation_id, external_id, direction, author, type, body, metadata, status)
-		VALUES ($1::uuid, $2, 'out', 'system', 'text', $3, '{}'::jsonb, 'sent')`,
-		sch.T("message")), conversationID, extID, text)
+		VALUES ($1::uuid, $2, 'out', 'system', 'text', $3, $4::jsonb, 'sent')`,
+		sch.T("message")), conversationID, extID, text, string(metaJSON))
 	if err != nil {
 		return fmt.Errorf("save message: %w", err)
 	}

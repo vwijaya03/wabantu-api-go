@@ -39,6 +39,14 @@ Entri lama tanpa prefix datetime (mis. `inbox-media-fase1.md`) tetap valid; entr
 
 ---
 
+## Entri terbaru (2026-10)
+
+| File | Isi | Status |
+|------|-----|--------|
+| [2026-10-14_141300_omah-shipping-kb-runbook.md](./2026-10-14_141300_omah-shipping-kb-runbook.md) | Runbook KB kategori Pengiriman tenant demo (ETA 2–3 hari) + SQL seed opsional | Ops (approve Viko) |
+| [2026-10-14_141300_simulator-firebase-checklist.md](./2026-10-14_141300_simulator-firebase-checklist.md) | Checklist env Firebase Vercel, rules, allowlist simulator, sesi | Ops / QA lomba |
+| [2026-10-14_141300_gemini-local-ops.md](./2026-10-14_141300_gemini-local-ops.md) | Gemini lokal: #219/#220 + setup-secrets; tanpa encore-run-local.sh | Verifikasi master |
+
 ## Entri terbaru (2026-09)
 
 | File | Isi | Status |

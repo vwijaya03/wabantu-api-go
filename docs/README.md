@@ -29,6 +29,9 @@ Peta navigasi untuk menjawab pertanyaan tentang backend WABantu. Mulai dari sini
 | Vision match katalog dari gambar (planned) | [ai-image-context.md](../docs-development-shipped/ai-image-context.md) |
 | Bagaimana RAG / vector search FAQ & katalog? | [RAG_VECTOR_RETRIEVAL.md](./RAG_VECTOR_RETRIEVAL.md) |
 | Skrip acceptance percakapan Omah? | [RAG_CONVERSATION_ACCEPTANCE.md](./RAG_CONVERSATION_ACCEPTANCE.md) |
+| KB Pengiriman / ETA 2–3 hari tenant demo Omah? | [2026-10-14_141300_omah-shipping-kb-runbook.md](../docs-development-shipped/2026-10-14_141300_omah-shipping-kb-runbook.md) |
+| Checklist simulator + Firebase Vercel demo? | [2026-10-14_141300_simulator-firebase-checklist.md](../docs-development-shipped/2026-10-14_141300_simulator-firebase-checklist.md) |
+| Gemini API key lokal (`encore run`)? | [2026-10-14_141300_gemini-local-ops.md](../docs-development-shipped/2026-10-14_141300_gemini-local-ops.md) · `scripts/setup-secrets-from-env.sh` |
 | Kenapa FAQ direct / retrieval fallback? | [RAG_VECTOR_RETRIEVAL.md](./RAG_VECTOR_RETRIEVAL.md) → §Query pipeline |
 | Setup Pinecone & embedding? | [RAG_VECTOR_RETRIEVAL.md](./RAG_VECTOR_RETRIEVAL.md) → §Secrets |
 | Rollout RAG / webhook cleanup (2026-08-31)? | [20260831_101000_rag-hardening-webhook-cleanup.md](../docs-development-shipped/20260831_101000_rag-hardening-webhook-cleanup.md) |

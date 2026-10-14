@@ -8,7 +8,7 @@ Skrip penerimaan (acceptance) untuk percakapan smooth catalog-first + checkout m
 | Apparel-only | `fixtures_apparel.go` | fashion |
 | Food-only | `fixtures_food.go` | FMCG |
 
-**Kode test:** `internal/buyerflow/regression_cases.go` · `checkout_continuity_test.go` · **Simulator:** `internal/buyerflow/simulator.go`
+**Kode test:** `internal/buyerflow/regression_cases.go` · `checkout_continuity_test.go` · `routing_parity_test.go` · **Simulator:** `internal/buyerflow/simulator.go`
 
 ---
 
@@ -53,6 +53,20 @@ encore test ./ai/ -run 'TestConversationRegression' -count=1
 | 18 | `pesanan saya ada 2 loh ya` (cart aktif) | `order_flow` | Recap keranjang, **bukan** `order_status` |
 | 19 | `masih mau order item yang lain?` | `consulting` | Policy cara tambah item, **bukan** full `catalog_db` |
 | 20 | `durian musang king 1` (food tenant) | `order_flow` | Langsung `ask_recipient`, tanpa `ask_variant` ukuran |
+
+---
+
+## Canary lomba — routing checkout (5 skenario QA, tenant demo)
+
+Setelah merge PR routing lomba; lokal dulu via `go test ./internal/buyerflow/ -run TestRoutingParityCheckoutLomba -count=1`.
+
+| # | Skenario | Lulus jika |
+|---|----------|------------|
+| 1 | ETA saat `ask_recipient` (mis. `kapan barang sampai?`) | Path `shipping_faq`, jawaban + ajakan **nama+HP**; keranjang utuh |
+| 2 | Ongkir saat `ask_recipient` (`berapa ongkir ke …?`) | Path `shipping_faq`, **tidak** minta alamat dulu; keranjang utuh |
+| 3 | `WB-…` + alamat (order **draft**) | Path `order_flow`, bukan `catalog_db` |
+| 4 | Negatif: `sampai kapan promonya?` | **Bukan** `shipping_faq` |
+| 5 | `WB-…` + alamat untuk order sudah **paid/processing** | Status/amend-blocked, data penerima tidak berubah |
 
 ---
 

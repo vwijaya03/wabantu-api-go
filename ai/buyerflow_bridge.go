@@ -52,6 +52,7 @@ const (
 	PathGreeting          = bf.PathGreeting
 	PathInjectionGuard    = bf.PathInjectionGuard
 	PathEscalate          = bf.PathEscalate
+	PathHumanHandoff      = bf.PathHumanHandoff
 	PathOutOfScope        = bf.PathOutOfScope
 	PathNonQuestion       = bf.PathNonQuestion
 	PathLowConfidence     = bf.PathLowConfidence
@@ -89,6 +90,7 @@ var (
 	FAQDirectGuardsPass                    = bf.FAQDirectGuardsPass
 	GreetingFeedbackReply                  = bf.GreetingFeedbackReply
 	GreetingReply                          = bf.GreetingReply
+	HumanHandoffReply                      = bf.HumanHandoffReply
 	HasPurchaseIntent                      = bf.HasPurchaseIntent
 	IsAbandonedCartSignal                  = bf.IsAbandonedCartSignal
 	IsAcknowledgmentLike                   = bf.IsAcknowledgmentLike

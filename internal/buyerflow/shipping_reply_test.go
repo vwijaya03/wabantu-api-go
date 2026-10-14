@@ -13,6 +13,8 @@ func TestIsShippingFAQQuestion(t *testing.T) {
 		{"berapa lama pengiriman?", true},
 		{"bisa kirim ke luar kota?", true},
 		{"berapa ongkir ke surabaya?", true},
+		{"kapan barang sampai?", true},
+		{"sampai kapan promonya?", false},
 		{"harga jeans berapa?", false},
 		{"toko jual apa aja?", false},
 	}
@@ -62,6 +64,20 @@ func TestTryShippingFAQReply_kbETA(t *testing.T) {
 	reply, ok := TryShippingFAQReply("berapa lama pengiriman?", nil, kb, false)
 	if !ok || !strings.Contains(reply, "2-3 hari") {
 		t.Fatalf("expected ETA KB, got %q ok=%v", reply, ok)
+	}
+}
+
+func TestTryCheckoutActiveShippingFAQReplyAskRecipient(t *testing.T) {
+	sim := newWB239488Sim()
+	reply, ok := TryCheckoutActiveShippingFAQReply("berapa ongkir ke bandung?", sim.Order.Step, sim.Profile, sim.KB, false)
+	if !ok {
+		t.Fatal("expected checkout shipping intercept reply")
+	}
+	if !strings.Contains(strings.ToLower(reply), "nama penerima") {
+		t.Fatalf("want recipient CTA: %q", reply)
+	}
+	if strings.Contains(strings.ToLower(reply), "kecamatan/kota) biar bisa dihitung") {
+		t.Fatalf("must not ask full address at ask_recipient: %q", reply)
 	}
 }
 

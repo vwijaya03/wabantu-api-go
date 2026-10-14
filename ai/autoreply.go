@@ -323,6 +323,10 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		applyContactTierPrices(ctx, ts, catalog, contact.ID)
 	}
 
+	if IsHumanEscalationRequest(userText) {
+		return s.handleBuyerHumanHandoff(ctx, ts, payload, convo, channel, contact, profile)
+	}
+
 	if IsPaymentQuestion(userText) {
 		if ans, ok := tryPaymentFAQAnswer(userText, kbEntries); ok {
 			finalReply := applyOutputPolicy(ans)
@@ -400,6 +404,16 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 			out := metaNoLLM(reasonNonQuestion, PathOrderFlow)
 			out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 			err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, reply, "system", payload.InboundMessageID, out)
+			return err == nil, err
+		}
+		if handled, err := s.handleOrderRefCheckoutContinuation(ctx, ts, payload, convo, channel, contact, userText, profile, kbEntries, history, catalog); handled || err != nil {
+			return handled, err
+		}
+		if shipReply, ok := bf.TryCheckoutActiveShippingFAQReply(userText, orderSt.Step, profileToBF(profile), kbToBF(kbEntries), formal); ok {
+			finalReply := applyOutputPolicy(shipReply)
+			out := metaNoLLM(reasonAIGenerated, PathShippingFAQ)
+			out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
+			err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, finalReply, "ai", payload.InboundMessageID, out)
 			return err == nil, err
 		}
 		if ShouldBreakOrderFlow(userText, orderSt.Step, catalog) {
@@ -513,6 +527,12 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 
 	if inScope && IsOrderAmendMessage(userText) {
 		return s.handleOrderAmend(ctx, ts, payload, convo, channel, contact, userText, profile, history)
+	}
+
+	if inScope {
+		if handled, err := s.handleOrderRefCheckoutContinuation(ctx, ts, payload, convo, channel, contact, userText, profile, kbEntries, history, catalog); handled || err != nil {
+			return handled, err
+		}
 	}
 
 	// ── Katalog WABantu (business_catalog_item) — prioritas sebelum FAQ/LLM ──
@@ -1550,6 +1570,26 @@ func (s *AutoReplyService) sendAiMessage(
 
 	s.markAiSendDone(ctx, inboundMessageID)
 	return nil
+}
+
+func (s *AutoReplyService) handleBuyerHumanHandoff(
+	ctx context.Context,
+	ts tenantScopedQuerier,
+	payload AiReplyJobPayload,
+	convo *dbConversation,
+	channel *dbChannel,
+	contact *dbContact,
+	profile *dbBusinessProfile,
+) (bool, error) {
+	formal := strOrEmpty(profile.Tone) == "formal"
+	finalReply := applyOutputPolicy(HumanHandoffReply(formal))
+	out := metaNoLLM(reasonAIGenerated, PathHumanHandoff)
+	out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
+	err := s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, finalReply, "system", payload.InboundMessageID, out)
+	if err != nil {
+		return false, err
+	}
+	return true, pauseAI(ctx, ts, convo.ID, "buyer_requested_human")
 }
 
 func pauseAI(ctx context.Context, ts tenantScopedQuerier, convoID, reason string) error {
