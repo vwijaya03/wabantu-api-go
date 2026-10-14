@@ -15,6 +15,8 @@
 #   PINECONE_API_KEY           → PineconeApiKey
 #   PINECONE_INDEX_HOST        → PineconeIndexHost
 #   RETRIEVAL_BUDGET_MS        → RetrievalBudgetMs (opsional, 200–10000)
+#   GEMINI_API_KEY             → bukan secret Encore. Kode membaca env proses GeminiAPIKey.
+#   NEON_*                     → tidak dipakai encore run (Postgres lokal Encore).
 #   ...
 #
 # Prerequisites (once per machine):
@@ -176,4 +178,14 @@ if [[ -n "$SECRET_TARGET_ENV" ]]; then
   echo "Done. Run: encore secret list --env=$SECRET_TARGET_ENV"
 else
   echo "Done. Run: encore secret list"
+fi
+
+# Gemini is process env, not an Encore secret (ai/llm_gemini.go reads GeminiAPIKey).
+# Do not print the key. Neon URLs are not read by encore run.
+if [[ -n "$(env_get GEMINI_API_KEY || true)" ]]; then
+  echo "GeminiAPIKey tidak disimpan sebagai secret Encore."
+  echo "Di shell yang sama dengan encore run:"
+  echo "  export GeminiAPIKey=\"\$(grep -E '^GEMINI_API_KEY=' $(printf '%q' "$ENV_FILE") | tail -n 1 | cut -d= -f2-)\""
+else
+  echo "GEMINI_API_KEY kosong. Gemini tidak terdaftar; rantai jatuh ke Anthropic."
 fi
