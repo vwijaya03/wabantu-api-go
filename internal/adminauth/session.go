@@ -203,7 +203,7 @@ var HandlerEnforcedRaw = map[string]bool{
 	"auth.Me":                 true, // RawHandlerAccess: client + impersonation; admin → 401
 	"auth.Reauth":             true, // RawHandlerAccess: client only; admin/impersonation → 401
 	"auth.Logout":             true, // RawHandlerAccess: any kind may end its own session
-	"auth.FirebaseToken":      true, // RawHandlerAccess: client only; admin → 401, impersonation → 403
+	"auth.FirebaseToken":      true, // RawHandlerAccess: client + impersonation; admin → 401
 }
 
 // ErrImpersonationForbidden → 403: the endpoint exists for the token's portal but is not
@@ -227,13 +227,11 @@ func RawHandlerAccess(endpoint, kind string) error {
 	case "auth.Logout":
 		return nil // every (normalized) kind may end its own authenticated session
 	case "auth.FirebaseToken":
-		// Client only (CTO option B, 2026-10-13): an impersonation mint would carry the tenant
-		// claim under the admin's uid. Admin → 401 (wrong portal), impersonation → 403.
+		// Client + Pantau (impersonation): claims use the effective tenant from the session;
+		// uid remains the operator account (Firestore rules match tenantId + role only).
 		switch NormalizeKind(kind) {
-		case KindClient:
+		case KindClient, KindImpersonation:
 			return nil
-		case KindImpersonation:
-			return ErrImpersonationForbidden
 		}
 		return ErrWrongTokenKind
 	}
