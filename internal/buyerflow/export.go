@@ -12,14 +12,15 @@ func StrPtr(s string) *string { return strPtr(s) }
 
 func OutOfScopeReply(profile *BusinessProfile) string { return outOfScopeReply(profile) }
 
+
 func BusinessScopeKeywords(profile *BusinessProfile) []string { return businessScopeKeywords(profile) }
 
 func NewOmahSimulator() *Simulator { return newOmahSimulator() }
 
 func NormalizeOrderState(st OrderState) OrderState { return normalizeOrderState(st) }
 
-func OrderTemplatesFromKB(kb []KBEntry, formal bool) OrderFlowTemplates {
-	return orderTemplatesFromKB(kb, formal)
+func OrderTemplatesFromKB(kb []KBEntry, formal bool, userText string) OrderFlowTemplates {
+	return orderTemplatesFromKB(kb, formal, userText)
 }
 
 func HasPurchaseIntentWithCatalog(userText string, catalog []CatalogItem) bool {

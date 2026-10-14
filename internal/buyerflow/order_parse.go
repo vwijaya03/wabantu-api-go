@@ -69,9 +69,60 @@ func defaultOrderTemplates(formal bool) orderFlowTemplates {
 	}
 }
 
+func englishDefaultOrderTemplates(formal bool) orderFlowTemplates {
+	if formal {
+		return orderFlowTemplates{
+			AskProduct:     "Which product from our catalog would you like? Please name the item.",
+			AskVariant:     "Please send the size (S/M/L/XL) and color you want.",
+			AskQty:         "How many would you like to order?",
+			AskRecipient:   "Please send the recipient's name and active mobile number.\nExample:\nName: Budi\nPhone: 081234567890",
+			AskAddressFull: "Please send your full shipping address (street, district, city, province, 5-digit postal code).",
+			ClarifyAddress: "The address isn't complete yet — we need street, city, province, and a 5-digit postal code.",
+			Complete:       "Thanks — we have everything. Our team will confirm your order shortly 🙏",
+			RetryStep:      "Please continue with your order details and our team will help finish it.",
+			ClarifyQty:     "How many would you like? (e.g. 1 pc)",
+		}
+	}
+	return orderFlowTemplates{
+		AskProduct:     "Which product would you like? Name something from our catalog.",
+		AskVariant:     "What size (S/M/L/XL) and color?",
+		AskQty:         "How many pcs would you like?",
+		AskRecipient:   "Please send the recipient's name and phone number.\nExample:\nName: Budi\nPhone: 081234567890",
+		AskAddressFull: "Please send your full shipping address (street, district, city, province, postal code).",
+		ClarifyAddress: "Address isn't complete yet — need street, city, province, and postal code.",
+		Complete:       "All set — our team will confirm your order shortly 🙏",
+		RetryStep:      "You can continue your order details here and our team will help wrap it up.",
+		ClarifyQty:     "How many pcs? (e.g. 1 pc)",
+	}
+}
+
+func defaultOrderTemplatesForBuyer(formal bool, userText string) orderFlowTemplates {
+	if IsEnglishBuyerMessage(userText) {
+		return englishDefaultOrderTemplates(formal)
+	}
+	return defaultOrderTemplates(formal)
+}
+
+func catalogExampleProductsLabel(userText string) string {
+	if IsEnglishBuyerMessage(userText) {
+		return "Example products:\n"
+	}
+	return "Contoh produk:\n"
+}
+
+func orderProductMissReply(userText string, formal bool, catalog []CatalogItem) string {
+	id := "Maaf kak, produknya belum ketemu di katalog. Sebut nama produk yang ada di katalog ya."
+	en := "Sorry — we couldn't find that product in our catalog. Please name a product from our list."
+	msg := PickBuyerLanguageReply(userText, formal, id, en)
+	if picker := formatCatalogPicker(catalog, 6); picker != "" {
+		msg += "\n\n" + picker
+	}
+	return msg
+}
+
 // orderTemplatesFromKB uses KB answers when question tags match order-flow steps.
-func orderTemplatesFromKB(kb []KBEntry, formal bool) orderFlowTemplates {
-	t := defaultOrderTemplates(formal)
+func orderTemplatesFromKB(kb []KBEntry, formal bool, userText string) orderFlowTemplates {
+	t := defaultOrderTemplatesForBuyer(formal, userText)
 	for _, e := range kb {
 		a := strings.TrimSpace(e.Answer)
 		if a == "" {
@@ -270,7 +321,7 @@ var OrderIntentKeywords = []string{
 	"jadi ambil", "jadi beli", "nyesan",
 }
 
-var orderIntentWordRe = regexp.MustCompile(`(?i)\b(order|pesan|pesanan|pesen|pesin|beli|checkout|nyesan)\b`)
+var orderIntentWordRe = regexp.MustCompile(`(?i)\b(order|pesan|pesanan|pesen|pesin|beli|buy|checkout|nyesan)\b`)
 
 func hasOrderIntentText(userText string) bool {
 	text := strings.ToLower(userText)
@@ -308,11 +359,16 @@ func hasPurchaseIntent(userText string, catalog []CatalogItem) bool {
 	if text == "" || IsQuestionLike(userText) {
 		return false
 	}
+	if strings.Contains(text, "want to order") || strings.Contains(text, "like to order") ||
+		strings.Contains(text, "ready to order") {
+		return true
+	}
 	if hasExplicitCartReadyPhrase(text) {
 		return true
 	}
 	hasWant := strings.Contains(text, "mau") || strings.Contains(text, "pengen") ||
-		strings.Contains(text, "pengin") || strings.Contains(text, "ingin")
+		strings.Contains(text, "pengin") || strings.Contains(text, "ingin") ||
+		strings.Contains(text, "want to buy") || strings.Contains(text, "i want to order")
 	if hasWant {
 		if mentionsOrderQty(text) || orderSizeLineRe.MatchString(text) {
 			return true

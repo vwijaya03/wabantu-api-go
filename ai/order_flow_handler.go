@@ -35,7 +35,7 @@ func (s *AutoReplyService) handleOrderFlow(
 
 	scopeKW := businessScopeKeywords(profile)
 	formal := strOrEmpty(profile.Tone) == "formal"
-	tmpl := orderTemplatesFromKB(kb, formal)
+	tmpl := orderTemplatesFromKB(kb, formal, userText)
 
 	state, _ := s.getOrderState(ctx, tenantID, convo.ID)
 

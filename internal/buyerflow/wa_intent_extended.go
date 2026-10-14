@@ -97,6 +97,7 @@ func IsPaymentQuestion(userText string) bool {
 	signals := []string{
 		"bayar", "pembayaran", "transfer", "trf", "tf ke", "cod", "qris",
 		"rekening", "bank", "va ", "virtual account", "cara bayar", "payment",
+		"how do i pay", "how to pay", "i want to pay", "pay for my order",
 	}
 	for _, s := range signals {
 		if strings.Contains(text, s) {

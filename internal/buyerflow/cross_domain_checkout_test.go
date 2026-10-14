@@ -83,7 +83,7 @@ func TestElectronicsConjunctionDoesNotAutoPick(t *testing.T) {
 		UnitPrice:     1999000,
 		SellUnit:      "pcs",
 	}
-	tmpl := orderTemplatesFromKB(nil, false)
+	tmpl := orderTemplatesFromKB(nil, false, "")
 	handled, reply := TryAppendItemsDuringCheckout(&st, "lalu samsung", catalog, tmpl, false, nil)
 	if !handled {
 		t.Fatal("ambiguous samsung after conjunction must show picker")

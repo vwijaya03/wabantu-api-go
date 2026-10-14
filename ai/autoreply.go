@@ -241,7 +241,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		out := metaNoLLM(reasonProfileIncomplete, PathProfileIncomplete)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact,
-			nonAiDefaultReply(profile), "system", payload.InboundMessageID, out)
+			nonAiDefaultReply(profile, userText), "system", payload.InboundMessageID, out)
 		return err == nil, err
 	}
 
@@ -298,7 +298,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		spike, _ := s.bumpCounter(ctx, payload.TenantID, convo.ID, "offscope")
 		text := "Maaf kak, untuk pertanyaan teknis sistem tidak bisa saya proses. Untuk info produk, harga, stok, atau pengiriman, aku bantu ya 🙏"
 		if spike >= 3 {
-			text = nonAiDefaultReply(profile)
+			text = nonAiDefaultReply(profile, userText)
 		}
 		out := metaNoLLM(reasonOutOfScope, PathInjectionGuard)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
@@ -587,7 +587,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		out := metaNoLLM(reasonOutOfScope, PathEscalate)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact,
-			"Maaf kak, untuk topik ini tim CS kami akan langsung mengambil alih dan segera menghubungi kakak 🙏",
+			sensitiveEscalateReply(userText, profile),
 			"system", payload.InboundMessageID, out)
 		if err != nil {
 			return false, err
@@ -605,9 +605,9 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	if classifier.Label == "in_scope_non_question" {
 		c, _ := s.bumpCounter(ctx, payload.TenantID, convo.ID, "nonscope")
 		rlog.Warn("AI job: in-scope non-question", "count", c)
-		text := scopeDirectionReply(profile)
+		text := scopeDirectionReply(profile, userText)
 		if c >= 3 {
-			text = nonAiDefaultReply(profile)
+			text = nonAiDefaultReply(profile, userText)
 		}
 		out := metaNoLLM(reasonNonQuestion, PathNonQuestion)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
@@ -1117,22 +1117,6 @@ func applyOutputPolicy(text string) string {
 }
 
 // ─── Reply helpers ───────────────────────────────────────────────────────────
-
-func nonAiDefaultReply(profile *dbBusinessProfile) string {
-	scope := strings.TrimSpace(strOrEmpty(profile.ProductsServices))
-	if scope == "" {
-		return "Maaf kak, tim CS kami akan segera menghubungi kakak untuk bantu lebih lanjut ya 🙏"
-	}
-	return fmt.Sprintf("Maaf kak, tim CS kami akan segera menghubungi kakak. Saat ini kami fokus bantu seputar: %s.", scope)
-}
-
-func scopeDirectionReply(profile *dbBusinessProfile) string {
-	scope := strings.TrimSpace(strOrEmpty(profile.ProductsServices))
-	if scope == "" {
-		return "Boleh kak, biar tepat, bisa tanya seputar produk, harga, stok, atau pengiriman dari bisnis kami ya."
-	}
-	return fmt.Sprintf("Boleh kak, biar tepat kami bantu pertanyaan seputar: %s. Bisa tanya harga/stok/order ya.", scope)
-}
 
 func isBusinessProfileComplete(p *dbBusinessProfile) bool {
 	filled := func(s *string) bool {

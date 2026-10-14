@@ -64,7 +64,7 @@ func TryCheckoutActiveShippingFAQReply(userText, step string, profile *BusinessP
 	}
 	var base string
 	if IsShippingQuoteQuestion(userText) {
-		base = checkoutActiveShippingQuoteBase(profile, kb, formal)
+		base = checkoutActiveShippingQuoteBase(userText, profile, kb, formal)
 	} else if ans, ok := tryShippingKBFAQ(userText, kb); ok {
 		base = ans
 	} else {
@@ -77,21 +77,29 @@ func TryCheckoutActiveShippingFAQReply(userText, step string, profile *BusinessP
 	return strings.TrimSpace(base + "\n\n" + cta), true
 }
 
-func checkoutActiveShippingQuoteBase(profile *BusinessProfile, kb []KBEntry, formal bool) string {
+func checkoutActiveShippingQuoteBase(userText string, profile *BusinessProfile, kb []KBEntry, formal bool) string {
 	if ans, ok := tryFAQDirectAnswer("berapa ongkir", kb); ok {
 		return ans
 	}
 	area := deliveryAreaLabel(profile)
+	idFormalArea := "Ongkir dihitung setelah alamat lengkap dikonfirmasi. Area pengiriman kami: " + area + "."
+	idFormal := "Ongkir dihitung setelah alamat lengkap dikonfirmasi."
+	idCasualArea := "Ongkirnya nanti dihitung setelah alamat lengkap ya kak. Area kirim kami: " + area + "."
+	idCasual := "Ongkirnya nanti dihitung setelah alamat lengkap ya kak."
+	enFormalArea := "Shipping is calculated after we confirm your full address. We deliver to: " + area + "."
+	enFormal := "Shipping is calculated after we confirm your full address."
+	enCasualArea := "We'll calculate shipping after your full address is confirmed. We ship to: " + area + "."
+	enCasual := "We'll calculate shipping after your full address is confirmed."
 	if formal {
 		if area != "" {
-			return "Ongkir dihitung setelah alamat lengkap dikonfirmasi. Area pengiriman kami: " + area + "."
+			return PickBuyerLanguageReply(userText, formal, idFormalArea, enFormalArea)
 		}
-		return "Ongkir dihitung setelah alamat lengkap dikonfirmasi."
+		return PickBuyerLanguageReply(userText, formal, idFormal, enFormal)
 	}
 	if area != "" {
-		return "Ongkirnya nanti dihitung setelah alamat lengkap ya kak. Area kirim kami: " + area + "."
+		return PickBuyerLanguageReply(userText, formal, idCasualArea, enCasualArea)
 	}
-	return "Ongkirnya nanti dihitung setelah alamat lengkap ya kak."
+	return PickBuyerLanguageReply(userText, formal, idCasual, enCasual)
 }
 
 func checkoutActiveShippingETABase(userText string, formal bool) string {

@@ -189,8 +189,8 @@ func newOmahSimulator() *ConversationSimulator { return bf.NewOmahSimulator() }
 
 func normalizeOrderState(st orderState) orderState { return bf.NormalizeOrderState(st) }
 
-func orderTemplatesFromKB(kb []dbKBEntry, formal bool) orderFlowTemplates {
-	return bf.OrderTemplatesFromKB(kb, formal)
+func orderTemplatesFromKB(kb []dbKBEntry, formal bool, userText string) orderFlowTemplates {
+	return bf.OrderTemplatesFromKB(kb, formal, userText)
 }
 
 func hasPurchaseIntent(userText string, catalog []dbCatalogItem) bool {
@@ -215,6 +215,21 @@ func tryShippingFAQReply(userText string, profile *dbBusinessProfile, kb []dbKBE
 
 func replyRecipientPolicyQuestion(userText string, kb []dbKBEntry, formal bool) string {
 	return bf.ReplyRecipientPolicyQuestion(userText, kb, formal)
+}
+
+func scopeDirectionReply(profile *dbBusinessProfile, userText string) string {
+	formal := strOrEmpty(profile.Tone) == "formal"
+	return bf.ScopeDirectionReplyFor(userText, strOrEmpty(profile.ProductsServices), formal)
+}
+
+func nonAiDefaultReply(profile *dbBusinessProfile, userText string) string {
+	formal := strOrEmpty(profile.Tone) == "formal"
+	return bf.NonAiDefaultReplyFor(userText, strOrEmpty(profile.ProductsServices), formal)
+}
+
+func sensitiveEscalateReply(userText string, profile *dbBusinessProfile) string {
+	formal := strOrEmpty(profile.Tone) == "formal"
+	return bf.SensitiveEscalateReplyFor(userText, formal)
 }
 
 func thirdPartyBuyerLookupDeniedReply() string { return bf.ThirdPartyBuyerLookupDeniedReply() }

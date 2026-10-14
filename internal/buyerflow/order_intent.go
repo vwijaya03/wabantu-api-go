@@ -214,6 +214,8 @@ var orderStatusInquiryPhrases = []string{
 	"pesanan yang", "pesanan atas nama", "orderan saya", "pesanan mana",
 	"apakah saya punya", "saya punya pesanan", "masih punya pesanan",
 	"pembeli atas nama saya", "pembeli saya", "pembeli atas nama ini",
+	"where is my order", "track my order", "order status", "my order status",
+	"status of my order", "check my order",
 }
 
 // IsOrderRefStatusLookup — buyer sends an order ref (with or without short status/detail phrasing).

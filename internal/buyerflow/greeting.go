@@ -103,10 +103,43 @@ func GreetingReply(userText, tone, customTemplate string) string {
 		}
 		period = CurrentGreetingPeriodWIB(time.Now())
 	}
-	return formatGreetingReply(period, tone == "formal")
+	return formatGreetingReply(period, tone == "formal", userText)
 }
 
-func formatGreetingReply(period GreetingPeriod, formal bool) string {
+func englishGreetingPhrase(period GreetingPeriod) string {
+	switch period {
+	case GreetMorning:
+		return "Good morning"
+	case GreetAfternoon:
+		return "Good afternoon"
+	case GreetEvening, GreetNight:
+		return "Good evening"
+	default:
+		return "Hello"
+	}
+}
+
+func isEnglishGreetingContext(userText string) bool {
+	if IsEnglishBuyerMessage(userText) {
+		return true
+	}
+	text := strings.ToLower(strings.TrimSpace(userText))
+	for _, p := range []string{"hello", "hi", "hey", "good morning", "good afternoon", "good evening", "good night"} {
+		if text == p || strings.HasPrefix(text, p+" ") {
+			return true
+		}
+	}
+	return false
+}
+
+func formatGreetingReply(period GreetingPeriod, formal bool, userText string) string {
+	if isEnglishGreetingContext(userText) {
+		phrase := englishGreetingPhrase(period)
+		if formal {
+			return phrase + ". How can we help you?"
+		}
+		return phrase + "! How can I help?"
+	}
 	phrase := greetingPhrase(period)
 	if formal {
 		return phrase + ", kak. Ada yang bisa kami bantu?"

@@ -63,6 +63,9 @@ func TestEnglishTalkToHumanKeepsCart(t *testing.T) {
 	if !IsEnglishBuyerMessage("talk to a human") {
 		t.Fatal("expected English detection")
 	}
+	if strings.Contains(strings.ToLower(out.Reply), "sambungkan") {
+		t.Fatalf("expected English handoff copy: %q", out.Reply)
+	}
 }
 
 func TestUnmatchedProductCatalogMissAiNoAnswer(t *testing.T) {
@@ -99,6 +102,58 @@ func TestShouldNoAnswerHandoffHelper(t *testing.T) {
 	}
 	if ShouldNoAnswerHandoff("Loha", false) {
 		t.Fatal("non-question chatter should not no-answer handoff")
+	}
+}
+
+func TestEnglishGreetingReply(t *testing.T) {
+	reply := GreetingReply("hello", "", "")
+	if strings.Contains(reply, "Ada yang bisa") || strings.Contains(reply, "kak!") {
+		t.Fatalf("English greeting should not use Indonesian tail: %q", reply)
+	}
+	if !strings.Contains(strings.ToLower(reply), "how can") {
+		t.Fatalf("expected English help prompt: %q", reply)
+	}
+}
+
+func TestIndonesianGreetingUnchanged(t *testing.T) {
+	reply := GreetingReply("halo kak", "", "")
+	if !strings.Contains(reply, "bantu") {
+		t.Fatalf("Indonesian greeting regression: %q", reply)
+	}
+}
+
+func TestEnglishRecipientPolicyReply(t *testing.T) {
+	reply := buildRecipientPolicyReply("can I buy for someone else", false)
+	if strings.Contains(reply, "Bisa kak") {
+		t.Fatalf("expected English recipient policy: %q", reply)
+	}
+	if !strings.Contains(strings.ToLower(reply), "someone else") {
+		t.Fatalf("expected English recipient policy: %q", reply)
+	}
+}
+
+func TestEnglishOrderFlowAskProduct(t *testing.T) {
+	sim := newOmahSimulator()
+	out := sim.Turn("I want to order")
+	if out.Path != PathOrderFlow {
+		t.Fatalf("path=%s want order_flow", out.Path)
+	}
+	if strings.Contains(out.Reply, "Mau order produk") || strings.Contains(out.Reply, "Siap kak") {
+		t.Fatalf("English buyer got Indonesian order prompt: %q", out.Reply)
+	}
+	if !strings.Contains(strings.ToLower(out.Reply), "product") {
+		t.Fatalf("expected English ask-product: %q", out.Reply)
+	}
+}
+
+func TestEnglishHumanHandoffReplyLanguage(t *testing.T) {
+	sim := newOmahSimulator()
+	out := sim.Turn("talk to customer service")
+	if out.Path != PathHumanHandoff {
+		t.Fatalf("path=%s", out.Path)
+	}
+	if strings.Contains(out.Reply, "sambungkan") || strings.Contains(out.Reply, "Siap kak") {
+		t.Fatalf("English handoff should be English: %q", out.Reply)
 	}
 }
 

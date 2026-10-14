@@ -7,6 +7,7 @@ import (
 
 var humanHandoffExplicit = []string{
 	"talk to a human", "speak to a human", "speak with a human", "talk with a human",
+	"talk to customer service", "speak to customer service", "speak with customer service",
 	"connect me to a human", "connect me to customer service", "connect to customer service",
 	"i need a human", "real person please", "live agent please",
 	"minta cs", "minta ke cs", "minta customer service",
