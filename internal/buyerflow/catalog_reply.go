@@ -28,6 +28,7 @@ func IsCatalogBrowsingIntent(userText string) bool {
 		return false
 	}
 	phrases := []string{
+		"i want to shop", "want to shop", "hi i want to shop",
 		"tanya produk", "tanya-tanya produk", "nanya produk",
 		"produk di toko", "produk yang dijual", "yang dijual di toko",
 		"tunjukkan produk", "tunjukan produk", "lihat produk", "liat katalog",
@@ -563,7 +564,7 @@ func replyFromBusinessCatalog(
 		if IsCatalogExclusionQuestion(userText) {
 			return buildCatalogListReplyFiltered(formal, bizName, catalog, profile, userText), true
 		}
-		return buildCatalogListReply(formal, bizName, catalog, profile), true
+		return buildCatalogListReply(userText, formal, bizName, catalog, profile), true
 	}
 
 	if reply, ok := tryBrandVariantReply(formal, userText, history, catalog, vctx); ok {
@@ -592,9 +593,9 @@ func replyFromBusinessCatalog(
 			return buildCatalogItemReply(formal, match, 0), true
 		}
 		if len(catalog) == 0 {
-			return buildCatalogEmptyReply(formal, bizName, profile), true
+			return buildCatalogEmptyReply(userText, formal, bizName, profile), true
 		}
-		return buildCatalogNotFoundReply(formal, bizName, catalog, profile), true
+		return buildCatalogNotFoundReply(userText, formal, bizName, catalog, profile), true
 	}
 
 	if IsConsultingPurchaseQuestion(userText, catalog) {
@@ -617,7 +618,7 @@ func replyFromBusinessCatalog(
 
 	if IsCatalogProductInquiry(userText) {
 		if len(catalog) == 0 {
-			return buildCatalogEmptyReply(formal, bizName, profile), true
+			return buildCatalogEmptyReply(userText, formal, bizName, profile), true
 		}
 		if match := resolve(userText, history, catalog); match != nil {
 			if IsPricingUnitClarification(userText) {
@@ -632,7 +633,7 @@ func replyFromBusinessCatalog(
 		if shouldAskCatalogClarification(userText, vctx) {
 			return CatalogAmbiguityReply(formal), true
 		}
-		return buildCatalogNotFoundReply(formal, bizName, catalog, profile), true
+		return buildCatalogNotFoundReply(userText, formal, bizName, catalog, profile), true
 	}
 
 	// Nama produk disebut tanpa kata harga — tetap coba cocokkan jika jelas ke katalog.
@@ -663,9 +664,9 @@ func buildGenericVisualProductInquiryReply(formal bool, bizName string, catalog 
 	return strings.TrimSpace(head + body + footer)
 }
 
-func buildCatalogListReply(formal bool, bizName string, catalog []CatalogItem, profile *BusinessProfile) string {
+func buildCatalogListReply(userText string, formal bool, bizName string, catalog []CatalogItem, profile *BusinessProfile) string {
 	if len(catalog) == 0 {
-		return buildCatalogEmptyReply(formal, bizName, profile)
+		return buildCatalogEmptyReply(userText, formal, bizName, profile)
 	}
 	var intro string
 	if formal {
@@ -678,24 +679,31 @@ func buildCatalogListReply(formal bool, bizName string, catalog []CatalogItem, p
 	return strings.TrimSpace(intro + body + footer)
 }
 
-func buildCatalogEmptyReply(formal bool, bizName string, profile *BusinessProfile) string {
+func buildCatalogEmptyReply(userText string, formal bool, bizName string, profile *BusinessProfile) string {
 	marker := catalogEmptyMarker
+	idFormal := fmt.Sprintf("%s\n\nKak, katalog produk %s saat ini belum berisi item aktif. Tim kami bisa bantu info produk secara manual.", marker, bizName)
+	idCasual := fmt.Sprintf("%s\n\nKak, katalog %s masih kosong. Chat dulu ya, nanti tim CS bantu.", marker, bizName)
+	enFormal := fmt.Sprintf("%s\n\nOur product catalog for %s doesn't have active items yet. Our team can help with product info manually.", marker, bizName)
+	enCasual := fmt.Sprintf("%s\n\nOur %s catalog is still empty. Chat here and our team will help with products.", marker, bizName)
+	var base string
 	if formal {
-		base := fmt.Sprintf("%s\n\nKak, katalog produk di sistem WABantu untuk %s saat ini belum berisi item aktif (belum ada data di business_catalog_item). Tim kami bisa bantu info produk secara manual.",
-			marker, bizName)
-		return strings.TrimSpace(base + catalogExternalFooter(profile, true))
+		base = PickBuyerLanguageReply(userText, formal, idFormal, enFormal)
+	} else {
+		base = PickBuyerLanguageReply(userText, formal, idCasual, enCasual)
 	}
-	base := fmt.Sprintf("%s\n\nKak, katalog WABantu untuk %s masih kosong (belum ada produk yang diinput). Chat ini dulu ya, nanti tim CS bantu.",
-		marker, bizName)
 	return strings.TrimSpace(base + catalogExternalFooter(profile, true))
 }
 
-func buildCatalogNotFoundReply(formal bool, bizName string, catalog []CatalogItem, profile *BusinessProfile) string {
+func buildCatalogNotFoundReply(userText string, formal bool, bizName string, catalog []CatalogItem, profile *BusinessProfile) string {
+	idFormalHead := fmt.Sprintf("Maaf kak, produk yang Kakak sebut belum kami temukan di katalog %s.\n\nBerikut produk yang tersedia:\n\n", bizName)
+	idCasualHead := fmt.Sprintf("Maaf kak, produknya belum ketemu di katalog %s.\n\nIni yang ada sekarang:\n\n", bizName)
+	enFormalHead := fmt.Sprintf("Sorry — we couldn't find that product in the %s catalog.\n\nHere's what's available:\n\n", bizName)
+	enCasualHead := fmt.Sprintf("Sorry kak, that product isn't in our %s catalog yet.\n\nHere's what we have:\n\n", bizName)
 	var head string
 	if formal {
-		head = fmt.Sprintf("Maaf kak, produk yang Kakak sebut belum kami temukan di katalog WABantu %s.\n\nBerikut produk yang tersedia:\n\n", bizName)
+		head = PickBuyerLanguageReply(userText, formal, idFormalHead, enFormalHead)
 	} else {
-		head = fmt.Sprintf("Maaf kak, produknya belum ketemu di katalog WABantu %s.\n\nIni yang ada sekarang:\n\n", bizName)
+		head = PickBuyerLanguageReply(userText, formal, idCasualHead, enCasualHead)
 	}
 	body := formatCatalogListBody(catalog, 6)
 	footer := catalogExternalFooter(profile, false)

@@ -12,14 +12,15 @@ func StrPtr(s string) *string { return strPtr(s) }
 
 func OutOfScopeReply(profile *BusinessProfile) string { return outOfScopeReply(profile) }
 
+
 func BusinessScopeKeywords(profile *BusinessProfile) []string { return businessScopeKeywords(profile) }
 
 func NewOmahSimulator() *Simulator { return newOmahSimulator() }
 
 func NormalizeOrderState(st OrderState) OrderState { return normalizeOrderState(st) }
 
-func OrderTemplatesFromKB(kb []KBEntry, formal bool) OrderFlowTemplates {
-	return orderTemplatesFromKB(kb, formal)
+func OrderTemplatesFromKB(kb []KBEntry, formal bool, userText string) OrderFlowTemplates {
+	return orderTemplatesFromKB(kb, formal, userText)
 }
 
 func HasPurchaseIntentWithCatalog(userText string, catalog []CatalogItem) bool {
@@ -39,7 +40,7 @@ const CatalogEmptyMarker = catalogEmptyMarker
 func FormatStockLabel(qty float64) string { return formatStockLabel(qty) }
 
 func BuildCatalogListReply(formal bool, bizName string, catalog []CatalogItem, profile *BusinessProfile) string {
-	return buildCatalogListReply(formal, bizName, catalog, profile)
+	return buildCatalogListReply("", formal, bizName, catalog, profile)
 }
 
 func WarehouseBuyerLabel(customerLabel, warehouseName string) string {
@@ -95,7 +96,7 @@ func ReplyRecipientPolicyQuestion(userText string, kb []KBEntry, formal bool) st
 
 func ThirdPartyBuyerLookupDeniedReply() string { return thirdPartyBuyerLookupDeniedReply() }
 
-func OrderFlowCancelReply(tone string) string { return orderFlowCancelReply(tone) }
+func OrderFlowCancelReply(tone, userText string) string { return orderFlowCancelReply(tone, userText) }
 
 func OrderFlowLoopBreakReply(formal bool) string { return orderFlowLoopBreakReply(formal) }
 
@@ -121,7 +122,7 @@ func MentionsOrderQty(text string) bool { return mentionsOrderQty(text) }
 
 func HasOrderIntentText(userText string) bool { return hasOrderIntentText(userText) }
 
-func CasualPraiseReply(formal bool) string { return casualPraiseReply(formal) }
+func CasualPraiseReply(formal bool, userText string) string { return casualPraiseReply(formal, userText) }
 
 func TopKBMatchScore(query string, kb []KBEntry) float64 { return topKBMatchScore(query, kb) }
 

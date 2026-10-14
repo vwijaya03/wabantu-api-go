@@ -29,6 +29,9 @@ var questionKeywords = []string{
 	"harga", "ongkir", "dimana", "lokasi", "mana",
 }
 
+// Whole-word English cues only (substring "do" must not match "tandoori").
+var englishQuestionWordRe = regexp.MustCompile(`(?i)\b(how|what|where|when|why|which|can|could|does|do|is|are)\b`)
+
 var greetingPrefixes = []string{
 	"selamat pagi", "selamat siang", "selamat sore", "selamat malam",
 	"halo", "hai", "hi", "hello",
@@ -48,6 +51,8 @@ var retailIntentKeywords = []string{
 	"pcs", "pc", "biji", "buah", "qty", "jumlah", "unit", "saja",
 	"harga", "stok", "stock", "ready", "tersedia", "ada", "jual", "jualan",
 	"catalog", "menu", "rekomend", "minimum", "minimal", "min order",
+	"shop", "shopping", "want to shop", "i want to",
+	"shipping", "delivery", "track", "payment", "pay",
 	"ukuran", "size", "warna", "model", "varian", "katalog", "produk", "barang",
 	"kirim", "ongkir", "pengiriman", "berapa", "apakah", "bisa", "cari", "butuh", "minat",
 	"toko", "tokonya", "dimana", "lokasi", "alamat", "terima kasih", "makasih",
@@ -109,6 +114,9 @@ func IsQuestionLike(raw string) bool {
 		return false
 	}
 	if strings.Contains(text, "?") {
+		return true
+	}
+	if englishQuestionWordRe.MatchString(text) {
 		return true
 	}
 	for _, kw := range questionKeywords {

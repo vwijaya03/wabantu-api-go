@@ -10,6 +10,7 @@ func TestIsOrderAmendMessage(t *testing.T) {
 		{"jadikan 1 dengan pesanan sebelumnya", true},
 		{"loh abon nutela ga masuk", true},
 		{"berapa harga maggi?", false},
+		{"1 pcs pada pesanan WB-239488D0", true},
 	}
 	for _, tc := range cases {
 		if got := IsOrderAmendMessage(tc.msg); got != tc.want {

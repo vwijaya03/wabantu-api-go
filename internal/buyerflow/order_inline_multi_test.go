@@ -55,7 +55,7 @@ func TestTryAppendItemsDuringCheckout(t *testing.T) {
 		UnitPrice:     70000,
 		SellUnit:      "pcs",
 	}
-	tmpl := orderTemplatesFromKB(nil, false)
+	tmpl := orderTemplatesFromKB(nil, false, "")
 	handled, reply := TryAppendItemsDuringCheckout(&st, "1 pcs, lalu abon sapi yang 250 gram 1pcs", catalog, tmpl, false, nil)
 	if !handled {
 		t.Fatal("expected handled append")
@@ -82,7 +82,7 @@ func TestTryAppendImplicitNoLalu(t *testing.T) {
 		UnitPrice:     70000,
 		SellUnit:      "pcs",
 	}
-	tmpl := orderTemplatesFromKB(nil, false)
+	tmpl := orderTemplatesFromKB(nil, false, "")
 	handled, _ := TryAppendItemsDuringCheckout(&st, "cadbury mini 1 pcs", catalog, tmpl, false, nil)
 	if !handled {
 		t.Fatal("expected implicit append without lalu keyword")
@@ -118,7 +118,7 @@ func TestConjunctionDoesNotAutoPickAmbiguousMaggi(t *testing.T) {
 		UnitPrice:     155000,
 		SellUnit:      "pcs",
 	}
-	tmpl := orderTemplatesFromKB(nil, false)
+	tmpl := orderTemplatesFromKB(nil, false, "")
 	handled, reply := TryAppendItemsDuringCheckout(&st, "lalu maggi", catalog, tmpl, false, nil)
 	if !handled {
 		t.Fatal("ambiguous maggi after conjunction must still be handled as picker, not ignored")
@@ -145,7 +145,7 @@ func TestTryAppendSingleLaluItem(t *testing.T) {
 		UnitPrice:     70000,
 		SellUnit:      "pcs",
 	}
-	tmpl := orderTemplatesFromKB(nil, false)
+	tmpl := orderTemplatesFromKB(nil, false, "")
 	handled, _ := TryAppendItemsDuringCheckout(&st, "lalu nutela biskuit 1 piece", catalog, tmpl, false, nil)
 	if !handled {
 		t.Fatal("expected handled")

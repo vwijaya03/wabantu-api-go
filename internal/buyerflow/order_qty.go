@@ -74,11 +74,15 @@ func IsCasualPraiseLike(userText string) bool {
 	return false
 }
 
-func casualPraiseReply(formal bool) string {
+func casualPraiseReply(formal bool, userText string) string {
+	idFormal := "Terima kasih kak 😊 Ada yang masih ingin ditanyakan atau mau lanjut pesan?"
+	idCasual := "Makasih kak 😊 Ada yang masih mau ditanyain atau mau lanjut pesan?"
+	enFormal := "Thank you 😊 Anything else you'd like to ask, or ready to continue your order?"
+	enCasual := "Thanks 😊 Anything else you want to ask, or want to keep ordering?"
 	if formal {
-		return "Terima kasih kak 😊 Ada yang masih ingin ditanyakan atau mau lanjut pesan?"
+		return PickBuyerLanguageReply(userText, true, idFormal, enFormal)
 	}
-	return "Makasih kak 😊 Ada yang masih mau ditanyain atau mau lanjut pesan?"
+	return PickBuyerLanguageReply(userText, false, idCasual, enCasual)
 }
 
 func inferVariantFromProductName(st *OrderState) {

@@ -3,6 +3,8 @@ package buyerflow
 import "strings"
 
 var recipientPolicyPhrases = []string{
+	"buy for someone else", "order for someone else", "purchase for someone else",
+	"ship to someone else", "on behalf of someone else",
 	"atas nama orang lain",
 	"beli untuk orang lain",
 	"pesan untuk orang lain",
@@ -76,18 +78,22 @@ func IsRecipientPolicyQuestion(userText string) bool {
 	return false
 }
 
-func buildRecipientPolicyReply(formal bool) string {
-	if formal {
-		return "Bisa kak. Pesanan atas nama orang lain diperbolehkan. " +
-			"Saat proses pesanan, kami akan meminta nama dan nomor HP/WA penerima."
-	}
-	return "Bisa kak, pesan atas nama orang lain boleh. " +
+func buildRecipientPolicyReply(userText string, formal bool) string {
+	idFormal := "Bisa kak. Pesanan atas nama orang lain diperbolehkan. " +
+		"Saat proses pesanan, kami akan meminta nama dan nomor HP/WA penerima."
+	idCasual := "Bisa kak, pesan atas nama orang lain boleh. " +
 		"Nanti pas proses pesanan saya minta nama & nomor HP/WA penerima ya."
+	enFormal := "Yes — you can order for someone else. We'll ask for the recipient's name and phone during checkout."
+	enCasual := "Yes, you can order for someone else. I'll ask for the recipient's name and phone when we process the order."
+	if formal {
+		return PickBuyerLanguageReply(userText, formal, idFormal, enFormal)
+	}
+	return PickBuyerLanguageReply(userText, formal, idCasual, enCasual)
 }
 
 func replyRecipientPolicyQuestion(userText string, kb []KBEntry, formal bool) string {
 	if ans, ok := tryFAQDirectAnswer(userText, kb); ok {
 		return ans
 	}
-	return buildRecipientPolicyReply(formal)
+	return buildRecipientPolicyReply(userText, formal)
 }

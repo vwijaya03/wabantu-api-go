@@ -83,7 +83,7 @@ func TestRawHandlerAccessMatrix(t *testing.T) {
 		"auth.Me":            {KindClient: true, KindImpersonation: true, KindAdmin: false, "": true},
 		"auth.Reauth":        {KindClient: true, KindImpersonation: false, KindAdmin: false, "": true},
 		"auth.Logout":        {KindClient: true, KindImpersonation: true, KindAdmin: true, "": true},
-		"auth.FirebaseToken": {KindClient: true, KindImpersonation: false, KindAdmin: false, "": true},
+		"auth.FirebaseToken": {KindClient: true, KindImpersonation: true, KindAdmin: false, "": true},
 		"auth.Other":         {KindClient: false, KindImpersonation: false, KindAdmin: false},
 	}
 	for ep, kinds := range want {
@@ -93,8 +93,8 @@ func TestRawHandlerAccessMatrix(t *testing.T) {
 			}
 		}
 	}
-	if !errors.Is(RawHandlerAccess("auth.FirebaseToken", KindImpersonation), ErrImpersonationForbidden) {
-		t.Error("firebase-token impersonation must be ErrImpersonationForbidden (403)")
+	if RawHandlerAccess("auth.FirebaseToken", KindImpersonation) != nil {
+		t.Error("firebase-token impersonation must be allowed (Pantau realtime)")
 	}
 	if !errors.Is(RawHandlerAccess("auth.FirebaseToken", KindAdmin), ErrWrongTokenKind) {
 		t.Error("firebase-token admin must be ErrWrongTokenKind (401)")

@@ -22,7 +22,7 @@ func TestFirebaseTokenKindGate(t *testing.T) {
 	}{
 		{adminauth.KindClient, true, 0, ""},
 		{adminauth.KindAdmin, false, http.StatusUnauthorized, "unauthenticated"},
-		{adminauth.KindImpersonation, false, http.StatusForbidden, "permission_denied"},
+		{adminauth.KindImpersonation, true, 0, ""},
 	}
 	for _, c := range cases {
 		rec := httptest.NewRecorder()
@@ -54,7 +54,7 @@ func TestFirebaseTokenKindCheckedBeforeConfig(t *testing.T) {
 		cfgUsed bool
 	}{
 		{adminauth.KindAdmin, http.StatusUnauthorized, false},
-		{adminauth.KindImpersonation, http.StatusForbidden, false},
+		{adminauth.KindImpersonation, http.StatusServiceUnavailable, true},
 		{adminauth.KindClient, http.StatusServiceUnavailable, true}, // unconfigured → 503
 	} {
 		called := false

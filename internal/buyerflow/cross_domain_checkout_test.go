@@ -83,7 +83,7 @@ func TestElectronicsConjunctionDoesNotAutoPick(t *testing.T) {
 		UnitPrice:     1999000,
 		SellUnit:      "pcs",
 	}
-	tmpl := orderTemplatesFromKB(nil, false)
+	tmpl := orderTemplatesFromKB(nil, false, "")
 	handled, reply := TryAppendItemsDuringCheckout(&st, "lalu samsung", catalog, tmpl, false, nil)
 	if !handled {
 		t.Fatal("ambiguous samsung after conjunction must show picker")
@@ -173,7 +173,7 @@ func TestApparelAndElectronicsRecapFromCart(t *testing.T) {
 }
 
 func TestAddMoreItemsPolicyReplyIsDomainAgnostic(t *testing.T) {
-	reply := AddMoreItemsPolicyReply(false, nil)
+	reply := AddMoreItemsPolicyReply(false, nil, "bisa nambah lagi")
 	lower := strings.ToLower(reply)
 	if strings.Contains(lower, "cadbury") || strings.Contains(lower, "abon") || strings.Contains(lower, "maggi") {
 		t.Fatalf("policy copy must not assume F&B catalog: %q", reply)

@@ -6,6 +6,10 @@ import (
 )
 
 var humanHandoffExplicit = []string{
+	"talk to a human", "speak to a human", "speak with a human", "talk with a human",
+	"talk to customer service", "speak to customer service", "speak with customer service",
+	"connect me to a human", "connect me to customer service", "connect to customer service",
+	"i need a human", "real person please", "live agent please",
 	"minta cs", "minta ke cs", "minta customer service",
 	"hubungi admin", "hubungkan ke admin", "hubung ke admin",
 	"chat cs", "chat sama cs", "chat dengan cs",
@@ -28,6 +32,18 @@ func HumanHandoffReply(formal bool) string {
 		return "Baik kak, permintaan kakak sudah kami teruskan ke tim CS. Draft pesanan kakak tetap kami simpan; tim kami akan melanjutkan chat ini segera 🙏"
 	}
 	return "Siap kak, aku sambungkan ke tim CS ya. Draft pesanan kakak tetap aman; tim kami lanjutin chat ini sebentar lagi 🙏"
+}
+
+// HumanHandoffReplyFor picks Indonesian or English copy from the buyer message language.
+func HumanHandoffReplyFor(userText string, formal bool) string {
+	idFormal := "Baik kak, permintaan kakak sudah kami teruskan ke tim CS. Draft pesanan kakak tetap kami simpan; tim kami akan melanjutkan chat ini segera 🙏"
+	idCasual := "Siap kak, aku sambungkan ke tim CS ya. Draft pesanan kakak tetap aman; tim kami lanjutin chat ini sebentar lagi 🙏"
+	enFormal := "Got it — I've passed your request to our team. Your order draft stays saved; a teammate will continue this chat shortly 🙏"
+	enCasual := "Sure — I'll connect you with our team. Your order draft is safe; someone will continue this chat shortly 🙏"
+	if formal {
+		return PickBuyerLanguageReply(userText, formal, idFormal, enFormal)
+	}
+	return PickBuyerLanguageReply(userText, formal, idCasual, enCasual)
 }
 
 // IsHumanEscalationRequest — permintaan jelas ke CS/manusia, bukan teks checkout/ongkir/produk kebetulan.

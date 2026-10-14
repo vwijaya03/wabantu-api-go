@@ -58,7 +58,7 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 	state := in.State
 
 	formal := profile != nil && strOrEmpty(profile.Tone) == "formal"
-	tmpl := orderTemplatesFromKB(in.KB, formal)
+	tmpl := orderTemplatesFromKB(in.KB, formal, userText)
 
 	if IsOffBusinessProductRequest(userText, in.ScopeKW, catalog) {
 		return OrderFlowResult{Cleared: true, Path: PathOutOfScope, Reply: outOfScopeReply(profile)}
@@ -218,7 +218,7 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 		}
 		msg := tmpl.AskProduct
 		if picker := formatCatalogPicker(catalog, 6); picker != "" {
-			msg += "\n\nContoh produk:\n" + picker
+			msg += "\n\n" + catalogExampleProductsLabel(userText) + picker
 		}
 		return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: msg}
 	}
@@ -245,10 +245,7 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 				st.Step = "ask_variant"
 				return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
 			}
-			msg := "Maaf kak, produknya belum ketemu di katalog. Sebut nama produk yang ada di katalog ya."
-			if picker := formatCatalogPicker(catalog, 6); picker != "" {
-				msg += "\n\n" + picker
-			}
+			msg := orderProductMissReply(userText, formal, catalog)
 			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: msg}
 		}
 		applyCatalogMatch(&st, match)

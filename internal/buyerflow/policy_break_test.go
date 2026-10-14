@@ -47,7 +47,7 @@ func TestAppendAcknowledgementCSStyle(t *testing.T) {
 		UnitPrice:     35000,
 		SellUnit:      "pcs",
 	}
-	tmpl := orderTemplatesFromKB(nil, false)
+	tmpl := orderTemplatesFromKB(nil, false, "")
 	_, reply := TryAppendItemsDuringCheckout(&st, "cadbury mini 1 pcs", catalog, tmpl, false, nil)
 	if !strings.Contains(reply, "ditambahkan") {
 		t.Fatalf("expected append acknowledgement in reply: %q", reply)

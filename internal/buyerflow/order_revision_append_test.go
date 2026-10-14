@@ -12,7 +12,7 @@ func TestTryAppendSkipsOrderRevision(t *testing.T) {
 		UnitPrice:     35000,
 		SellUnit:      "pcs",
 	}
-	tmpl := orderTemplatesFromKB(nil, false)
+	tmpl := orderTemplatesFromKB(nil, false, "")
 	msg := "ga jadi ganti 3 pcs bang"
 	handled, _ := TryAppendItemsDuringCheckout(&st, msg, catalog, tmpl, false, nil)
 	if handled {

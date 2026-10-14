@@ -1,5 +1,7 @@
 package buyerflow
 
+import "strings"
+
 // Simulator — multi-turn WhatsApp buyer flow tanpa Redis/DB.
 type Simulator struct {
 	Profile *BusinessProfile
@@ -10,6 +12,8 @@ type Simulator struct {
 	ScopeKW []string
 	// SimOrderRefStatus — opsional harness tes: ref → status DB (non-draft tanpa DB).
 	SimOrderRefStatus map[string]string
+	// SavedBuyerLang mirrors contact.preferred_language (id|en).
+	SavedBuyerLang string
 }
 
 // TurnOutcome — hasil satu pesan masuk pembeli.
@@ -43,6 +47,20 @@ func (s *Simulator) appendHistory(in, out string) {
 
 // Turn memproses satu pesan pembeli (routing + FSM).
 func (s *Simulator) Turn(userText string) TurnOutcome {
+	pop := PushSavedBuyerLang(s.SavedBuyerLang)
+	defer pop()
+	defer s.persistBuyerLangFromMessage(userText)
+	return s.turnOnce(userText)
+}
+
+func (s *Simulator) persistBuyerLangFromMessage(userText string) {
+	if lang, ok := LanguageToPersist(userText, s.SavedBuyerLang); ok {
+		s.SavedBuyerLang = lang
+		SetSavedBuyerLang(lang)
+	}
+}
+
+func (s *Simulator) turnOnce(userText string) TurnOutcome {
 	out := TurnOutcome{}
 
 	// Match autoreply.go: third-party buyer lookup denied before other routing.
@@ -77,6 +95,26 @@ func (s *Simulator) Turn(userText string) TurnOutcome {
 		}
 	}
 
+	if lang, ok := ParseLanguagePreferenceAnswer(userText); ok && strings.TrimSpace(s.SavedBuyerLang) == "" {
+		s.SavedBuyerLang = lang
+		SetSavedBuyerLang(lang)
+	}
+	if lang, ok := ParseExplicitLanguageSwitch(userText); ok {
+		s.SavedBuyerLang = lang
+		SetSavedBuyerLang(lang)
+		if !ExplicitLanguageSwitchHasShoppingRequest(userText) {
+			out.Path = PathBuyerLanguage
+			out.Reply = LanguageSwitchConfirmReply(lang)
+			s.appendHistory(userText, out.Reply)
+			return out
+		}
+	} else if ShouldAskBuyerLanguagePreference(userText, s.SavedBuyerLang) {
+		out.Path = PathBuyerLanguage
+		out.Reply = LanguagePreferenceAskReply()
+		s.appendHistory(userText, out.Reply)
+		return out
+	}
+
 	// Match autoreply.go: greetings always win (clear draft order), tidak perlu in-scope.
 	if IsGreetingLike(userText) {
 		s.Order = nil
@@ -108,7 +146,7 @@ func (s *Simulator) Turn(userText string) TurnOutcome {
 		out.Canceled = true
 		out.Path = PathOrderCancel
 		if hadOrder {
-			out.Reply = orderFlowCancelReply(strOrEmpty(s.Profile.Tone))
+			out.Reply = orderFlowCancelReply(strOrEmpty(s.Profile.Tone), userText)
 		}
 		s.appendHistory(userText, out.Reply)
 		return out
@@ -118,7 +156,7 @@ func (s *Simulator) Turn(userText string) TurnOutcome {
 		formal := strOrEmpty(s.Profile.Tone) == "formal"
 		out.Path = PathHumanHandoff
 		out.Intent = SalesIntent{State: SalesStateConsulting, Topic: SalesTopicGeneral, Confidence: 0.95}
-		out.Reply = HumanHandoffReply(formal)
+		out.Reply = HumanHandoffReplyFor(userText, formal)
 		out.Order = s.Order
 		s.appendHistory(userText, out.Reply)
 		return out
@@ -133,7 +171,7 @@ func (s *Simulator) Turn(userText string) TurnOutcome {
 			formal := strOrEmpty(s.Profile.Tone) == "formal"
 			out.Path = PathOrderFlow
 			out.Intent = SalesIntent{State: SalesStateCheckout, Topic: SalesTopicGeneral, Confidence: 0.9}
-			out.Reply = AddMoreItemsPolicyReply(formal, s.Order)
+			out.Reply = AddMoreItemsPolicyReply(formal, s.Order, userText)
 			out.Order = s.Order
 			s.appendHistory(userText, out.Reply)
 			return out
@@ -266,7 +304,7 @@ func (s *Simulator) Turn(userText string) TurnOutcome {
 		formal := strOrEmpty(s.Profile.Tone) == "formal"
 		out.Path = PathConsulting
 		out.Intent = SalesIntent{State: SalesStateConsulting, Topic: SalesTopicGeneral, Confidence: 0.9}
-		out.Reply = AddMoreItemsPolicyReply(formal, s.Order)
+		out.Reply = AddMoreItemsPolicyReply(formal, s.Order, userText)
 		s.appendHistory(userText, out.Reply)
 		return out
 	}
@@ -289,6 +327,14 @@ func (s *Simulator) Turn(userText string) TurnOutcome {
 	}
 
 	if catReply, ok := replyFromBusinessCatalog(userText, s.Profile, s.Catalog, s.History, nil); ok {
+		if ShouldHandoffForCatalogMiss(userText) && IsCatalogNotFoundReply(catReply) {
+			formal := strOrEmpty(s.Profile.Tone) == "formal"
+			out.Path = PathAiNoAnswer
+			out.Reply = NoAnswerHandoffReply(formal, userText)
+			out.Order = s.Order
+			s.appendHistory(userText, out.Reply)
+			return out
+		}
 		out.Path = PathCatalogDB
 		out.Reply = catReply
 		s.appendHistory(userText, out.Reply)

@@ -492,6 +492,7 @@ CREATE TABLE IF NOT EXISTS contact (
     display_name  VARCHAR(200),
     notes         TEXT,
     status        VARCHAR(20)  NOT NULL DEFAULT 'active',
+    preferred_language VARCHAR(8),
     tags          JSONB        NOT NULL DEFAULT '[]',
     created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
