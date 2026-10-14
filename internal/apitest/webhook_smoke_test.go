@@ -28,9 +28,9 @@ func TestWebhookSmoke_POST_MissingSignatureRejected(t *testing.T) {
 	rr := httptest.NewRecorder()
 	req := NewJSONPostRequest(t, "/api/v1/webhook/whatsapp", body)
 	webhook.ServeWhatsAppWebhookHTTP(rr, req)
-	// Payload without phone_number_id and no signature is accepted (legacy path).
-	if rr.Code != http.StatusOK {
-		t.Fatalf("POST empty payload status = %d, want %d; body: %s", rr.Code, http.StatusOK, rr.Body.String())
+	// Setiap POST tanpa X-Hub-Signature-256 ditolak. Jalur legacy yang dulu menjawab 200 sudah ditutup.
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("POST empty payload status = %d, want %d; body: %s", rr.Code, http.StatusUnauthorized, rr.Body.String())
 	}
 }
 
