@@ -443,6 +443,13 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 			err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, finalReply, "ai", payload.InboundMessageID, out)
 			return err == nil, err
 		}
+		if IsRecipientPolicyQuestion(userText) {
+			finalReply := applyOutputPolicy(replyRecipientPolicyQuestion(userText, kbEntries, formal))
+			out := metaNoLLM(reasonAIGenerated, PathRecipientPolicy)
+			out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
+			err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, finalReply, "ai", payload.InboundMessageID, out)
+			return err == nil, err
+		}
 		if ShouldBreakOrderFlow(userText, orderSt.Step, catalog) {
 			if ShouldKeepCartOnExplicitNewOrder(orderSt, userText) {
 				sent, oErr := s.handleOrderFlow(ctx, ts, payload.TenantSchema, payload.TenantID, convo, channel, contact,

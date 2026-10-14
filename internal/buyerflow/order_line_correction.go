@@ -149,6 +149,14 @@ func splitCartCorrectionSpans(userText string) (reject, want string) {
 			return rej, strings.TrimSpace(before + " " + add)
 		}
 	}
+	for _, m := range []string{"cancel the ", "cancel my ", "remove the ", "remove my "} {
+		if i := strings.Index(lower, m); i >= 0 {
+			return strings.TrimSpace(text[i+len(m):]), ""
+		}
+	}
+	if strings.HasPrefix(lower, "cancel ") {
+		return strings.TrimSpace(text[len("cancel "):]), ""
+	}
 	return "", text
 }
 
