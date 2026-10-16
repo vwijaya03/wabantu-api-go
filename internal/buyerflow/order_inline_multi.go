@@ -9,6 +9,11 @@ import (
 var inlineOrderConjunctionRe = regexp.MustCompile(`(?i)(?:,\s*)?\b(?:lalu|dan juga|plus|sama)\b\s+|,\s*\bdan\b\s+`)
 var looseDanConjunctionRe = regexp.MustCompile(`(?i)\s+\bdan\b\s+`)
 
+// EN: ", and" (list) dan "and" polos — keduanya dijaga looksLikeOrderSegment (lihat splitEnglishAndSegments).
+var commaAndConjunctionRe = regexp.MustCompile(`(?i),\s*\band\b\s+`)
+var looseAndConjunctionRe = regexp.MustCompile(`(?i)\s+\band\b\s+`)
+var questionSegmentStartRe = regexp.MustCompile(`(?i)^(?:how|what|when|where|why|which|who|can|could|do|does|is|are|will|would)\b`)
+
 // IsAddItemToOrderMessage — buyer menambah produk saat checkout aktif.
 func IsAddItemToOrderMessage(userText string) bool {
 	text := strings.ToLower(strings.TrimSpace(userText))
@@ -52,10 +57,51 @@ func splitInlineOrderSegments(userText string) []string {
 	if loose := splitLooseDanProductSegments(text); len(loose) >= 2 {
 		return loose
 	}
+	if en := splitEnglishAndSegments(text); len(en) >= 2 {
+		return en
+	}
 	if comma := splitLooseCommaProductSegments(text); len(comma) >= 2 {
 		return comma
 	}
 	return parts
+}
+
+// splitEnglishAndSegments memecah ", and" / "and" (EN) menjadi segmen produk.
+//   - ", and": minimal satu segmen tampak seperti baris order (jangkar); sisanya bukan pertanyaan.
+//   - "and" polos: minimal dua segmen tampak seperti baris order (hindari "salt and pepper").
+//
+// Segmen hasil split yang masih berisi koma ("1 salmon, 1 tuna, and 2 beef") dipecah lagi.
+func splitEnglishAndSegments(text string) []string {
+	anchors := 1
+	parts := trimNonEmpty(commaAndConjunctionRe.Split(text, -1))
+	if len(parts) < 2 {
+		anchors = 2
+		parts = trimNonEmpty(looseAndConjunctionRe.Split(text, -1))
+	}
+	if len(parts) < 2 {
+		return nil
+	}
+	n := 0
+	for i, p := range parts {
+		if looksLikeOrderSegment(p) {
+			n++
+		}
+		if i > 0 && (strings.Contains(p, "?") || questionSegmentStartRe.MatchString(p)) {
+			return nil
+		}
+	}
+	if n < anchors {
+		return nil
+	}
+	var out []string
+	for _, p := range parts {
+		if sub := splitLooseCommaProductSegments(p); len(sub) >= 2 {
+			out = append(out, sub...)
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
 }
 
 func splitLooseCommaProductSegments(text string) []string {

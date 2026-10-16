@@ -39,3 +39,61 @@ func TestSteakMultilineCommaTwoSKUs_simulator(t *testing.T) {
 		t.Fatalf("summary missing SKU names:\n%s", out.Reply)
 	}
 }
+
+const salmonBeefContestMsg = "Hi, I want to order Salmon steak 100 gr, and australian beef too"
+
+func TestSalmonAndBeefEnglish_inlineSplit(t *testing.T) {
+	if !IsInlineMultiOrderMessage(salmonBeefContestMsg) {
+		t.Fatal("expected ', and' to split into multiple segments")
+	}
+	segs := SplitInlineOrderSegments(salmonBeefContestMsg)
+	if len(segs) != 2 {
+		t.Fatalf("want 2 segments, got %d: %q", len(segs), segs)
+	}
+	if !strings.Contains(strings.ToLower(segs[1]), "beef") {
+		t.Fatalf("second segment should be beef: %q", segs[1])
+	}
+}
+
+func TestSalmonAndBeefEnglish_simulatorPicker(t *testing.T) {
+	s := newOmahSteakSimulator()
+	s.SavedBuyerLang = LangEN
+	out := s.Turn(salmonBeefContestMsg)
+	if out.Order == nil || len(out.Order.Items) < 1 {
+		t.Fatalf("expected salmon in cart, order=%+v path=%s reply=%s", out.Order, out.Path, out.Reply)
+	}
+	if out.Order.Items[0].CatalogItemID != "salmon-100" {
+		t.Fatalf("first item = %+v", out.Order.Items[0])
+	}
+	low := strings.ToLower(out.Reply)
+	if !strings.Contains(low, "beef") {
+		t.Fatalf("beef should surface a variant picker, not be dropped:\n%s", out.Reply)
+	}
+}
+
+func TestInlineAndSplit_loosePlainAnd(t *testing.T) {
+	segs := SplitInlineOrderSegments("2 pcs salmon steak 100 gram and 1 pcs yellow tail tuna")
+	if len(segs) != 2 {
+		t.Fatalf("want 2 segments, got %q", segs)
+	}
+}
+
+func TestInlineAndSplit_commaListWithFinalAnd(t *testing.T) {
+	segs := SplitInlineOrderSegments("1 salmon 100gr, 1 yellow tail tuna, and 2 beef 500gr")
+	if len(segs) != 3 {
+		t.Fatalf("want 3 segments, got %q", segs)
+	}
+}
+
+func TestInlineAndSplit_negativeGuards(t *testing.T) {
+	for _, msg := range []string{
+		"salt and pepper steak",
+		"I want 2 salmon and is it fresh?",
+		"2 salmon, and how long is shipping?",
+		"black and white",
+	} {
+		if segs := SplitInlineOrderSegments(msg); len(segs) >= 2 {
+			t.Errorf("%q must not split, got %q", msg, segs)
+		}
+	}
+}
