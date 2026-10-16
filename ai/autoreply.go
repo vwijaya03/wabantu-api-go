@@ -771,7 +771,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	toolExec := NewCatalogToolExecutor(catalog)
 	llmTaskHint := "Balas dalam bahasa yang sama dengan pesan pembeli. Jika tidak bisa menjawab dari katalog/KB/fakta pesanan, katakan tim akan melanjutkan — jangan mengarang harga, stok, atau estimasi hari kirim."
 	if ResolveBuyerLanguage(userText, contactPreferredLanguage(contact)) == LangEN {
-		llmTaskHint = "Reply in the buyer's language (English). FAQ/KB snippets may be in Indonesian — translate the facts into English. Use KB facts for shipping timing, same-day cutoffs, couriers, and payment rules. If you cannot answer from catalog/KB/order facts, say a teammate will continue — do not invent prices, stock, or delivery-day estimates."
+		llmTaskHint = "Reply in the buyer's language (English). FAQ/KB snippets may be in Indonesian — translate the facts into English. Use KB facts for shipping timing, same-day cutoffs, couriers, and payment rules. If you cannot answer from catalog/KB/order facts, say a teammate will continue — do not invent prices, stock, delivery-day estimates, or storage (frozen or fresh) unless the catalog description or a FAQ says so."
 	}
 	reply, compUsage, usedTools, chatProvider, chatModel, err := s.generateChatReply(
 		ctx,
