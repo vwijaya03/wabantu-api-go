@@ -33,7 +33,7 @@ func tryPaymentFAQAnswer(query string, kb []KBEntry) (string, bool) {
 		}
 		ans := strings.TrimSpace(e.Answer)
 		if ans != "" {
-			return ans, true
+			return LocalizeKBAnswerForBuyer(ans, query), true
 		}
 	}
 	if direct, ok := tryFAQDirectAnswer(query, kb); ok {

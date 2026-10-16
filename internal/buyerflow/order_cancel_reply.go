@@ -29,7 +29,16 @@ func OrderCancelCustomerReply(userText, tone, ref string) string {
 
 // OrderNoneToCancelReply when there is no active order to cancel from chat.
 func OrderNoneToCancelReply(userText string) string {
-	id := "Saat ini tidak ada pesanan aktif yang bisa dibatalkan dari chat ini. Kalau mau order baru, sebut produk dari katalog ya kak."
-	en := "There isn't an active order we can cancel from this chat right now. To start a new order, name a product from our catalog."
-	return PickBuyerLanguageReply(userText, false, id, en)
+	return orderFlowAbortNoDraftReply("", userText)
+}
+
+func orderFlowAbortNoDraftReply(tone, userText string) string {
+	idFormal := "Belum ada pesanan aktif kak. Mau lihat katalog atau tanya produk?"
+	idCasual := "Belum ada pesanan aktif kak. Mau lihat katalog atau tanya produk?"
+	enFormal := "There isn't an active order right now. Want to browse the catalog or ask about a product?"
+	enCasual := "No active order right now 😊 Want to see the catalog or ask about a product?"
+	if tone == "formal" {
+		return PickBuyerLanguageReply(userText, true, idFormal, enFormal)
+	}
+	return PickBuyerLanguageReply(userText, false, idCasual, enCasual)
 }

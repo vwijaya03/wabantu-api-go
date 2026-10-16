@@ -14,6 +14,11 @@ var orderCancelPhrases = []string{
 
 var softCancelRegretPhrases = []string{
 	"tidak jadi", "gak jadi", "ga jadi", "nggak jadi", "tidak order", "gak order",
+	"never mind", "nevermind",
+}
+
+var wholeMessageCheckoutAbort = map[string]struct{}{
+	"reset": {}, "abort": {}, "cancel": {},
 }
 
 var explicitPersistedCancelPhrases = []string{
@@ -132,12 +137,29 @@ func IsNewPurchaseIntentQuestion(userText string) bool {
 	return hasExplicitCartReadyPhrase(text)
 }
 
+func isWholeMessageCheckoutAbort(userText string) bool {
+	text := strings.ToLower(strings.TrimSpace(userText))
+	text = strings.TrimRight(text, "?!.")
+	if _, ok := wholeMessageCheckoutAbort[text]; ok {
+		return true
+	}
+	for _, p := range softCancelRegretPhrases {
+		if text == p {
+			return true
+		}
+	}
+	return false
+}
+
 // IsDraftOrderCancelRequest — batalkan draft Redis (termasuk "batal" / "cancel" saja).
 func IsDraftOrderCancelRequest(userText string) bool {
 	text := strings.ToLower(strings.TrimSpace(userText))
 	if text == "" || isRevisionNotCancel(userText) || IsCancelClarificationQuestion(userText) ||
 		IsCartLineCorrectionIntent(userText) || IsNegatedFullOrderCancel(userText) {
 		return false
+	}
+	if isWholeMessageCheckoutAbort(userText) {
+		return true
 	}
 	if orderCancelWordRe.MatchString(text) {
 		return true
