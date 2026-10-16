@@ -21,6 +21,7 @@ func IsShippingFAQQuestion(userText string) bool {
 		"how long is shipping", "how long does shipping", "how many days until",
 		"when will it arrive", "when will my order arrive", "shipping time", "delivery time",
 		"how long until it arrives", "days until it arrives",
+		"delivery fee", "shipping fee", "same day", "ship today", "deliver today", "send today",
 	}
 	for _, s := range signals {
 		if strings.Contains(text, s) {
@@ -38,14 +39,17 @@ func TryShippingFAQReply(userText string, profile *BusinessProfile, kb []KBEntry
 	if !IsShippingFAQQuestion(userText) {
 		return "", false
 	}
-	if IsShippingQuoteQuestion(userText) {
-		return buildShippingQuoteReply(userText, profile, kb, formal), true
-	}
 	if ans, ok := tryFAQDirectAnswer(userText, kb); ok {
 		return ans, true
 	}
+	if len(kb) > 0 {
+		return BuildShippingFAQReply(userText, profile, kb, formal), true
+	}
+	if IsShippingQuoteOrFeeQuestion(userText) {
+		return buildShippingQuoteReply(userText, profile, kb, formal), true
+	}
 	if ans, ok := tryShippingKBFAQ(userText, kb); ok {
-		return ans, true
+		return LocalizeKBAnswerForBuyer(ans, userText), true
 	}
 	return buildShippingDefaultReply(userText, profile, formal), true
 }
@@ -54,7 +58,7 @@ func tryShippingKBFAQ(userText string, kb []KBEntry) (string, bool) {
 	if ans, ok := tryFAQDirectAnswer(userText, kb); ok {
 		return ans, true
 	}
-	qTokens := tokenize(userText)
+	qTokens := tokenize(ExpandKBRetrievalQuery(userText))
 	var best KBEntry
 	var bestScore float64
 	minScore := 0.35
@@ -79,16 +83,19 @@ func tryShippingKBFAQ(userText string, kb []KBEntry) (string, bool) {
 		}
 	}
 	if bestScore >= minScore && strings.TrimSpace(best.Answer) != "" {
-		return strings.TrimSpace(best.Answer), true
+		return LocalizeKBAnswerForBuyer(strings.TrimSpace(best.Answer), userText), true
 	}
 	return "", false
 }
 
 func buildShippingQuoteReply(userText string, profile *BusinessProfile, kb []KBEntry, formal bool) string {
-	if ans, ok := tryFAQDirectAnswer(userText, kb); ok {
-		return ans
+	if len(kb) > 0 {
+		return BuildShippingFAQReply(userText, profile, kb, formal)
 	}
-	area := deliveryAreaLabel(profile)
+	if ans, ok := tryFAQDirectAnswer(userText, kb); ok {
+		return LocalizeKBAnswerForBuyer(ans, userText)
+	}
+	area := DeliveryAreaForReply(deliveryAreaLabel(profile), ResolveBuyerLanguage(userText, CurrentSavedBuyerLang()))
 	idFormalArea := "Ongkir dihitung setelah alamat lengkap dikonfirmasi. Area pengiriman kami: " + area +
 		". Mohon kirim alamat lengkap (kecamatan/kota) agar kami bisa hitungkan ongkirnya."
 	idFormal := "Ongkir dihitung setelah alamat lengkap dikonfirmasi. Mohon kirim alamat lengkap (kecamatan/kota) agar kami bisa hitungkan ongkirnya."
@@ -114,7 +121,7 @@ func buildShippingQuoteReply(userText string, profile *BusinessProfile, kb []KBE
 }
 
 func buildShippingDefaultReply(userText string, profile *BusinessProfile, formal bool) string {
-	area := deliveryAreaLabel(profile)
+	area := DeliveryAreaForReply(deliveryAreaLabel(profile), ResolveBuyerLanguage(userText, CurrentSavedBuyerLang()))
 	base := shippingETAGenericReplyFor(userText, formal)
 	if area == "" {
 		return base

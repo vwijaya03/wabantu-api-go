@@ -3,6 +3,7 @@ package buyerflow
 import (
 	"regexp"
 	"strings"
+	"unicode"
 )
 
 const (
@@ -295,4 +296,281 @@ func PickBuyerLanguageReply(userText string, formal bool, idReply, enReply strin
 		return enReply
 	}
 	return idReply
+}
+
+var kbRetrievalBridgePairs = []struct {
+	en []string
+	id []string
+}{
+	{[]string{"deliver", "delivery", "ship", "shipping", "send", "arrive", "today", "same day", "courier", "fee", "estimate", "eta"},
+		[]string{"kirim", "pengiriman", "dikirim", "estimasi", "hari", "hari yang sama", "kurir", "ongkir", "sampai"}},
+	{[]string{"pay", "payment", "paid", "transfer"},
+		[]string{"bayar", "pembayaran", "transfer"}},
+	{[]string{"minimum order", "min order"},
+		[]string{"minimum order", "minimal order", "pesan minimal"}},
+}
+
+// ExpandKBRetrievalQuery adds Indonesian tokens so lexical KB match works for English questions.
+func ExpandKBRetrievalQuery(query string) string {
+	text := strings.ToLower(strings.TrimSpace(query))
+	if text == "" {
+		return query
+	}
+	seen := make(map[string]struct{})
+	var extra []string
+	for _, pair := range kbRetrievalBridgePairs {
+		matched := false
+		for _, w := range pair.en {
+			if strings.Contains(text, w) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			continue
+		}
+		for _, tok := range pair.id {
+			if _, ok := seen[tok]; ok {
+				continue
+			}
+			seen[tok] = struct{}{}
+			extra = append(extra, tok)
+		}
+	}
+	if len(extra) == 0 {
+		return query
+	}
+	return query + " " + strings.Join(extra, " ")
+}
+
+func containsIndonesianMarkers(s string) bool {
+	s = strings.ToLower(s)
+	for _, m := range []string{
+		" kami ", " anda ", " pesanan ", " pengiriman ", " pembayaran ", " hari ", " hingga ",
+		" seluruh ", " di ", " ya ", " wib", " kurir ", " ongkir", " estimasi ",
+	} {
+		if strings.Contains(s, m) {
+			return true
+		}
+	}
+	for _, r := range s {
+		if r > unicode.MaxASCII && unicode.IsLetter(r) {
+			return true
+		}
+	}
+	return false
+}
+
+// DeliveryAreaForReply maps known Indonesian delivery-area phrases for English replies.
+func DeliveryAreaForReply(area string, lang string) string {
+	area = strings.TrimSpace(area)
+	if area == "" || lang != LangEN {
+		return area
+	}
+	lower := strings.ToLower(area)
+	switch {
+	case strings.Contains(lower, "seluruh indonesia"), strings.Contains(lower, "seluruh kota di indonesia"):
+		return "across Indonesia"
+	case strings.Contains(lower, "pulau jawa"):
+		return "across Java"
+	case strings.Contains(lower, "indonesia"):
+		return "across Indonesia"
+	default:
+		if containsIndonesianMarkers(" " + lower + " ") {
+			return ""
+		}
+		return area
+	}
+}
+
+var (
+	kbSameDayENRe  = regexp.MustCompile(`(?i)pukul\s*(\d{1,2}:\d{2})\s*hingga\s*(\d{1,2}:\d{2})\s*wib`)
+	kbDayRangeENRe = regexp.MustCompile(`(?i)(\d+)\s*-\s*(\d+)\s*(?:hari|business\s+days?|days?)`)
+)
+
+type shippingKBFacts struct {
+	etaID, etaEN         string
+	courierID, courierEN string
+	sameDayID, sameDayEN string
+}
+
+func isShippingKBCategory(cat string) bool {
+	c := strings.ToLower(strings.TrimSpace(cat))
+	return strings.Contains(c, "pengiriman") || strings.Contains(c, "shipping") || strings.Contains(c, "delivery")
+}
+
+func extractShippingKBFacts(kb []KBEntry) shippingKBFacts {
+	var f shippingKBFacts
+	for _, e := range kb {
+		if !e.IsActive {
+			continue
+		}
+		cat := ""
+		if e.Category != nil {
+			cat = *e.Category
+		}
+		if !isShippingKBCategory(cat) {
+			continue
+		}
+		ans := strings.TrimSpace(e.Answer)
+		if ans == "" {
+			continue
+		}
+		lower := strings.ToLower(ans)
+		if strings.Contains(lower, "estimasi") && strings.Contains(lower, "hari") {
+			f.etaID = ans
+			f.etaEN = localizeKBETAEN(ans)
+		}
+		if f.etaEN == "" && kbDayRangeENRe.FindStringSubmatch(ans) != nil &&
+			(strings.Contains(lower, "day") || strings.Contains(lower, "business")) {
+			f.etaEN = ans
+		}
+		if strings.Contains(lower, "j&t") || strings.Contains(lower, "jne") ||
+			(strings.Contains(lower, "kurir") && strings.Contains(lower, "indonesia")) {
+			f.courierID = ans
+			f.courierEN = localizeKBCourierEN(ans)
+		}
+		if strings.Contains(lower, "08:00") && strings.Contains(lower, "hari yang sama") {
+			if len(ans) > len(f.sameDayID) {
+				f.sameDayID = ans
+				f.sameDayEN = localizeKBSameDayEN(ans)
+			}
+		}
+	}
+	return f
+}
+
+func localizeKBETAEN(answer string) string {
+	if m := kbDayRangeENRe.FindStringSubmatch(answer); len(m) >= 3 {
+		return "Estimated delivery is " + m[1] + "-" + m[2] + " days."
+	}
+	return ""
+}
+
+func localizeKBCourierEN(answer string) string {
+	lower := strings.ToLower(answer)
+	if strings.Contains(lower, "j&t") && strings.Contains(lower, "jne") {
+		return "We deliver across Indonesia using J&T and JNE couriers."
+	}
+	return ""
+}
+
+func localizeKBSameDayEN(answer string) string {
+	m := kbSameDayENRe.FindStringSubmatch(answer)
+	if len(m) != 3 {
+		return ""
+	}
+	out := "Orders and payments we receive between " + m[1] + " and " + m[2] + " WIB ship the same day."
+	if strings.Contains(strings.ToLower(answer), "12:00") &&
+		strings.Contains(strings.ToLower(answer), "hari kerja berikutnya") {
+		out += " Orders after 12:00 WIB ship on the next working day."
+	}
+	return out
+}
+
+// LocalizeKBAnswerForBuyer returns English phrasing when the buyer language is English.
+func LocalizeKBAnswerForBuyer(answer, userText string) string {
+	ans := strings.TrimSpace(answer)
+	if ans == "" {
+		return ans
+	}
+	if ResolveBuyerLanguage(userText, CurrentSavedBuyerLang()) != LangEN {
+		return ans
+	}
+	if !containsIndonesianMarkers(" " + strings.ToLower(ans) + " ") {
+		return ans
+	}
+	if en := localizeKBSameDayEN(ans); en != "" {
+		return en
+	}
+	if en := localizeKBCourierEN(ans); en != "" {
+		return en
+	}
+	if en := localizeKBETAEN(ans); en != "" {
+		return en
+	}
+	return ""
+}
+
+func asksSameDayDelivery(userText string) bool {
+	text := strings.ToLower(strings.TrimSpace(userText))
+	if text == "" {
+		return false
+	}
+	signals := []string{
+		"same day", "today", "deliver today", "delivery today", "ship today", "send today",
+		"send it today", "send also today", "also today",
+		"hari ini", "kirim hari ini", "sampai hari ini",
+	}
+	for _, s := range signals {
+		if strings.Contains(text, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// BuildShippingFAQReply composes shipping FAQ answers using KB facts and buyer language.
+func BuildShippingFAQReply(userText string, profile *BusinessProfile, kb []KBEntry, formal bool) string {
+	lang := ResolveBuyerLanguage(userText, CurrentSavedBuyerLang())
+	facts := extractShippingKBFacts(kb)
+	area := DeliveryAreaForReply(deliveryAreaLabel(profile), lang)
+	askFee := IsShippingQuoteOrFeeQuestion(userText)
+	askSameDay := asksSameDayDelivery(userText)
+
+	var parts []string
+	if lang == LangEN {
+		if facts.courierEN != "" {
+			parts = append(parts, facts.courierEN)
+		} else if area != "" {
+			parts = append(parts, "We ship to "+area+".")
+		}
+		if askFee {
+			if formal {
+				parts = append(parts, "Shipping cost depends on your address and courier — we'll confirm once we have your full delivery address.")
+			} else {
+				parts = append(parts, "Shipping cost depends on your address and courier — we'll confirm once we have your full address.")
+			}
+		}
+		if askSameDay && facts.sameDayEN != "" {
+			parts = append(parts, facts.sameDayEN)
+		} else if !askFee && facts.etaEN != "" {
+			parts = append(parts, facts.etaEN)
+		} else if !askFee && facts.sameDayEN != "" && askSameDay {
+			parts = append(parts, facts.sameDayEN)
+		}
+		if len(parts) == 0 {
+			return shippingETAGenericReplyFor(userText, formal)
+		}
+		return strings.Join(parts, " ")
+	}
+
+	if area != "" {
+		if formal {
+			parts = append(parts, "Kami melayani pengiriman ke "+area+".")
+		} else {
+			parts = append(parts, "Kami kirim ke "+area+" ya kak.")
+		}
+	}
+	if facts.courierID != "" {
+		parts = append(parts, facts.courierID)
+	}
+	if askFee {
+		if formal {
+			parts = append(parts, "Ongkir dihitung setelah alamat lengkap dikonfirmasi.")
+		} else {
+			parts = append(parts, "Ongkirnya nanti dihitung setelah alamat lengkap ya kak.")
+		}
+	}
+	if askSameDay && facts.sameDayID != "" {
+		parts = append(parts, facts.sameDayID)
+	} else if facts.etaID != "" {
+		parts = append(parts, facts.etaID)
+	} else if facts.sameDayID != "" && askSameDay {
+		parts = append(parts, facts.sameDayID)
+	}
+	if len(parts) == 0 {
+		return buildShippingDefaultReply(userText, profile, formal)
+	}
+	return strings.Join(parts, " ")
 }

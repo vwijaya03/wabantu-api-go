@@ -149,6 +149,8 @@ func (s *Simulator) turnOnce(userText string) TurnOutcome {
 		out.Path = PathOrderCancel
 		if hadOrder {
 			out.Reply = orderFlowCancelReply(strOrEmpty(s.Profile.Tone), userText)
+		} else {
+			out.Reply = orderFlowAbortNoDraftReply(strOrEmpty(s.Profile.Tone), userText)
 		}
 		s.appendHistory(userText, out.Reply)
 		return out

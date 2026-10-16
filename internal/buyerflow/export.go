@@ -12,7 +12,6 @@ func StrPtr(s string) *string { return strPtr(s) }
 
 func OutOfScopeReply(profile *BusinessProfile) string { return outOfScopeReply(profile) }
 
-
 func BusinessScopeKeywords(profile *BusinessProfile) []string { return businessScopeKeywords(profile) }
 
 func NewOmahSimulator() *Simulator { return newOmahSimulator() }
@@ -67,8 +66,10 @@ func WouldRepeatOutbound(history []Message, outbound string) bool {
 }
 
 func FormatCatalogListBody(catalog []CatalogItem, maxFeatured int) string {
-	return formatCatalogListBody(catalog, maxFeatured)
+	return formatCatalogListBody("", catalog, maxFeatured)
 }
+
+func ExpandKBRetrievalQueryForTest(query string) string { return ExpandKBRetrievalQuery(query) }
 
 func BracketPackCount(name string) int { return bracketPackCount(name) }
 
@@ -110,9 +111,13 @@ func GuardOrderQtyStep(st OrderState, catalog []CatalogItem, formal bool, qtySte
 	return guardOrderQtyStep(st, catalog, formal, qtyStep)
 }
 
-func WantsOrderContextFromHistory(userText string) bool { return wantsOrderContextFromHistory(userText) }
+func WantsOrderContextFromHistory(userText string) bool {
+	return wantsOrderContextFromHistory(userText)
+}
 
-func PrependSalesCorrection(formal bool, body string) string { return prependSalesCorrection(formal, body) }
+func PrependSalesCorrection(formal bool, body string) string {
+	return prependSalesCorrection(formal, body)
+}
 
 func SalesCorrectionReply(formal bool) string { return salesCorrectionReply(formal) }
 
@@ -122,17 +127,25 @@ func MentionsOrderQty(text string) bool { return mentionsOrderQty(text) }
 
 func HasOrderIntentText(userText string) bool { return hasOrderIntentText(userText) }
 
-func CasualPraiseReply(formal bool, userText string) string { return casualPraiseReply(formal, userText) }
+func CasualPraiseReply(formal bool, userText string) string {
+	return casualPraiseReply(formal, userText)
+}
 
 func TopKBMatchScore(query string, kb []KBEntry) float64 { return topKBMatchScore(query, kb) }
 
-func TryFAQDirectAnswer(query string, kb []KBEntry) (string, bool) { return tryFAQDirectAnswer(query, kb) }
+func TryFAQDirectAnswer(query string, kb []KBEntry) (string, bool) {
+	return tryFAQDirectAnswer(query, kb)
+}
 
-func IsGeneralStoreCatalogQuestion(userText string) bool { return isGeneralStoreCatalogQuestion(userText) }
+func IsGeneralStoreCatalogQuestion(userText string) bool {
+	return isGeneralStoreCatalogQuestion(userText)
+}
 
 func CatalogConfirmLine(st OrderState) string { return catalogConfirmLine(st) }
 
-func FormatUpsellBlock(st OrderState, catalog []CatalogItem) string { return formatUpsellBlock(st, catalog) }
+func FormatUpsellBlock(st OrderState, catalog []CatalogItem) string {
+	return formatUpsellBlock(st, catalog)
+}
 
 type ParsedOrderHints = parsedOrderHints
 
@@ -146,7 +159,9 @@ func InferVariantFromProductName(st *OrderState) { inferVariantFromProductName(s
 
 func ParseSizeAndColor(text string) (string, string) { return parseSizeAndColor(text) }
 
-func FormatCatalogPicker(catalog []CatalogItem, limit int) string { return formatCatalogPicker(catalog, limit) }
+func FormatCatalogPicker(catalog []CatalogItem, limit int) string {
+	return formatCatalogPicker(catalog, limit)
+}
 
 func FormatOrderSummary(st OrderState) string { return formatOrderSummary(st) }
 
@@ -168,7 +183,9 @@ func OmahProfile() *BusinessProfile { return omahProfile() }
 
 func OmahCatalog() []CatalogItem { return omahCatalog() }
 
-func TryApplyQtyRevision(st *OrderState, userText string) bool { return tryApplyQtyRevision(st, userText) }
+func TryApplyQtyRevision(st *OrderState, userText string) bool {
+	return tryApplyQtyRevision(st, userText)
+}
 
 func MergeShippingText(st *OrderState, userText string) { mergeShippingText(st, userText) }
 
@@ -216,7 +233,9 @@ func BuildCatalogListReplyFiltered(formal bool, bizName string, catalog []Catalo
 	return buildCatalogListReplyFiltered(formal, bizName, catalog, profile, userText)
 }
 
-func IsCatalogExclusionQuestionExported(userText string) bool { return IsCatalogExclusionQuestion(userText) }
+func IsCatalogExclusionQuestionExported(userText string) bool {
+	return IsCatalogExclusionQuestion(userText)
+}
 
 func ResolveOrderProductMatch(userText string, history []Message, catalog []CatalogItem, vctx *CatalogVectorContext) *CatalogItem {
 	return resolveOrderProductMatch(userText, history, catalog, vctx)

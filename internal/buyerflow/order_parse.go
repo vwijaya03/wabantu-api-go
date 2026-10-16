@@ -8,13 +8,14 @@ import (
 
 var (
 	// Explicit qty with whitespace before unit (avoids matching "1PCS" in catalog product titles).
-	orderQtyWithUnitRe = regexp.MustCompile(`(?i)(?:^|\s)(\d{1,4})\s+(pcs|pc|biji|buah|item|unit|piece|pieces|paket|pket)\b`)
-	orderQtyLabelRe    = regexp.MustCompile(`(?i)\b(?:qty|jumlah)\s*[:\-]?\s*(\d{1,4})\b`)
-	orderQtyBareLineRe = regexp.MustCompile(`(?i)^\s*(\d{1,4})\s*(?:biji|pcs|pc|buah|piece|pieces|paket)?\s*[!.?]*\s*$`)
-	orderQtyTrailingRe = regexp.MustCompile(`(?i)\s(\d{1,4})\s*(?:pcs|pc|biji|buah|piece|pieces)?\s*(?:ya+|dong|kak|aja|saja|nih|deh|lah|lagi)?\s*[.!?]*$`)
-	orderQtyLusinRe    = regexp.MustCompile(`(?i)(?:^|\s)(\d{1,3})\s*lusin\b`)
-	orderQtyOneLusinRe = regexp.MustCompile(`(?i)(?:^|\s)1\s*lusin\b|satu\s*lusin`)
-	orderQtyIndoWordRe = regexp.MustCompile(`(?i)\b(satu|dua|tiga|empat|lima|enam|tujuh|delapan|sembilan|sepuluh)\s*(pcs|pc|biji|buah|piece|pieces|lusin)?\b`)
+	orderQtyWithUnitRe       = regexp.MustCompile(`(?i)(?:^|\s)(\d{1,4})\s+(pcs|pc|biji|buah|item|unit|piece|pieces|paket|pket)\b`)
+	orderQtyLabelRe          = regexp.MustCompile(`(?i)\b(?:qty|jumlah)\s*[:\-]?\s*(\d{1,4})\b`)
+	orderQtyBareLineRe       = regexp.MustCompile(`(?i)^\s*(\d{1,4})\s*(?:biji|pcs|pc|buah|piece|pieces|paket)?\s*[!.?]*\s*$`)
+	orderQtyTrailingRe       = regexp.MustCompile(`(?i)\s(\d{1,4})\s*(?:pcs|pc|biji|buah|piece|pieces)?\s*(?:ya+|dong|kak|aja|saja|nih|deh|lah|lagi)?\s*[.!?]*$`)
+	orderQtyAfterVerbRe      = regexp.MustCompile(`(?i)\b(?:order|pesan|pesen|beli|buy|ambil)\s+(\d{1,4})\b`)
+	orderQtyLusinRe          = regexp.MustCompile(`(?i)(?:^|\s)(\d{1,3})\s*lusin\b`)
+	orderQtyOneLusinRe       = regexp.MustCompile(`(?i)(?:^|\s)1\s*lusin\b|satu\s*lusin`)
+	orderQtyIndoWordRe       = regexp.MustCompile(`(?i)\b(satu|dua|tiga|empat|lima|enam|tujuh|delapan|sembilan|sepuluh)\s*(pcs|pc|biji|buah|piece|pieces|lusin)?\b`)
 	gluedCatalogQtyRe        = regexp.MustCompile(`(?i)\d+pcs`)
 	orderSegmentVerbPrefixRe = regexp.MustCompile(`(?i)^(hah+\s*[?.!]*)?\s*(?:nambah|tambahkan|tambah|beli|mau|order)\s+`)
 	// Longest-first so XXL is not parsed as XL and XL is not parsed as L.
@@ -120,12 +121,51 @@ func orderProductMissReply(userText string, formal bool, catalog []CatalogItem) 
 	return msg
 }
 
+func kbEntryOverridesOrderFlowStep(question string) (field string, ok bool) {
+	q := strings.ToLower(strings.TrimSpace(question))
+	if strings.Contains(q, "minimum") || strings.Contains(q, "min order") ||
+		strings.Contains(q, "minimum order") || strings.Contains(q, "minimum jumlah") {
+		return "", false
+	}
+	switch {
+	case strings.Contains(q, "produk") || strings.Contains(q, "barang"):
+		return "ask_product", true
+	case strings.Contains(q, "varian") || strings.Contains(q, "ukuran") || strings.Contains(q, "size"):
+		return "ask_variant", true
+	case strings.Contains(q, "qty") || (strings.Contains(q, "berapa") && strings.Contains(q, "pcs")) ||
+		(strings.Contains(q, "mau pesan berapa") || strings.Contains(q, "jumlah pcs")):
+		return "ask_qty", true
+	case strings.Contains(q, "penerima") || (strings.Contains(q, "nama") && strings.Contains(q, "hp")):
+		return "ask_recipient", true
+	case strings.Contains(q, "alamat") && !strings.Contains(q, "pengiriman apa"):
+		return "ask_address", true
+	case strings.Contains(q, "selesai") || strings.Contains(q, "konfirmasi"):
+		return "complete", true
+	default:
+		return "", false
+	}
+}
+
+func kbAnswerAllowedForBuyerLanguage(answer, userText string) bool {
+	if ResolveBuyerLanguage(userText, CurrentSavedBuyerLang()) != LangEN {
+		return true
+	}
+	lower := strings.ToLower(answer)
+	idHints := []string{" pelanggan ", " pemesanan ", " wajib ", " kami ", " ya kak", " kak,", " buah produk"}
+	for _, h := range idHints {
+		if strings.Contains(lower, h) {
+			return false
+		}
+	}
+	return true
+}
+
 // orderTemplatesFromKB uses KB answers when question tags match order-flow steps.
 func orderTemplatesFromKB(kb []KBEntry, formal bool, userText string) orderFlowTemplates {
 	t := defaultOrderTemplatesForBuyer(formal, userText)
 	for _, e := range kb {
 		a := strings.TrimSpace(e.Answer)
-		if a == "" {
+		if a == "" || !kbAnswerAllowedForBuyerLanguage(a, userText) {
 			continue
 		}
 		q := strings.ToLower(e.Question)
@@ -133,18 +173,22 @@ func orderTemplatesFromKB(kb []KBEntry, formal bool, userText string) orderFlowT
 		if cat != "order" && cat != "order_flow" && !strings.Contains(q, "order") {
 			continue
 		}
-		switch {
-		case strings.Contains(q, "produk") || strings.Contains(q, "barang"):
+		field, ok := kbEntryOverridesOrderFlowStep(e.Question)
+		if !ok {
+			continue
+		}
+		switch field {
+		case "ask_product":
 			t.AskProduct = a
-		case strings.Contains(q, "varian") || strings.Contains(q, "ukuran") || strings.Contains(q, "size"):
+		case "ask_variant":
 			t.AskVariant = a
-		case strings.Contains(q, "pcs") || strings.Contains(q, "jumlah") || strings.Contains(q, "qty"):
+		case "ask_qty":
 			t.AskQty = a
-		case strings.Contains(q, "penerima") || strings.Contains(q, "nama") && strings.Contains(q, "hp"):
+		case "ask_recipient":
 			t.AskRecipient = a
-		case strings.Contains(q, "alamat") || strings.Contains(q, "pengiriman"):
+		case "ask_address":
 			t.AskAddressFull = a
-		case strings.Contains(q, "selesai") || strings.Contains(q, "konfirmasi"):
+		case "complete":
 			t.Complete = a
 		}
 	}
@@ -256,6 +300,13 @@ func parseOrderQty(text string) (int, bool) {
 		}
 	}
 	if m := orderQtyTrailingRe.FindStringSubmatch(text); len(m) > 1 {
+		var q int
+		fmt.Sscanf(m[1], "%d", &q)
+		if q > 0 {
+			return q, true
+		}
+	}
+	if m := orderQtyAfterVerbRe.FindStringSubmatch(text); len(m) > 1 {
 		var q int
 		fmt.Sscanf(m[1], "%d", &q)
 		if q > 0 {

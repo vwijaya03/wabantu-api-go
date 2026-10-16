@@ -21,6 +21,58 @@ var (
 	colorHintRe    = regexp.MustCompile(`(?i)(warna|color|colour)\s*[:\-]?\s*([a-z]+)`)
 )
 
+var genericCatalogMatchTokens = map[string]bool{
+	"steak": true, "portion": true, "gram": true, "australian": true,
+	"yellow": true, "tail": true, "beef": true, "pcs": true, "order": true,
+	"please": true, "would": true, "like": true, "okay": true, "about": true,
+}
+
+// uniqueSingleProductTokenPick — e.g. "tuna" maps to one SKU; shared "steak" must not win.
+func uniqueSingleProductTokenPick(text string, catalog []CatalogItem) *CatalogItem {
+	tokens := tokenize(strings.ToLower(strings.TrimSpace(text)))
+	if len(tokens) == 0 {
+		return nil
+	}
+	exclude := append(catalogExcludeHints(text), catalogSpeciesExcludeHints(text)...)
+	var picked *CatalogItem
+	for _, tok := range tokens {
+		if len(tok) < 3 || genericCatalogMatchTokens[tok] || isFuzzyStopToken(tok) {
+			continue
+		}
+		var hits []*CatalogItem
+		for i := range catalog {
+			nameLower := strings.ToLower(catalog[i].Name)
+			if catalogItemExcluded(nameLower, exclude) {
+				continue
+			}
+			if strings.Contains(nameLower, tok) {
+				hits = append(hits, &catalog[i])
+			}
+		}
+		if len(hits) != 1 {
+			continue
+		}
+		if picked == nil {
+			picked = hits[0]
+		} else if picked.ID != hits[0].ID {
+			return nil
+		}
+	}
+	return picked
+}
+
+func catalogSpeciesExcludeHints(text string) []string {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	var out []string
+	if strings.Contains(lower, "tuna") {
+		out = append(out, "salmon")
+	}
+	if strings.Contains(lower, "salmon") {
+		out = append(out, "tuna")
+	}
+	return out
+}
+
 func matchCatalogItem(userText string, catalog []CatalogItem) *CatalogItem {
 	if len(catalog) == 0 {
 		return nil
@@ -30,8 +82,11 @@ func matchCatalogItem(userText string, catalog []CatalogItem) *CatalogItem {
 	if len(tokens) == 0 {
 		return nil
 	}
+	if pick := uniqueSingleProductTokenPick(text, catalog); pick != nil {
+		return pick
+	}
 
-	exclude := catalogExcludeHints(text)
+	exclude := append(catalogExcludeHints(text), catalogSpeciesExcludeHints(text)...)
 	preferPria := strings.Contains(text, "pria") || strings.Contains(text, "cowok")
 	preferAnak := strings.Contains(text, "anak") || strings.Contains(text, "perempuan")
 
@@ -140,7 +195,64 @@ func fuzzyTokenPrefixMatch(a, b string) bool {
 	return strings.HasPrefix(a, b[:n]) || strings.HasPrefix(b, a[:n])
 }
 
+func catalogNameAppearsInText(name, body string) bool {
+	name = strings.ToLower(strings.TrimSpace(name))
+	body = strings.ToLower(body)
+	if name == "" || body == "" {
+		return false
+	}
+	if strings.Contains(body, name) {
+		return true
+	}
+	compact := strings.Join(strings.Fields(strings.NewReplacer("(", " ", ")", " ", ",", " ").Replace(body)), " ")
+	fields := strings.Fields(name)
+	if len(fields) >= 3 {
+		prefix := strings.Join(fields[:3], " ")
+		return strings.Contains(compact, prefix)
+	}
+	return strings.Contains(compact, name)
+}
+
+// matchSingleProductFromRecentOutbound — pronoun buy / history-backed order; ignore token noise like "gram".
+func matchSingleProductFromRecentOutbound(history []Message, catalog []CatalogItem) *CatalogItem {
+	if len(history) == 0 || len(catalog) == 0 {
+		return nil
+	}
+	seen := 0
+	for i := len(history) - 1; i >= 0 && seen < 4; i-- {
+		if history[i].Direction != "out" {
+			continue
+		}
+		seen++
+		body := history[i].Body
+		if isCatalogListOutbound(body) {
+			continue
+		}
+		var matched []*CatalogItem
+		for j := range catalog {
+			it := &catalog[j]
+			if catalogNameAppearsInText(it.Name, body) {
+				matched = append(matched, it)
+			}
+		}
+		switch len(matched) {
+		case 1:
+			return matched[0]
+		case 0:
+			if m := uniqueSingleProductTokenPick(body, catalog); m != nil {
+				return m
+			}
+		}
+	}
+	return nil
+}
+
 func resolveOrderProductMatch(userText string, history []Message, catalog []CatalogItem, vctx *CatalogVectorContext) *CatalogItem {
+	if isPronounPurchaseIntent(userText) {
+		if m := matchSingleProductFromRecentOutbound(history, catalog); m != nil {
+			return m
+		}
+	}
 	if unique := uniqueBrandSKUFromText(userText, catalog); unique != nil {
 		return unique
 	}
@@ -296,7 +408,9 @@ func tryApplyProductRevision(st *OrderState, userText string, catalog []CatalogI
 		return false
 	}
 	text := strings.ToLower(strings.TrimSpace(userText))
-	hasSignal := strings.Contains(text, "bukan") || strings.Contains(text, "ubah produk") ||
+	hasSignal := strings.Contains(text, "bukan") || strings.Contains(text, "not the ") ||
+		strings.Contains(text, " instead of ") ||
+		strings.Contains(text, "ubah produk") ||
 		strings.Contains(text, "ganti jadi") || strings.Contains(text, "ganti produk") ||
 		strings.Contains(text, "mau boxer") || strings.Contains(text, "mau mono") ||
 		(strings.Contains(text, "mono spot") && strings.Contains(text, "bukan")) ||
