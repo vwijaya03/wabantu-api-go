@@ -8,7 +8,7 @@ import (
 // Model status values exposed in the admin catalog.
 const (
 	ModelSupported     = "supported"      // usable for chat/intent/vision/ocr functions
-	ModelEmbeddingOnly = "embedding_only" // OpenAI: embeddings only, no chat adapter
+	ModelEmbeddingOnly = "embedding_only" // OpenAI/Gemini embedding models: no chat adapter
 )
 
 type ModelInfo struct {
@@ -33,6 +33,7 @@ var modelMeta = map[string]struct {
 	"gemini-2.5-flash":           {"Gemini 2.5 Flash", true},
 	"gemini-2.5-pro":             {"Gemini 2.5 Pro", true},
 	"text-embedding-3-small":     {"OpenAI text-embedding-3-small", false},
+	"gemini-embedding-001":       {"Gemini Embedding 001 (1536 dim)", false},
 }
 
 // CatalogModels lists allowlisted models in stable order.
@@ -42,7 +43,7 @@ func CatalogModels() []ModelInfo {
 		for _, id := range ids {
 			m := modelMeta[id]
 			st := ModelSupported
-			if p == "openai" {
+			if IsEmbeddingModel(id) {
 				st = ModelEmbeddingOnly
 			}
 			label := m.label

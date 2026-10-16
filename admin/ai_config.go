@@ -13,6 +13,7 @@ import (
 
 	"encore.app/wabantu/audit"
 	"encore.app/wabantu/shared/llm"
+	"encore.app/wabantu/shared/retrieval"
 )
 
 // ─── AI provider config (BE-06) — contract: docs/API_AI_CONFIG.md ───────────
@@ -31,6 +32,8 @@ type AIFunctionConfig struct {
 	TenantID   *string       `json:"tenantId"`
 	Chain      []AIChainLink `json:"chain"`
 	MaxRetries int           `json:"maxRetries"`
+	// Reindex is set when an embedding model change queued a reindex (PUT only).
+	Reindex *AIReindexInfo `json:"reindex,omitempty"`
 }
 
 type ListAIFunctionConfigParams struct {
@@ -91,6 +94,9 @@ type PutAIFunctionConfigParams struct {
 	TenantID   *string       `json:"tenantId"`
 	Chain      []AIChainLink `json:"chain"`
 	MaxRetries int           `json:"maxRetries"`
+	// ConfirmReindex is required when the embedding model changes: vectors of the affected
+	// namespaces are wiped and re-queued (the request returns after enqueue, not after embedding).
+	ConfirmReindex bool `json:"confirmReindex,omitempty"`
 }
 
 // PutAIFunctionConfig upserts the global (tenantId=null) or tenant override chain.
@@ -109,6 +115,19 @@ func PutAIFunctionConfig(ctx context.Context, function string, p *PutAIFunctionC
 	tenantID := ""
 	if p.TenantID != nil {
 		if tenantID, err = requireTenant(ctx, *p.TenantID); err != nil {
+			return nil, err
+		}
+	}
+	var embedFrom, embedTo string
+	if fn == llm.FnEmbedding {
+		embedTo = retrieval.EmbeddingModelFromChain(chain)
+		if err := requireEmbeddingCredentials(embedTo); err != nil {
+			return nil, err
+		}
+		if embedFrom, err = effectiveEmbeddingModel(ctx, tenantID); err != nil {
+			return nil, &errs.Error{Code: errs.Internal, Message: "gagal membaca konfigurasi embedding saat ini"}
+		}
+		if err := requireReindexConfirmation(embedFrom, embedTo, p.ConfirmReindex); err != nil {
 			return nil, err
 		}
 	}
@@ -142,15 +161,25 @@ func PutAIFunctionConfig(ctx context.Context, function string, p *PutAIFunctionC
 	if tenantID != "" {
 		out.TenantID = &tenantID
 	}
+	if fn == llm.FnEmbedding && embedFrom != embedTo {
+		info, err := triggerEmbeddingReindex(ctx, tenantID, embedFrom, embedTo)
+		if err != nil {
+			return nil, err
+		}
+		out.Reindex = info
+	}
 	return out, nil
 }
 
 type DeleteAIFunctionConfigParams struct {
 	TenantID string `query:"tenantId"`
+	// ConfirmReindex is required when removing an embedding override changes the effective model.
+	ConfirmReindex bool `query:"confirmReindex"`
 }
 
 type DeleteAIFunctionConfigResponse struct {
-	Deleted bool `json:"deleted"`
+	Deleted bool           `json:"deleted"`
+	Reindex *AIReindexInfo `json:"reindex,omitempty"`
 }
 
 // DeleteAIFunctionConfig removes a tenant override (?tenantId= required; global rows are not deletable here).
@@ -172,6 +201,18 @@ func DeleteAIFunctionConfig(ctx context.Context, function string, p *DeleteAIFun
 	if err != nil {
 		return nil, err
 	}
+	var embedFrom, embedTo string
+	if fn == llm.FnEmbedding {
+		if embedFrom, err = effectiveEmbeddingModel(ctx, tenantID); err != nil {
+			return nil, &errs.Error{Code: errs.Internal, Message: "gagal membaca konfigurasi embedding saat ini"}
+		}
+		if embedTo, err = effectiveEmbeddingModel(ctx, ""); err != nil {
+			return nil, &errs.Error{Code: errs.Internal, Message: "gagal membaca konfigurasi embedding global"}
+		}
+		if err := requireReindexConfirmation(embedFrom, embedTo, p.ConfirmReindex); err != nil {
+			return nil, err
+		}
+	}
 	res, err := db.Stdlib().ExecContext(ctx,
 		`DELETE FROM ai_function_config WHERE function = $1 AND tenant_id = $2`, string(fn), tenantID)
 	if err != nil {
@@ -182,7 +223,15 @@ func DeleteAIFunctionConfig(ctx context.Context, function string, p *DeleteAIFun
 		llm.NotifyConfigChanged()
 		auditAIConfig(ctx, user.AccountID, tenantID, "ai_function_config_delete", string(fn), map[string]any{"actorEmail": user.Email})
 	}
-	return &DeleteAIFunctionConfigResponse{Deleted: n > 0}, nil
+	resp := &DeleteAIFunctionConfigResponse{Deleted: n > 0}
+	if n > 0 && fn == llm.FnEmbedding && embedFrom != embedTo {
+		info, err := triggerEmbeddingReindex(ctx, tenantID, embedFrom, embedTo)
+		if err != nil {
+			return nil, err
+		}
+		resp.Reindex = info
+	}
+	return resp, nil
 }
 
 type AIProviderInfo struct {

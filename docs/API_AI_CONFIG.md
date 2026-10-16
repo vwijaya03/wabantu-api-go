@@ -21,7 +21,7 @@ All endpoints: `auth` + `tag:super_admin`. The server checks `role == "super_adm
 Changes apply immediately on the instance that handled the request and within **≤30 s** on other instances (resolver TTL; no Pub/Sub).
 
 Functions: `chat`, `intent`, `ocr`, `payment_ocr`, `vision`, `memory`, `embedding`.
-Allowed providers per function: `embedding` → `openai` only; all others → `anthropic`, `gemini`. **OpenAI has no chat adapter** (catalog marks its models `embedding_only`).
+Allowed providers per function: `embedding` → `openai` (`text-embedding-3-small`) or `gemini` (`gemini-embedding-001`, 1536 dims); all others → `anthropic`, `gemini`. **Embedding models have no chat adapter** (catalog marks them `embedding_only`; `gemini-embedding-001` is rejected for every non-embedding function). The `embedding` chain has **exactly 1 link** (no cross-model fallback: OpenAI and Gemini vector spaces are not comparable). A Gemini embedding link must name its model (empty = rejected).
 `model: ""` = provider default (Anthropic: caller's legacy default, e.g. Haiku 4.5; Gemini: `gemini-3.1-flash-lite`, see `llm.GeminiDefaultModel`).
 
 ### Types
@@ -44,11 +44,13 @@ Returns all global rows (`tenantId: null`) plus the overrides of `tenantId` if g
 ```
 
 ### PUT `/api/v1/admin/ai/function-config/:function`
-Body: `{ "tenantId": string | null, "chain": ChainLink[], "maxRetries": number }` — `null` = global default.
-Response `200`: the saved `FunctionConfig`.
+Body: `{ "tenantId": string | null, "chain": ChainLink[], "maxRetries": number, "confirmReindex"?: boolean }` — `null` = global default.
+Response `200`: the saved `FunctionConfig`, plus `reindex?: { tenants, mode: "inline"|"background", fromModel, toModel, progressHint, queuedTenantId? }` when an embedding model change queued a reindex.
+
+**Embedding model change** (`function = "embedding"`): if the effective model (tenant override → global → OpenAI default) differs from the one in `chain`, the request is rejected with `412 failed_precondition` unless `confirmReindex: true`. With confirmation the handler saves the config, then **only wipes the Pinecone namespace, resets rows to `pending` and enqueues** — it returns after enqueue, never after embedding. Embedding runs in the `retrieval-index-worker` (Encore) or the bounded background drain (`RETRIEVAL_BACKGROUND_DRAIN=1`, Cloud Run). Tenant override → that tenant, inline. Global change → every tenant **without its own embedding override** whose retrieval mode is not `disabled`, fanned out in a bounded background job (`mode: "background"`). Switching to Gemini also needs `GeminiAPIKey` in the environment (`412` otherwise). Default stays OpenAI until a superadmin saves Gemini. Rollback = save OpenAI again (with `confirmReindex`); Gemini vectors are never queried by an OpenAI tenant (query filter on `embedding_model`). Similarity thresholds (`shared/retrieval/thresholds.go`) were tuned for `text-embedding-3-small` and must be re-measured before relying on Gemini.
 
 ### DELETE `/api/v1/admin/ai/function-config/:function?tenantId=<uuid required>`
-Removes the **tenant override** only (global rows can't be deleted here → use PUT). Response: `{ "deleted": true|false }` (`false` = no override existed).
+Removes the **tenant override** only (global rows can't be deleted here → use PUT). Optional `&confirmReindex=true`: required for `function=embedding` when removing the override changes the tenant's effective model (same `412` rule + inline reindex as PUT). Response: `{ "deleted": true|false, "reindex"?: {…} }` (`false` = no override existed).
 
 ### GET `/api/v1/admin/ai/catalog`
 ```json
@@ -59,7 +61,7 @@ Removes the **tenant override** only (global rows can't be deleted here → use 
               {"provider":"openai","id":"text-embedding-3-small","label":"OpenAI text-embedding-3-small","status":"embedding_only","vision":false} ] }
 ```
 - `enabled`: `ai_providers.enabled` (no row = enabled). Disabled providers are skipped in chains.
-- `available`: credentials present at runtime (Gemini key set, Anthropic key set). An unavailable link is skipped at runtime and the chain falls back (logged once). OpenAI availability is not reported yet (always `false`).
+- `available`: credentials present at runtime (Gemini key set, Anthropic key set). An unavailable link is skipped at runtime and the chain falls back (logged once). OpenAI availability is not reported yet (always `false`). Gemini embeddings read the same `GeminiAPIKey` process env as Gemini chat.
 - `status`: `supported` | `embedding_only`.
 
 Cost policy (defaults seeded by migrations 26/27): `payment_ocr`, `intent`, `memory` → Gemini 2.5 Flash, fallback Anthropic (Haiku). `chat` not seeded: legacy Haiku/Sonnet routing (Sonnet only for complex chat / tool-use). Actual provider/model is logged per call and stored in usage (`model`, `tier` = family alias).

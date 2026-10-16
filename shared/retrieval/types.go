@@ -1,9 +1,13 @@
 package retrieval
 
-// Embedding model constants (OpenAI text-embedding-3-small).
+import "encore.app/wabantu/shared/llm"
+
+// Embedding model constants. EmbeddingModel is the default (OpenAI); GeminiEmbeddingModel is
+// opt-in per tenant/global via ai_function_config. All vectors are EmbeddingDims wide.
 const (
-	EmbeddingModel = "text-embedding-3-small"
-	EmbeddingDims  = 1536
+	EmbeddingModel       = llm.OpenAIEmbeddingModel
+	GeminiEmbeddingModel = llm.GeminiEmbeddingModel
+	EmbeddingDims        = llm.EmbeddingDims
 )
 
 // Source identifies indexed content type in Pinecone metadata.
