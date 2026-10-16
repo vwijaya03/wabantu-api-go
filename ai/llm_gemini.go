@@ -20,9 +20,15 @@ var geminiOnce sync.Once
 // lookupGeminiKey is swappable in tests.
 var lookupGeminiKey = func() string { return strings.TrimSpace(os.Getenv(geminiKeyEnv)) }
 
+// SyncProviderAvailabilityForCatalog refreshes in-memory provider availability for GET /admin/ai/catalog.
+func SyncProviderAvailabilityForCatalog() {
+	ensureGeminiRegistered()
+}
+
 // ensureGeminiRegistered lazily registers Gemini (text + vision) on first registry use,
 // only when a key is present. Without a key nothing is registered and chains fall back
 // to Anthropic; that is logged once here instead of per call.
+
 func ensureGeminiRegistered() {
 	geminiOnce.Do(func() {
 		key := lookupGeminiKey()
