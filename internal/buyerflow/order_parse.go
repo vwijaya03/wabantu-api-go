@@ -13,6 +13,7 @@ var (
 	orderQtyBareLineRe       = regexp.MustCompile(`(?i)^\s*(\d{1,4})\s*(?:biji|pcs|pc|buah|piece|pieces|paket)?\s*[!.?]*\s*$`)
 	orderQtyTrailingRe       = regexp.MustCompile(`(?i)\s(\d{1,4})\s*(?:pcs|pc|biji|buah|piece|pieces)?\s*(?:ya+|dong|kak|aja|saja|nih|deh|lah|lagi)?\s*[.!?]*$`)
 	orderQtyAfterVerbRe      = regexp.MustCompile(`(?i)\b(?:order|pesan|pesen|beli|buy|ambil)\s+(\d{1,4})\b`)
+	orderQtyLeadingProductRe = regexp.MustCompile(`(?i)^\s*(\d{1,4})\s+[a-zA-Z]`)
 	orderQtyLusinRe          = regexp.MustCompile(`(?i)(?:^|\s)(\d{1,3})\s*lusin\b`)
 	orderQtyOneLusinRe       = regexp.MustCompile(`(?i)(?:^|\s)1\s*lusin\b|satu\s*lusin`)
 	orderQtyIndoWordRe       = regexp.MustCompile(`(?i)\b(satu|dua|tiga|empat|lima|enam|tujuh|delapan|sembilan|sepuluh)\s*(pcs|pc|biji|buah|piece|pieces|lusin)?\b`)
@@ -229,6 +230,13 @@ func parseQtyFromLine(line string) (int, bool) {
 			if unit != "" || n > 0 {
 				return n, true
 			}
+		}
+	}
+	if m := orderQtyLeadingProductRe.FindStringSubmatch(line); len(m) > 1 {
+		var q int
+		fmt.Sscanf(m[1], "%d", &q)
+		if q > 0 {
+			return q, true
 		}
 	}
 	if m := orderQtyLabelRe.FindStringSubmatch(line); len(m) > 1 {
