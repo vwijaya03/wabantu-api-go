@@ -93,8 +93,31 @@ func ApplyDraftLineMutations(st *OrderState, userText string, catalog []CatalogI
 	if addSrc == "" && (IsAddItemToOrderMessage(userText) || IsOrderAmendMessage(userText)) {
 		addSrc = userText
 	}
+	correctionNoop := false
 	if addSrc != "" {
-		_, added := parseAppendSegments(addSrc, catalog, nil)
+		var added []OrderLineState
+		if IsCartLineCorrectionIntent(userText) {
+			if match := resolveOrderProductMatch(addSrc, nil, catalog, nil); match != nil {
+				if orderCartContainsID(*st, match.ID) {
+					if q, ok := parseOrderQty(addSrc); ok && q > 0 {
+						setCartLineQty(st, match.ID, q)
+					}
+					correctionNoop = true
+				} else {
+					qty := st.Qty
+					if q, ok := parseOrderQty(addSrc); ok && q > 0 {
+						qty = q
+					}
+					if qty < 1 {
+						qty = 1
+					}
+					added = []OrderLineState{orderLineFromCatalogItem(*match, qty)}
+				}
+			}
+		}
+		if len(added) == 0 {
+			_, added = parseAppendSegments(addSrc, catalog, nil)
+		}
 		if len(added) == 0 {
 			added = appendLinesFromIdentifiedCatalog(addSrc, catalog, nil)
 		}
@@ -115,7 +138,24 @@ func ApplyDraftLineMutations(st *OrderState, userText string, catalog []CatalogI
 			st.Step = "ask_recipient"
 		}
 	}
-	return cartFingerprint(*st) != before
+	return cartFingerprint(*st) != before || correctionNoop
+}
+
+func setCartLineQty(st *OrderState, catalogID string, qty int) {
+	if st == nil || catalogID == "" || qty < 1 {
+		return
+	}
+	ensureMultiItemsFromSingle(st)
+	for i := range st.Items {
+		if st.Items[i].CatalogItemID == catalogID {
+			st.Items[i].Qty = qty
+			syncOrderStateFromItems(st)
+			return
+		}
+	}
+	if st.CatalogItemID == catalogID {
+		st.Qty = qty
+	}
 }
 
 func cartFingerprint(st OrderState) string {

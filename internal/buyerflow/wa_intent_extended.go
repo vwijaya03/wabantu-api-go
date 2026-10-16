@@ -122,6 +122,29 @@ func IsAbandonedCartSignal(userText string) bool {
 	return false
 }
 
+// IsShippingQuoteOrFeeQuestion — ongkir / delivery fee (English + Indonesian), bukan langkah checkout.
+func IsShippingQuoteOrFeeQuestion(userText string) bool {
+	if IsShippingQuoteQuestion(userText) {
+		return true
+	}
+	text := strings.ToLower(strings.TrimSpace(userText))
+	if text == "" {
+		return false
+	}
+	phrases := []string{
+		"delivery fee", "shipping fee", "shipping cost", "delivery cost",
+		"how much is the delivery", "how much is shipping", "how much is the shipping",
+		"cost of delivery", "cost of shipping",
+	}
+	for _, p := range phrases {
+		if strings.Contains(text, p) {
+			return true
+		}
+	}
+	return strings.Contains(text, "how much") &&
+		(strings.Contains(text, "delivery") || strings.Contains(text, "shipping") || strings.Contains(text, "ongkir"))
+}
+
 // IsAmbiguousPurchaseSignal — bisa konsultasi bisa checkout.
 func IsAmbiguousPurchaseSignal(userText string) bool {
 	if IsConsultingPurchaseQuestion(userText, nil) {

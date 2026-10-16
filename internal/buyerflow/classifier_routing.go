@@ -144,8 +144,8 @@ func topKBMatchScore(query string, kb []KBEntry) float64 {
 	if len(kb) == 0 {
 		return 0
 	}
-	qTokens := tokenize(query)
-	qScope := ExtractScopeKeywords(query)
+	qTokens := tokenize(ExpandKBRetrievalQuery(query))
+	qScope := ExtractScopeKeywords(ExpandKBRetrievalQuery(query))
 	var best float64
 	for _, entry := range kb {
 		text := entry.Question + " " + entry.Answer
@@ -169,8 +169,9 @@ func tryFAQDirectAnswer(query string, kb []KBEntry) (answer string, ok bool) {
 	if len(kb) == 0 {
 		return "", false
 	}
-	qTokens := tokenize(query)
-	qScope := ExtractScopeKeywords(query)
+	expanded := ExpandKBRetrievalQuery(query)
+	qTokens := tokenize(expanded)
+	qScope := ExtractScopeKeywords(expanded)
 
 	var best KBEntry
 	var bestScore float64
@@ -189,5 +190,13 @@ func tryFAQDirectAnswer(query string, kb []KBEntry) (answer string, ok bool) {
 	if bestScore < faqDirectAnswerMinScore || strings.TrimSpace(best.Answer) == "" {
 		return "", false
 	}
-	return strings.TrimSpace(best.Answer), true
+	ans := strings.TrimSpace(best.Answer)
+	localized := LocalizeKBAnswerForBuyer(ans, query)
+	if localized == "" {
+		if ResolveBuyerLanguage(query, CurrentSavedBuyerLang()) == LangEN && containsIndonesianMarkers(" "+strings.ToLower(ans)+" ") {
+			return "", false
+		}
+		return ans, true
+	}
+	return localized, true
 }

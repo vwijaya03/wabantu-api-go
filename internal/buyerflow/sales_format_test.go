@@ -7,9 +7,9 @@ import (
 
 func TestInferProductFamilyFoodItemsDistinct(t *testing.T) {
 	cases := []struct {
-		name   string
-		item   CatalogItem
-		want   string
+		name string
+		item CatalogItem
+		want string
 	}{
 		{
 			name: "abon",
@@ -51,7 +51,7 @@ func TestFormatCatalogListBodyShowsMultipleFoodFamilies(t *testing.T) {
 		{Name: "Cadbury Dairy Milk", SellPrice: 18000, SellUnit: "pcs"},
 		{Name: "Keripik Singkong Original", SellPrice: 12000, SellUnit: "pcs"},
 	}
-	body := formatCatalogListBody(catalog, 8)
+	body := formatCatalogListBody("", catalog, 8)
 	for _, want := range []string{"Abon", "Maggi", "Benns", "Cadbury", "Keripik"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected %q in list body:\n%s", want, body)
@@ -68,7 +68,7 @@ func TestGroupCatalogByCategoryOnePerFamily(t *testing.T) {
 		{Name: "Abon Sapi 500G", SellPrice: 35000},
 		{Name: "Maggi Ayam Berempah", SellPrice: 70000},
 	}
-	grouped := groupCatalogByCategory(catalog)
+	grouped := groupCatalogByCategory(catalog, false)
 	items := grouped["Makanan"]
 	if len(items) != 2 {
 		t.Fatalf("expected 2 families under Makanan (Abon + Maggi), got %d: %+v", len(items), items)
@@ -81,7 +81,7 @@ func TestPickFeaturedCatalogItemsGranularFamilies(t *testing.T) {
 		{Name: "Maggi Ayam Berempah", SellPrice: 70000},
 		{Name: "Benns Oatlife Chocolate", SellPrice: 25000},
 	}
-	featured := pickFeaturedCatalogItems(catalog, 8)
+	featured := pickFeaturedCatalogItems(catalog, 8, false)
 	if len(featured) < 3 {
 		t.Fatalf("expected 3 featured families, got %d", len(featured))
 	}

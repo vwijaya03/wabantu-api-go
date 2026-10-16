@@ -188,6 +188,9 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 			if hints.HasQty {
 				st.Qty = hints.Qty
 			}
+			if st.Qty < 1 && isPronounPurchaseIntent(userText) {
+				st.Qty = 1
+			}
 			if st.VariantComplete() {
 				if st.Qty > 0 {
 					st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")

@@ -124,11 +124,17 @@ func inferCatalogCategory(it CatalogItem) string {
 	return ""
 }
 
+const fallbackCatalogCategory = "Lainnya"
+
+func isFallbackCatalogCategory(cat string) bool {
+	return strings.EqualFold(strings.TrimSpace(cat), fallbackCatalogCategory)
+}
+
 func catalogDisplayCategory(it CatalogItem) string {
 	if cat := inferCatalogCategory(it); cat != "" {
 		return cat
 	}
-	return "Lainnya"
+	return fallbackCatalogCategory
 }
 
 func humanizeFamilyLabel(s string) string {
@@ -161,13 +167,13 @@ func shortDisplayName(name string) string {
 	return strings.TrimSpace(name)
 }
 
-func groupCatalogByCategory(catalog []CatalogItem) map[string][]CatalogItem {
+func groupCatalogByCategory(catalog []CatalogItem, includeAllFamilies bool) map[string][]CatalogItem {
 	out := make(map[string][]CatalogItem)
 	seen := make(map[string]struct{})
 	for _, it := range catalog {
 		cat := catalogDisplayCategory(it)
 		family := strings.ToLower(inferProductFamily(it))
-		if family != "" {
+		if family != "" && !includeAllFamilies {
 			key := cat + "|" + family
 			if _, ok := seen[key]; ok {
 				continue
@@ -196,7 +202,7 @@ func categoryEmoji(cat string) string {
 	}
 }
 
-func pickFeaturedCatalogItems(catalog []CatalogItem, max int) []CatalogItem {
+func pickFeaturedCatalogItems(catalog []CatalogItem, max int, includeAllFamilies bool) []CatalogItem {
 	if max < 1 {
 		max = 8
 	}
@@ -204,7 +210,11 @@ func pickFeaturedCatalogItems(catalog []CatalogItem, max int) []CatalogItem {
 	var out []CatalogItem
 	for _, it := range catalog {
 		family := strings.ToLower(inferProductFamily(it))
-		if family == "" {
+		if family == "" || includeAllFamilies {
+			out = append(out, it)
+			if len(out) >= max {
+				break
+			}
 			continue
 		}
 		if _, ok := seen[family]; ok {
@@ -474,8 +484,13 @@ func formatUpsellBlock(st OrderState, catalog []CatalogItem) string {
 	if len(suggestions) == 0 {
 		return ""
 	}
+	en := ResolveBuyerLanguage("", CurrentSavedBuyerLang()) == LangEN
 	var lines []string
-	lines = append(lines, "💡 Rekomendasi tambahan (tidak wajib):")
+	if en {
+		lines = append(lines, "💡 You might also like (optional):")
+	} else {
+		lines = append(lines, "💡 Rekomendasi tambahan (tidak wajib):")
+	}
 	for i, it := range suggestions {
 		lines = append(lines, fmt.Sprintf("%d. %s\n%s", i+1, it.Name, formatCatalogPrice(&it)))
 	}

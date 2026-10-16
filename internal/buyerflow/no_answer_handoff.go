@@ -77,6 +77,9 @@ func ShouldNoAnswerHandoff(userText string, inScope bool) bool {
 	if !IsQuestionLike(userText) {
 		return false
 	}
+	if isPronounPurchaseIntent(userText) || hasPurchaseIntent(userText, nil) {
+		return false
+	}
 	return true
 }
 

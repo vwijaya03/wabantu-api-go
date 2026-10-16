@@ -135,7 +135,10 @@ func ResolveSalesIntent(
 		return SalesIntent{State: SalesStateCartReady, Topic: SalesTopicProduct, ProductHint: hint, Confidence: 0.92}
 	}
 	if isHistoryBackedPurchaseIntent(userText, history, catalog) {
-		match := matchCatalogFromFocusedHistory(history, catalog)
+		match := matchSingleProductFromRecentOutbound(history, catalog)
+		if match == nil {
+			match = matchCatalogFromFocusedHistory(history, catalog)
+		}
 		hint := ""
 		if match != nil {
 			hint = shortDisplayName(match.Name)
