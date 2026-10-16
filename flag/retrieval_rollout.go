@@ -222,7 +222,7 @@ type GetRetrievalModeResponse struct {
 	Mode     string `json:"mode"`
 }
 
-//encore:api auth method=GET path=/api/v1/flags/retrieval-mode/:tenantId
+//encore:api auth method=GET path=/api/v1/flags/retrieval-mode/:tenantId tag:super_admin
 func GetRetrievalMode(ctx context.Context, tenantId string) (*GetRetrievalModeResponse, error) {
 	if _, err := requireSuperAdmin(); err != nil {
 		return nil, err
@@ -233,7 +233,7 @@ func GetRetrievalMode(ctx context.Context, tenantId string) (*GetRetrievalModeRe
 	}, nil
 }
 
-//encore:api auth method=PUT path=/api/v1/flags/retrieval-mode
+//encore:api auth method=PUT path=/api/v1/flags/retrieval-mode tag:super_admin
 func SetRetrievalMode(ctx context.Context, req *SetRetrievalModeRequest) (*SetRetrievalModeResponse, error) {
 	if _, err := requireSuperAdmin(); err != nil {
 		return nil, err
