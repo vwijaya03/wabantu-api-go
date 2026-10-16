@@ -25,6 +25,8 @@ type RebuildTenantRetrievalResult struct {
 	KBEnqueued      int   `json:"kbEnqueued"`
 	CatalogEnqueued int   `json:"catalogEnqueued"`
 	PineconeWiped   bool  `json:"pineconeWiped"`
+	SyncProcessed   int   `json:"syncProcessed"`
+	SyncFailed      int   `json:"syncFailed"`
 }
 
 // RebuildTenantRetrievalIndex wipes optional Pinecone data, resets embedding rows,
@@ -100,6 +102,15 @@ func RebuildTenantRetrievalIndex(ctx context.Context, tenantSchema, tenantID str
 	}
 	result.KBEnqueued = kbN
 	result.CatalogEnqueued = catN
+
+	processed, failed, err := ProcessPendingRetrievalOutboxSync(ctx, tenantSchema, tenantID, 500)
+	if err != nil {
+		rlog.Warn("rebuild: sync outbox drain failed", "tenantId", tenantID, "err", err)
+	} else if processed > 0 || failed > 0 {
+		rlog.Info("rebuild: sync outbox drain", "tenantId", tenantID, "processed", processed, "failed", failed)
+	}
+	result.SyncProcessed = processed
+	result.SyncFailed = failed
 	return result, nil
 }
 
