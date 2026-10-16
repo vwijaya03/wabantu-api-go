@@ -38,6 +38,11 @@ var _ = pubsub.NewSubscription(InboundAIJobs, "ai-auto-reply", pubsub.Subscripti
 	RetryPolicy: &pubsub.RetryPolicy{MaxRetries: 3},
 })
 
+// ProcessInboundAIJob runs the ai-auto-reply handler (same as Pub/Sub subscription).
+func ProcessInboundAIJob(ctx context.Context, job *InboundAIJob) error {
+	return handleInboundAI(ctx, job)
+}
+
 // PublishInboundJob enqueues AI processing for an inbound message.
 func PublishInboundJob(ctx context.Context, job *InboundAIJob) error {
 	if job == nil || job.TenantSchema == "" || job.ConversationID == "" || job.InboundMessageID == "" {
