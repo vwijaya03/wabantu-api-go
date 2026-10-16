@@ -74,8 +74,16 @@ func InsertKBEntryWithIndex(
 // EnqueueRAGBackfillForTenant queues index jobs for all active KB entries and catalog items
 // that are not yet indexed (or failed). Loops in batches until none remain (superadmin one-shot).
 func EnqueueRAGBackfillForTenant(ctx context.Context, tenantSchema, tenantID string, batchSize int) (kbEnqueued, catalogEnqueued int, err error) {
+	return EnqueueRAGBackfillForTenantScoped(ctx, tenantSchema, tenantID, batchSize, true, true)
+}
+
+// EnqueueRAGBackfillForTenantScoped enqueues backfill only for included entity types.
+func EnqueueRAGBackfillForTenantScoped(ctx context.Context, tenantSchema, tenantID string, batchSize int, includeKB, includeCatalog bool) (kbEnqueued, catalogEnqueued int, err error) {
 	if batchSize <= 0 || batchSize > 500 {
 		batchSize = 200
+	}
+	if !includeKB && !includeCatalog {
+		return 0, 0, nil
 	}
 	if err := tenant.EnsureRetrievalSchema(ctx, tenantSchema); err != nil {
 		return 0, 0, err
@@ -86,24 +94,28 @@ func EnqueueRAGBackfillForTenant(ctx context.Context, tenantSchema, tenantID str
 	}
 
 	const maxRounds = 200 // safety: up to 200×batch per entity type (~100k rows)
-	for round := 0; round < maxRounds; round++ {
-		n, err := enqueueKBBackfill(ctx, ts, tenantSchema, tenantID, batchSize)
-		kbEnqueued += n
-		if err != nil {
-			return kbEnqueued, catalogEnqueued, err
-		}
-		if n < batchSize {
-			break
+	if includeKB {
+		for round := 0; round < maxRounds; round++ {
+			n, err := enqueueKBBackfill(ctx, ts, tenantSchema, tenantID, batchSize)
+			kbEnqueued += n
+			if err != nil {
+				return kbEnqueued, catalogEnqueued, err
+			}
+			if n < batchSize {
+				break
+			}
 		}
 	}
-	for round := 0; round < maxRounds; round++ {
-		n, err := enqueueCatalogBackfill(ctx, ts, tenantSchema, tenantID, batchSize)
-		catalogEnqueued += n
-		if err != nil {
-			return kbEnqueued, catalogEnqueued, err
-		}
-		if n < batchSize {
-			break
+	if includeCatalog {
+		for round := 0; round < maxRounds; round++ {
+			n, err := enqueueCatalogBackfill(ctx, ts, tenantSchema, tenantID, batchSize)
+			catalogEnqueued += n
+			if err != nil {
+				return kbEnqueued, catalogEnqueued, err
+			}
+			if n < batchSize {
+				break
+			}
 		}
 	}
 	return kbEnqueued, catalogEnqueued, nil
