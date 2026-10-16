@@ -7,7 +7,7 @@ import (
 	"encore.app/wabantu/shared/retrieval"
 )
 
-//encore:api auth method=GET path=/api/v1/flags/retrieval-indexing/:tenantId
+//encore:api auth method=GET path=/api/v1/flags/retrieval-indexing/:tenantId tag:super_admin
 func GetRetrievalIndexingProgress(ctx context.Context, tenantId string) (*kb.TenantIndexingProgress, error) {
 	if _, err := requireSuperAdmin(); err != nil {
 		return nil, err
@@ -23,7 +23,7 @@ type RetrievalObservabilityResponse struct {
 	Metrics retrieval.ObservabilitySnapshot `json:"metrics"`
 }
 
-//encore:api auth method=GET path=/api/v1/flags/retrieval-observability
+//encore:api auth method=GET path=/api/v1/flags/retrieval-observability tag:super_admin
 func GetRetrievalObservability(ctx context.Context) (*RetrievalObservabilityResponse, error) {
 	if _, err := requireSuperAdmin(); err != nil {
 		return nil, err

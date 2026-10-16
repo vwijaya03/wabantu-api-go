@@ -658,7 +658,7 @@ func cancelRAGRolloutJob(ctx context.Context, jobID string) (*RAGRolloutJobSumma
 	return getRAGRolloutJob(ctx, jobID)
 }
 
-//encore:api auth method=POST path=/api/v1/flags/retrieval-rollout
+//encore:api auth method=POST path=/api/v1/flags/retrieval-rollout tag:super_admin
 func StartRAGRollout(ctx context.Context, req *StartRAGRolloutRequest) (*StartRAGRolloutResponse, error) {
 	u, err := requireSuperAdmin()
 	if err != nil {
@@ -667,7 +667,7 @@ func StartRAGRollout(ctx context.Context, req *StartRAGRolloutRequest) (*StartRA
 	return enqueueRAGRollout(ctx, req, u.AccountID)
 }
 
-//encore:api auth method=GET path=/api/v1/flags/retrieval-rollout/jobs/:jobId
+//encore:api auth method=GET path=/api/v1/flags/retrieval-rollout/jobs/:jobId tag:super_admin
 func GetRAGRolloutJob(ctx context.Context, jobId string) (*RAGRolloutJobSummary, error) {
 	if _, err := requireSuperAdmin(); err != nil {
 		return nil, err
@@ -675,7 +675,7 @@ func GetRAGRolloutJob(ctx context.Context, jobId string) (*RAGRolloutJobSummary,
 	return getRAGRolloutJob(ctx, jobId)
 }
 
-//encore:api auth method=GET path=/api/v1/flags/retrieval-rollout/active-jobs
+//encore:api auth method=GET path=/api/v1/flags/retrieval-rollout/active-jobs tag:super_admin
 func ListActiveRAGRolloutJobs(ctx context.Context) (*ListRAGRolloutJobsResponse, error) {
 	if _, err := requireSuperAdmin(); err != nil {
 		return nil, err
@@ -687,7 +687,7 @@ func ListActiveRAGRolloutJobs(ctx context.Context) (*ListRAGRolloutJobsResponse,
 	return &ListRAGRolloutJobsResponse{Jobs: jobs}, nil
 }
 
-//encore:api auth method=POST path=/api/v1/flags/retrieval-rollout/jobs/:jobId/cancel
+//encore:api auth method=POST path=/api/v1/flags/retrieval-rollout/jobs/:jobId/cancel tag:super_admin
 func CancelRAGRolloutJob(ctx context.Context, jobId string) (*RAGRolloutJobSummary, error) {
 	if _, err := requireSuperAdmin(); err != nil {
 		return nil, err
