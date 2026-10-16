@@ -59,12 +59,31 @@ func extractUnnumberedOrderLines(userText string) []string {
 	return out
 }
 
+func expandStructuredOrderLineSegments(line string) []string {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return nil
+	}
+	if bf.IsInlineMultiOrderMessage(line) {
+		return bf.SplitInlineOrderSegments(line)
+	}
+	return []string{line}
+}
+
+func flattenStructuredOrderRawLines(lines []string) []string {
+	var out []string
+	for _, line := range lines {
+		out = append(out, expandStructuredOrderLineSegments(line)...)
+	}
+	return out
+}
+
 func extractStructuredOrderLines(userText string) []string {
 	if numbered := extractNumberedOrderLines(userText); len(numbered) > 0 {
-		return numbered
+		return flattenStructuredOrderRawLines(numbered)
 	}
 	if unnumbered := extractUnnumberedOrderLines(userText); len(unnumbered) > 0 {
-		return unnumbered
+		return flattenStructuredOrderRawLines(unnumbered)
 	}
 	if bf.IsInlineMultiOrderMessage(userText) {
 		return bf.SplitInlineOrderSegments(userText)

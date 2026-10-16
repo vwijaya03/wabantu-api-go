@@ -1,0 +1,16 @@
+[
+  {"topic": "broadcast-send", "subscription": "broadcast-sender"},
+  {"topic": "conversation-summarize", "subscription": "summarizer"},
+  {"topic": "tenant-schema-migrate", "subscription": "tenant-schema-migrate-worker"},
+  {"topic": "ai-jobs", "subscription": "ai-auto-reply"},
+  {"topic": "payment-proof-jobs", "subscription": "payment-proof-handler"},
+  {"topic": "faq-cache-invalidate", "subscription": "faq-cache-invalidator"},
+  {"topic": "retrieval-index", "subscription": "retrieval-index-worker"},
+  {"topic": "file-import", "subscription": "import-processor"},
+  {"topic": "rag-retrieval-rollout", "subscription": "rag-retrieval-rollout-worker"},
+  {"topic": "inbox-media-persist", "subscription": "inbox-media-persist-handler"},
+  {"topic": "image-context-jobs", "subscription": "image-context-handler"},
+  {"topic": "ai-triage-report-judge", "subscription": "ai-triage-report-judge-handler"},
+  {"topic": "webhook-retry", "subscription": "webhook-retryer"},
+  {"topic": "webhook-retry-dlq", "subscription": null}
+]
