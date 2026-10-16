@@ -61,7 +61,7 @@ Removes the **tenant override** only (global rows can't be deleted here → use 
               {"provider":"openai","id":"text-embedding-3-small","label":"OpenAI text-embedding-3-small","status":"embedding_only","vision":false} ] }
 ```
 - `enabled`: `ai_providers.enabled` (no row = enabled). Disabled providers are skipped in chains.
-- `available`: credentials present at runtime (Gemini key set, Anthropic key set). An unavailable link is skipped at runtime and the chain falls back (logged once). OpenAI availability is not reported yet (always `false`). Gemini embeddings read the same `GeminiAPIKey` process env as Gemini chat.
+- `available`: credentials present at runtime (Anthropic/Gemini keys via LLM startup; OpenAI via `OpenAIApiKey` secret on catalog refresh). An unavailable link is skipped at runtime and the chain falls back (logged once). Gemini embeddings read the same `GeminiAPIKey` process env as Gemini chat.
 - `status`: `supported` | `embedding_only`.
 
 Cost policy (defaults seeded by migrations 26/27): `payment_ocr`, `intent`, `memory` → Gemini 2.5 Flash, fallback Anthropic (Haiku). `chat` not seeded: legacy Haiku/Sonnet routing (Sonnet only for complex chat / tool-use). Actual provider/model is logged per call and stored in usage (`model`, `tier` = family alias).
