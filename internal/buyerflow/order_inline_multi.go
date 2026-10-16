@@ -345,12 +345,34 @@ func appendLinesFromIdentifiedCatalog(userText string, catalog []CatalogItem, ex
 	return out
 }
 
+// isProductQuestionNotCartAdd — "I want to ask about tuna" must not append a line to the draft.
+func isProductQuestionNotCartAdd(userText string) bool {
+	text := strings.ToLower(strings.TrimSpace(userText))
+	if text == "" || mentionsOrderQty(text) {
+		return false
+	}
+	for _, p := range []string{"want to order", "like to order", "ready to order", "mau beli", "mau order", "mau pesan"} {
+		if strings.Contains(text, p) {
+			return false
+		}
+	}
+	for _, p := range []string{"ask about", "want to ask", "would like to ask", "do you have", "tanya ", "nanya"} {
+		if strings.Contains(text, p) {
+			return true
+		}
+	}
+	return false
+}
+
 // TryAppendItemsDuringCheckout appends parsed items to active checkout state.
 func TryAppendItemsDuringCheckout(st *OrderState, userText string, catalog []CatalogItem, tmpl orderFlowTemplates, formal bool, vctx *CatalogVectorContext) (bool, string) {
 	if st == nil {
 		return false, ""
 	}
 	if IsOrderRevisionMessage(userText) || IsCartLineCorrectionIntent(userText) || IsNegatedFullOrderCancel(userText) {
+		return false, ""
+	}
+	if isProductQuestionNotCartAdd(userText) {
 		return false, ""
 	}
 	if isCheckoutFormFieldMessage(userText) {

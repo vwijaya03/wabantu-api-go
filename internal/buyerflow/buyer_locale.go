@@ -163,16 +163,53 @@ func ParseExplicitLanguageSwitch(userText string) (lang string, ok bool) {
 		return "", false
 	}
 	for _, p := range explicitEnglishSwitchPhrases {
-		if strings.Contains(text, p) {
+		if strings.Contains(text, p) && !languagePhraseNegated(text, p) {
+			return LangEN, true
+		}
+	}
+	if strings.Contains(text, "speak english") || strings.Contains(text, "talk english") {
+		if !languagePhraseNegated(text, "english") {
 			return LangEN, true
 		}
 	}
 	for _, p := range explicitIndonesianSwitchPhrases {
-		if strings.Contains(text, p) {
+		if strings.Contains(text, p) && !languagePhraseNegated(text, p) {
 			return LangID, true
 		}
 	}
 	return "", false
+}
+
+// languagePhraseNegated — "can't speak bahasa indonesia" is a refusal, not a switch to Indonesian.
+func languagePhraseNegated(text, phrase string) bool {
+	idx := strings.Index(text, phrase)
+	if idx < 0 {
+		return false
+	}
+	start := idx - 48
+	if start < 0 {
+		start = 0
+	}
+	window := text[start:idx]
+	for _, n := range []string{
+		"can't", "cannot", "cant", "don't", "do not", "dont",
+		"not ", "no,", "no i", "bukan", "jangan", "tidak", "gak bisa", "ga bisa", "nggak",
+	} {
+		if strings.Contains(window, n) {
+			return true
+		}
+	}
+	return false
+}
+
+func looksLikeShippingAddress(text string) bool {
+	if postalCodeIDRe.MatchString(text) {
+		return true
+	}
+	if strings.Contains(text, "address:") || strings.HasPrefix(strings.TrimSpace(text), "alamat") {
+		return true
+	}
+	return false
 }
 
 // ParseLanguagePreferenceAnswer parses a reply to the bilingual language question.
@@ -184,10 +221,18 @@ func ParseLanguagePreferenceAnswer(userText string) (lang string, ok bool) {
 	case "2", "id", "indonesia", "indonesian", "bahasa indonesia":
 		return LangID, true
 	}
+	if looksLikeShippingAddress(text) {
+		return "", false
+	}
 	if strings.Contains(text, "inggris") || strings.Contains(text, "english") {
-		return LangEN, true
+		if !languagePhraseNegated(text, "english") && !languagePhraseNegated(text, "inggris") {
+			return LangEN, true
+		}
 	}
 	if strings.Contains(text, "indonesia") || strings.Contains(text, "indonesian") {
+		if languagePhraseNegated(text, "indonesia") || languagePhraseNegated(text, "indonesian") {
+			return LangEN, true
+		}
 		return LangID, true
 	}
 	return "", false

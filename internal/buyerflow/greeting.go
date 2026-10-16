@@ -202,13 +202,38 @@ func isCommerceDominant(text string) bool {
 	return false
 }
 
+func greetingTailIsPure(rest string) bool {
+	rest = strings.TrimSpace(rest)
+	if rest == "" || strings.Contains(rest, "?") {
+		return false
+	}
+	fields := strings.Fields(rest)
+	if len(fields) > 3 {
+		return false
+	}
+	for _, w := range fields {
+		switch strings.Trim(w, ".,!") {
+		case "morning", "afternoon", "evening", "night",
+			"pagi", "siang", "sore", "malam",
+			"kak", "ka", "min", "gan", "bro", "there", "ya", "all":
+			continue
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 func isPureGreetingCore(text string) bool {
 	text = strings.ToLower(strings.TrimSpace(text))
 	if text == "" {
 		return false
 	}
 	for _, g := range greetingPrefixes {
-		if text == g || strings.HasPrefix(text, g+" ") {
+		if text == g {
+			return true
+		}
+		if strings.HasPrefix(text, g+" ") && greetingTailIsPure(strings.TrimSpace(text[len(g):])) {
 			return true
 		}
 	}
