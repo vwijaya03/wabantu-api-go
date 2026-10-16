@@ -21,6 +21,8 @@ type RebuildRetrievalIndexResponse struct {
 	KBEnqueued      int    `json:"kbEnqueued"`
 	CatalogEnqueued int    `json:"catalogEnqueued"`
 	PineconeWiped   bool   `json:"pineconeWiped"`
+	SyncProcessed   int    `json:"syncProcessed"`
+	SyncFailed      int    `json:"syncFailed"`
 }
 
 func rebuildIncludesFromEntities(entities []string) (includeKB, includeCatalog bool, err error) {
@@ -85,5 +87,7 @@ func RebuildRetrievalIndex(ctx context.Context, req *RebuildRetrievalIndexReques
 		KBEnqueued:      result.KBEnqueued,
 		CatalogEnqueued: result.CatalogEnqueued,
 		PineconeWiped:   result.PineconeWiped,
+		SyncProcessed:   result.SyncProcessed,
+		SyncFailed:      result.SyncFailed,
 	}, nil
 }
