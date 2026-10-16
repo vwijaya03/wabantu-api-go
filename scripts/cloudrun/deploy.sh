@@ -91,10 +91,13 @@ for row in rows:
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
+    extra = []
+    if sub == "retrieval-index-worker":
+        extra = ["--ack-deadline=600"]
     if describe.returncode != 0:
-        subprocess.check_call(["gcloud", "pubsub", "subscriptions", "create", name, *common])
+        subprocess.check_call(["gcloud", "pubsub", "subscriptions", "create", name, *common, *extra])
         print(f"created subscription {name}")
     else:
-        subprocess.check_call(["gcloud", "pubsub", "subscriptions", "update", name, *common[1:]])
+        subprocess.check_call(["gcloud", "pubsub", "subscriptions", "update", name, *common[1:], *extra])
         print(f"updated subscription {name}")
 PY
