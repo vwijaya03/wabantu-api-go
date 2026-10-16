@@ -141,6 +141,23 @@ func TestTryPaymentFAQAnswer_prefersPaymentCategoryOverShipping(t *testing.T) {
 	}
 }
 
+func TestTryPaymentFAQAnswer_informalBayarPhrase(t *testing.T) {
+	cat := "Nomor Rekening"
+	kb := []KBEntry{{
+		Question: "Nomor Rekening",
+		Answer:   "BCA 110220330 atas nama Omah Apparel",
+		Category: &cat,
+		IsActive: true,
+	}}
+	ans, ok := TryPaymentFAQAnswer("saya bayarnya gimana ini ?", kb)
+	if !ok {
+		t.Fatal("expected payment FAQ match")
+	}
+	if !strings.Contains(strings.ToUpper(ans), "BCA") {
+		t.Fatalf("unexpected answer: %q", ans)
+	}
+}
+
 func TestIsOrderRefStatusLookup(t *testing.T) {
 	if !IsOrderRefStatusLookup("WB-58D662BC") {
 		t.Fatal("bare order ref should trigger status lookup")
