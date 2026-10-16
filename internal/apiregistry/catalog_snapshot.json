@@ -1,5 +1,5 @@
 {
-  "count": 371,
+  "count": 372,
   "endpoints": [
     {
       "service": "admin",
@@ -421,7 +421,7 @@
     {
       "service": "auth",
       "file": "auth/firebase_token.go",
-      "line": 15,
+      "line": 19,
       "access": "public",
       "method": "POST",
       "path": "/api/v1/auth/firebase-token",
@@ -451,7 +451,7 @@
     {
       "service": "auth",
       "file": "auth/auth.go",
-      "line": 332,
+      "line": 349,
       "access": "public",
       "method": "GET",
       "path": "/api/v1/auth/me",
@@ -461,7 +461,7 @@
     {
       "service": "auth",
       "file": "auth/reauth.go",
-      "line": 27,
+      "line": 28,
       "access": "public",
       "method": "POST",
       "path": "/api/v1/auth/reauth",
@@ -1948,7 +1948,8 @@
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/flags/retrieval-indexing/:tenantId",
-      "annotation": "auth method=GET path=/api/v1/flags/retrieval-indexing/:tenantId"
+      "tag": "super_admin",
+      "annotation": "auth method=GET path=/api/v1/flags/retrieval-indexing/:tenantId tag:super_admin"
     },
     {
       "service": "flag",
@@ -1957,7 +1958,8 @@
       "access": "auth",
       "method": "PUT",
       "path": "/api/v1/flags/retrieval-mode",
-      "annotation": "auth method=PUT path=/api/v1/flags/retrieval-mode"
+      "tag": "super_admin",
+      "annotation": "auth method=PUT path=/api/v1/flags/retrieval-mode tag:super_admin"
     },
     {
       "service": "flag",
@@ -1966,7 +1968,8 @@
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/flags/retrieval-mode/:tenantId",
-      "annotation": "auth method=GET path=/api/v1/flags/retrieval-mode/:tenantId"
+      "tag": "super_admin",
+      "annotation": "auth method=GET path=/api/v1/flags/retrieval-mode/:tenantId tag:super_admin"
     },
     {
       "service": "flag",
@@ -1975,7 +1978,18 @@
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/flags/retrieval-observability",
-      "annotation": "auth method=GET path=/api/v1/flags/retrieval-observability"
+      "tag": "super_admin",
+      "annotation": "auth method=GET path=/api/v1/flags/retrieval-observability tag:super_admin"
+    },
+    {
+      "service": "flag",
+      "file": "flag/retrieval_rebuild.go",
+      "line": 48,
+      "access": "auth",
+      "method": "POST",
+      "path": "/api/v1/flags/retrieval-rebuild",
+      "tag": "super_admin",
+      "annotation": "auth method=POST path=/api/v1/flags/retrieval-rebuild tag:super_admin"
     },
     {
       "service": "flag",
@@ -1984,7 +1998,8 @@
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/flags/retrieval-rollout",
-      "annotation": "auth method=POST path=/api/v1/flags/retrieval-rollout"
+      "tag": "super_admin",
+      "annotation": "auth method=POST path=/api/v1/flags/retrieval-rollout tag:super_admin"
     },
     {
       "service": "flag",
@@ -1993,7 +2008,8 @@
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/flags/retrieval-rollout/active-jobs",
-      "annotation": "auth method=GET path=/api/v1/flags/retrieval-rollout/active-jobs"
+      "tag": "super_admin",
+      "annotation": "auth method=GET path=/api/v1/flags/retrieval-rollout/active-jobs tag:super_admin"
     },
     {
       "service": "flag",
@@ -2002,7 +2018,8 @@
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/flags/retrieval-rollout/jobs/:jobId",
-      "annotation": "auth method=GET path=/api/v1/flags/retrieval-rollout/jobs/:jobId"
+      "tag": "super_admin",
+      "annotation": "auth method=GET path=/api/v1/flags/retrieval-rollout/jobs/:jobId tag:super_admin"
     },
     {
       "service": "flag",
@@ -2011,7 +2028,8 @@
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/flags/retrieval-rollout/jobs/:jobId/cancel",
-      "annotation": "auth method=POST path=/api/v1/flags/retrieval-rollout/jobs/:jobId/cancel"
+      "tag": "super_admin",
+      "annotation": "auth method=POST path=/api/v1/flags/retrieval-rollout/jobs/:jobId/cancel tag:super_admin"
     },
     {
       "service": "health",
@@ -3063,7 +3081,7 @@
     {
       "service": "order",
       "file": "order/approve.go",
-      "line": 27,
+      "line": 89,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/orders/:id/approve",
@@ -3081,7 +3099,7 @@
     {
       "service": "order",
       "file": "order/payment_proof.go",
-      "line": 86,
+      "line": 88,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/orders/:id/payment-proof/reject",
@@ -3090,7 +3108,7 @@
     {
       "service": "order",
       "file": "order/payment_proof.go",
-      "line": 132,
+      "line": 134,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/orders/:id/payment-proof/unblock",
@@ -3146,7 +3164,7 @@
     {
       "service": "auth",
       "file": "auth/login_portal.go",
-      "line": 211,
+      "line": 226,
       "access": "public",
       "method": "GET",
       "path": "/api/v1/platform-admin/me",
@@ -3246,7 +3264,7 @@
     {
       "service": "webhook",
       "file": "webhook/simulator.go",
-      "line": 144,
+      "line": 147,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/simulator/messages",
@@ -3255,7 +3273,7 @@
     {
       "service": "webhook",
       "file": "webhook/simulator.go",
-      "line": 53,
+      "line": 56,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/simulator/messages",
@@ -3378,7 +3396,7 @@
     {
       "service": "webhook",
       "file": "webhook/webhook.go",
-      "line": 57,
+      "line": 54,
       "access": "public",
       "method": "*",
       "path": "/api/v1/webhook/whatsapp",
