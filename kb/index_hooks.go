@@ -175,7 +175,7 @@ func enqueueKBIndexOutbox(ctx context.Context, ts appdb.TenantScope, tenantSchem
 
 func enqueueCatalogBackfill(ctx context.Context, ts appdb.TenantScope, tenantSchema, tenantID string, batchSize int) (int, error) {
 	rows, err := ts.QueryContext(ctx, `
-		SELECT id::text, name, COALESCE(description,''), COALESCE(external_code,''), embedding_version
+		SELECT id::text, name, COALESCE(description,''), COALESCE(external_code,'')
 		FROM business_catalog_item
 		WHERE deleted_at IS NULL AND is_active = true
 		  AND embedding_status IN ('pending', 'failed')
@@ -189,24 +189,35 @@ func enqueueCatalogBackfill(ctx context.Context, ts appdb.TenantScope, tenantSch
 	enqueued := 0
 	for rows.Next() {
 		var id, name, desc, code string
-		var version int64
-		if err := rows.Scan(&id, &name, &desc, &code, &version); err != nil {
+		if err := rows.Scan(&id, &name, &desc, &code); err != nil {
 			return enqueued, err
 		}
-		if enqueueCatalogIndexOutbox(ctx, ts, tenantSchema, tenantID, id, name, desc, code, version) {
+		ok, err := enqueueCatalogIndexOutbox(ctx, ts, tenantSchema, tenantID, id, name, desc, code)
+		if err != nil {
+			return enqueued, err
+		}
+		if ok {
 			enqueued++
 		}
 	}
 	return enqueued, rows.Err()
 }
 
-func enqueueCatalogIndexOutbox(ctx context.Context, ts appdb.TenantScope, tenantSchema, tenantID, itemID, name, desc, code string, version int64) bool {
+func enqueueCatalogIndexOutbox(ctx context.Context, ts appdb.TenantScope, tenantSchema, tenantID, itemID, name, desc, code string) (bool, error) {
 	tx, err := ts.BeginTx(ctx, nil)
 	if err != nil {
-		return false
+		return false, err
 	}
 	defer func() { _ = tx.Rollback() }()
 	tTx := txn(ts, tx)
+
+	if err := supersedeStaleCatalogOutboxTx(ctx, tTx, itemID); err != nil {
+		return false, err
+	}
+	version, err := bumpCatalogEmbeddingPendingTx(ctx, tTx, itemID, name, desc, code)
+	if err != nil {
+		return false, err
+	}
 
 	hash := retrieval.CatalogContentHash(name, desc, code)
 	var outboxID string
@@ -217,10 +228,10 @@ func enqueueCatalogIndexOutbox(ctx context.Context, ts appdb.TenantScope, tenant
 		outboxIndexCatalog, catalogEntityType, itemID, version, hash,
 	).Scan(&outboxID)
 	if err != nil {
-		return false
+		return false, err
 	}
 	if err := tx.Commit(); err != nil {
-		return false
+		return false, err
 	}
 	_ = PublishRetrievalJob(ctx, &RetrievalIndexJob{
 		TenantSchema: tenantSchema,
@@ -232,5 +243,5 @@ func enqueueCatalogIndexOutbox(ctx context.Context, ts appdb.TenantScope, tenant
 		EventType:    outboxIndexCatalog,
 		Lane:         retrieval.IndexLaneBackfill,
 	})
-	return true
+	return true, nil
 }

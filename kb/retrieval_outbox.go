@@ -43,6 +43,35 @@ func supersedeStaleKBOutboxTx(ctx context.Context, ts appdb.TenantScope, entryID
 	return err
 }
 
+// supersedeStaleCatalogOutboxTx marks pending/failed catalog outbox rows done so a new version can be enqueued cleanly.
+func supersedeStaleCatalogOutboxTx(ctx context.Context, ts appdb.TenantScope, itemID string) error {
+	_, err := ts.ExecContext(ctx, `
+		UPDATE retrieval_outbox
+		SET status = 'done', processed_at = NOW(), updated_at = NOW(), last_error = NULL
+		WHERE entity_type = $1 AND entity_id = $2::uuid AND status IN ('pending', 'failed')`,
+		catalogEntityType, itemID)
+	return err
+}
+
+func bumpCatalogEmbeddingPendingTx(ctx context.Context, ts appdb.TenantScope, itemID, name, desc, code string) (int64, error) {
+	hash := retrieval.CatalogContentHash(name, desc, code)
+	var version int64
+	err := ts.QueryRowContext(ctx, `
+		UPDATE business_catalog_item
+		SET embedding_version = embedding_version + 1,
+		    embedding_status = 'pending',
+		    embedding_content_hash = $2,
+		    embedding_model = $3,
+		    embedding_updated_at = NOW(),
+		    embedding_attempts = 0,
+		    embedding_last_error = NULL
+		WHERE id = $1::uuid AND deleted_at IS NULL AND is_active = true
+		RETURNING embedding_version`,
+		itemID, hash, retrieval.EmbeddingModel,
+	).Scan(&version)
+	return version, err
+}
+
 func bumpKBEmbeddingPendingTx(ctx context.Context, ts appdb.TenantScope, entryID, question, answer string) (int64, error) {
 	hash := kbContentHash(question, answer)
 	var version int64
