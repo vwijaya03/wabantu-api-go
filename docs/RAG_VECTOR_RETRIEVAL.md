@@ -235,6 +235,13 @@ Acceptance Omah: [RAG_CONVERSATION_ACCEPTANCE.md](./RAG_CONVERSATION_ACCEPTANCE.
 | `GET /api/v1/flags/retrieval-rollout/jobs/:jobId` | Detail job rollout |
 | `GET /api/v1/flags/retrieval-rollout/active-jobs` | Job rollout yang masih berjalan |
 | `POST /api/v1/flags/retrieval-rollout/jobs/:jobId/cancel` | Batalkan job |
+| `POST /api/v1/flags/retrieval-rebuild` | Reset indexing satu tenant: wipe namespace + reset baris + enqueue, **lalu langsung return** (`queued`, `embeddingModel`, `backgroundDrain`). Tidak meng-embed di dalam request; pantau lewat `retrieval-indexing`. |
+
+### Model embedding per tenant (OpenAI / Gemini)
+
+Model aktif dibaca dari `ai_function_config` (function `embedding`, override tenant → global → default OpenAI `text-embedding-3-small`). Opsi lain: `gemini-embedding-001` dengan `outputDimensionality=1536` (indeks Pinecone tetap 1536, vektor di-L2-normalize). Satu model per namespace: dokumen dan query memakai model yang sama, dan query difilter `embedding_model` di metadata Pinecone. Ganti model wajib reindex (`confirmReindex`, lihat `API_AI_CONFIG.md`). Nilai `embedding_model` di PG ikut model aktif tenant; worker menolak baris yang model-nya beda (error sementara sampai konfigurasi merambat ≤30 dtk).
+
+`RETRIEVAL_BACKGROUND_DRAIN=1` (env proses, bukan secret): setelah rebuild, drain outbox berjalan di goroutine terpisah (1 per tenant, maks 2 tenant paralel per proses, batas 10 menit). Dipakai di Cloud Run saat push Pub/Sub gagal JWT. Encore Cloud tidak menyetelnya dan memakai subscription `retrieval-index-worker`.
 
 **Frontend:** `/dashboard/admin/ai-retrieval` (super_admin) — `lib/api/flags.ts` memakai path relatif `/flags/...` (base axios sudah `/api/v1`).
 

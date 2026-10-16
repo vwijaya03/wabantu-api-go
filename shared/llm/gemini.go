@@ -105,6 +105,9 @@ func (g *GeminiProvider) generate(ctx context.Context, model string, body gReq) 
 	if err := ValidateModel(g.ID(), model); err != nil {
 		return "", u, err
 	}
+	if IsEmbeddingModel(model) {
+		return "", u, fmt.Errorf("gemini: model %q is embedding-only", model)
+	}
 	if strings.TrimSpace(g.APIKey) == "" {
 		return "", u, fmt.Errorf("gemini: API key not configured")
 	}

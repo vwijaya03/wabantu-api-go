@@ -26,12 +26,22 @@ func EmbeddingModelSlug(model string) string {
 
 // KBContentHash hashes KB text including the active embedding model.
 func KBContentHash(question, answer string) string {
-	return ContentHash(EmbeddingModel, question, answer)
+	return KBContentHashForModel(EmbeddingModel, question, answer)
+}
+
+// KBContentHashForModel hashes KB text including the given embedding model.
+func KBContentHashForModel(model, question, answer string) string {
+	return ContentHash(model, question, answer)
 }
 
 // CatalogContentHash hashes catalog text including the active embedding model.
 func CatalogContentHash(name, description, externalCode string) string {
-	return ContentHash(EmbeddingModel, name, description, externalCode)
+	return CatalogContentHashForModel(EmbeddingModel, name, description, externalCode)
+}
+
+// CatalogContentHashForModel hashes catalog text including the given embedding model.
+func CatalogContentHashForModel(model, name, description, externalCode string) string {
+	return ContentHash(model, name, description, externalCode)
 }
 
 // KBVectorIDForModel builds a model-scoped vector id (current format).
@@ -82,11 +92,34 @@ func CatalogVectorIDsForVersions(itemID, model string, fromVer, toVer int64) []s
 
 // StoredEmbeddingModelOK returns false when PG row was indexed with a different model.
 func StoredEmbeddingModelOK(stored string) bool {
+	return StoredEmbeddingModelOKFor(stored, EmbeddingModel)
+}
+
+// StoredEmbeddingModelOKFor is StoredEmbeddingModelOK against the model configured for the tenant.
+func StoredEmbeddingModelOKFor(stored, active string) bool {
 	stored = strings.TrimSpace(stored)
 	if stored == "" {
 		return true // legacy rows before embedding_model column
 	}
-	return stored == EmbeddingModel
+	return stored == active
+}
+
+// allModelKBIDs / allModelCatalogIDs cover vectors of every known embedding model so a model
+// switch never leaves orphans behind.
+func allModelKBIDs(entryID string, fromVer, toVer int64) []string {
+	var ids []string
+	for _, m := range KnownEmbeddingModels() {
+		ids = append(ids, KBVectorIDsForVersions(entryID, m, fromVer, toVer)...)
+	}
+	return ids
+}
+
+func allModelCatalogIDs(itemID string, fromVer, toVer int64) []string {
+	var ids []string
+	for _, m := range KnownEmbeddingModels() {
+		ids = append(ids, CatalogVectorIDsForVersions(itemID, m, fromVer, toVer)...)
+	}
+	return ids
 }
 
 // PurgeStaleKBVersions deletes superseded KB vectors (versions < keepVersion).
@@ -98,7 +131,7 @@ func PurgeStaleKBVersions(ctx context.Context, svc *Service, tenant TenantIdenti
 	if err != nil {
 		return err
 	}
-	ids := KBVectorIDsForVersions(entryID, EmbeddingModel, 1, keepVersion-1)
+	ids := allModelKBIDs(entryID, 1, keepVersion-1)
 	return svc.Store.DeleteIDs(ctx, ns, ids)
 }
 
@@ -114,7 +147,7 @@ func DeleteAllKBEntryVectors(ctx context.Context, svc *Service, tenant TenantIde
 	if maxVersion < 1 {
 		maxVersion = 1
 	}
-	ids := KBVectorIDsForVersions(entryID, EmbeddingModel, 1, maxVersion)
+	ids := allModelKBIDs(entryID, 1, maxVersion)
 	if err := svc.Store.DeleteIDs(ctx, ns, ids); err != nil {
 		return err
 	}
@@ -134,7 +167,7 @@ func PurgeStaleCatalogVersions(ctx context.Context, svc *Service, tenant TenantI
 	if err != nil {
 		return err
 	}
-	ids := CatalogVectorIDsForVersions(itemID, EmbeddingModel, 1, keepVersion-1)
+	ids := allModelCatalogIDs(itemID, 1, keepVersion-1)
 	return svc.Store.DeleteIDs(ctx, ns, ids)
 }
 
@@ -150,7 +183,7 @@ func DeleteAllCatalogItemVectors(ctx context.Context, svc *Service, tenant Tenan
 	if maxVersion < 1 {
 		maxVersion = 1
 	}
-	ids := CatalogVectorIDsForVersions(itemID, EmbeddingModel, 1, maxVersion)
+	ids := allModelCatalogIDs(itemID, 1, maxVersion)
 	if err := svc.Store.DeleteIDs(ctx, ns, ids); err != nil {
 		return err
 	}

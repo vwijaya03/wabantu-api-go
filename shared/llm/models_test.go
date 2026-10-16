@@ -132,3 +132,63 @@ func io_copy(b *strings.Builder, r *http.Request) (int64, error) {
 		}
 	}
 }
+
+func TestEmbeddingAllowlistGeminiAndOpenAI(t *testing.T) {
+	ok := [][]ChainLink{
+		{{Provider: "openai", Model: "text-embedding-3-small"}},
+		{{Provider: "openai"}},
+		{{Provider: "gemini", Model: "gemini-embedding-001"}},
+	}
+	for _, chain := range ok {
+		if err := ValidateFunctionConfig(FnEmbedding, chain, 1); err != nil {
+			t.Errorf("%+v: %v", chain, err)
+		}
+	}
+}
+
+func TestEmbeddingConfigRejections(t *testing.T) {
+	bad := map[string][]ChainLink{
+		"two links":             {{Provider: "openai", Model: "text-embedding-3-small"}, {Provider: "gemini", Model: "gemini-embedding-001"}},
+		"gemini chat model":     {{Provider: "gemini", Model: "gemini-2.5-flash"}},
+		"gemini no model":       {{Provider: "gemini"}},
+		"anthropic":             {{Provider: "anthropic"}},
+		"cross provider models": {{Provider: "openai", Model: "gemini-embedding-001"}},
+	}
+	for name, chain := range bad {
+		if err := ValidateFunctionConfig(FnEmbedding, chain, 1); err == nil {
+			t.Errorf("%s: want error", name)
+		}
+	}
+}
+
+func TestGeminiEmbeddingModelRejectedForChatFunctions(t *testing.T) {
+	for _, fn := range []Function{FnChat, FnIntent, FnOCR, FnPaymentOCR, FnVision, FnMemory} {
+		err := ValidateFunctionConfig(fn, []ChainLink{{Provider: "gemini", Model: "gemini-embedding-001"}}, 1)
+		if err == nil {
+			t.Errorf("%s must reject gemini-embedding-001", fn)
+		}
+	}
+}
+
+func TestGeminiProviderRefusesEmbeddingModelForGenerate(t *testing.T) {
+	hit := false
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { hit = true }))
+	defer srv.Close()
+	g := NewGeminiProvider("k")
+	g.BaseURL = srv.URL
+	if _, _, err := g.Complete(context.Background(), "gemini-embedding-001", "", "x", 0); err == nil || hit {
+		t.Fatalf("err=%v hit=%v", err, hit)
+	}
+}
+
+func TestCatalogListsGeminiEmbeddingAsEmbeddingOnly(t *testing.T) {
+	for _, m := range CatalogModels() {
+		if m.ID == "gemini-embedding-001" {
+			if m.Provider != "gemini" || m.Status != ModelEmbeddingOnly || m.Vision {
+				t.Fatalf("unexpected catalog entry: %+v", m)
+			}
+			return
+		}
+	}
+	t.Fatal("gemini-embedding-001 missing from catalog")
+}

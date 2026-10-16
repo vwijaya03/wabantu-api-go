@@ -21,8 +21,8 @@ func ensureRetrievalSchema(ctx context.Context, schema string) error {
 	return tenant.EnsureRetrievalSchema(ctx, schema)
 }
 
-func kbContentHash(question, answer string) string {
-	return retrieval.KBContentHash(question, answer)
+func kbContentHash(model, question, answer string) string {
+	return retrieval.KBContentHashForModel(model, question, answer)
 }
 
 func enqueueKBOutboxTx(ctx context.Context, ts appdb.TenantScope, eventType, entryID string, version int64, hash string) error {
@@ -53,8 +53,8 @@ func supersedeStaleCatalogOutboxTx(ctx context.Context, ts appdb.TenantScope, it
 	return err
 }
 
-func bumpCatalogEmbeddingPendingTx(ctx context.Context, ts appdb.TenantScope, itemID, name, desc, code string) (int64, error) {
-	hash := retrieval.CatalogContentHash(name, desc, code)
+func bumpCatalogEmbeddingPendingTx(ctx context.Context, ts appdb.TenantScope, model, itemID, name, desc, code string) (int64, error) {
+	hash := retrieval.CatalogContentHashForModel(model, name, desc, code)
 	var version int64
 	err := ts.QueryRowContext(ctx, `
 		UPDATE business_catalog_item
@@ -67,13 +67,13 @@ func bumpCatalogEmbeddingPendingTx(ctx context.Context, ts appdb.TenantScope, it
 		    embedding_last_error = NULL
 		WHERE id = $1::uuid AND deleted_at IS NULL AND is_active = true
 		RETURNING embedding_version`,
-		itemID, hash, retrieval.EmbeddingModel,
+		itemID, hash, model,
 	).Scan(&version)
 	return version, err
 }
 
-func bumpKBEmbeddingPendingTx(ctx context.Context, ts appdb.TenantScope, entryID, question, answer string) (int64, error) {
-	hash := kbContentHash(question, answer)
+func bumpKBEmbeddingPendingTx(ctx context.Context, ts appdb.TenantScope, model, entryID, question, answer string) (int64, error) {
+	hash := kbContentHash(model, question, answer)
 	var version int64
 	err := ts.QueryRowContext(ctx, `
 		UPDATE knowledge_base_entry
@@ -86,7 +86,7 @@ func bumpKBEmbeddingPendingTx(ctx context.Context, ts appdb.TenantScope, entryID
 		    embedding_last_error = NULL
 		WHERE id = $1::uuid AND deleted_at IS NULL
 		RETURNING embedding_version`,
-		entryID, hash, retrieval.EmbeddingModel,
+		entryID, hash, model,
 	).Scan(&version)
 	return version, err
 }
@@ -122,7 +122,7 @@ func markKBIndexFailed(ctx context.Context, ts interface {
 	return err
 }
 
-func loadKBForIndex(ctx context.Context, ts appdb.TenantScope, entryID string, wantVersion int64) (question, answer, category string, version int64, hash string, ok bool, err error) {
+func loadKBForIndex(ctx context.Context, ts appdb.TenantScope, tenantID, entryID string, wantVersion int64) (question, answer, category string, version int64, hash string, ok bool, err error) {
 	var isActive bool
 	var storedModel sql.NullString
 	err = ts.QueryRowContext(ctx, `
@@ -144,9 +144,15 @@ func loadKBForIndex(ctx context.Context, ts appdb.TenantScope, entryID string, w
 	if !isActive {
 		return "", "", "", version, hash, false, nil
 	}
-	if storedModel.Valid && !retrieval.StoredEmbeddingModelOK(storedModel.String) {
-		return "", "", "", version, hash, false, fmt.Errorf("embedding model mismatch: stored %q want %q",
-			storedModel.String, retrieval.EmbeddingModel)
+	if storedModel.Valid {
+		active, rerr := retrieval.ResolveEmbeddingModel(ctx, tenantID)
+		if rerr != nil {
+			return "", "", "", version, hash, false, rerr
+		}
+		if !retrieval.StoredEmbeddingModelOKFor(storedModel.String, active) {
+			return "", "", "", version, hash, false, fmt.Errorf("embedding model mismatch (config propagating, retrying temporarily): stored %q want %q",
+				storedModel.String, active)
+		}
 	}
 	return question, answer, category, version, hash, true, nil
 }

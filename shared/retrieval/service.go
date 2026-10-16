@@ -34,10 +34,13 @@ type RetrieveKBResult struct {
 // Service wires embedder + vector store + resilience.
 type Service struct {
 	Embedder Embedder
-	Store    VectorStore
-	Breaker  *CircuitBreaker // legacy/tests; production uses Breakers
-	Breakers *BreakerPool
-	Budget   *Budget
+	// Embedders maps embedding model id → embedder. When non-empty the active model is resolved
+	// per tenant (ResolveEmbeddingModel); otherwise Embedder is used for everything (tests, legacy).
+	Embedders map[string]Embedder
+	Store     VectorStore
+	Breaker   *CircuitBreaker // legacy/tests; production uses Breakers
+	Breakers  *BreakerPool
+	Budget    *Budget
 }
 
 func NewService(embedder Embedder, store VectorStore) *Service {
@@ -47,6 +50,30 @@ func NewService(embedder Embedder, store VectorStore) *Service {
 		Breakers: NewBreakerPool(5, 30*time.Second),
 		Budget:   NewBudget(8),
 	}
+}
+
+// hasEmbedder reports whether any embedder is configured.
+func (s *Service) hasEmbedder() bool {
+	return s != nil && (s.Embedder != nil || len(s.Embedders) > 0)
+}
+
+// embedderFor returns the embedder and model id active for tenantID. One model per namespace:
+// documents and queries must use the same one, so a resolver error is returned, never guessed.
+func (s *Service) embedderFor(ctx context.Context, tenantID string) (Embedder, string, error) {
+	if !s.hasEmbedder() {
+		return nil, "", ErrServiceNotConfigured
+	}
+	if len(s.Embedders) == 0 {
+		return s.Embedder, EmbeddingModel, nil
+	}
+	model, err := ResolveEmbeddingModel(ctx, tenantID)
+	if err != nil {
+		return nil, "", err
+	}
+	if e := s.Embedders[model]; e != nil {
+		return e, model, nil
+	}
+	return nil, "", fmt.Errorf("%w: no credentials for embedding model %q", ErrServiceNotConfigured, model)
 }
 
 func (s *Service) breakerFor(tenantID string) *CircuitBreaker {
@@ -79,7 +106,7 @@ func (s *Service) RetrieveKB(ctx context.Context, req RetrieveKBRequest, lexical
 		res.LexicalHits = lexicalHits
 	}
 
-	if req.Mode == ModeDisabled || s == nil || s.Embedder == nil || s.Store == nil {
+	if req.Mode == ModeDisabled || !s.hasEmbedder() || s.Store == nil {
 		res.Entries = lexicalHits
 		return res, nil
 	}
@@ -111,8 +138,12 @@ func (s *Service) RetrieveKB(ctx context.Context, req RetrieveKBRequest, lexical
 	var vectorHits []Hit
 	start := time.Now()
 	err = WithBudget(ctx, s.Budget, func() error {
+		embedder, model, e := s.embedderFor(ctx, req.Tenant.TenantID)
+		if e != nil {
+			return e
+		}
 		embedStart := time.Now()
-		vecs, e := s.Embedder.Embed(ctx, []string{SanitizeForEmbed(req.Query)})
+		vecs, e := embedder.Embed(ctx, []string{SanitizeForEmbed(req.Query)})
 		RecordEmbedLatency(time.Since(embedStart))
 		if e != nil {
 			return e
@@ -121,7 +152,7 @@ func (s *Service) RetrieveKB(ctx context.Context, req RetrieveKBRequest, lexical
 			return fmt.Errorf("empty query embedding")
 		}
 		storeStart := time.Now()
-		vectorHits, e = s.Store.Query(ctx, ns, vecs[0], req.TopK, PineconeFilterActiveKB())
+		vectorHits, e = s.Store.Query(ctx, ns, vecs[0], req.TopK, PineconeFilterActiveKBForModel(model))
 		RecordStoreLatency(time.Since(storeStart))
 		return e
 	})
@@ -177,14 +208,18 @@ func (s *Service) RetrieveKB(ctx context.Context, req RetrieveKBRequest, lexical
 
 // IndexKB upserts KB entry vectors (idempotent by vector id).
 func (s *Service) IndexKB(ctx context.Context, tenant TenantIdentity, entryID, category, question, answer string, version int64) error {
-	if s == nil || s.Embedder == nil || s.Store == nil {
+	if !s.hasEmbedder() || s.Store == nil {
 		return fmt.Errorf("retrieval service not configured")
 	}
 	ns, err := Namespace(tenant)
 	if err != nil {
 		return err
 	}
-	chunks := ChunkKB(entryID, version, question, answer)
+	embedder, model, err := s.embedderFor(ctx, tenant.TenantID)
+	if err != nil {
+		return err
+	}
+	chunks := ChunkKBForModel(model, entryID, version, question, answer)
 	if len(chunks) == 0 {
 		return nil
 	}
@@ -192,14 +227,14 @@ func (s *Service) IndexKB(ctx context.Context, tenant TenantIdentity, entryID, c
 	for i, c := range chunks {
 		texts[i] = c.Text
 	}
-	vectors, err := s.Embedder.Embed(ctx, texts)
+	vectors, err := embedder.Embed(ctx, texts)
 	if err != nil {
 		return err
 	}
-	if err := ValidateVectors(s.Embedder, vectors); err != nil {
+	if err := ValidateVectors(embedder, vectors); err != nil {
 		return err
 	}
-	recs, err := BuildKBVectorRecords(entryID, version, category, KBContentHash(question, answer), chunks, vectors)
+	recs, err := BuildKBVectorRecordsForModel(model, entryID, version, category, KBContentHashForModel(model, question, answer), chunks, vectors)
 	if err != nil {
 		return err
 	}
@@ -215,9 +250,9 @@ func (s *Service) DeleteKB(ctx context.Context, tenant TenantIdentity, entryID s
 	if err != nil {
 		return err
 	}
-	ids := []string{
-		LegacyKBVectorID(entryID, version, 0),
-		KBVectorID(entryID, version, 0),
+	ids := []string{LegacyKBVectorID(entryID, version, 0)}
+	for _, m := range KnownEmbeddingModels() {
+		ids = append(ids, KBVectorIDForModel(entryID, m, version, 0))
 	}
 	return s.Store.DeleteIDs(ctx, ns, ids)
 }

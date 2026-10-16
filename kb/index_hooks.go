@@ -41,6 +41,7 @@ func InsertKBEntryWithIndex(
 	defer func() { _ = tx.Rollback() }()
 	tTx := txn(ts, tx)
 
+	model := retrieval.ActiveEmbeddingModel(ctx, tenantID)
 	var version int64
 	err = tTx.QueryRowContext(ctx, `
 		INSERT INTO knowledge_base_entry (question, answer, category, source, is_active,
@@ -48,7 +49,7 @@ func InsertKBEntryWithIndex(
 		VALUES ($1, $2, $3, $4, $5, 1, 'pending', $6, $7, NOW())
 		RETURNING id::text, embedding_version`,
 		question, answer, category, source, isActive,
-		kbContentHash(question, answer), retrieval.EmbeddingModel,
+		kbContentHash(model, question, answer), model,
 	).Scan(&entryID, &version)
 	if err != nil {
 		return "", fmt.Errorf("insert KB: %w", err)
@@ -59,7 +60,7 @@ func InsertKBEntryWithIndex(
 		INSERT INTO retrieval_outbox (event_type, entity_type, entity_id, version, content_hash, status)
 		VALUES ($1, $2, $3::uuid, $4, $5, 'pending')
 		RETURNING id::text`,
-		outboxEventIndexKB, entityTypeKB, entryID, version, kbContentHash(question, answer),
+		outboxEventIndexKB, entityTypeKB, entryID, version, kbContentHash(model, question, answer),
 	).Scan(&outboxID)
 	if err != nil {
 		return "", err
@@ -163,12 +164,13 @@ func enqueueKBIndexOutbox(ctx context.Context, ts appdb.TenantScope, tenantSchem
 	if err := supersedeStaleKBOutboxTx(ctx, tTx, entryID); err != nil {
 		return false, err
 	}
-	version, err := bumpKBEmbeddingPendingTx(ctx, tTx, entryID, question, answer)
+	model := retrieval.ActiveEmbeddingModel(ctx, tenantID)
+	version, err := bumpKBEmbeddingPendingTx(ctx, tTx, model, entryID, question, answer)
 	if err != nil {
 		return false, err
 	}
 
-	hash := kbContentHash(question, answer)
+	hash := kbContentHash(model, question, answer)
 	var outboxID string
 	err = tTx.QueryRowContext(ctx, `
 		INSERT INTO retrieval_outbox (event_type, entity_type, entity_id, version, content_hash, status)
@@ -227,12 +229,13 @@ func enqueueCatalogIndexOutbox(ctx context.Context, ts appdb.TenantScope, tenant
 	if err := supersedeStaleCatalogOutboxTx(ctx, tTx, itemID); err != nil {
 		return false, err
 	}
-	version, err := bumpCatalogEmbeddingPendingTx(ctx, tTx, itemID, name, desc, code)
+	model := retrieval.ActiveEmbeddingModel(ctx, tenantID)
+	version, err := bumpCatalogEmbeddingPendingTx(ctx, tTx, model, itemID, name, desc, code)
 	if err != nil {
 		return false, err
 	}
 
-	hash := retrieval.CatalogContentHash(name, desc, code)
+	hash := retrieval.CatalogContentHashForModel(model, name, desc, code)
 	var outboxID string
 	err = tTx.QueryRowContext(ctx, `
 		INSERT INTO retrieval_outbox (event_type, entity_type, entity_id, version, content_hash, status)

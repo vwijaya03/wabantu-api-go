@@ -246,13 +246,14 @@ func Create(ctx context.Context, req *CreateRequest) (*CreateResponse, error) {
 
 	var entry KBEntry
 	var version int64
+	model := retrieval.ActiveEmbeddingModel(ctx, u.TenantID)
 	err = tTx.QueryRowContext(ctx, `
 		INSERT INTO knowledge_base_entry (question, answer, category, source, is_active,
 		    embedding_version, embedding_status, embedding_content_hash, embedding_model, embedding_updated_at)
 		VALUES ($1, $2, $3, $4, $5, 1, 'pending', $6, $7, NOW())
 		RETURNING id, question, answer, category, source, is_active, created_at, updated_at, embedding_version`,
 		req.Question, req.Answer, req.Category, source, isActive,
-		kbContentHash(req.Question, req.Answer), retrieval.EmbeddingModel,
+		kbContentHash(model, req.Question, req.Answer), model,
 	).Scan(&entry.ID, &entry.Question, &entry.Answer, &entry.Category,
 		&entry.Source, &entry.IsActive, &entry.CreatedAt, &entry.UpdatedAt, &version)
 	if err != nil {
@@ -264,7 +265,7 @@ func Create(ctx context.Context, req *CreateRequest) (*CreateResponse, error) {
 		INSERT INTO retrieval_outbox (event_type, entity_type, entity_id, version, content_hash, status)
 		VALUES ($1, $2, $3::uuid, $4, $5, 'pending')
 		RETURNING id::text`,
-		outboxEventIndexKB, entityTypeKB, entry.ID, version, kbContentHash(req.Question, req.Answer),
+		outboxEventIndexKB, entityTypeKB, entry.ID, version, kbContentHash(model, req.Question, req.Answer),
 	).Scan(&outboxID)
 	if err != nil {
 		return nil, fmt.Errorf("enqueue KB outbox: %w", err)
@@ -354,11 +355,12 @@ func Update(ctx context.Context, id string, req *UpdateRequest) (*UpdateResponse
 		return nil, fmt.Errorf("update KB entry: %w", err)
 	}
 
-	version, err := bumpKBEmbeddingPendingTx(ctx, tTx, entry.ID, entry.Question, entry.Answer)
+	model := retrieval.ActiveEmbeddingModel(ctx, u.TenantID)
+	version, err := bumpKBEmbeddingPendingTx(ctx, tTx, model, entry.ID, entry.Question, entry.Answer)
 	if err != nil {
 		return nil, fmt.Errorf("bump embedding version: %w", err)
 	}
-	hash := kbContentHash(entry.Question, entry.Answer)
+	hash := kbContentHash(model, entry.Question, entry.Answer)
 	eventType := outboxEventIndexKB
 	if !entry.IsActive {
 		eventType = outboxEventDeleteKB
