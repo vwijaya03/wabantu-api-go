@@ -449,6 +449,9 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 		if phone != "" {
 			st.RecipientPhone = phone
 		}
+		if st.RecipientName != "" && st.RecipientPhone == "" && plausibleRecipientName(st.RecipientName) {
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: recipientClarifyPhoneReply(st, userText, formal)}
+		}
 		if st.RecipientName == "" || st.RecipientPhone == "" {
 			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: tmpl.AskRecipient}
 		}
