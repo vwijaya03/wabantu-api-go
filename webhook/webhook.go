@@ -198,13 +198,11 @@ func ingestResolved(ctx context.Context, schema, channelID string, msg whatsapp.
 		rlog.Warn("workflow evaluation failed", "err", wfErr)
 	}
 	if !handled {
-		publishJobWithRetry(ctx, "ai-inbound", func(ctx context.Context) error {
-			return ai.PublishInboundJob(ctx, &ai.InboundAIJob{
-				TenantSchema:     schema,
-				ConversationID:   convoID,
-				InboundMessageID: messageID,
-				InboundType:      msg.Type,
-			})
+		enqueueInboundAI(ctx, &ai.InboundAIJob{
+			TenantSchema:     schema,
+			ConversationID:   convoID,
+			InboundMessageID: messageID,
+			InboundType:      msg.Type,
 		})
 	}
 
