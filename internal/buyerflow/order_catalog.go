@@ -571,7 +571,7 @@ func mergeShippingText(st *OrderState, userText string) {
 			if p := phoneIDRe.FindString(val); p != "" {
 				st.RecipientPhone = normalizePhoneID(p)
 			}
-		case strings.HasPrefix(low, "jalan"), strings.HasPrefix(low, "alamat jalan"), strings.HasPrefix(low, "jl"):
+		case strings.HasPrefix(low, "jalan"), strings.HasPrefix(low, "alamat"), strings.HasPrefix(low, "address"), strings.HasPrefix(low, "jl"):
 			if val != "" {
 				st.Street = val
 			}
@@ -669,7 +669,22 @@ func parseUnstructuredAddress(st *OrderState, lower, raw string) {
 			}
 		}
 	}
-	_ = raw
+	if st.Street == "" && st.City != "" {
+		idx := strings.Index(lower, strings.ToLower(st.City))
+		if idx > 3 {
+			street := strings.Trim(raw[:idx], " ,\n")
+			lowStreet := strings.ToLower(street)
+			for _, label := range []string{"address:", "alamat:"} {
+				if i := strings.LastIndex(lowStreet, label); i >= 0 {
+					street = strings.TrimSpace(street[i+len(label):])
+				}
+			}
+			street = strings.Trim(street, " ,")
+			if len(street) > 3 {
+				st.Street = street
+			}
+		}
+	}
 }
 
 func labelValue(line string) string {
