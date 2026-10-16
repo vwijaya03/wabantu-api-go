@@ -29,12 +29,8 @@ var RetrievalIndexTopic = pubsub.NewTopic[*RetrievalIndexJob]("retrieval-index",
 	DeliveryGuarantee: pubsub.AtLeastOnce,
 })
 
-var _ = pubsub.NewSubscription(RetrievalIndexTopic, "retrieval-index-worker", pubsub.SubscriptionConfig[*RetrievalIndexJob]{
-	Handler:     handleRetrievalIndexJob,
-	RetryPolicy: &pubsub.RetryPolicy{MaxRetries: 5},
-})
-
-func handleRetrievalIndexJob(ctx context.Context, job *RetrievalIndexJob) error {
+// HandleRetrievalIndexJob processes one retrieval outbox job (KB or catalog).
+func HandleRetrievalIndexJob(ctx context.Context, job *RetrievalIndexJob) error {
 	if job == nil {
 		return nil
 	}

@@ -3,6 +3,7 @@ package kb
 import (
 	"context"
 	"fmt"
+	"time"
 
 	appdb "encore.app/wabantu/shared/db"
 	"encore.app/wabantu/shared/retrieval"
@@ -254,6 +255,7 @@ func enqueueCatalogIndexOutbox(ctx context.Context, ts appdb.TenantScope, tenant
 		Version:      version,
 		EventType:    outboxIndexCatalog,
 		Lane:         retrieval.IndexLaneBackfill,
+		EnqueuedAt:   time.Now().UTC(),
 	})
 	return true, nil
 }
