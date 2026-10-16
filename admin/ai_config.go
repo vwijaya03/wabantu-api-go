@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"encore.app/wabantu/audit"
+	"encore.app/wabantu/ai"
 	"encore.app/wabantu/shared/llm"
 	"encore.app/wabantu/shared/retrieval"
 )
@@ -252,6 +253,8 @@ func GetAICatalog(ctx context.Context) (*GetAICatalogResponse, error) {
 	if _, err := requireSuperAdmin(ctx); err != nil {
 		return nil, err
 	}
+	ai.SyncProviderAvailabilityForCatalog()
+	retrieval.SyncOpenAIProviderAvailability()
 	enabled := map[string]bool{}
 	rows, err := db.Stdlib().QueryContext(ctx, `SELECT id, enabled FROM ai_providers`)
 	if err == nil {
