@@ -34,8 +34,14 @@ func SplitInlineOrderSegments(userText string) []string {
 	return splitInlineOrderSegments(userText)
 }
 
+var trailingOrderPoliteRe = regexp.MustCompile(`(?i)(?:,\s*)?(?:please|thanks|thank you|pls)\s*[.!?]*\s*$`)
+
+func stripTrailingOrderPolite(text string) string {
+	return strings.TrimSpace(trailingOrderPoliteRe.ReplaceAllString(strings.TrimSpace(text), ""))
+}
+
 func splitInlineOrderSegments(userText string) []string {
-	text := strings.TrimSpace(userText)
+	text := stripTrailingOrderPolite(userText)
 	if text == "" {
 		return nil
 	}

@@ -147,6 +147,32 @@ CELANA DALAM BOXER ANAK PEREMPUAN MOTIF HELLO KITTY BUNGA LEMBUT - XXL 3 lusin`
 	}
 }
 
+func omahSteakCatalog() []dbCatalogItem {
+	return []dbCatalogItem{
+		{ID: "salmon-100", ExternalCode: "SALMON_STEAK_100_GRAM", Name: "Salmon Steak 100 Gram", SellPrice: 75000},
+		{ID: "tuna-100", ExternalCode: "YELLOW_TAIL_TUNA_PORTION_100_GRAM", Name: "Yellow Tail Tuna Portion 100 Gram", SellPrice: 350000, SellUnit: "pcs"},
+	}
+}
+
+func TestParseStructuredOrderLines_multilineCommaTwoSKUs(t *testing.T) {
+	catalog := omahSteakCatalog()
+	msg := "Ehmm okay\nI wang to order 1 salmons teak 100gr, 1 Yellow tail tuna , please"
+	parsed := parseStructuredOrderLines(msg, catalog, nil)
+	if len(parsed.Lines) != 2 {
+		t.Fatalf("want 2 lines, got %d unmatched=%v", len(parsed.Lines), parsed.Unmatched)
+	}
+	ids := map[string]bool{}
+	for _, ln := range parsed.Lines {
+		if ln.Qty != 1 {
+			t.Fatalf("qty want 1, got %d for %s", ln.Qty, ln.ProductName)
+		}
+		ids[ln.CatalogItemID] = true
+	}
+	if !ids["salmon-100"] || !ids["tuna-100"] {
+		t.Fatalf("want salmon-100 and tuna-100, got lines=%v", parsed.Lines)
+	}
+}
+
 func TestFormatMultiOrderSummary_helloKittyThreeSKUs(t *testing.T) {
 	catalog := helloKittyCatalog()
 	msg := `mau order ini ya min

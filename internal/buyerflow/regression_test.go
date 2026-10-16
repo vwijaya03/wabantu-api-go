@@ -112,6 +112,35 @@ func TestTryPaymentFAQAnswer(t *testing.T) {
 	}
 }
 
+func TestTryPaymentFAQAnswer_prefersPaymentCategoryOverShipping(t *testing.T) {
+	ship := "pengiriman"
+	pay := "pembayaran"
+	kb := []KBEntry{
+		{
+			Question: "Kapan pesanan akan dikirim?",
+			Answer:   "Pesanan dan pembayaran yang kami terima antara pukul 08:00 hingga 12:00 WIB akan dikirim di hari yang sama.",
+			Category: &ship,
+			IsActive: true,
+		},
+		{
+			Question: "Apa saja metode pembayaran yang tersedia?",
+			Answer:   "Transfer Bank BCA 000111222 atas nama Omah Apparel",
+			Category: &pay,
+			IsActive: true,
+		},
+	}
+	ans, ok := TryPaymentFAQAnswer("Where should i send payment?", kb)
+	if !ok {
+		t.Fatal("expected payment FAQ match")
+	}
+	if strings.Contains(ans, "08:00") || strings.Contains(ans, "same day") {
+		t.Fatalf("must not return shipping FAQ: %q", ans)
+	}
+	if !strings.Contains(strings.ToUpper(ans), "BCA") {
+		t.Fatalf("expected bank details: %q", ans)
+	}
+}
+
 func TestIsOrderRefStatusLookup(t *testing.T) {
 	if !IsOrderRefStatusLookup("WB-58D662BC") {
 		t.Fatal("bare order ref should trigger status lookup")
