@@ -36,6 +36,8 @@ var pricingTable = map[string]modelPricing{
 	"gemini-2.5-pro":        {InputPer1M: 1.25, OutputPer1M: 10.00},
 	// OpenAI embeddings: input only (platform.openai.com/docs/pricing).
 	"text-embedding-3-small": {InputPer1M: 0.02, OutputPer1M: 0},
+	// Gemini embedding (ai.google.dev/gemini-api/docs/pricing): input only, paid tier.
+	"gemini-embedding-001": {InputPer1M: 0.15, OutputPer1M: 0},
 }
 
 // EstimateTokenCost returns the estimated USD cost for a given model and token counts.

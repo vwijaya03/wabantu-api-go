@@ -62,7 +62,7 @@ func recordCatalogIndexFailure(ctx context.Context, ts appdb.TenantScope, job *R
 }
 
 func processCatalogIndex(ctx context.Context, ts appdb.TenantScope, svc *retrieval.Service, tenant retrieval.TenantIdentity, job *RetrievalIndexJob) error {
-	name, desc, code, ver, hash, ok, err := loadCatalogForIndex(ctx, ts, job.EntityID, job.Version)
+	name, desc, code, ver, hash, ok, err := loadCatalogForIndex(ctx, ts, job.TenantID, job.EntityID, job.Version)
 	if err != nil {
 		return err
 	}
@@ -84,7 +84,7 @@ func processCatalogIndex(ctx context.Context, ts appdb.TenantScope, svc *retriev
 	return nil
 }
 
-func loadCatalogForIndex(ctx context.Context, ts appdb.TenantScope, itemID string, wantVersion int64) (name, description, code string, version int64, hash string, ok bool, err error) {
+func loadCatalogForIndex(ctx context.Context, ts appdb.TenantScope, tenantID, itemID string, wantVersion int64) (name, description, code string, version int64, hash string, ok bool, err error) {
 	var isActive bool
 	var storedModel sql.NullString
 	err = ts.QueryRowContext(ctx, `
@@ -106,9 +106,15 @@ func loadCatalogForIndex(ctx context.Context, ts appdb.TenantScope, itemID strin
 	if !isActive {
 		return "", "", "", version, hash, false, nil
 	}
-	if storedModel.Valid && !retrieval.StoredEmbeddingModelOK(storedModel.String) {
-		return "", "", "", version, hash, false, fmt.Errorf("embedding model mismatch: stored %q want %q",
-			storedModel.String, retrieval.EmbeddingModel)
+	if storedModel.Valid {
+		active, rerr := retrieval.ResolveEmbeddingModel(ctx, tenantID)
+		if rerr != nil {
+			return "", "", "", version, hash, false, rerr
+		}
+		if !retrieval.StoredEmbeddingModelOKFor(storedModel.String, active) {
+			return "", "", "", version, hash, false, fmt.Errorf("embedding model mismatch (config propagating, retrying temporarily): stored %q want %q",
+				storedModel.String, active)
+		}
 	}
 	return name, description, code, version, hash, true, nil
 }

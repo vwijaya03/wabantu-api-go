@@ -113,7 +113,7 @@ func recordKBIndexFailure(ctx context.Context, ts appdb.TenantScope, job *Retrie
 }
 
 func processKBIndex(ctx context.Context, ts appdb.TenantScope, svc *retrieval.Service, tenant retrieval.TenantIdentity, job *RetrievalIndexJob) error {
-	q, a, cat, ver, hash, ok, err := loadKBForIndex(ctx, ts, job.EntityID, job.Version)
+	q, a, cat, ver, hash, ok, err := loadKBForIndex(ctx, ts, job.TenantID, job.EntityID, job.Version)
 	if err != nil {
 		return err
 	}

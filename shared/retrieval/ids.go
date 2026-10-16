@@ -54,28 +54,38 @@ func CatalogDocumentText(name, description, externalCode string) string {
 	return b.String()
 }
 
-// ChunkKB splits a KB entry into chunks (v1: single chunk).
+// ChunkKB splits a KB entry into chunks (v1: single chunk) for the default model.
 func ChunkKB(entryID string, version int64, question, answer string) []Chunk {
+	return ChunkKBForModel(EmbeddingModel, entryID, version, question, answer)
+}
+
+// ChunkKBForModel is ChunkKB with model-scoped vector ids.
+func ChunkKBForModel(model, entryID string, version int64, question, answer string) []Chunk {
 	text := KBDocumentText(question, answer)
 	if text == "" {
 		return nil
 	}
 	return []Chunk{{
-		ID:      KBVectorID(entryID, version, 0),
+		ID:      KBVectorIDForModel(entryID, model, version, 0),
 		Index:   0,
 		Text:    text,
 		Version: version,
 	}}
 }
 
-// ChunkCatalog splits catalog item into chunks (v1: single chunk).
+// ChunkCatalog splits catalog item into chunks (v1: single chunk) for the default model.
 func ChunkCatalog(itemID string, version int64, name, description, externalCode string) []Chunk {
+	return ChunkCatalogForModel(EmbeddingModel, itemID, version, name, description, externalCode)
+}
+
+// ChunkCatalogForModel is ChunkCatalog with model-scoped vector ids.
+func ChunkCatalogForModel(model, itemID string, version int64, name, description, externalCode string) []Chunk {
 	text := CatalogDocumentText(name, description, externalCode)
 	if text == "" {
 		return nil
 	}
 	return []Chunk{{
-		ID:      CatalogVectorID(itemID, version, 0),
+		ID:      CatalogVectorIDForModel(itemID, model, version, 0),
 		Index:   0,
 		Text:    text,
 		Version: version,
@@ -85,6 +95,11 @@ func ChunkCatalog(itemID string, version int64, name, description, externalCode 
 // BuildKBVectorRecords builds Pinecone records from chunks and embeddings.
 // Metadata stores entry_id + content_hash only (no raw Q&A text in Pinecone).
 func BuildKBVectorRecords(entryID string, version int64, category, contentHash string, chunks []Chunk, vectors [][]float32) ([]VectorRecord, error) {
+	return BuildKBVectorRecordsForModel(EmbeddingModel, entryID, version, category, contentHash, chunks, vectors)
+}
+
+// BuildKBVectorRecordsForModel stamps embedding_model metadata with the model that produced vectors.
+func BuildKBVectorRecordsForModel(model, entryID string, version int64, category, contentHash string, chunks []Chunk, vectors [][]float32) ([]VectorRecord, error) {
 	if len(chunks) != len(vectors) {
 		return nil, fmt.Errorf("chunks/vectors length mismatch: %d vs %d", len(chunks), len(vectors))
 	}
@@ -95,7 +110,7 @@ func BuildKBVectorRecords(entryID string, version int64, category, contentHash s
 			"entry_id":        entryID,
 			"version":         version,
 			"chunk":           ch.Index,
-			"embedding_model": EmbeddingModel,
+			"embedding_model": model,
 		}
 		if contentHash != "" {
 			meta["content_hash"] = contentHash
@@ -133,17 +148,27 @@ func Namespace(tenant TenantIdentity) (string, error) {
 
 // PineconeFilterActiveKB returns metadata filter for active KB entries on the current model.
 func PineconeFilterActiveKB() map[string]any {
+	return PineconeFilterActiveKBForModel(EmbeddingModel)
+}
+
+// PineconeFilterActiveKBForModel restricts a query to vectors produced by model.
+func PineconeFilterActiveKBForModel(model string) map[string]any {
 	return map[string]any{
 		"source":          map[string]any{"$eq": string(SourceKB)},
-		"embedding_model": map[string]any{"$eq": EmbeddingModel},
+		"embedding_model": map[string]any{"$eq": model},
 	}
 }
 
 // PineconeFilterActiveCatalog returns metadata filter for catalog vectors on the current model.
 func PineconeFilterActiveCatalog() map[string]any {
+	return PineconeFilterActiveCatalogForModel(EmbeddingModel)
+}
+
+// PineconeFilterActiveCatalogForModel restricts a query to vectors produced by model.
+func PineconeFilterActiveCatalogForModel(model string) map[string]any {
 	return map[string]any{
 		"source":          map[string]any{"$eq": string(SourceCatalog)},
-		"embedding_model": map[string]any{"$eq": EmbeddingModel},
+		"embedding_model": map[string]any{"$eq": model},
 	}
 }
 

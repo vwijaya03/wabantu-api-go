@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	appErrs "encore.app/wabantu/shared/errs"
 	"encore.app/wabantu/kb"
+	appErrs "encore.app/wabantu/shared/errs"
 )
 
 type RebuildRetrievalIndexRequest struct {
@@ -21,8 +21,11 @@ type RebuildRetrievalIndexResponse struct {
 	KBEnqueued      int    `json:"kbEnqueued"`
 	CatalogEnqueued int    `json:"catalogEnqueued"`
 	PineconeWiped   bool   `json:"pineconeWiped"`
-	SyncProcessed   int    `json:"syncProcessed"`
-	SyncFailed      int    `json:"syncFailed"`
+	// Queued = kbEnqueued + catalogEnqueued. The request returns after wipe + enqueue; embedding
+	// runs in the indexing worker. Poll GET /api/v1/flags/retrieval-indexing/:tenantId for progress.
+	Queued          int    `json:"queued"`
+	EmbeddingModel  string `json:"embeddingModel"`
+	BackgroundDrain bool   `json:"backgroundDrain"`
 }
 
 func rebuildIncludesFromEntities(entities []string) (includeKB, includeCatalog bool, err error) {
@@ -87,7 +90,8 @@ func RebuildRetrievalIndex(ctx context.Context, req *RebuildRetrievalIndexReques
 		KBEnqueued:      result.KBEnqueued,
 		CatalogEnqueued: result.CatalogEnqueued,
 		PineconeWiped:   result.PineconeWiped,
-		SyncProcessed:   result.SyncProcessed,
-		SyncFailed:      result.SyncFailed,
+		Queued:          result.KBEnqueued + result.CatalogEnqueued,
+		EmbeddingModel:  result.EmbeddingModel,
+		BackgroundDrain: result.BackgroundDrain,
 	}, nil
 }

@@ -25,12 +25,18 @@ type RebuildTenantRetrievalResult struct {
 	KBEnqueued      int   `json:"kbEnqueued"`
 	CatalogEnqueued int   `json:"catalogEnqueued"`
 	PineconeWiped   bool  `json:"pineconeWiped"`
-	SyncProcessed   int   `json:"syncProcessed"`
-	SyncFailed      int   `json:"syncFailed"`
+	// EmbeddingModel is the model new vectors will be built with (resolved for this tenant).
+	EmbeddingModel string `json:"embeddingModel"`
+	// BackgroundDrain is true when an in-process drain was started after the response (Cloud Run only).
+	BackgroundDrain bool `json:"backgroundDrain"`
 }
 
 // RebuildTenantRetrievalIndex wipes optional Pinecone data, resets embedding rows,
 // supersedes stale outbox work, and enqueues a RAG backfill for the tenant.
+//
+// It returns as soon as the work is queued: embedding runs in the Pub/Sub retrieval-index-worker
+// (Encore) or, when RETRIEVAL_BACKGROUND_DRAIN=1, in a bounded detached drain started after the
+// wipe+enqueue (Cloud Run). It never embeds inside the caller's request.
 func RebuildTenantRetrievalIndex(ctx context.Context, tenantSchema, tenantID string, opts RebuildTenantRetrievalOptions) (*RebuildTenantRetrievalResult, error) {
 	if tenantSchema == "" || tenantID == "" {
 		return nil, fmt.Errorf("tenantSchema and tenantID required")
@@ -43,7 +49,13 @@ func RebuildTenantRetrievalIndex(ctx context.Context, tenantSchema, tenantID str
 		return nil, err
 	}
 
-	result := &RebuildTenantRetrievalResult{}
+	// Strict: rows are stamped with the model the worker will resolve; never guess on a config error.
+	model, err := retrieval.ResolveEmbeddingModel(ctx, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve embedding model: %w", err)
+	}
+
+	result := &RebuildTenantRetrievalResult{EmbeddingModel: model}
 
 	// Full namespace wipe only when rebuilding both entity types; partial rebuild must not delete the other vectors.
 	if opts.WipePinecone && opts.IncludeKB && opts.IncludeCatalog {
@@ -68,9 +80,10 @@ func RebuildTenantRetrievalIndex(ctx context.Context, tenantSchema, tenantID str
 			SET embedding_status = 'pending',
 			    embedding_version = embedding_version + 1,
 			    embedding_attempts = 0,
-			    embedding_last_error = NULL
+			    embedding_last_error = NULL,
+			    embedding_model = $1
 			WHERE deleted_at IS NULL AND is_active = true
-			  AND embedding_status IN ('indexed', 'failed', 'dlq')`)
+			  AND embedding_status IN ('indexed', 'failed', 'dlq')`, model)
 		if err != nil {
 			return nil, err
 		}
@@ -83,9 +96,10 @@ func RebuildTenantRetrievalIndex(ctx context.Context, tenantSchema, tenantID str
 			SET embedding_status = 'pending',
 			    embedding_version = embedding_version + 1,
 			    embedding_attempts = 0,
-			    embedding_last_error = NULL
+			    embedding_last_error = NULL,
+			    embedding_model = $1
 			WHERE deleted_at IS NULL AND is_active = true
-			  AND embedding_status IN ('indexed', 'failed', 'dlq')`)
+			  AND embedding_status IN ('indexed', 'failed', 'dlq')`, model)
 		if err != nil {
 			return nil, err
 		}
@@ -103,14 +117,9 @@ func RebuildTenantRetrievalIndex(ctx context.Context, tenantSchema, tenantID str
 	result.KBEnqueued = kbN
 	result.CatalogEnqueued = catN
 
-	processed, failed, err := ProcessPendingRetrievalOutboxSync(ctx, tenantSchema, tenantID, 500)
-	if err != nil {
-		rlog.Warn("rebuild: sync outbox drain failed", "tenantId", tenantID, "err", err)
-	} else if processed > 0 || failed > 0 {
-		rlog.Info("rebuild: sync outbox drain", "tenantId", tenantID, "processed", processed, "failed", failed)
+	if kbN+catN > 0 {
+		result.BackgroundDrain = scheduleBackgroundRetrievalDrain(tenantSchema, tenantID)
 	}
-	result.SyncProcessed = processed
-	result.SyncFailed = failed
 	return result, nil
 }
 
