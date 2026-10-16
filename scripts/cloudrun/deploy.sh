@@ -57,7 +57,7 @@ gcloud run deploy "$SERVICE" \
   --concurrency=40 \
   --timeout=300 \
   --allow-unauthenticated \
-  --set-env-vars="INLINE_INBOUND_AI=1" \
+  --set-env-vars="INLINE_INBOUND_AI=1,RETRIEVAL_BACKGROUND_DRAIN=1" \
   --set-secrets="$SET_SECRETS"
 
 URL="$(gcloud run services describe "$SERVICE" --project="$PROJECT" --region="$REGION" --format='value(status.url)')"

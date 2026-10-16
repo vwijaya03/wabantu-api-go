@@ -57,7 +57,14 @@ func IndexCatalogItem(ctx context.Context, svc *Service, in CatalogIndexInput) e
 	if err != nil {
 		return err
 	}
-	chunks := ChunkCatalog(in.ItemID, in.Version, in.Name, in.Description, in.ExternalCode)
+	if !svc.hasEmbedder() {
+		return fmt.Errorf("retrieval service not configured")
+	}
+	embedder, model, err := svc.embedderFor(ctx, in.Tenant.TenantID)
+	if err != nil {
+		return err
+	}
+	chunks := ChunkCatalogForModel(model, in.ItemID, in.Version, in.Name, in.Description, in.ExternalCode)
 	if len(chunks) == 0 {
 		return nil
 	}
@@ -65,11 +72,11 @@ func IndexCatalogItem(ctx context.Context, svc *Service, in CatalogIndexInput) e
 	for i, c := range chunks {
 		texts[i] = c.Text
 	}
-	vectors, err := svc.Embedder.Embed(ctx, texts)
+	vectors, err := embedder.Embed(ctx, texts)
 	if err != nil {
 		return err
 	}
-	if err := ValidateVectors(svc.Embedder, vectors); err != nil {
+	if err := ValidateVectors(embedder, vectors); err != nil {
 		return err
 	}
 	recs := make([]VectorRecord, len(chunks))
@@ -79,7 +86,7 @@ func IndexCatalogItem(ctx context.Context, svc *Service, in CatalogIndexInput) e
 			"entry_id":        in.ItemID,
 			"version":         in.Version,
 			"chunk":           ch.Index,
-			"embedding_model": EmbeddingModel,
+			"embedding_model": model,
 			"name":            truncateMeta(in.Name, 200),
 		}
 		if in.ExternalCode != "" {
@@ -95,7 +102,7 @@ func IndexCatalogItem(ctx context.Context, svc *Service, in CatalogIndexInput) e
 
 // RetrieveCatalogCandidates returns top semantic catalog hits (rules applied by caller).
 func (s *Service) RetrieveCatalogCandidates(parentCtx context.Context, ctx context.Context, tenant TenantIdentity, query string, topK int) ([]Hit, error) {
-	if s == nil || s.Embedder == nil || s.Store == nil {
+	if !s.hasEmbedder() || s.Store == nil {
 		return nil, nil
 	}
 	if parentCtx == nil {
@@ -115,8 +122,12 @@ func (s *Service) RetrieveCatalogCandidates(parentCtx context.Context, ctx conte
 	var hits []Hit
 	start := time.Now()
 	err = WithBudget(ctx, s.Budget, func() error {
+		embedder, model, e := s.embedderFor(ctx, tenant.TenantID)
+		if e != nil {
+			return e
+		}
 		embedStart := time.Now()
-		vecs, e := s.Embedder.Embed(ctx, []string{SanitizeForEmbed(query)})
+		vecs, e := embedder.Embed(ctx, []string{SanitizeForEmbed(query)})
 		RecordEmbedLatency(time.Since(embedStart))
 		if e != nil {
 			return e
@@ -125,7 +136,7 @@ func (s *Service) RetrieveCatalogCandidates(parentCtx context.Context, ctx conte
 			return fmt.Errorf("empty query embedding")
 		}
 		storeStart := time.Now()
-		filter := PineconeFilterActiveCatalog()
+		filter := PineconeFilterActiveCatalogForModel(model)
 		hits, e = s.Store.Query(ctx, ns, vecs[0], topK, filter)
 		RecordStoreLatency(time.Since(storeStart))
 		return e

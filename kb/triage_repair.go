@@ -91,11 +91,12 @@ func ApplyTriageKBPatch(ctx context.Context, p *TriageKBPatchParams) (*TriageKBP
 	if err != nil {
 		return nil, fmt.Errorf("update KB entry: %w", err)
 	}
-	version, err := bumpKBEmbeddingPendingTx(ctx, tTx, entry.ID, entry.Question, entry.Answer)
+	model := retrieval.ActiveEmbeddingModel(ctx, p.TenantID)
+	version, err := bumpKBEmbeddingPendingTx(ctx, tTx, model, entry.ID, entry.Question, entry.Answer)
 	if err != nil {
 		return nil, err
 	}
-	hash := kbContentHash(entry.Question, entry.Answer)
+	hash := kbContentHash(model, entry.Question, entry.Answer)
 	eventType := outboxEventIndexKB
 	if !entry.IsActive {
 		eventType = outboxEventDeleteKB

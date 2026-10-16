@@ -17,14 +17,27 @@ var ModelAllowlist = map[string][]string{
 	},
 	"gemini": {
 		"gemini-3.1-flash-lite", "gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.5-pro",
+		GeminiEmbeddingModel,
 	},
 	"openai": {
-		"text-embedding-3-small",
+		OpenAIEmbeddingModel,
 	},
 }
 
+// Embedding model ids. Vectors are always EmbeddingDims wide (Pinecone index is 1536).
+const (
+	OpenAIEmbeddingModel = "text-embedding-3-small"
+	GeminiEmbeddingModel = "gemini-embedding-001"
+	EmbeddingDims        = 1536
+)
+
+// IsEmbeddingModel reports whether id is an embedding-only model (no chat/generate adapter).
+func IsEmbeddingModel(id string) bool {
+	return id == OpenAIEmbeddingModel || id == GeminiEmbeddingModel
+}
+
 // FunctionProviders limits which providers may serve a function.
-// Embedding stays OpenAI (vector dimension is bound to the model).
+// Embedding: OpenAI or Gemini (vector space is bound to the model; one active model per namespace).
 var FunctionProviders = map[Function][]string{
 	FnChat:       {"anthropic", "gemini"},
 	FnIntent:     {"anthropic", "gemini"},
@@ -32,7 +45,7 @@ var FunctionProviders = map[Function][]string{
 	FnPaymentOCR: {"anthropic", "gemini"},
 	FnVision:     {"anthropic", "gemini"},
 	FnMemory:     {"anthropic", "gemini"},
-	FnEmbedding:  {"openai"},
+	FnEmbedding:  {"openai", "gemini"},
 }
 
 // AllFunctions in stable order.
@@ -84,6 +97,10 @@ func ValidateFunctionConfig(fn Function, chain []ChainLink, maxRetries int) erro
 	if len(chain) == 0 || len(chain) > maxChainLinks {
 		return fmt.Errorf("llm: chain must have 1..%d links", maxChainLinks)
 	}
+	if fn == FnEmbedding && len(chain) != 1 {
+		// Mixed vector spaces in one namespace break cosine scores: no cross-model fallback.
+		return fmt.Errorf("llm: embedding chain must have exactly 1 link")
+	}
 	if maxRetries < 0 || maxRetries > maxRetriesCap {
 		return fmt.Errorf("llm: max_retries must be 0..%d", maxRetriesCap)
 	}
@@ -100,6 +117,16 @@ func ValidateFunctionConfig(fn Function, chain []ChainLink, maxRetries int) erro
 		}
 		if err := ValidateModel(l.Provider, l.Model); err != nil {
 			return fmt.Errorf("link %d: %w", i, err)
+		}
+		if fn == FnEmbedding {
+			if l.Model != "" && !IsEmbeddingModel(l.Model) {
+				return fmt.Errorf("llm: link %d: model %q is not an embedding model", i, l.Model)
+			}
+			if l.Model == "" && l.Provider != "openai" {
+				return fmt.Errorf("llm: link %d: embedding model is required for provider %q", i, l.Provider)
+			}
+		} else if IsEmbeddingModel(l.Model) {
+			return fmt.Errorf("llm: link %d: embedding model %q cannot serve function %q", i, l.Model, fn)
 		}
 		if l.TimeoutMS < 0 || l.TimeoutMS > maxTimeoutMS {
 			return fmt.Errorf("llm: link %d: timeout_ms must be 0..%d", i, maxTimeoutMS)

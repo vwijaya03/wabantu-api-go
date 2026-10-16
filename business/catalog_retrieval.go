@@ -19,8 +19,8 @@ func ensureCatalogRetrievalSchema(ctx context.Context, schema string) error {
 	return tenant.EnsureRetrievalSchema(ctx, schema)
 }
 
-func catalogContentHash(name, description, code string) string {
-	return retrieval.CatalogContentHash(name, description, code)
+func catalogContentHash(model, name, description, code string) string {
+	return retrieval.CatalogContentHashForModel(model, name, description, code)
 }
 
 func enqueueCatalogIndex(ctx context.Context, tenantSchema, tenantID, itemID, name string, description *string, code string) {
@@ -42,7 +42,8 @@ func enqueueCatalogIndex(ctx context.Context, tenantSchema, tenantID, itemID, na
 	defer func() { _ = tx.Rollback() }()
 
 	var version int64
-	hash := catalogContentHash(name, desc, code)
+	model := retrieval.ActiveEmbeddingModel(ctx, tenantID)
+	hash := catalogContentHash(model, name, desc, code)
 	err = tx.QueryRowContext(ctx, `
 		UPDATE business_catalog_item
 		SET embedding_version = embedding_version + 1,
@@ -52,7 +53,7 @@ func enqueueCatalogIndex(ctx context.Context, tenantSchema, tenantID, itemID, na
 		    embedding_updated_at = NOW()
 		WHERE id = $1::uuid AND deleted_at IS NULL
 		RETURNING embedding_version`,
-		itemID, hash, retrieval.EmbeddingModel,
+		itemID, hash, model,
 	).Scan(&version)
 	if err != nil {
 		return
