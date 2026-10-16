@@ -101,6 +101,7 @@ func isGeneralStoreCatalogQuestion(userText string) bool {
 		"kamu jualan", "kamu jual", "lu jualan", "lu jual",
 		"tersedia apa", "ada apa", "punya apa",
 		"semua produk", "semua barang", "macam-macam",
+		"what do you sell", "what products", "what items", "what's available", "what is available",
 	}
 	for _, s := range signals {
 		if strings.Contains(text, s) {
@@ -659,7 +660,7 @@ func buildGenericVisualProductInquiryReply(formal bool, bizName string, catalog 
 	if len(catalog) == 0 {
 		return strings.TrimSpace(head + catalogExternalFooter(profile, true))
 	}
-	body := "\n\nContoh produk di katalog kami:\n\n" + formatCatalogListBody(catalog, 5)
+	body := "\n\nContoh produk di katalog kami:\n\n" + formatCatalogListBody("", catalog, 5)
 	footer := catalogExternalFooter(profile, false)
 	return strings.TrimSpace(head + body + footer)
 }
@@ -668,13 +669,17 @@ func buildCatalogListReply(userText string, formal bool, bizName string, catalog
 	if len(catalog) == 0 {
 		return buildCatalogEmptyReply(userText, formal, bizName, profile)
 	}
+	idFormalIntro := fmt.Sprintf("Berikut katalog %s kami:\n\n", bizName)
+	idCasualIntro := fmt.Sprintf("Ini katalog %s ya kak:\n\n", bizName)
+	enFormalIntro := fmt.Sprintf("Here's the %s catalog:\n\n", bizName)
+	enCasualIntro := fmt.Sprintf("Here's our %s catalog:\n\n", bizName)
 	var intro string
 	if formal {
-		intro = fmt.Sprintf("Berikut katalog %s kami:\n\n", bizName)
+		intro = PickBuyerLanguageReply(userText, formal, idFormalIntro, enFormalIntro)
 	} else {
-		intro = fmt.Sprintf("Ini katalog %s ya kak:\n\n", bizName)
+		intro = PickBuyerLanguageReply(userText, formal, idCasualIntro, enCasualIntro)
 	}
-	body := formatCatalogListBody(catalog, 8)
+	body := formatCatalogListBody(userText, catalog, 8)
 	footer := catalogExternalFooter(profile, false)
 	return strings.TrimSpace(intro + body + footer)
 }
@@ -705,7 +710,7 @@ func buildCatalogNotFoundReply(userText string, formal bool, bizName string, cat
 	} else {
 		head = PickBuyerLanguageReply(userText, formal, idCasualHead, enCasualHead)
 	}
-	body := formatCatalogListBody(catalog, 6)
+	body := formatCatalogListBody(userText, catalog, 6)
 	footer := catalogExternalFooter(profile, false)
 	return strings.TrimSpace(head + body + footer)
 }
@@ -748,11 +753,15 @@ func buildCatalogItemReply(formal bool, it *CatalogItem, qty int) string {
 	return strings.TrimSpace(strings.Join(lines, "\n") + "\n\n" + cta)
 }
 
-func formatCatalogListBody(catalog []CatalogItem, maxFeatured int) string {
+func formatCatalogListBody(userText string, catalog []CatalogItem, maxFeatured int) string {
 	if maxFeatured < 1 || maxFeatured > 8 {
 		maxFeatured = 5
 	}
-	grouped := groupCatalogByCategory(catalog)
+	if len(catalog) <= 8 && maxFeatured < len(catalog) {
+		maxFeatured = len(catalog)
+	}
+	en := ResolveBuyerLanguage(userText, CurrentSavedBuyerLang()) == LangEN
+	grouped := groupCatalogByCategory(catalog, len(catalog) <= 8)
 	cats := extractCatalogCategories(catalog)
 	if len(cats) == 0 {
 		for c := range grouped {
@@ -762,9 +771,14 @@ func formatCatalogListBody(catalog []CatalogItem, maxFeatured int) string {
 	}
 
 	var parts []string
-	parts = append(parts, "🔥 Produk Pilihan\n")
+	if en {
+		parts = append(parts, "🔥 Featured products\n")
+	} else {
+		parts = append(parts, "🔥 Produk Pilihan\n")
+	}
 
 	shown := 0
+	visibleCats := 0
 	for _, cat := range cats {
 		if shown >= maxFeatured {
 			break
@@ -773,7 +787,9 @@ func formatCatalogListBody(catalog []CatalogItem, maxFeatured int) string {
 		if len(items) == 0 {
 			continue
 		}
-		parts = append(parts, categoryEmoji(cat)+" "+cat)
+		if !isFallbackCatalogCategory(cat) {
+			parts = append(parts, categoryEmoji(cat)+" "+cat)
+		}
 		for _, it := range items {
 			if shown >= maxFeatured {
 				break
@@ -781,18 +797,25 @@ func formatCatalogListBody(catalog []CatalogItem, maxFeatured int) string {
 			parts = append(parts, fmt.Sprintf("• %s\n%s", shortDisplayName(it.Name), formatCatalogPrice(&it)))
 			shown++
 		}
+		if !isFallbackCatalogCategory(cat) {
+			visibleCats++
+		}
 	}
 	if shown == 0 {
-		featured := pickFeaturedCatalogItems(catalog, maxFeatured)
+		featured := pickFeaturedCatalogItems(catalog, maxFeatured, len(catalog) <= 8)
 		parts = append(parts, formatFeaturedProductsBody(featured))
 		shown = len(featured)
 	}
 	if len(catalog) > shown {
 		remaining := len(catalog) - shown
-		parts = append(parts, fmt.Sprintf("\nAda %d produk lain di katalog. Sebut nama produk yang kakak mau ya.", remaining))
+		idTail := fmt.Sprintf("\nAda %d produk lain di katalog. Sebut nama produk yang kakak mau ya.", remaining)
+		enTail := fmt.Sprintf("\n%d more products in the catalog — tell us the product name you want.", remaining)
+		parts = append(parts, PickBuyerLanguageReply(userText, false, idTail, enTail))
 	}
-	if len(cats) > 1 {
-		parts = append(parts, "\nMau lihat kategori tertentu? Sebut saja ya kak.")
+	if visibleCats > 1 {
+		idCat := "\nMau lihat kategori tertentu? Sebut saja ya kak."
+		enCat := "\nWant a specific category? Just say the name."
+		parts = append(parts, PickBuyerLanguageReply(userText, false, idCat, enCat))
 	}
 	return strings.Join(parts, "\n")
 }

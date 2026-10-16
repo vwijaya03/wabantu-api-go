@@ -43,8 +43,33 @@ func hasExplicitCartReadyPhrase(text string) bool {
 	return false
 }
 
-// isHistoryBackedPurchaseIntent — "mau beli 2 lusin" tanpa nama produk, produk jelas dari outbound terakhir.
+// isPronounPurchaseIntent — "buy it", "mau itu" after bot named a product.
+func isPronounPurchaseIntent(userText string) bool {
+	text := strings.ToLower(strings.TrimSpace(userText))
+	if text == "" {
+		return false
+	}
+	phrases := []string{
+		"buy it", "want buy it", "want to buy it", "i want it", "i'll take it", "ill take it",
+		"i will take it", "take it", "order it", "get it", "mau itu", "ambil itu", "yang itu",
+		"beli itu", "pesan itu", "i want buy it", "okay i want buy it",
+	}
+	for _, p := range phrases {
+		if strings.Contains(text, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// isHistoryBackedPurchaseIntent — qty or pronoun purchase when product is clear from last outbound.
 func isHistoryBackedPurchaseIntent(userText string, history []Message, catalog []CatalogItem) bool {
+	if isPronounPurchaseIntent(userText) {
+		if matchCatalogItem(userText, catalog) != nil {
+			return false
+		}
+		return matchSingleProductFromRecentOutbound(history, catalog) != nil
+	}
 	if !mentionsOrderQty(userText) {
 		return false
 	}

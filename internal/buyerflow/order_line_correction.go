@@ -34,6 +34,13 @@ func IsCartLineCorrectionIntent(userText string) bool {
 	if strings.Contains(text, "bukan yang") {
 		return true
 	}
+	if strings.Contains(text, "not the ") || strings.Contains(text, " instead of ") {
+		return true
+	}
+	if strings.Contains(text, " not ") && (strings.Contains(text, "salmon") || strings.Contains(text, "tuna") ||
+		strings.Contains(text, "steak") || strings.Contains(text, "beef")) {
+		return true
+	}
 	if strings.Contains(text, "tidak mau") || strings.Contains(text, "ga mau") ||
 		strings.Contains(text, "gak mau") || strings.Contains(text, "nggak mau") {
 		return strings.Contains(text, "yang") || strings.Contains(text, "bukan")
@@ -108,9 +115,14 @@ func tryApplyCartLineCorrection(st *OrderState, userText string, catalog []Catal
 func splitCartCorrectionSpans(userText string) (reject, want string) {
 	text := strings.TrimSpace(userText)
 	lower := strings.ToLower(text)
-	for _, m := range []string{"bukan yang", "batalkan yang", "batalin yang", "batal yang"} {
+	for _, m := range []string{" not the ", " instead of ", "bukan yang", "batalkan yang", "batalin yang", "batal yang"} {
 		if i := strings.LastIndex(lower, m); i >= 0 {
-			return strings.TrimSpace(text[i:]), strings.TrimSpace(text[:i])
+			reject := strings.TrimSpace(text[i+len(m):])
+			want := strings.TrimSpace(text[:i])
+			if strings.HasPrefix(strings.ToLower(m), " not") || strings.HasPrefix(m, " instead") {
+				return reject, want
+			}
+			return strings.TrimSpace(text[i:]), want
 		}
 	}
 	for _, m := range []string{"tidak mau", "nggak mau", "gak mau", "ga mau"} {
