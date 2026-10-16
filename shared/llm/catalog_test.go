@@ -39,3 +39,31 @@ func TestAvailabilityAndInvalidateHooks(t *testing.T) {
 		t.Fatal("hook not called")
 	}
 }
+
+func TestCatalogGeminiLatestChatModels(t *testing.T) {
+	want := map[string]string{
+		"gemini-3.8-flash":       "Gemini 3.8 Flash",
+		"gemini-3.6-flash":       "Gemini 3.6 Flash",
+		"gemini-3.5-flash-lite":  "Gemini 3.5 Flash-Lite",
+		"gemini-3.1-pro-preview": "Gemini 3.1 Pro (Preview)",
+	}
+	got := map[string]ModelInfo{}
+	for _, m := range CatalogModels() {
+		if m.Provider == "gemini" {
+			got[m.ID] = m
+		}
+	}
+	for id, label := range want {
+		m, ok := got[id]
+		if !ok {
+			t.Errorf("%s missing from gemini catalog", id)
+			continue
+		}
+		if m.Label != label || m.Status != ModelSupported || !m.Vision {
+			t.Errorf("%s: unexpected %+v", id, m)
+		}
+		if err := ValidateFunctionConfig(FnChat, []ChainLink{{Provider: "gemini", Model: id}}, 1); err != nil {
+			t.Errorf("%s must be valid for chat: %v", id, err)
+		}
+	}
+}
