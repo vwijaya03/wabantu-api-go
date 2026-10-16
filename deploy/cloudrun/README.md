@@ -48,3 +48,11 @@ Deploy pertama memakai `base_url` `https://pending.invalid` bila `CLOUD_RUN_URL`
 Service: `wabantu-api`, region `asia-southeast2`, `--max-instances=2`, port 8080, 1 CPU, 1Gi.
 
 CORS credential untuk `*.hosted.app` ada di `encore.app` pada branch ini.
+
+## Troubleshooting: balasan AI tidak keluar (Cloud Run)
+
+Webhook WhatsApp bisa **200** sementara worker Pub/Sub gagal. Cek log Cloud Run untuk `subscription":"ai-auto-reply"` dan `unable to validate JWT` pada `POST .../__encore/pubsub/push/ai-auto-reply`.
+
+Deploy lomba menyetel **`INLINE_INBOUND_AI=1`**: setelah pesan masuk, `webhook` memanggil handler AI di proses yang sama (tanpa menunggu push Pub/Sub). Encore Cloud **tidak** memakai env ini — tetap lewat topik `ai-jobs`.
+
+Perbaikan JWT push (audience / rebuild image dengan `CLOUD_RUN_URL` benar) bisa dilakukan terpisah; inline AI menjaga balasan tetap jalan.
