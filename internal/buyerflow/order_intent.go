@@ -33,9 +33,9 @@ var orderCancelWordRe = regexp.MustCompile(`(?i)\b(batal(?:kan)?|cancel)\b`)
 // Nomor pesanan singkat dari chat pembeli (WB-A1B2C3D4).
 var orderRefInMessageRe = regexp.MustCompile(`(?i)\bWB-([A-F0-9]{6,8})\b`)
 
-// Inline Nama:/HP: pada satu baris chat (mis. "... ada? Nama: supriyanto").
-var recipientNameInlineRe = regexp.MustCompile(`(?i)\bnama\s*:\s*([^?\n,;]+)`)
-var recipientPhoneInlineRe = regexp.MustCompile(`(?i)\b(?:hp|no\.?\s*hp|telp)\s*:\s*(\+?[\d\s-]{8,})`)
+// Inline Nama:/HP: (atau Name:/Phone: EN) pada satu baris chat (mis. "... ada? Nama: supriyanto").
+var recipientNameInlineRe = regexp.MustCompile(`(?i)\b(?:nama|name)\s*:\s*([^?\n,;]+)`)
+var recipientPhoneInlineRe = regexp.MustCompile(`(?i)\b(?:hp|no\.?\s*hp|telp|phone(?:\s*(?:number|no\.?))?|mobile)\s*:\s*(\+?[\d \t-]{8,})`)
 
 func isRevisionNotCancel(userText string) bool {
 	text := strings.ToLower(strings.TrimSpace(userText))
@@ -420,10 +420,12 @@ func IsOrderStatusInquiry(userText string) bool {
 // parseRecipientHintFromMessage extracts Nama:/HP: blocks from buyer chat text.
 func parseRecipientHintFromMessage(userText string) (name, phone string) {
 	if m := recipientNameInlineRe.FindStringSubmatch(userText); len(m) > 1 {
-		name = strings.TrimSpace(m[1])
+		if n := strings.TrimSpace(m[1]); len(n) <= maxRecipientFieldLen {
+			name = n
+		}
 	}
 	if m := recipientPhoneInlineRe.FindStringSubmatch(userText); len(m) > 1 {
-		phone = normalizePhoneID(m[1])
+		phone = extractRecipientPhone(m[1])
 	}
 	if name != "" || phone != "" {
 		return name, phone
@@ -438,6 +440,7 @@ func hasRecipientHintInMessage(userText string) bool {
 		return true
 	}
 	if name != "" && (strings.Contains(text, "nama:") || strings.Contains(text, "nama :") ||
+		strings.Contains(text, "name:") || strings.Contains(text, "name :") ||
 		strings.Contains(text, "pembeli atas nama")) {
 		return true
 	}

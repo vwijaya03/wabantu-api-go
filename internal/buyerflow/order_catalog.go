@@ -503,6 +503,19 @@ func parseRecipientLine(userText string) (name, phone string) {
 			continue
 		}
 		lower := strings.ToLower(line)
+		if kind, val := englishRecipientLabel(line); kind != "" {
+			switch kind {
+			case recipientLabelName:
+				if val != "" {
+					name = val
+				}
+			case recipientLabelPhone:
+				if p := extractRecipientPhone(val); p != "" {
+					phone = p
+				}
+			}
+			continue
+		}
 		if strings.HasPrefix(lower, "nama") {
 			name = strings.TrimSpace(line[strings.Index(line, ":")+1:])
 		} else if strings.HasPrefix(lower, "hp") || strings.HasPrefix(lower, "no") || strings.HasPrefix(lower, "telp") {
@@ -516,6 +529,84 @@ func parseRecipientLine(userText string) (name, phone string) {
 		}
 	}
 	return name, phone
+}
+
+const (
+	recipientLabelName  = "name"
+	recipientLabelPhone = "phone"
+
+	// maxRecipientFieldLen caps label values parsed from buyer text (defensive).
+	maxRecipientFieldLen = 120
+	// maxRecipientPhoneDigits caps digits kept when normalising a bare phone value.
+	maxRecipientPhoneDigits = 15
+)
+
+// englishRecipientLabel detects `Name:` / `Phone:` style labels (EN) on a single line.
+// Returns ("", "") for any other line so ID labels keep their existing handling.
+func englishRecipientLabel(line string) (kind, val string) {
+	i := strings.Index(line, ":")
+	if i <= 0 || i > 32 {
+		return "", ""
+	}
+	key := strings.ToLower(strings.TrimSpace(line[:i]))
+	switch key {
+	case "name", "full name", "recipient", "recipient name", "receiver", "receiver name":
+		kind = recipientLabelName
+	case "phone", "phone number", "phone no", "phone no.", "mobile", "mobile number", "mobile phone", "tel", "contact", "contact number", "whatsapp":
+		kind = recipientLabelPhone
+	default:
+		return "", ""
+	}
+	val = strings.TrimSpace(line[i+1:])
+	if len(val) > maxRecipientFieldLen {
+		val = ""
+	}
+	return kind, val
+}
+
+// extractRecipientPhone pulls a phone from a labelled value. phoneIDRe wins; otherwise a
+// bare 8–12 digit mobile starting with 8 or 9 (leading 0 / +62 omitted) is normalised to +62.
+func extractRecipientPhone(val string) string {
+	val = strings.TrimSpace(val)
+	if val == "" || len(val) > maxRecipientFieldLen {
+		return ""
+	}
+	total := 0
+	for i := 0; i < len(val); i++ {
+		if val[i] >= '0' && val[i] <= '9' {
+			total++
+		}
+	}
+	if total > maxRecipientPhoneDigits {
+		return ""
+	}
+	if m := phoneIDRe.FindString(val); m != "" {
+		return normalizePhoneID(m)
+	}
+	var digits strings.Builder
+	for _, r := range val {
+		switch {
+		case r >= '0' && r <= '9':
+			if digits.Len() >= maxRecipientPhoneDigits {
+				return ""
+			}
+			digits.WriteRune(r)
+		case r == ' ' || r == '-' || r == '.' || r == '(' || r == ')' || r == '+':
+		default:
+			return ""
+		}
+	}
+	d := digits.String()
+	switch {
+	case strings.HasPrefix(d, "628") && len(d) >= 11 && len(d) <= 14:
+		return "+" + d
+	case strings.HasPrefix(d, "08") && len(d) >= 10 && len(d) <= 13:
+		return "+62" + d[1:]
+	}
+	if len(d) < 8 || len(d) > 12 || (d[0] != '8' && d[0] != '9') {
+		return ""
+	}
+	return "+62" + d
 }
 
 func normalizePhoneID(p string) string {
@@ -562,14 +653,27 @@ func mergeShippingText(st *OrderState, userText string) {
 		}
 		low := strings.ToLower(line)
 		val := labelValue(line)
+		if kind, ev := englishRecipientLabel(line); kind != "" {
+			switch kind {
+			case recipientLabelName:
+				if ev != "" {
+					st.RecipientName = ev
+				}
+			case recipientLabelPhone:
+				if p := extractRecipientPhone(ev); p != "" {
+					st.RecipientPhone = p
+				}
+			}
+			continue
+		}
 		switch {
 		case strings.HasPrefix(low, "nama penerima"), strings.HasPrefix(low, "nama"):
 			if val != "" {
 				st.RecipientName = val
 			}
 		case strings.HasPrefix(low, "no hp"), strings.HasPrefix(low, "hp"), strings.HasPrefix(low, "telepon"), strings.HasPrefix(low, "wa"):
-			if p := phoneIDRe.FindString(val); p != "" {
-				st.RecipientPhone = normalizePhoneID(p)
+			if p := extractRecipientPhone(val); p != "" {
+				st.RecipientPhone = p
 			}
 		case strings.HasPrefix(low, "jalan"), strings.HasPrefix(low, "alamat"), strings.HasPrefix(low, "address"), strings.HasPrefix(low, "jl"):
 			if val != "" {
