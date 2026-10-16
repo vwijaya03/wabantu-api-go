@@ -43,7 +43,8 @@ func RebuildTenantRetrievalIndex(ctx context.Context, tenantSchema, tenantID str
 
 	result := &RebuildTenantRetrievalResult{}
 
-	if opts.WipePinecone {
+	// Full namespace wipe only when rebuilding both entity types; partial rebuild must not delete the other vectors.
+	if opts.WipePinecone && opts.IncludeKB && opts.IncludeCatalog {
 		if svc := retrieval.DefaultService(); svc != nil {
 			tenantIdent := retrieval.TenantIdentity{TenantID: tenantID, TenantSchema: tenantSchema}
 			if err := retrieval.DeleteTenantNamespace(ctx, svc, tenantIdent); err != nil {
@@ -63,6 +64,7 @@ func RebuildTenantRetrievalIndex(ctx context.Context, tenantSchema, tenantID str
 		res, err := ts.ExecContext(ctx, `
 			UPDATE knowledge_base_entry
 			SET embedding_status = 'pending',
+			    embedding_version = embedding_version + 1,
 			    embedding_attempts = 0,
 			    embedding_last_error = NULL
 			WHERE deleted_at IS NULL AND is_active = true
@@ -77,6 +79,7 @@ func RebuildTenantRetrievalIndex(ctx context.Context, tenantSchema, tenantID str
 		res, err := ts.ExecContext(ctx, `
 			UPDATE business_catalog_item
 			SET embedding_status = 'pending',
+			    embedding_version = embedding_version + 1,
 			    embedding_attempts = 0,
 			    embedding_last_error = NULL
 			WHERE deleted_at IS NULL AND is_active = true
@@ -91,7 +94,7 @@ func RebuildTenantRetrievalIndex(ctx context.Context, tenantSchema, tenantID str
 		return nil, err
 	}
 
-	kbN, catN, err := EnqueueRAGBackfillForTenant(ctx, tenantSchema, tenantID, 500)
+	kbN, catN, err := EnqueueRAGBackfillForTenantScoped(ctx, tenantSchema, tenantID, 500, opts.IncludeKB, opts.IncludeCatalog)
 	if err != nil {
 		return nil, err
 	}
