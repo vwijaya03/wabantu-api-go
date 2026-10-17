@@ -153,6 +153,9 @@ func planTurn(ctx context.Context, in planInput, chat chatFunc) turnPlan {
 			CartSubtotal: salesbrain.CartSubtotal(nextCart),
 			OpenOrders:   in.State.OpenOrders,
 			BuyerTexts:   in.BuyerTexts,
+			Message:      in.Message,
+			// The model may speak of payment in its confirm reply only at the confirm step.
+			AtConfirmStep: in.State.PendingField == "confirm",
 		})
 		if vs := salesbrain.Validate(d, facts, lang); len(vs) > 0 {
 			plan.Violations = vs

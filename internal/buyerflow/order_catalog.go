@@ -1037,6 +1037,10 @@ var provinceAliases = map[string]string{
 	"papua": "Papua", "maluku": "Maluku",
 }
 
+// addressLabelRe strips a leading "Address:" / "Alamat:" / "Street:" label from the first part of a
+// one-line address.
+var addressLabelRe = regexp.MustCompile(`(?i)^\s*(?:alamat|address|street|jalan)\s*:\s*`)
+
 var postalSuffixRe = regexp.MustCompile(`\s*\b\d{5}\b\s*$`)
 
 // parseCommaAddress handles one-line addresses written as "street, city, province, postal"
@@ -1068,7 +1072,7 @@ func parseCommaAddress(st *OrderState, raw string) {
 	if len(parts) < 3 {
 		return
 	}
-	street, city, prov := parts[0], parts[len(parts)-2], parts[len(parts)-1]
+	street, city, prov := addressLabelRe.ReplaceAllString(parts[0], ""), parts[len(parts)-2], parts[len(parts)-1]
 	if st.Street == "" || strings.Count(st.Street, ",") >= 2 {
 		st.Street = street
 	}
