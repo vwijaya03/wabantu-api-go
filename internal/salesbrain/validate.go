@@ -41,6 +41,12 @@ type FactsInput struct {
 	CartSubtotal int64
 	OpenOrders   []OrderSnapshot
 	BuyerTexts   []string // current + recent buyer messages (their own numbers may be echoed)
+	// Message is the buyer's current message: a buyer who asks about payment may be answered
+	// with the payment methods.
+	Message string
+	// AtConfirmStep: the checkout is at its final confirm step (everything collected). A confirm
+	// decision may then speak of payment.
+	AtConfirmStep bool
 }
 
 // Facts is the allow-list used by Validate.
@@ -48,6 +54,13 @@ type Facts struct {
 	Amounts       map[int64]bool
 	Numbers       map[string]bool // digit strings (≥ 8 digits) the reply may contain
 	InternalCodes []string
+	// KBNumbers are the long numbers of the FAQ answers (bank accounts): the numbers a premature
+	// payment reply would quote.
+	KBNumbers map[string]bool
+	// PaymentOK: payment instructions may be sent (an order awaits payment, or the buyer asks
+	// about payment). AtConfirm lets an intent "confirm" speak of payment too.
+	PaymentOK bool
+	AtConfirm bool
 }
 
 // Violation codes.
@@ -58,6 +71,8 @@ const (
 	VNumber       = "number_not_in_facts"
 	VInternalCode = "internal_code"
 	VLanguage     = "language_mismatch"
+	// VPrematurePayment: payment instructions or "ready for payment" before the order exists.
+	VPrematurePayment = "premature_payment"
 )
 
 // MaxReplyRunes caps one WhatsApp reply.
@@ -75,7 +90,9 @@ const maxQtyMultiple = 50
 // subtotal, open-order totals, amounts and long numbers in KB answers, and numbers the buyer
 // typed (phones are also allowed in 0…/62… form).
 func BuildFacts(in FactsInput) Facts {
-	f := Facts{Amounts: map[int64]bool{}, Numbers: map[string]bool{}}
+	f := Facts{Amounts: map[int64]bool{}, Numbers: map[string]bool{}, KBNumbers: map[string]bool{}}
+	f.AtConfirm = in.AtConfirmStep
+	f.PaymentOK = BuyerAsksAboutPayment(in.Message)
 	for _, c := range in.Catalog {
 		if c.Price > 0 {
 			for q := int64(1); q <= maxQtyMultiple; q++ {
@@ -97,6 +114,9 @@ func BuildFacts(in FactsInput) Facts {
 		f.Amounts[in.CartSubtotal] = true
 	}
 	for _, o := range in.OpenOrders {
+		if o.Stage == StagePayment || o.Status == StatusAwaitingPayment {
+			f.PaymentOK = true
+		}
 		addLines(o.Lines)
 		if o.Subtotal > 0 {
 			f.Amounts[o.Subtotal] = true
@@ -112,6 +132,7 @@ func BuildFacts(in FactsInput) Facts {
 		}
 		for _, n := range extractLongNumbers(k.Answer) {
 			f.Numbers[n] = true
+			f.KBNumbers[n] = true
 		}
 	}
 	for _, t := range in.BuyerTexts {
@@ -160,6 +181,11 @@ func Validate(d Decision, f Facts, lang Lang) []Violation {
 			break
 		}
 	}
+	if !f.PaymentOK && !(d.Intent == IntentConfirm && f.AtConfirm) {
+		if detail := prematurePaymentDetail(reply, f); detail != "" {
+			vs = append(vs, Violation{Code: VPrematurePayment, Detail: detail})
+		}
+	}
 	if got, ok := ClearLanguage(reply); ok && got != lang {
 		vs = append(vs, Violation{Code: VLanguage, Detail: string(got)})
 	}
@@ -181,6 +207,8 @@ func ViolationNote(vs []Violation) string {
 			fmt.Fprintf(&b, "- Nomor %s tidak ada di FAQ atau pesan pembeli. Jangan mengarang nomor.\n", v.Detail)
 		case VInternalCode:
 			b.WriteString("- Jangan menyebut kode internal produk.\n")
+		case VPrematurePayment:
+			b.WriteString("- Pesanan belum dikonfirmasi: jangan beri instruksi pembayaran, nomor rekening, atau bilang pesanan siap dibayar. Lanjutkan sesuai STATE.kolom_tertunda.\n")
 		case VLanguage:
 			b.WriteString("- Bahasa balasan salah. Pakai STATE.bahasa.\n")
 		case VTooLong:
@@ -193,8 +221,10 @@ func ViolationNote(vs []Violation) string {
 }
 
 var (
-	rpAmountRe   = regexp.MustCompile(`(?i)\brp\.?\s*([0-9][0-9.,]*)`)
-	longNumberRe = regexp.MustCompile(`\+?\d[\d \-]{6,}\d`)
+	buyerPaymentRe = regexp.MustCompile(`(?i)bayar|transfer|rekening|payment|\bpay\b|\bqris\b|\baccount\b`)
+	paymentTalkRe  = regexp.MustCompile(`(?i)transfer|payment proof|proof of payment|bukti (transfer|bayar|pembayaran)|ready for payment|siap (untuk )?(di)?bayar|proceed (with|to) (the )?payment|make (the|a|your) payment|lanjut(kan)? (ke )?pembayaran|silakan (bayar|lakukan pembayaran)`)
+	rpAmountRe     = regexp.MustCompile(`(?i)\brp\.?\s*([0-9][0-9.,]*)`)
+	longNumberRe   = regexp.MustCompile(`\+?\d[\d \-]{6,}\d`)
 )
 
 func extractAmounts(s string) []int64 {
@@ -239,4 +269,19 @@ func extractLongNumbers(s string) []string {
 		}
 	}
 	return out
+}
+
+// BuyerAsksAboutPayment reports whether the buyer's message is about paying (bayar, transfer,
+// rekening, payment, pay, QRIS, account).
+func BuyerAsksAboutPayment(msg string) bool { return buyerPaymentRe.MatchString(msg) }
+
+// prematurePaymentDetail returns what in the reply sounds like payment instructions ("" when
+// nothing does): a number from the FAQ (a bank account) or a payment phrase.
+func prematurePaymentDetail(reply string, f Facts) string {
+	for _, n := range extractLongNumbers(reply) {
+		if f.KBNumbers[n] {
+			return n
+		}
+	}
+	return paymentTalkRe.FindString(reply)
 }

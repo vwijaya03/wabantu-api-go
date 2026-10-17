@@ -13,6 +13,7 @@ func omahFacts(cart []OrderLine, subtotal int64, buyer ...string) Facts {
 		Cart:         cart,
 		CartSubtotal: subtotal,
 		BuyerTexts:   buyer,
+		Message:      "how do I pay?", // these tests are about grounding, not about premature payment
 	})
 }
 
@@ -100,5 +101,54 @@ func TestValidateAllowsDigitOnlyOrderRefsAndDates(t *testing.T) {
 	bad := Decision{Reply: "Please transfer to 1234-5678-90."}
 	if vs := Validate(bad, f, LangEN); len(vs) == 0 || vs[0].Code != VNumber {
 		t.Fatalf("an invented account number must still be rejected, got %+v", vs)
+	}
+}
+
+func TestValidatePrematurePayment(t *testing.T) {
+	kb := []KBFact{{Answer: "Transfer ke BCA - 000111222 - Omah Apparel"}}
+	facts := func(msg string, orders ...OrderSnapshot) Facts {
+		return BuildFacts(FactsInput{KB: kb, Message: msg, BuyerTexts: []string{msg}, OpenOrders: orders})
+	}
+	bad := []string{
+		"Your order is now ready for payment; please transfer Rp0 to BCA.",
+		"Silakan transfer ke rekening BCA, lalu kirim bukti transfer.",
+		"Pesanan Kakak siap dibayar ya.",
+		"Please send your payment proof afterwards.",
+		"Pay to 000111222 please.",
+		"I have updated your address. Please proceed with the payment.",
+	}
+	for _, reply := range bad {
+		vs := Validate(Decision{Reply: reply, Intent: IntentFieldAnswer}, facts("Name: Anastasi\nPhone: 081222000111"), LangEN)
+		found := false
+		for _, v := range vs {
+			found = found || v.Code == VPrematurePayment
+		}
+		if !found {
+			t.Errorf("%q must be premature_payment, got %v", reply, codes(vs))
+		}
+	}
+	ok := Decision{Reply: "You can pay by transfer to BCA 000111222 or QRIS.", Intent: IntentQuestion}
+	if vs := Validate(ok, facts("how do I pay?"), LangEN); len(vs) != 0 {
+		t.Errorf("a buyer asking about payment is answered: %+v", vs)
+	}
+	if vs := Validate(ok, facts("ke rekening mana?"), LangEN); len(vs) != 0 {
+		t.Errorf("rekening question: %+v", vs)
+	}
+	waiting := OrderSnapshot{Ref: "WB-1", Status: StatusAwaitingPayment, Stage: StagePayment}
+	if vs := Validate(ok, facts("ok thanks", waiting), LangEN); len(vs) != 0 {
+		t.Errorf("an order awaiting payment may be discussed: %+v", vs)
+	}
+	// An ordinary answer is untouched.
+	plain := Decision{Reply: "It is sold frozen and vacuum-sealed.", Intent: IntentQuestion}
+	if vs := Validate(plain, facts("is it frozen?"), LangEN); len(vs) != 0 {
+		t.Errorf("plain reply rejected: %+v", vs)
+	}
+	// The confirm intent at the confirm step may mention payment.
+	conf := BuildFacts(FactsInput{KB: kb, Message: "OK", AtConfirmStep: true})
+	if vs := Validate(Decision{Reply: "Thanks! Please transfer to BCA 000111222.", Intent: IntentConfirm}, conf, LangEN); len(vs) != 0 {
+		t.Errorf("confirm step: %+v", vs)
+	}
+	if vs := Validate(Decision{Reply: "Thanks! Please transfer to BCA 000111222.", Intent: IntentConfirm}, facts("OK"), LangEN); len(vs) == 0 {
+		t.Error("a confirm outside the confirm step is premature")
 	}
 }
