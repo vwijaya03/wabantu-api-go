@@ -37,6 +37,13 @@ const DefaultTTL = 30 * time.Second
 // CodeDefaults preserves legacy behaviour (Anthropic) when tables are empty.
 func CodeDefaults(fn Function) FunctionConfig {
 	switch fn {
+	case FnChat:
+		// Gemini first (skipped when the provider is not registered, e.g. no GeminiAPIKey on
+		// Encore Cloud), then Haiku with an explicit model so the fallback never lands on Sonnet.
+		return FunctionConfig{Function: fn, Chain: []ChainLink{
+			{Provider: "gemini", Model: "gemini-3.1-flash-lite"},
+			{Provider: "anthropic", Model: "claude-haiku-4-5"},
+		}, MaxRetries: 1}
 	case FnEmbedding:
 		return FunctionConfig{Function: fn, Chain: []ChainLink{{Provider: "openai", Model: "text-embedding-3-small"}}, MaxRetries: 1}
 	case FnOCR, FnVision, FnPaymentOCR:
