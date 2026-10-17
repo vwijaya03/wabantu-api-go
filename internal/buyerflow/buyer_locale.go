@@ -3,7 +3,10 @@ package buyerflow
 import (
 	"regexp"
 	"strings"
+	"sync"
 	"unicode"
+
+	"encore.app/wabantu/internal/salesbrain"
 )
 
 const (
@@ -54,12 +57,19 @@ var explicitIndonesianSwitchPhrases = []string{
 	"pakai bahasa indonesia", "indonesia saja",
 }
 
-var savedBuyerLangStack []string
+var (
+	savedBuyerLangMu    sync.Mutex // guards savedBuyerLangStack (data-race free; the stack stays process-global)
+	savedBuyerLangStack []string
+)
 
 // PushSavedBuyerLang scopes template/reply language for the current turn (simulator + autoreply).
 func PushSavedBuyerLang(saved string) func() {
+	savedBuyerLangMu.Lock()
 	savedBuyerLangStack = append(savedBuyerLangStack, normalizeLang(saved))
+	savedBuyerLangMu.Unlock()
 	return func() {
+		savedBuyerLangMu.Lock()
+		defer savedBuyerLangMu.Unlock()
 		if len(savedBuyerLangStack) > 0 {
 			savedBuyerLangStack = savedBuyerLangStack[:len(savedBuyerLangStack)-1]
 		}
@@ -68,6 +78,8 @@ func PushSavedBuyerLang(saved string) func() {
 
 // SetSavedBuyerLang updates the innermost saved language (after persisting preference mid-turn).
 func SetSavedBuyerLang(saved string) {
+	savedBuyerLangMu.Lock()
+	defer savedBuyerLangMu.Unlock()
 	if len(savedBuyerLangStack) == 0 {
 		savedBuyerLangStack = append(savedBuyerLangStack, normalizeLang(saved))
 		return
@@ -77,6 +89,8 @@ func SetSavedBuyerLang(saved string) {
 
 // CurrentSavedBuyerLang returns the active saved buyer language for this turn.
 func CurrentSavedBuyerLang() string {
+	savedBuyerLangMu.Lock()
+	defer savedBuyerLangMu.Unlock()
 	if len(savedBuyerLangStack) == 0 {
 		return ""
 	}
@@ -156,98 +170,85 @@ func ClearMessageLanguage(userText string) (lang string, ok bool) {
 	return "", false
 }
 
-// ParseExplicitLanguageSwitch detects an explicit language preference command.
+// ParseExplicitLanguageSwitch — shared policy with the LLM-first path (salesbrain): a language
+// name only counts with a request verb/tail or an inability statement in the same clause.
 func ParseExplicitLanguageSwitch(userText string) (lang string, ok bool) {
-	text := strings.ToLower(strings.TrimSpace(userText))
-	if text == "" {
-		return "", false
-	}
-	for _, p := range explicitEnglishSwitchPhrases {
-		if strings.Contains(text, p) && !languagePhraseNegated(text, p) {
-			return LangEN, true
-		}
-	}
-	if strings.Contains(text, "speak english") || strings.Contains(text, "talk english") {
-		if !languagePhraseNegated(text, "english") {
-			return LangEN, true
-		}
-	}
-	for _, p := range explicitIndonesianSwitchPhrases {
-		if strings.Contains(text, p) && !languagePhraseNegated(text, p) {
-			return LangID, true
-		}
-	}
-	return "", false
+	l, ok := salesbrain.ParseExplicitSwitch(userText)
+	return string(l), ok
 }
 
-// languagePhraseNegated — "can't speak bahasa indonesia" is a refusal, not a switch to Indonesian.
-func languagePhraseNegated(text, phrase string) bool {
-	idx := strings.Index(text, phrase)
-	if idx < 0 {
+// languageAnswerNames are the words that name a language in a reply to the language question;
+// languageAnswerFillers are the polite extras a buyer adds to them ("indo aja", "english please").
+var (
+	languageAnswerNames = map[string]bool{
+		"english": true, "inggris": true, "eng": true, "en": true,
+		"indonesia": true, "indonesian": true, "indo": true, "ind": true, "id": true, "bahasa": true,
+	}
+	languageAnswerFillers = map[string]bool{
+		"please": true, "pls": true, "plz": true, "only": true, "aja": true, "saja": true, "dong": true,
+		"ya": true, "deh": true, "kak": true, "yang": true, "yg": true, "pakai": true, "pake": true,
+		"in": true, "the": true, "mau": true,
+	}
+)
+
+// isBareLanguageAnswer — at most 4 words, all of them a language name or a polite filler, with at
+// least one name ("english", "indo aja", "bahasa inggris dong"). A sentence that is merely written
+// in a language or names a place ("talk to a human", "Surabaya, Indonesia") is not an answer.
+func isBareLanguageAnswer(userText string) bool {
+	toks := strings.FieldsFunc(strings.ToLower(userText), func(r rune) bool {
+		return !(unicode.IsLetter(r) || unicode.IsDigit(r))
+	})
+	if len(toks) == 0 || len(toks) > 4 {
 		return false
 	}
-	start := idx - 48
-	if start < 0 {
-		start = 0
-	}
-	window := text[start:idx]
-	for _, n := range []string{
-		"can't", "cannot", "cant", "don't", "do not", "dont",
-		"not ", "no,", "no i", "bukan", "jangan", "tidak", "gak bisa", "ga bisa", "nggak",
-	} {
-		if strings.Contains(window, n) {
-			return true
+	named := false
+	for _, t := range toks {
+		switch {
+		case languageAnswerNames[t]:
+			named = true
+		case languageAnswerFillers[t]:
+		default:
+			return false
 		}
 	}
-	return false
+	return named
 }
 
-func looksLikeShippingAddress(text string) bool {
-	if postalCodeIDRe.MatchString(text) {
-		return true
-	}
-	if strings.Contains(text, "address:") || strings.HasPrefix(strings.TrimSpace(text), "alamat") {
-		return true
-	}
-	return false
-}
-
-// ParseLanguagePreferenceAnswer parses a reply to the bilingual language question.
+// ParseLanguagePreferenceAnswer parses a reply to LanguagePreferenceAskReply. Numbers follow the
+// order shown in that prompt: 1 = Indonesia, 2 = English. Only a bare answer counts ("english",
+// "indo aja"); a clear sentence is left to normal handling and to LanguageToPersist. Once a
+// language is saved the question is no longer pending, so only an explicit switch request counts.
 func ParseLanguagePreferenceAnswer(userText string) (lang string, ok bool) {
-	text := strings.ToLower(strings.TrimSpace(userText))
-	switch text {
-	case "1", "en", "english", "inggris", "bahasa inggris":
-		return LangEN, true
-	case "2", "id", "indonesia", "indonesian", "bahasa indonesia":
-		return LangID, true
+	if l, ok := salesbrain.ParseExplicitSwitch(userText); ok {
+		return string(l), true
 	}
-	if looksLikeShippingAddress(text) {
+	if saved := CurrentSavedBuyerLang(); saved == LangEN || saved == LangID {
 		return "", false
 	}
-	if strings.Contains(text, "inggris") || strings.Contains(text, "english") {
-		if !languagePhraseNegated(text, "english") && !languagePhraseNegated(text, "inggris") {
-			return LangEN, true
-		}
-	}
-	if strings.Contains(text, "indonesia") || strings.Contains(text, "indonesian") {
-		if languagePhraseNegated(text, "indonesia") || languagePhraseNegated(text, "indonesian") {
-			return LangEN, true
-		}
+	switch strings.TrimSpace(userText) {
+	case "1":
 		return LangID, true
+	case "2":
+		return LangEN, true
 	}
-	return "", false
+	if !isBareLanguageAnswer(userText) {
+		return "", false
+	}
+	l, ok := salesbrain.ParseChoiceAnswer(userText)
+	return string(l), ok
 }
 
-// ResolveBuyerLanguage: explicit switch → clear message language → saved preference → Indonesian.
+// ResolveBuyerLanguage: explicit switch → saved preference (lock) → clear message language →
+// per-turn saved stack → Indonesian.
 func ResolveBuyerLanguage(userText, savedPref string) string {
 	if lang, ok := ParseExplicitLanguageSwitch(userText); ok {
 		return lang
 	}
-	if lang, ok := ClearMessageLanguage(userText); ok {
-		return lang
-	}
 	if saved := normalizeLang(savedPref); saved == LangEN || saved == LangID {
 		return saved
+	}
+	if lang, ok := ClearMessageLanguage(userText); ok {
+		return lang
 	}
 	if saved := CurrentSavedBuyerLang(); saved == LangEN || saved == LangID {
 		return saved
@@ -255,19 +256,24 @@ func ResolveBuyerLanguage(userText, savedPref string) string {
 	return LangID
 }
 
-// LanguageToPersist returns a language code to store on the contact after this message.
+// LanguageToPersist: an explicit switch always persists; otherwise only the first clear signal
+// locks the language (a saved preference is never overwritten by auto-detection).
 func LanguageToPersist(userText, savedPref string) (lang string, ok bool) {
-	if lang, ok := ParseExplicitLanguageSwitch(userText); ok {
-		return lang, true
-	}
-	if ans, ok := ParseLanguagePreferenceAnswer(userText); ok && strings.TrimSpace(savedPref) == "" {
-		return ans, true
-	}
-	if lang, ok := ClearMessageLanguage(userText); ok {
-		if normalizeLang(savedPref) == lang {
+	saved := normalizeLang(savedPref)
+	if l, ok := ParseExplicitLanguageSwitch(userText); ok {
+		if l == saved {
 			return "", false
 		}
-		return lang, true
+		return l, true
+	}
+	if saved == LangEN || saved == LangID {
+		return "", false
+	}
+	if ans, ok := ParseLanguagePreferenceAnswer(userText); ok {
+		return ans, true
+	}
+	if l, ok := salesbrain.ClearLanguage(userText); ok {
+		return string(l), true
 	}
 	return "", false
 }

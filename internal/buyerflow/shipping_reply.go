@@ -22,6 +22,8 @@ func IsShippingFAQQuestion(userText string) bool {
 		"when will it arrive", "when will my order arrive", "shipping time", "delivery time",
 		"how long until it arrives", "days until it arrives",
 		"delivery fee", "shipping fee", "same day", "ship today", "deliver today", "send today",
+		"delivered today", "delivered tomorrow", "arrive today", "arrive tomorrow", "today or tomorrow",
+		"hari ini atau besok", "sampai hari ini", "sampai besok", "same-day",
 	}
 	for _, s := range signals {
 		if strings.Contains(text, s) {
@@ -54,7 +56,29 @@ func TryShippingFAQReply(userText string, profile *BusinessProfile, kb []KBEntry
 	return buildShippingDefaultReply(userText, profile, formal), true
 }
 
+// sameDayShippingKBAnswer — "same day delivery?": the dispatch-hours rule from the KB first, then
+// the ETA, in the buyer's language. Empty when the KB has no same-day rule (callers fall through).
+func sameDayShippingKBAnswer(userText string, kb []KBEntry) string {
+	facts := extractShippingKBFacts(kb)
+	sameDay, eta := facts.sameDayID, facts.etaID
+	if ResolveBuyerLanguage(userText, CurrentSavedBuyerLang()) == LangEN {
+		sameDay, eta = facts.sameDayEN, facts.etaEN
+	}
+	if sameDay == "" {
+		return ""
+	}
+	if eta == "" {
+		return sameDay
+	}
+	return sameDay + " " + eta
+}
+
 func tryShippingKBFAQ(userText string, kb []KBEntry) (string, bool) {
+	if asksSameDayDelivery(userText) {
+		if ans := sameDayShippingKBAnswer(userText, kb); ans != "" {
+			return ans, true
+		}
+	}
 	if ans, ok := tryFAQDirectAnswer(userText, kb); ok {
 		return ans, true
 	}
@@ -83,7 +107,11 @@ func tryShippingKBFAQ(userText string, kb []KBEntry) (string, bool) {
 		}
 	}
 	if bestScore >= minScore && strings.TrimSpace(best.Answer) != "" {
-		return LocalizeKBAnswerForBuyer(strings.TrimSpace(best.Answer), userText), true
+		// An empty localization (Indonesian-only KB text for an English buyer) is "no KB answer",
+		// never ("", true): the caller then uses its own localized template.
+		if localized := strings.TrimSpace(LocalizeKBAnswerForBuyer(strings.TrimSpace(best.Answer), userText)); localized != "" {
+			return localized, true
+		}
 	}
 	return "", false
 }

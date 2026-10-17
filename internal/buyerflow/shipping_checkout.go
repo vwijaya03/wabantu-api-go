@@ -65,7 +65,7 @@ func TryCheckoutActiveShippingFAQReply(userText, step string, profile *BusinessP
 	var base string
 	if IsShippingQuoteQuestion(userText) {
 		base = checkoutActiveShippingQuoteBase(userText, profile, kb, formal)
-	} else if ans, ok := tryShippingKBFAQ(userText, kb); ok {
+	} else if ans, ok := tryShippingKBFAQ(userText, kb); ok && strings.TrimSpace(ans) != "" {
 		base = ans
 	} else {
 		base = checkoutActiveShippingETABase(userText, formal)
