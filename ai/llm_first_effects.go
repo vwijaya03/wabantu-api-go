@@ -82,6 +82,8 @@ const (
 	lfReplacedPersistFailed      = "order_persist_failed"
 	lfReplacedVariantMissing     = "variant_missing"
 	lfReplacedNotExplicitConfirm = "confirm_not_explicit"
+	lfReplacedFieldIncomplete    = "field_incomplete"
+	lfReplacedConfirmNotReady    = "confirm_not_ready"
 )
 
 // lfApplyIntent applies the accepted decision of a turn. An error means a write that must be
@@ -213,6 +215,15 @@ func lfApplyFields(ctx context.Context, fx lfFX, in lfApplyIn, out *lfOutcome) {
 
 	modelReply := p.Decision.Reply
 	pending := pendingFieldFromState(&st)
+	if pending != "" && pending != "confirm" {
+		// Fields are still missing: whatever the model claimed ("ready for payment", "address
+		// saved") is not what code did. The buyer reads what was stored, what is missing, and the
+		// question again, all from code.
+		out.Reply = lfFieldProgressReply(in.State, &st, pending, problems, p.Lang)
+		out.Author = "system"
+		out.ReplacedReason = lfReplacedFieldIncomplete
+		return
+	}
 	var b strings.Builder
 	b.WriteString(modelReply)
 	if len(problems) > 0 {
@@ -225,6 +236,87 @@ func lfApplyFields(ctx context.Context, fx lfFX, in lfApplyIn, out *lfOutcome) {
 		b.WriteString("\n\n" + salesbrain.ResumeLineFor(pending, p.Lang))
 	}
 	out.Reply = b.String()
+}
+
+// lfFieldProgressReply is the code-built answer to a field_answer that left the checkout
+// incomplete: what was stored this turn (short), the invalid data, exactly what is missing, and
+// the resume line for the pending field.
+func lfFieldProgressReply(before, after *orderState, pending string, problems []string, lang salesbrain.Lang) string {
+	en := lang == salesbrain.LangEN
+	label := func(id, eng string) string {
+		if en {
+			return eng
+		}
+		return id
+	}
+	var saved []string
+	if after.RecipientName != before.RecipientName {
+		saved = append(saved, label("nama ", "name ")+after.RecipientName)
+	}
+	if after.RecipientPhone != before.RecipientPhone {
+		saved = append(saved, label("HP ", "phone ")+after.RecipientPhone)
+	}
+	var addr []string
+	for _, c := range []struct{ was, now string }{
+		{before.Street, after.Street}, {before.Kecamatan, after.Kecamatan}, {before.City, after.City},
+		{before.Province, after.Province}, {before.PostalCode, after.PostalCode},
+	} {
+		if strings.TrimSpace(c.now) != "" && c.now != c.was {
+			addr = append(addr, strings.TrimSpace(c.now))
+		}
+	}
+	if len(addr) > 0 {
+		saved = append(saved, label("alamat ", "address ")+strings.Join(addr, ", "))
+	}
+
+	var parts []string
+	if len(saved) > 0 {
+		parts = append(parts, salesbrain.T(salesbrain.TplFieldSaved, lang, strings.Join(saved, "; ")))
+	}
+	if len(problems) > 0 {
+		parts = append(parts, salesbrain.T(salesbrain.TplFieldProblems, lang, lfJoinProblems(problems)))
+	}
+	if missing := lfMissingFields(after, pending, en); len(missing) > 0 {
+		parts = append(parts, salesbrain.T(salesbrain.TplFieldMissing, lang, strings.Join(missing, ", ")))
+	}
+	parts = append(parts, salesbrain.ResumeLineFor(pending, lang))
+	return strings.Join(parts, "\n\n")
+}
+
+// lfMissingFields names what the pending field still lacks (the same parts addressMissingReply
+// of the legacy flow names).
+func lfMissingFields(st *orderState, pending string, en bool) []string {
+	var missing []string
+	add := func(id, eng string) {
+		if en {
+			missing = append(missing, eng)
+		} else {
+			missing = append(missing, id)
+		}
+	}
+	switch pending {
+	case "recipient":
+		if strings.TrimSpace(st.RecipientName) == "" {
+			add("nama penerima", "recipient name")
+		}
+		if strings.TrimSpace(st.RecipientPhone) == "" {
+			add("nomor HP", "phone number")
+		}
+	case "address":
+		if strings.TrimSpace(st.Street) == "" {
+			add("nama jalan dan nomor", "street name and number")
+		}
+		if strings.TrimSpace(st.City) == "" {
+			add("kota", "city")
+		}
+		if strings.TrimSpace(st.Province) == "" {
+			add("provinsi", "province")
+		}
+		if len(st.PostalCode) != 5 {
+			add("kode pos 5 digit", "5-digit postal code")
+		}
+	}
+	return missing
 }
 
 // lfConfirmBlock is the final summary: the items with the subtotal, where the order goes, and the
@@ -247,7 +339,14 @@ func lfConfirmBlock(st *orderState, lang salesbrain.Lang) string {
 func lfApplyConfirm(ctx context.Context, fx lfFX, in lfApplyIn, out *lfOutcome) {
 	st := in.State
 	if st == nil || st.Step != lfStepConfirm || !st.ShippingComplete() || len(cartFromState(st)) == 0 {
-		return // nothing to confirm: the turn stays an ordinary answer that resumes the pending field
+		// Nothing to confirm. The model's reply (probably "confirmed" / "ready") would be false:
+		// the buyer is led back to the pending field instead.
+		if pending := lfPendingForUnconfirmed(st); pending != "" {
+			out.Reply = salesbrain.ResumeLineFor(pending, in.Plan.Lang)
+			out.Author = "system"
+			out.ReplacedReason = lfReplacedConfirmNotReady
+		}
+		return
 	}
 	p := in.Plan
 	next := *st
@@ -294,6 +393,25 @@ func lfApplyConfirm(ctx context.Context, fx lfFX, in lfApplyIn, out *lfOutcome) 
 		fx.clearState(ctx)
 		return nil
 	}
+}
+
+// lfPendingForUnconfirmed is the field to ask for when the buyer "confirmed" something that is not
+// ready to confirm: "" when there is no live checkout (the model's answer stands).
+func lfPendingForUnconfirmed(st *orderState) string {
+	if st == nil || len(cartFromState(st)) == 0 {
+		return ""
+	}
+	pending := pendingFieldFromState(st)
+	if pending == "confirm" || pending == "" {
+		switch lfStepAfterItems(st) {
+		case lfStepAskRecipient:
+			return "recipient"
+		case lfStepAskAddressFull:
+			return "address"
+		}
+		return "" // everything is there and the step is confirm: handled by the caller
+	}
+	return pending
 }
 
 // lfFirstMissingVariantName is the product of the first cart line that lacks its variant.
