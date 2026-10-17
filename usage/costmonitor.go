@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	"encore.dev/rlog"
 )
@@ -34,8 +35,8 @@ var pricingTable = map[string]modelPricing{
 	"gemini-2.5-pro":        {InputPer1M: 1.25, OutputPer1M: 10.00},
 	// Gemini 3.x, Standard paid tier, text, from https://ai.google.dev/gemini-api/docs/pricing (read 2026-10-17);
 	// thinking tokens are billed as output.
-	//   3.6 Flash / 3.8 Flash: promotional price through 2026-12-31 ($0.75 in / $3.75 out); the page
-	//   lists $1.50 / $7.50 from 2027-01-01, so update these two rows then.
+	//   3.6 Flash / 3.8 Flash: $0.75 in / $3.75 out through 2026-12-31; the page lists $1.50 / $7.50
+	//   from 2027-01-01, which pricingSteps applies automatically from that date.
 	//   3.5 Flash-Lite: $0.30 in / $2.50 out.
 	//   3.1 Pro Preview: $2.00 in / $12.00 out for prompts <= 200k tokens (the > 200k tier is not modeled).
 	"gemini-3.8-flash":       {InputPer1M: 0.75, OutputPer1M: 3.75},
@@ -46,6 +47,39 @@ var pricingTable = map[string]modelPricing{
 	"text-embedding-3-small": {InputPer1M: 0.02, OutputPer1M: 0},
 	// Gemini embedding (ai.google.dev/gemini-api/docs/pricing): input only, paid tier.
 	"gemini-embedding-001": {InputPer1M: 0.15, OutputPer1M: 0},
+}
+
+// pricingNow is the clock of the price steps below (a test seam).
+var pricingNow = time.Now
+
+// priceStep is a price that replaces the pricingTable entry of a model from a given instant.
+type priceStep struct {
+	From  time.Time
+	Price modelPricing
+}
+
+// pricingSteps holds announced price changes. Source: https://ai.google.dev/gemini-api/docs/pricing
+// (paid tier, read 2026-10-17): gemini-3.6-flash and gemini-3.8-flash cost $0.75 in / $3.75 out
+// through 2026-12-31 (the pricingTable rows) and $1.50 / $7.50 from 2027-01-01 (WIB boundary is not
+// modeled: the step starts at 2027-01-01 00:00 UTC).
+var pricingSteps = map[string][]priceStep{
+	"gemini-3.6-flash": {{From: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC), Price: modelPricing{InputPer1M: 1.50, OutputPer1M: 7.50}}},
+	"gemini-3.8-flash": {{From: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC), Price: modelPricing{InputPer1M: 1.50, OutputPer1M: 7.50}}},
+}
+
+// priceFor is the price of model now: the table row, or the latest step that already started.
+func priceFor(model string) (modelPricing, bool) {
+	p, ok := pricingTable[model]
+	if !ok {
+		return p, false
+	}
+	now := pricingNow()
+	for _, st := range pricingSteps[model] {
+		if !now.Before(st.From) {
+			p = st.Price
+		}
+	}
+	return p, true
 }
 
 // ModelPriced reports whether pricingTable has a price for model.
@@ -65,7 +99,7 @@ func EstimateTokenCost(model string, inputTokens, outputTokens int) float64 {
 // EstimateTokenCostKnown is EstimateTokenCost with an explicit flag: known=false means the model
 // has no entry in pricingTable and the returned cost (0) is not an estimate.
 func EstimateTokenCostKnown(model string, inputTokens, outputTokens int) (cost float64, known bool) {
-	pricing, ok := pricingTable[model]
+	pricing, ok := priceFor(model)
 	if !ok {
 		rlog.Warn("unknown model for cost estimation, cost not estimated", "model", model)
 		return 0, false

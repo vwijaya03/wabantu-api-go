@@ -2,6 +2,7 @@ package usage
 
 import (
 	"testing"
+	"time"
 
 	"encore.app/wabantu/shared/llm"
 )
@@ -61,5 +62,27 @@ func TestGeminiStandardPrices(t *testing.T) {
 	// 1M in + 1M out on gemini-3.6-flash = 0.75 + 3.75.
 	if got, known := EstimateTokenCostKnown("gemini-3.6-flash", 1_000_000, 1_000_000); !known || got != 4.50 {
 		t.Fatalf("3.6 flash 1M/1M = %v (known=%v), want 4.50", got, known)
+	}
+}
+
+func TestFlashPriceStepsUpOn2027(t *testing.T) {
+	old := pricingNow
+	defer func() { pricingNow = old }()
+	at := func(y int, m time.Month, d int) {
+		pricingNow = func() time.Time { return time.Date(y, m, d, 12, 0, 0, 0, time.UTC) }
+	}
+	for _, model := range []string{"gemini-3.6-flash", "gemini-3.8-flash"} {
+		at(2026, 12, 31)
+		if got, _ := EstimateTokenCostKnown(model, 1_000_000, 1_000_000); got != 4.50 {
+			t.Errorf("%s on 2026-12-31 = %v, want 0.75+3.75", model, got)
+		}
+		at(2027, 1, 1)
+		if got, _ := EstimateTokenCostKnown(model, 1_000_000, 1_000_000); got != 9.00 {
+			t.Errorf("%s on 2027-01-01 = %v, want 1.50+7.50", model, got)
+		}
+	}
+	at(2027, 6, 1)
+	if got, _ := EstimateTokenCostKnown("gemini-3.1-flash-lite", 1_000_000, 1_000_000); got != 1.75 {
+		t.Errorf("flash-lite must not step: %v", got)
 	}
 }
