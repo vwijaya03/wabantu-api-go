@@ -137,10 +137,10 @@ func buildShippingQuoteReply(userText string, profile *BusinessProfile, kb []KBE
 	idCasualArea := "Ongkirnya nanti dihitung setelah alamat lengkap ya kak. Area kirim kami: " + area +
 		". Boleh kirim alamat lengkap (kecamatan/kota) biar bisa dihitung ongkirnya?"
 	idCasual := "Ongkirnya nanti dihitung setelah alamat lengkap ya kak. Boleh kirim alamat lengkap (kecamatan/kota) biar bisa dihitung ongkirnya?"
-	enFormalArea := "Shipping cost is calculated after we confirm your full address. We deliver to: " + area +
+	enFormalArea := "Shipping cost is calculated after we confirm your full address. " + enShipsTo("We deliver", area) +
 		". Please send your full address (district/city) so we can quote shipping."
 	enFormal := "Shipping cost is calculated after we confirm your full address. Please send your full address (district/city) so we can quote shipping."
-	enCasualArea := "We'll calculate shipping after your full address is confirmed. We ship to: " + area +
+	enCasualArea := "We'll calculate shipping after your full address is confirmed. " + enShipsTo("We ship", area) +
 		". Could you send your full address (district/city) so we can quote shipping?"
 	enCasual := "We'll calculate shipping after your full address is confirmed. Could you send your full address (district/city) so we can quote shipping?"
 	if formal {
@@ -163,8 +163,8 @@ func buildShippingDefaultReply(userText string, profile *BusinessProfile, formal
 	}
 	idFormal := "Kami melayani pengiriman ke " + area + ". " + base
 	idCasual := "Kami kirim ke " + area + " ya kak. " + base
-	enFormal := "We deliver to " + area + ". " + base
-	enCasual := "We ship to " + area + ". " + base
+	enFormal := enShipsTo("We deliver", area) + ". " + base
+	enCasual := enShipsTo("We ship", area) + ". " + base
 	if formal {
 		return PickBuyerLanguageReply(userText, formal, idFormal, enFormal)
 	}

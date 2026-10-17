@@ -574,7 +574,7 @@ func BuildShippingFAQReply(userText string, profile *BusinessProfile, kb []KBEnt
 		if facts.courierEN != "" {
 			parts = append(parts, facts.courierEN)
 		} else if area != "" {
-			parts = append(parts, "We ship to "+area+".")
+			parts = append(parts, enShipsTo("We ship", area)+".")
 		}
 		if askFee {
 			if formal {
@@ -624,4 +624,12 @@ func BuildShippingFAQReply(userText string, profile *BusinessProfile, kb []KBEnt
 		return buildShippingDefaultReply(userText, profile, formal)
 	}
 	return strings.Join(parts, " ")
+}
+
+// enShipsTo renders "We ship across Indonesia" (DeliveryAreaForReply EN form) or "We ship to Surabaya".
+func enShipsTo(verb, area string) string {
+	if strings.HasPrefix(area, "across ") {
+		return verb + " " + area
+	}
+	return verb + " to " + area
 }

@@ -86,9 +86,9 @@ func checkoutActiveShippingQuoteBase(userText string, profile *BusinessProfile, 
 	idFormal := "Ongkir dihitung setelah alamat lengkap dikonfirmasi."
 	idCasualArea := "Ongkirnya nanti dihitung setelah alamat lengkap ya kak. Area kirim kami: " + area + "."
 	idCasual := "Ongkirnya nanti dihitung setelah alamat lengkap ya kak."
-	enFormalArea := "Shipping is calculated after we confirm your full address. We deliver to: " + area + "."
+	enFormalArea := "Shipping is calculated after we confirm your full address. " + enShipsTo("We deliver", area) + "."
 	enFormal := "Shipping is calculated after we confirm your full address."
-	enCasualArea := "We'll calculate shipping after your full address is confirmed. We ship to: " + area + "."
+	enCasualArea := "We'll calculate shipping after your full address is confirmed. " + enShipsTo("We ship", area) + "."
 	enCasual := "We'll calculate shipping after your full address is confirmed."
 	if formal {
 		if area != "" {
