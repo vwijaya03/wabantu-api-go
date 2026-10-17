@@ -1042,48 +1042,72 @@ func (s *AutoReplyService) handleCustomerOrderStatus(
 	}
 	meta := metaNoLLM(reasonAIGenerated, PathOrderStatus)
 	meta.OrderAction = "status"
-	send := func(text string) (bool, error) {
-		meta.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err := s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, text, "system", payload.InboundMessageID, meta)
-		return err == nil, err
+	draftSummary := func() string {
+		if orderSt, err := s.getOrderState(ctx, payload.TenantID, convo.ID); err == nil && orderSt != nil && orderSt.ProductComplete() {
+			return formatOrderSummary(*orderSt)
+		}
+		return ""
 	}
-	if res.AccessDenied {
-		return send(orderAccessDeniedReply())
-	}
-	if res.NotFound {
-		return send(orderRefNotFoundReply(parseOrderRefFromMessage(userText)))
-	}
-	if res.RecipientHintNotFound {
-		return send(orderRecipientHintNotFoundReply())
-	}
-	if res.ActiveOnly && res.Order == nil {
-		return send(orderNoActiveOrdersReply())
-	}
-	if res.NeedPick {
-		return send(orderStatusPickRefReply(res.List))
+	text, orderID := orderStatusReplyFor(res, userText, buyerEnglish(userText, contact), scope, contact, draftSummary)
+	meta.OrderID = orderID
+	meta.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
+	err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, text, "system", payload.InboundMessageID, meta)
+	return err == nil, err
+}
+
+// buyerEnglish: the language the buyer's fixed status text must use: an explicit switch in the
+// message, the locked preference, a clear message language, the turn's saved language, else Indonesian.
+func buyerEnglish(userText string, contact *dbContact) bool {
+	return ResolveBuyerLanguage(userText, contactPreferredLanguage(contact)) == bf.LangEN
+}
+
+// orderStatusReplyFor is the text of the order-status answer and the id of the order it is about
+// ("" when none). Pure apart from draftSummary, which is only called when no saved order matched and
+// returns the buyer's unsaved checkout summary ("" when there is none).
+func orderStatusReplyFor(res persistedOrderResolve, userText string, en bool, scope orderAccessScope, contact *dbContact, draftSummary func() string) (string, string) {
+	switch {
+	case res.AccessDenied:
+		return orderAccessDeniedReplyL(en), ""
+	case res.NotFound:
+		return orderRefNotFoundReplyL(parseOrderRefFromMessage(userText), en), ""
+	case res.RecipientHintNotFound:
+		return orderRecipientHintNotFoundReplyL(en), ""
+	case res.ActiveOnly && res.Order == nil:
+		return orderNoActiveOrdersReply(en), ""
+	case res.NeedPick:
+		return orderStatusPickRefReply(res.List, en), ""
 	}
 	o := res.Order
 	if o == nil {
-		if orderSt, err := s.getOrderState(ctx, payload.TenantID, convo.ID); err == nil && orderSt != nil && orderSt.ProductComplete() {
-			body := formatOrderSummary(*orderSt)
-			if body != "" {
-				body += "\n\n(Ini draft pesanan dari chat — belum dikonfirmasi ke toko.)"
-				return send(body)
+		if draftSummary != nil {
+			if body := draftSummary(); body != "" {
+				if en {
+					return body + "\n\n(This is a draft order from the chat — not yet confirmed with the shop.)", ""
+				}
+				return body + "\n\n(Ini draft pesanan dari chat — belum dikonfirmasi ke toko.)", ""
 			}
 		}
-		return send(orderNoneFoundReply())
+		return orderNoneFoundReply(en), ""
 	}
 	if contact != nil && !OrderChatAccessAllowed(o, scope, contact.PhoneNumber, contact.PhoneNumber) {
-		return send(orderAccessDeniedReply())
+		return orderAccessDeniedReplyL(en), ""
 	}
-	meta.OrderID = o.ID
-	body := formatPersistedOrderSummary(o)
-	if strings.EqualFold(o.Status, "cancelled") {
-		body += "\n\nPesanan ini sudah dibatalkan."
-	} else if cancellableOrderStatuses[o.Status] {
-		body += "\n\nUntuk membatalkan, ketik saja: batalkan pesanan."
+	body := formatPersistedOrderSummaryL(o, en)
+	switch {
+	case strings.EqualFold(o.Status, "cancelled"):
+		if en {
+			body += "\n\nThis order has been cancelled."
+		} else {
+			body += "\n\nPesanan ini sudah dibatalkan."
+		}
+	case cancellableOrderStatuses[o.Status]:
+		if en {
+			body += "\n\nTo cancel, just type: cancel order."
+		} else {
+			body += "\n\nUntuk membatalkan, ketik saja: batalkan pesanan."
+		}
 	}
-	return send(body)
+	return body, o.ID
 }
 
 // isStructuredOrderCheckoutBreak — multi-line order pasted mid-checkout (bukan append lalu/tambah/nambah).

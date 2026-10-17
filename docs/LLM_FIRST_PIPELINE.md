@@ -38,7 +38,7 @@ Mode `on`, berurutan (`ai/llm_first.go`):
 | `cancel` | Draft belum bayar: `cancelPersistedOrder` + `clearOrderState`, balasan template `TplOrderCancelled`. Pesanan yang sudah dibayar **tidak pernah** dibatalkan bot: notifikasi owner dulu, lalu `TplCancelPaidOrder`. Nomor `WB-…` di pesan menentukan pesanan; nomor tidak dikenal tidak membatalkan apa pun. Dengan dua pesanan terbuka atau lebih dan tanpa nomor, tidak ada yang dibatalkan (pembeli yang memilih; balasan model tetap dikirim). Keranjang yang belum tersimpan cukup dikosongkan. |
 | `continue_order` | Draft terbuka terbaru (atau yang disebut nomornya) dipulihkan ke Redis dari DB; hanya kolom yang kurang yang ditanya. Pesanan yang menunggu bayar tidak dipulihkan (tidak ada yang tersisa untuk dikumpulkan). |
 | `new_order` | `clearOrderState`; draft lama **tetap** di DB (diparkir, tetap muncul di pengingat) dan keranjang berikutnya menjadi draft baru. `TplNewOrderParked` bila model belum menyebut nomornya. |
-| `status` | `handleCustomerOrderStatus` (jalur lama; membalas sendiri). |
+| `status` | `handleCustomerOrderStatus` (jalur lama; membalas sendiri). Semua teks status dua bahasa; bahasa dipilih `ResolveBuyerLanguage(pesan, bahasa terkunci kontak)`, jadi pembeli Inggris menerima status Inggris. |
 | `human_request`, atau `handoff.level = takeover` | Setelah balasan terkirim: `pauseAI(HandoffReasonHumanRequest)` lalu `notifyOwner("ai.handoff")`. Balasan memuat jam buka tenant. AI lanjut otomatis setelah 2 jam tanpa balasan staf. |
 | `handoff.level = note` | `notifyOwner` saja; AI tetap melayani. |
 
@@ -305,7 +305,6 @@ Peringatan harga:
 
 Perilaku yang sengaja atau belum ditangani, supaya tidak mengejutkan saat canary:
 
-- **Intent `status`** dijawab `handleCustomerOrderStatus` (jalur lama): teksnya Indonesia saja, jadi pembeli berbahasa Inggris menerima status dalam bahasa Indonesia. Perlu template status dua bahasa.
 - **Produk bervarian (ukuran/warna)**, misalnya nama berisi celana, kaos, atau ukuran: pipeline tidak punya kolom varian, jadi menyimpan pesanannya gagal (`ReadyToPersist`) dan pembeli mendapat pesan gangguan sistem plus notifikasi owner. Tenant pilot (steak) tidak terdampak.
 - **Fail-open di langkah `confirm`:** jalur lama tidak mengenal langkah itu dan membalas teks "lanjutkan data order" sampai pembeli mengulang OK atau state kedaluwarsa.
 - **Kuota habis** dijawab template tanpa notifikasi owner (sama dengan jalur lama); spec §4.4 menyebut notifikasi untuk kasus ini.
