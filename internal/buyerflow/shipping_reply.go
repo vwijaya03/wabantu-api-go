@@ -25,7 +25,14 @@ func IsShippingFAQQuestion(userText string) bool {
 		"delivered today", "delivered tomorrow", "arrive today", "arrive tomorrow", "today or tomorrow",
 		"hari ini atau besok", "sampai hari ini", "sampai besok", "same-day",
 	}
+	// "sampai besok" / "sampai hari ini" are also farewells ("oke kak, sampai besok ya"); they only
+	// count as a shipping question when the message actually asks something.
+	asks := strings.Contains(text, "?") || strings.Contains(text, "apakah") || strings.Contains(text, "bisa") ||
+		strings.Contains(text, "kapan") || strings.Contains(text, "gak") || strings.Contains(text, "nggak")
 	for _, s := range signals {
+		if (s == "sampai besok" || s == "sampai hari ini") && !asks {
+			continue
+		}
 		if strings.Contains(text, s) {
 			if isShippingFAQNegated(text) {
 				return false
