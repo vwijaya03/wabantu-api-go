@@ -186,14 +186,14 @@ func TestRunToolChatFallbackToAnthropic(t *testing.T) {
 	}
 }
 
-func TestRunToolChatDefaultIsAnthropicWithRouting(t *testing.T) {
-	// No DB config → code default chain (anthropic, no model) → ResolveRouting model is used.
+func TestRunToolChatDefaultWithoutGeminiUsesExplicitHaiku(t *testing.T) {
+	// No DB config and no gemini registered (Encore Cloud) → code default chain skips gemini and
+	// the anthropic link carries claude-haiku-4-5, so the routing model (Sonnet) is not used.
 	r := NewRegistry(NewResolver(NewMemoryStore(), 0))
-	r.Register(&MockToolProvider{MockProvider: &MockProvider{Name: "gemini"}})
 	r.Register(&MockProvider{Name: "anthropic"})
 	var ac []string
 	out, res, err := RunToolChat(context.Background(), r, "t1", FnChat, ToolChatRequest{}, nil, anthropicSpecial("claude-sonnet-4-5", &ac))
-	if err != nil || res.Provider != "anthropic" || out.Usage.Model != "claude-sonnet-4-5" {
+	if err != nil || res.Provider != "anthropic" || out.Usage.Model != "claude-haiku-4-5" {
 		t.Fatalf("%+v %+v %v", out, res, err)
 	}
 }
