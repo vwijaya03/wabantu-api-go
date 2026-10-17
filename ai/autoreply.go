@@ -767,8 +767,16 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return err == nil, err
 	}
 
-	kbForPrompt := make([]KBEntry, len(kbHybrid))
-	for i, e := range kbHybrid {
+	// A tenant KB of at most kbPromptFullMax rows goes to the model whole (O6); one bounded extra
+	// query tells whether it is that small. Bigger KBs keep using the retrieved rows.
+	allKB, allKBErr := loadKBEntries(ctx, ts, kbPromptFullMax+1)
+	if allKBErr != nil {
+		rlog.Warn("AI job: full KB load failed, using retrieved KB only", "err", allKBErr)
+		allKB = nil
+	}
+	promptKB := kbForLLMPrompt(allKB, kbHybrid)
+	kbForPrompt := make([]KBEntry, len(promptKB))
+	for i, e := range promptKB {
 		cat := ""
 		if e.Category != nil {
 			cat = *e.Category
@@ -832,7 +840,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	}
 
 	groundedReply, wasGrounded, groundReason := groundLLMReply(reply, userText, buyerReplyLang(userText, contact),
-		profile, catalog, mergeKBEntries(kbEntries, kbHybrid), orderActiveNow, history,
+		profile, catalog, mergeKBEntries(mergeKBEntries(kbEntries, kbHybrid), promptKB), orderActiveNow, history,
 		func(ut string, p *dbBusinessProfile, c []dbCatalogItem, h []dbMessage) (string, bool) {
 			return s.replyFromBusinessCatalogHybrid(ctx, payload.TenantID, payload.TenantSchema, ut, ts, p, c, h)
 		})
