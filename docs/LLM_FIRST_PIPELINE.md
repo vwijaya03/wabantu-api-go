@@ -46,7 +46,7 @@ Status pengingat pesanan terbuka (TTL 72 jam) dan penghitung salah paham beruntu
 
 ### Fail-open
 
-Kegagalan sebelum tulisan pertama mengembalikan `(false, nil)` dan jalur lama menangani giliran itu: gagal muat data, gagal menulis bahasa, error LLM, JSON/validasi rusak dua kali, teks yang mirip injeksi prompt (penjaganya ada di belakang hook). Pemakaian token tetap dicatat (`ai_token` = input + output + thinking) walau fallback. **Error pipeline tidak pernah memicu pause.**
+Kegagalan sebelum tulisan pertama mengembalikan `(false, nil)` dan jalur lama menangani giliran itu: gagal muat data, gagal menulis bahasa, error LLM, JSON/validasi rusak dua kali, teks yang mirip injeksi prompt (penjaganya ada di belakang hook). Pemakaian token tetap dicatat (`ai_token` = input + output + thinking) walau fallback. **Error pipeline tidak pernah memicu pause.** Bila state Redis sedang di langkah `confirm` (langkah yang hanya dikenal jalur ini), `normalizeOrderState` di jalur lama membacanya sebagai langkah alamat selesai: alamat lengkap langsung menyelesaikan pesanan cara lama, selain itu alamat ditanyakan lagi.
 
 ---
 
@@ -306,7 +306,6 @@ Peringatan harga:
 Perilaku yang sengaja atau belum ditangani, supaya tidak mengejutkan saat canary:
 
 - **Produk bervarian (ukuran/warna)**, misalnya nama berisi celana, kaos, atau ukuran: pipeline tidak punya kolom varian, jadi menyimpan pesanannya gagal (`ReadyToPersist`) dan pembeli mendapat pesan gangguan sistem plus notifikasi owner. Tenant pilot (steak) tidak terdampak.
-- **Fail-open di langkah `confirm`:** jalur lama tidak mengenal langkah itu dan membalas teks "lanjutkan data order" sampai pembeli mengulang OK atau state kedaluwarsa.
 - **Kuota habis** dijawab template tanpa notifikasi owner (sama dengan jalur lama); spec §4.4 menyebut notifikasi untuk kasus ini.
 - Penghitungan sesi `ai_conversation`: bila giliran fallback lalu jalur lama memanggil LLM di sesi baru, event percakapan untuk sesi itu tidak tercatat (menguntungkan tenant, bukan menagih lebih).
 

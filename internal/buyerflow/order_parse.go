@@ -755,6 +755,12 @@ func normalizeOrderState(st OrderState) OrderState {
 	switch st.Step {
 	case "ask_address":
 		st.Step = "ask_address_full"
+	case "confirm":
+		// Step of the LLM-first pipeline, unknown to this FSM. When such a turn fails open to
+		// this flow, read it as the address step: complete shipping finishes the order the legacy
+		// way, otherwise the address is asked for again. Without this the FSM answers its generic
+		// retry text until the state expires.
+		st.Step = "ask_address_full"
 	}
 	inferVariantFromProductName(&st)
 	if len(st.Items) > 0 && strings.TrimSpace(st.ProductName) == "" {
