@@ -1,5 +1,5 @@
 {
-  "count": 372,
+  "count": 373,
   "endpoints": [
     {
       "service": "admin",
@@ -204,7 +204,7 @@
     {
       "service": "admin",
       "file": "admin/ai_config.go",
-      "line": 201,
+      "line": 251,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/admin/ai/catalog",
@@ -214,7 +214,7 @@
     {
       "service": "admin",
       "file": "admin/ai_config.go",
-      "line": 46,
+      "line": 50,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/admin/ai/function-config",
@@ -224,7 +224,7 @@
     {
       "service": "admin",
       "file": "admin/ai_config.go",
-      "line": 158,
+      "line": 188,
       "access": "auth",
       "method": "DELETE",
       "path": "/api/v1/admin/ai/function-config/:function",
@@ -234,12 +234,22 @@
     {
       "service": "admin",
       "file": "admin/ai_config.go",
-      "line": 98,
+      "line": 105,
       "access": "auth",
       "method": "PUT",
       "path": "/api/v1/admin/ai/function-config/:function",
       "tag": "super_admin",
       "annotation": "auth method=PUT path=/api/v1/admin/ai/function-config/:function tag:super_admin"
+    },
+    {
+      "service": "admin",
+      "file": "admin/ai_llm_first_usage.go",
+      "line": 40,
+      "access": "auth",
+      "method": "GET",
+      "path": "/api/v1/admin/ai/llm-first/usage",
+      "tag": "super_admin",
+      "annotation": "auth method=GET path=/api/v1/admin/ai/llm-first/usage tag:super_admin"
     },
     {
       "service": "admin",
@@ -1905,7 +1915,7 @@
     {
       "service": "flag",
       "file": "flag/flag.go",
-      "line": 106,
+      "line": 108,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/flags",
@@ -1915,7 +1925,7 @@
     {
       "service": "flag",
       "file": "flag/flag.go",
-      "line": 131,
+      "line": 133,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/flags",
@@ -1925,7 +1935,7 @@
     {
       "service": "flag",
       "file": "flag/flag.go",
-      "line": 161,
+      "line": 163,
       "access": "auth",
       "method": "PATCH",
       "path": "/api/v1/flags/:key",
@@ -1935,7 +1945,7 @@
     {
       "service": "flag",
       "file": "flag/flag.go",
-      "line": 217,
+      "line": 219,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/flags/check/:key",
@@ -1984,7 +1994,7 @@
     {
       "service": "flag",
       "file": "flag/retrieval_rebuild.go",
-      "line": 48,
+      "line": 53,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/flags/retrieval-rebuild",
@@ -2946,7 +2956,7 @@
     {
       "service": "kb",
       "file": "kb/kb.go",
-      "line": 384,
+      "line": 386,
       "access": "auth",
       "method": "DELETE",
       "path": "/api/v1/knowledge-base/:id",
@@ -2955,7 +2965,7 @@
     {
       "service": "kb",
       "file": "kb/kb.go",
-      "line": 280,
+      "line": 281,
       "access": "auth",
       "method": "PATCH",
       "path": "/api/v1/knowledge-base/:id",
@@ -2964,7 +2974,7 @@
     {
       "service": "kb",
       "file": "kb/retrieval_worker.go",
-      "line": 152,
+      "line": 148,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/knowledge-base/reindex",
@@ -3351,7 +3361,7 @@
     {
       "service": "usage",
       "file": "usage/ai_activity.go",
-      "line": 200,
+      "line": 202,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/usage/ai-activity",
@@ -3360,7 +3370,7 @@
     {
       "service": "usage",
       "file": "usage/ai_activity.go",
-      "line": 209,
+      "line": 211,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/usage/ai-activity/summary",
