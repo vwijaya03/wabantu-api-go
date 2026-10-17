@@ -22,6 +22,19 @@ const maxCatalogToolRounds = 4
 
 const catalogToolsTaskHint = "Tugas: balas singkat (maks 8 baris). Untuk produk/harga WAJIB panggil search_catalog atau get_product dulu. Jangan mengarang harga."
 
+// withCatalogToolsHint appends the catalog-tools instruction to the caller's task hint. The hints
+// used to replace each other (the tools hint applied only when the caller passed none, which
+// ProcessAutoReply never does), so the model was told the language but not to call the catalog
+// tools. Merging twice does not repeat it.
+func withCatalogToolsHint(req SalesReplyRequest) SalesReplyRequest {
+	hint := strings.TrimSpace(req.TaskHint)
+	if !strings.Contains(hint, catalogToolsTaskHint) {
+		hint = strings.TrimSpace(hint + "\n" + catalogToolsTaskHint)
+	}
+	req.TaskHint = hint
+	return req
+}
+
 func catalogToolDefinitions() []anthropic.ToolUnionParam {
 	return []anthropic.ToolUnionParam{
 		{
@@ -73,10 +86,7 @@ func (c *AnthropicClient) GenerateSalesReplyWithCatalogTools(
 	}
 	model = ResolveAnthropicModel(model)
 
-	toolReq := req
-	if strings.TrimSpace(toolReq.TaskHint) == "" {
-		toolReq.TaskHint = catalogToolsTaskHint
-	}
+	toolReq := withCatalogToolsHint(req)
 
 	text, usage, usedTools, err = c.generateWithCatalogToolsOnce(ctx, model, toolReq, exec)
 	if err == nil {
@@ -233,11 +243,7 @@ func catalogToolDefsNeutral() []llm.ToolDef {
 
 // salesSystemText flattens the Anthropic system blocks for providers without cache blocks.
 func salesSystemText(req SalesReplyRequest) string {
-	hinted := req
-	if strings.TrimSpace(hinted.TaskHint) == "" {
-		hinted.TaskHint = catalogToolsTaskHint
-	}
-	blocks := buildSalesSystemBlocks(hinted)
+	blocks := buildSalesSystemBlocks(withCatalogToolsHint(req))
 	parts := make([]string, 0, len(blocks))
 	for _, b := range blocks {
 		parts = append(parts, b.Text)

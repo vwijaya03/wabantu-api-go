@@ -22,8 +22,17 @@ func IsShippingFAQQuestion(userText string) bool {
 		"when will it arrive", "when will my order arrive", "shipping time", "delivery time",
 		"how long until it arrives", "days until it arrives",
 		"delivery fee", "shipping fee", "same day", "ship today", "deliver today", "send today",
+		"delivered today", "delivered tomorrow", "arrive today", "arrive tomorrow", "today or tomorrow",
+		"hari ini atau besok", "sampai hari ini", "sampai besok", "same-day",
 	}
+	// "sampai besok" / "sampai hari ini" are also farewells ("oke kak, sampai besok ya"); they only
+	// count as a shipping question when the message actually asks something.
+	asks := strings.Contains(text, "?") || strings.Contains(text, "apakah") || strings.Contains(text, "bisa") ||
+		strings.Contains(text, "kapan") || strings.Contains(text, "gak") || strings.Contains(text, "nggak")
 	for _, s := range signals {
+		if (s == "sampai besok" || s == "sampai hari ini") && !asks {
+			continue
+		}
 		if strings.Contains(text, s) {
 			if isShippingFAQNegated(text) {
 				return false
@@ -54,7 +63,29 @@ func TryShippingFAQReply(userText string, profile *BusinessProfile, kb []KBEntry
 	return buildShippingDefaultReply(userText, profile, formal), true
 }
 
+// sameDayShippingKBAnswer — "same day delivery?": the dispatch-hours rule from the KB first, then
+// the ETA, in the buyer's language. Empty when the KB has no same-day rule (callers fall through).
+func sameDayShippingKBAnswer(userText string, kb []KBEntry) string {
+	facts := extractShippingKBFacts(kb)
+	sameDay, eta := facts.sameDayID, facts.etaID
+	if ResolveBuyerLanguage(userText, CurrentSavedBuyerLang()) == LangEN {
+		sameDay, eta = facts.sameDayEN, facts.etaEN
+	}
+	if sameDay == "" {
+		return ""
+	}
+	if eta == "" {
+		return sameDay
+	}
+	return sameDay + " " + eta
+}
+
 func tryShippingKBFAQ(userText string, kb []KBEntry) (string, bool) {
+	if asksSameDayDelivery(userText) {
+		if ans := sameDayShippingKBAnswer(userText, kb); ans != "" {
+			return ans, true
+		}
+	}
 	if ans, ok := tryFAQDirectAnswer(userText, kb); ok {
 		return ans, true
 	}
@@ -83,7 +114,11 @@ func tryShippingKBFAQ(userText string, kb []KBEntry) (string, bool) {
 		}
 	}
 	if bestScore >= minScore && strings.TrimSpace(best.Answer) != "" {
-		return LocalizeKBAnswerForBuyer(strings.TrimSpace(best.Answer), userText), true
+		// An empty localization (Indonesian-only KB text for an English buyer) is "no KB answer",
+		// never ("", true): the caller then uses its own localized template.
+		if localized := strings.TrimSpace(LocalizeKBAnswerForBuyer(strings.TrimSpace(best.Answer), userText)); localized != "" {
+			return localized, true
+		}
 	}
 	return "", false
 }
@@ -102,10 +137,10 @@ func buildShippingQuoteReply(userText string, profile *BusinessProfile, kb []KBE
 	idCasualArea := "Ongkirnya nanti dihitung setelah alamat lengkap ya kak. Area kirim kami: " + area +
 		". Boleh kirim alamat lengkap (kecamatan/kota) biar bisa dihitung ongkirnya?"
 	idCasual := "Ongkirnya nanti dihitung setelah alamat lengkap ya kak. Boleh kirim alamat lengkap (kecamatan/kota) biar bisa dihitung ongkirnya?"
-	enFormalArea := "Shipping cost is calculated after we confirm your full address. We deliver to: " + area +
+	enFormalArea := "Shipping cost is calculated after we confirm your full address. " + enShipsTo("We deliver", area) +
 		". Please send your full address (district/city) so we can quote shipping."
 	enFormal := "Shipping cost is calculated after we confirm your full address. Please send your full address (district/city) so we can quote shipping."
-	enCasualArea := "We'll calculate shipping after your full address is confirmed. We ship to: " + area +
+	enCasualArea := "We'll calculate shipping after your full address is confirmed. " + enShipsTo("We ship", area) +
 		". Could you send your full address (district/city) so we can quote shipping?"
 	enCasual := "We'll calculate shipping after your full address is confirmed. Could you send your full address (district/city) so we can quote shipping?"
 	if formal {
@@ -128,8 +163,8 @@ func buildShippingDefaultReply(userText string, profile *BusinessProfile, formal
 	}
 	idFormal := "Kami melayani pengiriman ke " + area + ". " + base
 	idCasual := "Kami kirim ke " + area + " ya kak. " + base
-	enFormal := "We deliver to " + area + ". " + base
-	enCasual := "We ship to " + area + ". " + base
+	enFormal := enShipsTo("We deliver", area) + ". " + base
+	enCasual := enShipsTo("We ship", area) + ". " + base
 	if formal {
 		return PickBuyerLanguageReply(userText, formal, idFormal, enFormal)
 	}

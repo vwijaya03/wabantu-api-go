@@ -143,7 +143,7 @@ func toBFCatalog(catalog []dbCatalogItem) []bf.CatalogItem {
 	for i, c := range catalog {
 		out[i] = bf.CatalogItem{
 			ID: c.ID, ExternalCode: c.ExternalCode, Name: c.Name,
-			SellPrice: c.SellPrice, SellUnit: c.SellUnit,
+			SellPrice: c.SellPrice, SellUnit: c.SellUnit, Description: c.Description,
 		}
 	}
 	return out

@@ -44,7 +44,7 @@ func loadCatalogItemsByIDs(ctx context.Context, ts tenantScopedQuerier, ids []st
 	}
 	rows, err := ts.QueryContext(ctx, fmt.Sprintf(`
 		SELECT id::text, external_code, name,
-		       COALESCE(sell_price, 0), COALESCE(sell_unit, 'pcs')
+		       COALESCE(sell_price, 0), COALESCE(sell_unit, 'pcs'), COALESCE(description, '')
 		FROM %s
 		WHERE deleted_at IS NULL AND is_active = true AND id = ANY($1::uuid[])`,
 		ts.T("business_catalog_item")), ids)
@@ -55,7 +55,7 @@ func loadCatalogItemsByIDs(ctx context.Context, ts tenantScopedQuerier, ids []st
 	var out []dbCatalogItem
 	for rows.Next() {
 		var it dbCatalogItem
-		if err := rows.Scan(&it.ID, &it.ExternalCode, &it.Name, &it.SellPrice, &it.SellUnit); err != nil {
+		if err := rows.Scan(&it.ID, &it.ExternalCode, &it.Name, &it.SellPrice, &it.SellUnit, &it.Description); err != nil {
 			return nil, err
 		}
 		out = append(out, it)
