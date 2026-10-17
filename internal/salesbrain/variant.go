@@ -54,7 +54,10 @@ type ResolveInput struct {
 	Cart       []OrderLine
 	Ops        []ItemOp
 	Catalog    []CatalogFact
-	BuyerTexts []string // current + recent buyer messages: a variant must appear in them
+	BuyerTexts []string // current + recent buyer messages (phones, amounts in Validate)
+	// VariantTexts grounds size/colour only from these messages (usually the current turn only),
+	// so a house number in an earlier address message is never read as a size.
+	VariantTexts []string
 }
 
 // CartResolution is the outcome of ResolveCartOps. Cart is a new slice; the input is never mutated.
@@ -84,12 +87,20 @@ func Siblings(catalog []CatalogFact, c CatalogFact) []CatalogFact {
 // ResolveCartOps applies the model's item ops to the cart with the variant, stock and price rules
 // above. Prices always come from the catalog row, never from the model. For catalogs without
 // variants and stock data it behaves like ApplyItemOps.
+func variantTexts(in ResolveInput) []string {
+	if len(in.VariantTexts) > 0 {
+		return in.VariantTexts
+	}
+	return in.BuyerTexts
+}
+
 func ResolveCartOps(in ResolveInput) CartResolution {
 	byNo := make(map[int]CatalogFact, len(in.Catalog))
 	for _, c := range in.Catalog {
 		byNo[c.No] = c
 	}
 	res := CartResolution{Cart: append([]OrderLine(nil), in.Cart...)}
+	vTexts := variantTexts(in)
 
 	for _, op := range in.Ops {
 		c, ok := byNo[op.No]
@@ -97,7 +108,7 @@ func ResolveCartOps(in ResolveInput) CartResolution {
 			res.Unknown = append(res.Unknown, op.No)
 			continue
 		}
-		size, color := grounded(in.BuyerTexts, op.Size), grounded(in.BuyerTexts, op.Color)
+		size, color := grounded(vTexts, op.Size), grounded(vTexts, op.Color)
 
 		// The buyer named another size of a sized row: that is the sibling row, when it exists.
 		if c.Size != "" && size != "" && !strings.EqualFold(size, c.Size) {
@@ -113,6 +124,12 @@ func ResolveCartOps(in ResolveInput) CartResolution {
 			size = c.Size // the row's own size is the size of the line
 		case !c.NeedsVariant:
 			size, color = "", "" // a plain product has no variant
+		}
+		if color != "" && c.NeedsVariant && !colorAllowed(in.Catalog, c, color) {
+			res.Issues = append(res.Issues, OpIssue{
+				Kind: IssueVariantUnknown, No: c.No, Name: displayName(c), Options: colorsOffered(in.Catalog, c),
+			})
+			continue
 		}
 
 		matches := lineMatches(res.Cart, c)
@@ -141,11 +158,9 @@ func ResolveCartOps(in ResolveInput) CartResolution {
 
 		case idx >= 0:
 			line := &res.Cart[idx]
-			if op.Qty > line.Qty {
-				if is := stockIssue(in.Catalog, c, op.Qty); is != nil {
-					res.Issues = append(res.Issues, *is)
-					continue
-				}
+			if is := stockIssueForLine(in.Catalog, res.Cart, c, op.Qty, idx); is != nil {
+				res.Issues = append(res.Issues, *is)
+				continue
 			}
 			before := *line
 			line.Qty, line.UnitPrice = op.Qty, c.Price
@@ -158,12 +173,12 @@ func ResolveCartOps(in ResolveInput) CartResolution {
 			}
 
 		default:
-			if c.Size != "" && len(Siblings(in.Catalog, c)) > 0 && !groundedWord(in.BuyerTexts, c.Size) {
+			if c.Size != "" && len(Siblings(in.Catalog, c)) > 0 && !groundedWord(vTexts, c.Size) {
 				// The buyer never said which size: nothing is added, the choices are asked.
 				res.Issues = append(res.Issues, OpIssue{Kind: IssueChooseVariant, No: c.No, Name: displayName(c), Options: sizesInStock(in.Catalog, c)})
 				continue
 			}
-			if is := stockIssue(in.Catalog, c, op.Qty); is != nil {
+			if is := stockIssueForLine(in.Catalog, res.Cart, c, op.Qty, -1); is != nil {
 				res.Issues = append(res.Issues, *is)
 				continue
 			}
@@ -179,16 +194,103 @@ func ResolveCartOps(in ResolveInput) CartResolution {
 	return res
 }
 
-// stockIssue refuses a quantity the row cannot supply. A row without stock data (Stock "") is
-// never refused here; the checkout save keeps its own stock guard.
-func stockIssue(catalog []CatalogFact, c CatalogFact, qty int) *OpIssue {
+// stockPoolID is the catalog row whose StockQty caps every variant line (same ID, e.g. two colours).
+func stockPoolID(c CatalogFact) string {
+	return strings.TrimSpace(c.ID)
+}
+
+// poolQtyInCart sums quantities of cart lines that draw from the same stock pool as c.
+func poolQtyInCart(cart []OrderLine, c CatalogFact, skipIdx int) int {
+	pool := stockPoolID(c)
+	if pool == "" {
+		return 0
+	}
+	n := 0
+	for i, l := range cart {
+		if i == skipIdx || strings.TrimSpace(l.ID) != pool {
+			continue
+		}
+		n += l.Qty
+	}
+	return n
+}
+
+// stockIssueForLine refuses when the pool would exceed StockQty after applying qty to skipIdx (-1 = new line).
+func stockIssueForLine(catalog []CatalogFact, cart []OrderLine, c CatalogFact, qty int, lineIdx int) *OpIssue {
 	switch {
 	case c.Stock == StockOut:
 		return &OpIssue{Kind: IssueSoldOut, No: c.No, Name: c.Name, Options: sizesInStock(catalog, c)}
-	case c.Stock != "" && int(c.StockQty) > 0 && qty > int(c.StockQty):
-		return &OpIssue{Kind: IssueStockLimit, No: c.No, Name: c.Name, Available: int(c.StockQty)}
+	case c.Stock != "" && int(c.StockQty) > 0:
+		other := poolQtyInCart(cart, c, lineIdx)
+		if other+qty > int(c.StockQty) {
+			left := int(c.StockQty) - other
+			if left < 0 {
+				left = 0
+			}
+			return &OpIssue{Kind: IssueStockLimit, No: c.No, Name: displayName(c), Available: left}
+		}
 	}
 	return nil
+}
+
+var catalogColorTokens = []string{
+	"hitam", "putih", "biru", "merah", "pink", "cream", "navy", "abu", "coklat", "hijau", "kuning", "ungu",
+	"orange", "gold", "silver", "maroon", "tosca", "beige", "brown", "black", "white", "blue", "red", "green",
+	"yellow", "grey", "gray", "purple", "nude", "mocha", "olive",
+}
+
+// colorAllowed accepts grounded colours that are standard retail words or appear on a catalog row of the product.
+func colorAllowed(catalog []CatalogFact, c CatalogFact, color string) bool {
+	col := normWords(color)
+	if col == "" {
+		return false
+	}
+	for _, tok := range strings.Fields(col) {
+		if !catalogColorTokenKnown(catalog, c, tok) {
+			return false
+		}
+	}
+	return true
+}
+
+func catalogColorTokenKnown(catalog []CatalogFact, c CatalogFact, tok string) bool {
+	for _, known := range catalogColorTokens {
+		if tok == known {
+			return true
+		}
+	}
+	needle := " " + tok + " "
+	for _, row := range catalog {
+		if !sameStockProduct(row, c) {
+			continue
+		}
+		if strings.Contains(" "+normWords(row.Name+" "+row.Description)+" ", needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func sameStockProduct(a, b CatalogFact) bool {
+	if a.ID != "" && b.ID != "" {
+		return a.ID == b.ID
+	}
+	if a.BaseName != "" && b.BaseName != "" {
+		return strings.EqualFold(a.BaseName, b.BaseName)
+	}
+	return strings.EqualFold(a.Name, b.Name)
+}
+
+func colorsOffered(catalog []CatalogFact, c CatalogFact) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, tok := range catalogColorTokens {
+		if catalogColorTokenKnown(catalog, c, tok) && !seen[tok] {
+			seen[tok] = true
+			out = append(out, tok)
+		}
+	}
+	return out
 }
 
 // sizesInStock lists the sizes of c and its siblings that still have stock (c itself included

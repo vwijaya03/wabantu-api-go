@@ -32,7 +32,7 @@ func TestNormalizeOrderStateKeepsConfirmStep(t *testing.T) {
 func TestLegacyFlowDoesNotFinishOrderFromConfirmStepWithoutExplicitConfirm(t *testing.T) {
 	for _, text := range []string{
 		"hmm", "tolong kirim hari ini", "ok tapi ganti alamat", "oke berapa ongkirnya?", "tidak", "jangan dulu",
-		"ganti jadi 2 ya", "siap kak ditunggu kabarnya besok pagi ya", "terima kasih", "thanks",
+		"siap kak ditunggu kabarnya besok pagi ya", "terima kasih", "thanks",
 	} {
 		st := confirmStepState(true)
 		persisted := 0
@@ -54,6 +54,26 @@ func TestLegacyFlowDoesNotFinishOrderFromConfirmStepWithoutExplicitConfirm(t *te
 		if strings.Contains(res.Reply, "data ordernya") {
 			t.Fatalf("%q must not answer with the generic retry text: %q", text, res.Reply)
 		}
+	}
+}
+
+func TestLegacyFlowAppliesQtyRevisionAtConfirmWithoutSaving(t *testing.T) {
+	st := confirmStepState(true)
+	persisted := 0
+	res := AdvanceOrderFlow(OrderFlowInput{
+		UserText: "ganti jadi 2 ya", State: &st, Catalog: omahCadburyLiveCatalog(), Profile: foodProfile(),
+	}, func(OrderState) (string, error) {
+		persisted++
+		return "9f1c2d3e-0000-0000-0000-000000000000", nil
+	})
+	if res.Completed || res.Cleared || persisted != 0 {
+		t.Fatalf("qty edit must not finish the order: completed=%v cleared=%v persisted=%d", res.Completed, res.Cleared, persisted)
+	}
+	if res.State == nil || res.State.Step != "confirm" || res.State.Qty != 2 || res.State.Items[0].Qty != 2 {
+		t.Fatalf("qty must update in place at confirm: %+v", res.State)
+	}
+	if !strings.Contains(res.Reply, "OK") || !strings.Contains(res.Reply, "Abon Sapi 500 Gram") {
+		t.Fatalf("must re-show summary after edit, got %q", res.Reply)
 	}
 }
 

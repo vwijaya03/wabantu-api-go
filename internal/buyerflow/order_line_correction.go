@@ -90,6 +90,8 @@ func checkoutEditPrompt(st OrderState, tmpl orderFlowTemplates) string {
 		return tmpl.AskQty
 	case "ask_address", "ask_address_full":
 		return tmpl.AskAddressFull
+	case "confirm":
+		return "" // caller uses orderReconfirmReply for the full summary at confirm
 	default:
 		return tmpl.AskRecipient
 	}
@@ -115,6 +117,9 @@ func tryApplyCartLineCorrection(st *OrderState, userText string, catalog []Catal
 	}
 	if st.Step == "" || st.Step == "ask_product" {
 		st.Step = "ask_recipient"
+	}
+	if st.Step == "confirm" {
+		return true, orderReconfirmReply(*st, userText)
 	}
 	return true, buildOrderFlowReply(*st, checkoutEditPrompt(*st, tmpl), catalog)
 }
