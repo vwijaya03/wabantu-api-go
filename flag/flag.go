@@ -2,7 +2,9 @@ package flag
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -227,7 +229,9 @@ func CheckFlag(ctx context.Context, key string) (*CheckFlagResponse, error) {
 }
 
 // IsEnabled checks whether a feature flag is active for the given tenant.
-// Safe to call from any service — uses an in-memory cache with 60 s TTL.
+// Safe to call from any service — uses an in-memory cache with 60 s TTL. A key with no row is
+// cached as a disabled flag for the same 60 s, so checking a flag that was never created costs one
+// query a minute instead of one per call. Other lookup errors read as disabled but are not cached.
 func IsEnabled(ctx context.Context, key, tenantID string) bool {
 	if f, ok := getCached(key); ok {
 		return flagEnabled(f, tenantID)
@@ -239,6 +243,11 @@ func IsEnabled(ctx context.Context, key, tenantID string) bool {
 
 	f, err := scanFlag(row.Scan)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			// CreateFlag and UpdateFlag replace this entry through setCache; the writers in
+			// retrieval_rollout.go invalidate it.
+			setCache(FeatureFlag{Key: key})
+		}
 		return false
 	}
 	setCache(f)
