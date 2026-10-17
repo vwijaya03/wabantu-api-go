@@ -31,7 +31,12 @@ Target: AI bersikap seperti pelayan toko yang menjawab dari katalog (termasuk de
 - `flag`: `ai_llm_first`, `ai_llm_first_shadow`, `ai_llm_first_kill`, `LLMFirstMode`, dan cache untuk flag yang belum dibuat.
 - `ai/llm_first_plan.go`: `planTurn`, keputusan murni dengan retry dan validasi.
 - `ai/llm_first_orders.go`: adaptor keranjang dan data penerima.
-- `ai/llm_first.go` dan `ai/llm_first_effects.go`: cangkang I/O. Hook `tryLLMFirst` di `ProcessAutoReply` tepat setelah gerbang `IsThirdPartyBuyerLookup`; tenant tanpa flag hanya membayar satu pengecekan flag. Mode shadow hanya mencatat log dan aktivitas AI (purpose `llm_first_shadow`). Mode on memuat data, mengunci bahasa, memanggil `planTurn`, menjalankan efek per intent (keranjang, data penerima, simpan pesanan, batal, lanjut, pesanan baru, status, handoff), lalu mengirim. Error sebelum tulisan pertama mengembalikan giliran ke jalur lama.
+- `ai/llm_first.go` dan `ai/llm_first_effects.go`: cangkang I/O. Hook `tryLLMFirst` di `ProcessAutoReply` tepat setelah gerbang `IsThirdPartyBuyerLookup`; tenant tanpa flag hanya membayar satu pengecekan flag. Mode shadow hanya mencatat log, aktivitas AI (purpose `llm_first_shadow`), dan event pengukuran `ai_token_llm_first`. Mode on memuat data, mengunci bahasa, memanggil `planTurn`, menjalankan efek per intent (keranjang, data penerima, simpan pesanan, batal, lanjut, pesanan baru, status, handoff), lalu mengirim. Error sebelum tulisan pertama mengembalikan giliran ke jalur lama.
+- **Fail-closed di langkah `confirm`:** FSM lama (`order_fsm.go`) mengenal langkah `confirm` dan hanya menyimpan pesanan bila balasan lolos `IsExplicitOrderConfirm`; `normalizeOrderState` tidak lagi memetakan `confirm` ke `ask_address_full`. Bila LLM gagal saat state di `confirm` dengan alamat lengkap, pipeline menahan giliran (ringkasan + ajakan OK dikirim ulang, owner diberi tahu) dan tidak menyerahkan ke jalur lama.
+- **Varian penuh:** `CatalogFact`/`ItemOp`/`OrderLine` membawa ukuran dan warna; `salesbrain.ResolveCartOps` mencocokkan varian yang beralasan dari teks pembeli, mendukung beberapa baris produk sama, menanyakan varian yang kurang sekali, dan menolak stok habis/kurang dengan kalimat template plus alternatif. Baris berukuran kini tersimpan dengan `Size` sehingga lolos `ReadyToPersist`.
+- **Token terpisah:** event usage `ai_token_llm_first` (live dan shadow) tanpa kuota; `ai_token` mode `on` tidak berubah.
+- **Model chat:** `lfNewChat` memakai chain `chat` tenant; link Anthropic tanpa model memakai Haiku, bukan Sonnet.
+- **Harga:** `usage/costmonitor.go` memuat `gemini-3.6-flash`, `gemini-3.8-flash`, `gemini-3.5-flash-lite`, `gemini-3.1-pro-preview`; model tanpa harga dihitung 0 (tidak lagi harga Sonnet); `GetTenantAICostEstimate` menghitung per model.
 - `AiReplyMeta` mendapat `pipeline`, `intent`, `lang`, `replacedReason`, `rawOutput` (diredaksi, ≤ 1000 karakter), `attempts`; path baru `llm_first`.
 - `internal/salesbrain` mendapat tiga template dua bahasa untuk nomor pesanan, data tidak valid, dan ringkasan pengiriman.
 
@@ -46,7 +51,8 @@ Target: AI bersikap seperti pelayan toko yang menjawab dari katalog (termasuk de
 
 ## Testing
 
-- `go test ./internal/salesbrain/ ./internal/buyerflow/ -count=1`
+- `go test ./internal/salesbrain/ ./internal/buyerflow/ -race -count=1`
+- `encore test ./shared/llm/ ./usage/ -count=1`
 - `encore test ./ai/ -count=1` (seluruh paket `ai`)
 - `encore test ./flag/ -count=1`
 - `encore test ./internal/apitest/ -count=1` (apiregistry tetap lulus, tidak ada endpoint baru)
@@ -56,6 +62,6 @@ Target: AI bersikap seperti pelayan toko yang menjawab dari katalog (termasuk de
 
 - Tidak ada migrasi skema, secret, env, atau endpoint baru. Merge tidak mengubah perilaku jalur baru; Part C dan D langsung aktif.
 - Aktivasi lewat `POST/PATCH /api/v1/flags` (super admin): shadow, canary satu tenant, lalu bertahap. Kill switch `ai_llm_first_kill` (`enabledGlobally=true`) mematikan jalur baru global dalam ≤ 60 detik. Langkah dan contoh `curl` dengan token placeholder ada di `docs/LLM_FIRST_PIPELINE.md`.
-- Chain `chat` di AI Provider disetel superadmin (disarankan `gemini-3.1-flash-lite`, lalu `gemini-3.6-flash`). `GeminiAPIKey` hanya ada di Cloud Run; di Encore Cloud chain jatuh ke Anthropic dan JSON diminta lewat prompt (default Sonnet bila link tanpa model: biaya jauh lebih tinggi).
+- Chain `chat` di AI Provider disetel superadmin (disarankan `gemini-3.1-flash-lite`, lalu `gemini-3.6-flash`). `GeminiAPIKey` hanya ada di Cloud Run; di Encore Cloud chain jatuh ke Anthropic dan JSON diminta lewat prompt (link tanpa model memakai Haiku; jangan hidupkan `ai_llm_first` di Encore sebelum ada kunci Gemini, lihat `docs/LLM_FIRST_PIPELINE.md` §3).
 - Kuota tidak diubah: LLM-first memakai ±5 kali token per pesan, jadi tenant Trial dan Starter lebih cepat habis kuota bila flag diaktifkan untuk mereka.
-- Batasan yang diketahui (status memakai jalur lama berbahasa Indonesia, draft belum disimpan selama belanja, produk bervarian): `docs/LLM_FIRST_PIPELINE.md` §8.
+- Batasan yang diketahui (status memakai jalur lama berbahasa Indonesia, pilihan ukuran/warna produk tanpa ukuran di nama tidak diketahui katalog): `docs/LLM_FIRST_PIPELINE.md` §8.

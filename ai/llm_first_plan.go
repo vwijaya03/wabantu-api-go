@@ -21,9 +21,12 @@ type planInput struct {
 	Catalog    []salesbrain.CatalogFact
 	KB         []salesbrain.KBFact
 	State      salesbrain.TurnState // Cart/PendingField/OpenOrders/RemindAllowed already filled
-	History    []salesbrain.HistoryTurn
-	Message    string
-	BuyerTexts []string // current + up to 3 previous buyer messages
+	// PendingAfterVariant is the pending field once the cart's variants are settled (what follows
+	// the "which size?" question). Equal to State.PendingField when that is not "variant".
+	PendingAfterVariant string
+	History             []salesbrain.HistoryTurn
+	Message             string
+	BuyerTexts          []string // current + up to 3 previous buyer messages
 }
 
 // turnPlan is the outcome of one planTurn call. Nothing in it has been applied or sent.
@@ -33,13 +36,17 @@ type turnPlan struct {
 	Cart         []salesbrain.OrderLine // cart after item ops (== State.Cart when unchanged)
 	CartChanged  bool
 	UnknownItems []int
-	Reply        string // final text to send (model reply + code additions)
-	Fallback     bool   // true → do not send; legacy flow handles the turn
-	FallbackWhy  string
-	Attempts     int
-	Usage        llm.Usage              // summed across attempts (Input/Output/Thoughts)
-	RawOutput    string                 // last raw model output, redacted
-	Violations   []salesbrain.Violation // of the last attempt
+	// Issues are the cart ops that were refused or left incomplete (missing variant, sold out,
+	// stock limit). When there are any, Reply is built from templates, not from the model's text.
+	Issues         []salesbrain.OpIssue
+	ReplacedReason string // why the model's reply was replaced ("" when it was kept)
+	Reply          string // final text to send (model reply + code additions)
+	Fallback       bool   // true → do not send; legacy flow handles the turn
+	FallbackWhy    string
+	Attempts       int
+	Usage          llm.Usage              // summed across attempts (Input/Output/Thoughts)
+	RawOutput      string                 // last raw model output, redacted
+	Violations     []salesbrain.Violation // of the last attempt
 }
 
 // Fallback reasons reported in turnPlan.FallbackWhy.
@@ -47,6 +54,9 @@ const (
 	lfWhyLLMError      = "llm_error"
 	lfWhyInvalidOutput = "invalid_output"
 )
+
+// Reason recorded in message metadata when cart issues replaced the model's reply.
+const lfReplacedCartIssue = "cart_issue"
 
 const (
 	lfMaxAttempts      = 2    // one call plus one corrective retry
@@ -98,6 +108,7 @@ func planTurn(ctx context.Context, in planInput, chat chatFunc) turnPlan {
 		cart     []salesbrain.OrderLine
 		changed  bool
 		unknown  []int
+		issues   []salesbrain.OpIssue
 		ok       bool
 	)
 	for attempt := 1; attempt <= lfMaxAttempts && !ok; attempt++ {
@@ -126,9 +137,12 @@ func planTurn(ctx context.Context, in planInput, chat chatFunc) turnPlan {
 		}
 		plan.Decision = d
 
-		nextCart, nextChanged, nextUnknown := in.State.Cart, false, []int(nil)
+		nextCart, nextChanged, nextUnknown, nextIssues := in.State.Cart, false, []int(nil), []salesbrain.OpIssue(nil)
 		if d.Intent == salesbrain.IntentOrder || d.Intent == salesbrain.IntentAmend {
-			nextCart, nextChanged, nextUnknown = salesbrain.ApplyItemOps(in.State.Cart, d.Items, in.Catalog)
+			res := salesbrain.ResolveCartOps(salesbrain.ResolveInput{
+				Cart: in.State.Cart, Ops: d.Items, Catalog: in.Catalog, BuyerTexts: in.BuyerTexts,
+			})
+			nextCart, nextChanged, nextUnknown, nextIssues = res.Cart, res.Changed, res.Unknown, res.Issues
 		}
 		facts := salesbrain.BuildFacts(salesbrain.FactsInput{
 			Catalog:      in.Catalog,
@@ -143,15 +157,69 @@ func planTurn(ctx context.Context, in planInput, chat chatFunc) turnPlan {
 			note = "\n\n" + salesbrain.ViolationNote(vs)
 			continue
 		}
-		accepted, cart, changed, unknown, ok = d, nextCart, nextChanged, nextUnknown, true
+		accepted, cart, changed, unknown, issues, ok = d, nextCart, nextChanged, nextUnknown, nextIssues, true
 	}
 	if !ok {
 		return lfFallbackPlan(plan, lfWhyInvalidOutput)
 	}
 
-	plan.Cart, plan.CartChanged, plan.UnknownItems = cart, changed, unknown
-	plan.Reply = lfComposeReply(accepted.Reply, cart, changed, in.State.PendingField, lang)
+	plan.Cart, plan.CartChanged, plan.UnknownItems, plan.Issues = cart, changed, unknown, issues
+	pending := lfPendingAfterOps(in, cart)
+	if len(issues) > 0 {
+		// The model's text may promise what the code refused (a sold-out size "added to the cart"):
+		// the buyer hears the code's own sentences instead.
+		plan.Reply = lfComposeIssueReply(issues, cart, changed, pending, lang)
+		plan.ReplacedReason = lfReplacedCartIssue
+		return plan
+	}
+	plan.Reply = lfComposeReply(accepted.Reply, cart, changed, pending, lang)
 	return plan
+}
+
+// lfPendingAfterOps is the checkout field the reply must lead back to once the cart ops are
+// applied: "variant" while a line lacks its size or colour, and once the last one is filled the
+// field that was waiting behind the variant question.
+func lfPendingAfterOps(in planInput, cart []salesbrain.OrderLine) string {
+	switch {
+	case lfCartMissingVariant(cart):
+		return "variant"
+	case in.State.PendingField == "variant":
+		return in.PendingAfterVariant
+	}
+	return in.State.PendingField
+}
+
+// lfComposeIssueReply renders the refused ops (templates, locked language), the cart summary when
+// the cart changed, and the resume line unless an issue already ends on a question.
+func lfComposeIssueReply(issues []salesbrain.OpIssue, cart []salesbrain.OrderLine, changed bool, pendingField string, lang salesbrain.Lang) string {
+	reply := salesbrain.RenderIssues(issues, lang)
+	next := pendingField
+	if len(cart) == 0 {
+		next = ""
+	} else if changed && next == "" {
+		next = lfFieldAfterItems
+	}
+	resume := ""
+	if next != "" && !strings.Contains(reply, "?") {
+		resume = salesbrain.ResumeLineFor(next, lang)
+	}
+	compose := func(withSummary bool) string {
+		out := reply
+		if withSummary {
+			if summary := salesbrain.RenderCartSummary(cart, lang); summary != "" {
+				out += "\n\n" + summary
+			}
+		}
+		if resume != "" {
+			out += "\n\n" + resume
+		}
+		return out
+	}
+	out := compose(changed)
+	if changed && utf8.RuneCountInString(out) > lfMaxComposedRunes {
+		out = compose(false)
+	}
+	return out
 }
 
 // lfFallbackPlan marks the plan as "do not send": the legacy flow handles the turn.

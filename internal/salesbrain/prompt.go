@@ -133,10 +133,33 @@ func writeCatalog(b *strings.Builder, items []CatalogFact) {
 		if c.Stock != "" {
 			fmt.Fprintf(b, " | stok: %s", oneLine(c.Stock))
 		}
+		writeVariantInfo(b, items, c)
 		if d := truncateRunes(oneLine(c.Description), maxDescriptionRunes); d != "" {
 			fmt.Fprintf(b, " | %s", d)
 		}
 		b.WriteByte('\n')
+	}
+}
+
+// writeVariantInfo tells the model what a row needs and which sibling rows are the other sizes of
+// the same product (their row numbers and stock), so it can pick the right row for a size.
+func writeVariantInfo(b *strings.Builder, items []CatalogFact, c CatalogFact) {
+	if c.Size != "" {
+		fmt.Fprintf(b, " | ukuran: %s", c.Size)
+		var sibs []string
+		for _, o := range Siblings(items, c) {
+			stock := o.Stock
+			if stock == "" {
+				stock = "stok tidak dilacak"
+			}
+			sibs = append(sibs, fmt.Sprintf("no %d (%s, %s)", o.No, o.Size, stock))
+		}
+		if len(sibs) > 0 {
+			fmt.Fprintf(b, " | ukuran lain: %s", strings.Join(sibs, "; "))
+		}
+	}
+	if c.NeedsVariant && c.Size == "" {
+		b.WriteString(" | wajib pilih ukuran/warna")
 	}
 }
 
@@ -181,7 +204,7 @@ func writeState(b *strings.Builder, s TurnState) {
 	} else {
 		var parts []string
 		for _, l := range s.Cart {
-			parts = append(parts, fmt.Sprintf("%dx %s @%s", l.Qty, l.Name, FormatRupiah(l.UnitPrice)))
+			parts = append(parts, fmt.Sprintf("%dx %s @%s", l.Qty, LineLabel(l, LangID), FormatRupiah(l.UnitPrice)))
 		}
 		fmt.Fprintf(b, "keranjang: %s | subtotal %s\n", strings.Join(parts, "; "), FormatRupiah(s.CartSubtotal))
 	}
@@ -283,7 +306,8 @@ MELAYANI
 - Salam waktu pakai STATE.salam.
 
 PESANAN
-- Kamu hanya MENGUSULKAN perubahan keranjang lewat "items" ([{"no": nomor baris KATALOG, "qty": jumlah}], qty 0 = hapus baris); sistem yang mengubah keranjang dan mengirim ringkasan + total. Di reply cukup konfirmasi singkat atau pertanyaan berikutnya.
+- Kamu hanya MENGUSULKAN perubahan keranjang lewat "items" ([{"no": nomor baris KATALOG, "qty": jumlah, "size": "", "color": ""}], qty 0 = hapus baris); sistem yang mengubah keranjang dan mengirim ringkasan + total. Di reply cukup konfirmasi singkat atau pertanyaan berikutnya.
+- Ukuran/warna: isi "size"/"color" HANYA dengan kata yang diketik pembeli; jangan menebak. Ukuran yang menempel di nama produk ("- L") dipilih lewat nomor baris; baris "ukuran lain" adalah ukuran lain produk yang sama, pakai nomor baris itu. Produk bertanda "wajib pilih ukuran/warna" tetap dimasukkan ke items dengan qty; sistem yang menanyakan ukuran/warna yang belum disebut. Beberapa ukuran atau warna dari produk yang sama = satu entri items per varian. Ubah jumlah varian yang sudah ada dengan mengulang no dan size/color-nya. Stok habis atau tidak cukup ditolak dan dijelaskan sistem.
 - Produk ambigu (mis. dua varian): tanyakan hanya produk itu dengan pilihannya; item lain tetap dimasukkan.
 - Bila STATE.kolom_tertunda terisi dan pembeli bertanya sesuatu: jawab pertanyaannya, lalu tutup dengan STATE.kalimat_lanjut. Pertanyaan tidak pernah dianggap nama atau alamat.
 - intent "field_answer" hanya bila pesan berisi data untuk STATE.kolom_tertunda (nama/HP/alamat). intent "confirm" hanya bila pembeli menyetujui ringkasan (OK, ya benar, lanjut proses).
@@ -306,5 +330,5 @@ Mengarang fakta; diskon atau janji di luar FAQ; rekening selain di FAQ; meminta 
 
 KELUARAN
 Balas HANYA satu objek JSON tanpa teks lain:
-{"intent": "greeting|question|browse|recommend|order|amend|cancel|field_answer|confirm|continue_order|new_order|status|payment_proof|complaint|human_request|other", "items": [{"no": 1, "qty": 1}], "fields": {"name": "", "phone": "", "street": "", "district": "", "city": "", "province": "", "postal_code": ""}, "language_switch": null, "handoff": null, "reply": "pesan WhatsApp untuk pembeli"}
-items hanya untuk intent order/amend. fields hanya untuk intent field_answer; isi persis dari pesan pembeli, kosongkan yang tidak disebut, jangan mengarang. Nilai fields selalu string. language_switch: null, "id", atau "en". handoff: null atau {"level":"note"|"takeover","reason":"..."}. reply tidak boleh kosong.`
+{"intent": "greeting|question|browse|recommend|order|amend|cancel|field_answer|confirm|continue_order|new_order|status|payment_proof|complaint|human_request|other", "items": [{"no": 1, "qty": 1, "size": "", "color": ""}], "fields": {"name": "", "phone": "", "street": "", "district": "", "city": "", "province": "", "postal_code": ""}, "language_switch": null, "handoff": null, "reply": "pesan WhatsApp untuk pembeli"}
+items hanya untuk intent order/amend; size dan color kosong bila pembeli tidak menyebutnya. fields hanya untuk intent field_answer; isi persis dari pesan pembeli, kosongkan yang tidak disebut, jangan mengarang. Nilai fields selalu string. language_switch: null, "id", atau "en". handoff: null atau {"level":"note"|"takeover","reason":"..."}. reply tidak boleh kosong.`

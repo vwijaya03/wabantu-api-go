@@ -19,6 +19,7 @@ import (
 // Checkout steps of bf.OrderState that the adapter reads or writes. The legacy flow has no
 // confirm step: it persists as soon as the shipping data is complete.
 const (
+	lfStepAskVariant     = "ask_variant"
 	lfStepAskRecipient   = "ask_recipient"
 	lfStepAskAddressFull = "ask_address_full"
 	lfStepConfirm        = "confirm"
@@ -26,7 +27,8 @@ const (
 
 // cartFromState reads the checkout state as a salesbrain cart. Lines come from Items; a legacy
 // single-item state (no Items) reads as a one-line cart. A product that has no quantity yet is
-// not a line: quantities are never invented.
+// not a line: quantities are never invented. Each line carries its size and colour; a line whose
+// product needs a variant that is still missing is flagged VariantMissing.
 func cartFromState(st *orderState) []salesbrain.OrderLine {
 	if st == nil {
 		return nil
@@ -38,16 +40,33 @@ func cartFromState(st *orderState) []salesbrain.OrderLine {
 			if l.Qty < 1 || (l.CatalogItemID == "" && name == "") {
 				continue
 			}
-			cart = append(cart, salesbrain.OrderLine{ID: l.CatalogItemID, Name: name, Qty: l.Qty, UnitPrice: lfRoundPrice(l.UnitPrice)})
+			cart = append(cart, lfOrderLine(l))
 		}
 		return cart
 	}
-	norm := bf.NormalizeOrderState(*st) // fills ProductName from the old Product field
+	norm := bf.NormalizeOrderState(*st) // fills ProductName from the old Product field, Size from the name
 	name := strings.TrimSpace(norm.ProductName)
 	if norm.Qty < 1 || (norm.CatalogItemID == "" && name == "") {
 		return nil
 	}
-	return []salesbrain.OrderLine{{ID: norm.CatalogItemID, Name: name, Qty: norm.Qty, UnitPrice: lfRoundPrice(norm.UnitPrice)}}
+	return []salesbrain.OrderLine{lfOrderLine(orderLineState{
+		CatalogItemID: norm.CatalogItemID, ExternalCode: norm.ExternalCode, ProductName: name,
+		Size: norm.Size, Color: norm.Color, Qty: norm.Qty, UnitPrice: norm.UnitPrice,
+	})}
+}
+
+// lfOrderLine maps one stored line to a cart line. A size that the product name carries ("… - L")
+// counts as the line's size even when the stored line lacks it.
+func lfOrderLine(l orderLineState) salesbrain.OrderLine {
+	name := strings.TrimSpace(l.ProductName)
+	if strings.TrimSpace(l.Size) == "" {
+		l.Size = bf.ExtractSizeFromProductName(name)
+	}
+	return salesbrain.OrderLine{
+		ID: l.CatalogItemID, Name: name, Qty: l.Qty, UnitPrice: lfRoundPrice(l.UnitPrice),
+		Size: strings.TrimSpace(l.Size), Color: strings.TrimSpace(l.Color),
+		VariantMissing: !bf.LineVariantComplete(orderLineState{ProductName: name, ExternalCode: l.ExternalCode, Size: l.Size, Color: l.Color}),
+	}
 }
 
 // stateWithCart returns a copy of st whose lines are exactly cart (nil when the cart is empty).
@@ -65,49 +84,102 @@ func stateWithCart(st *orderState, cart []salesbrain.OrderLine, catalog []dbCata
 		out = *st
 	}
 
-	earlier := make(map[string]orderLineState, len(out.Items)+1)
-	for _, l := range out.Items {
-		if l.CatalogItemID != "" {
-			earlier[l.CatalogItemID] = l
+	// A line is its product plus its size and colour: one product can be several lines.
+	type lineKey struct{ id, size, color string }
+	keyOf := func(id, size, color string) lineKey {
+		return lineKey{id, strings.ToLower(strings.TrimSpace(size)), strings.ToLower(strings.TrimSpace(color))}
+	}
+	earlier := make(map[lineKey]orderLineState, len(out.Items)+1)
+	byID := make(map[string]orderLineState, len(out.Items)+1)
+	idLines := make(map[string]int, len(out.Items)+1)
+	remember := func(l orderLineState) {
+		if l.CatalogItemID == "" {
+			return
+		}
+		earlier[keyOf(l.CatalogItemID, l.Size, l.Color)] = l
+		idLines[l.CatalogItemID]++
+		if _, ok := byID[l.CatalogItemID]; !ok {
+			byID[l.CatalogItemID] = l
 		}
 	}
+	for _, l := range out.Items {
+		remember(l)
+	}
 	if len(out.Items) == 0 && out.CatalogItemID != "" { // legacy single-item state
-		earlier[out.CatalogItemID] = orderLineState{
+		remember(orderLineState{
 			CatalogItemID: out.CatalogItemID, ExternalCode: out.ExternalCode, ProductName: out.ProductName,
 			Size: out.Size, Color: out.Color, Qty: out.Qty, UnitPrice: out.UnitPrice, SellUnit: out.SellUnit,
 			WarehouseID: out.WarehouseID,
-		}
+		})
 	}
 	rows := make(map[string]dbCatalogItem, len(catalog))
 	for _, it := range catalog {
 		rows[it.ID] = it
 	}
 
+	missing := false
 	lines := make([]orderLineState, 0, len(cart))
 	for _, c := range cart {
-		line := orderLineState{CatalogItemID: c.ID, ProductName: c.Name, Qty: c.Qty, UnitPrice: float64(c.UnitPrice)}
-		if prev, ok := earlier[c.ID]; ok {
+		line := orderLineState{
+			CatalogItemID: c.ID, ProductName: c.Name, Qty: c.Qty, UnitPrice: float64(c.UnitPrice),
+			Size: c.Size, Color: c.Color,
+		}
+		if prev, ok := earlier[keyOf(c.ID, c.Size, c.Color)]; ok {
+			line.ExternalCode, line.SellUnit, line.WarehouseID = prev.ExternalCode, prev.SellUnit, prev.WarehouseID
+		} else if prev, ok := byID[c.ID]; ok {
 			line.ExternalCode, line.SellUnit = prev.ExternalCode, prev.SellUnit
-			line.Size, line.Color, line.WarehouseID = prev.Size, prev.Color, prev.WarehouseID
+			if c.Size == "" && c.Color == "" && !c.VariantMissing && idLines[c.ID] == 1 {
+				// A cart that names no variant for the product's only stored line keeps that line's variant.
+				line.Size, line.Color, line.WarehouseID = prev.Size, prev.Color, prev.WarehouseID
+			}
 		}
 		if row, ok := rows[c.ID]; ok && c.ID != "" {
 			line.ExternalCode, line.SellUnit = row.ExternalCode, row.SellUnit
 		}
+		missing = missing || c.VariantMissing
 		lines = append(lines, line)
 	}
 	out.Items = lines
 	bf.ApplyLineToOrderState(&out, lines[0])
 
-	switch out.Step {
-	case "", "ask_product", "ask_variant", "ask_qty":
+	switch {
+	case missing:
+		out.Step = lfStepAskVariant // nothing moves on until the size or colour is known
+	case out.Step == lfStepAskVariant:
+		out.Step = lfStepAfterItems(&out) // the last open variant was filled: carry on from the collected data
+	case out.Step == "" || out.Step == "ask_product" || out.Step == "ask_qty":
 		out.Step = lfStepAskRecipient
 	}
 	return &out
 }
 
+// lfStepAfterItems is the step that follows a complete cart, from the data already collected: the
+// recipient, then the address, then the final confirmation.
+func lfStepAfterItems(st *orderState) string {
+	switch {
+	case strings.TrimSpace(st.RecipientName) == "" || strings.TrimSpace(st.RecipientPhone) == "":
+		return lfStepAskRecipient
+	case !st.ShippingComplete():
+		return lfStepAskAddressFull
+	}
+	return lfStepConfirm
+}
+
 // pendingFieldFromState names the checkout field the buyer still owes:
-// "", "recipient", "address" or "confirm".
+// "", "variant", "recipient", "address" or "confirm".
 func pendingFieldFromState(st *orderState) string {
+	if st == nil {
+		return ""
+	}
+	if lfCartMissingVariant(cartFromState(st)) {
+		return "variant"
+	}
+	return pendingFieldAfterVariant(st)
+}
+
+// pendingFieldAfterVariant is the pending field once the variants are settled: what follows the
+// "which size?" question.
+func pendingFieldAfterVariant(st *orderState) string {
 	if st == nil {
 		return ""
 	}
@@ -118,8 +190,28 @@ func pendingFieldFromState(st *orderState) string {
 		return "address"
 	case lfStepConfirm:
 		return "confirm"
+	case lfStepAskVariant:
+		if len(cartFromState(st)) > 0 {
+			switch lfStepAfterItems(st) {
+			case lfStepAskRecipient:
+				return "recipient"
+			case lfStepAskAddressFull:
+				return "address"
+			}
+			return "confirm"
+		}
 	}
 	return ""
+}
+
+// lfCartMissingVariant: some line still lacks the size or colour its product needs.
+func lfCartMissingVariant(cart []salesbrain.OrderLine) bool {
+	for _, l := range cart {
+		if l.VariantMissing {
+			return true
+		}
+	}
+	return false
 }
 
 // applyFieldAnswer validates the checkout fields the model extracted from buyerText and writes
@@ -181,7 +273,7 @@ func applyFieldAnswer(st *orderState, f *salesbrain.FieldData, buyerText string,
 	if st.Step == lfStepAskRecipient && st.RecipientName != "" && st.RecipientPhone != "" {
 		st.Step = lfStepAskAddressFull
 	}
-	if st.ShippingComplete() {
+	if st.ShippingComplete() && !lfCartMissingVariant(cartFromState(st)) {
 		st.Step = lfStepConfirm
 	}
 	return problems

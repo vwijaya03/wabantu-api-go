@@ -9,6 +9,7 @@ import (
 
 	"encore.dev/rlog"
 
+	bf "encore.app/wabantu/internal/buyerflow"
 	"encore.app/wabantu/internal/salesbrain"
 )
 
@@ -67,6 +68,7 @@ const (
 	notifyReasonCancelPaid      = "pesanan %s sudah dibayar; pembatalan perlu ditangani tim."
 	notifyReasonDraftSaveFailed = "draft pesanan awal gagal disimpan ke database; keranjang masih ada di sesi, pembeli tetap dibalas. Pengingat pesanan terbuka belum bisa muncul untuk keranjang ini."
 	notifyReasonOrderSaveFailed = "pesanan gagal disimpan setelah pembeli konfirmasi (stok tidak cukup atau data belum lengkap); pembeli sudah diberi tahu."
+	notifyReasonConfirmHeld     = "pembeli sedang di langkah konfirmasi akhir, tetapi AI gagal membaca balasannya; pesanan TIDAK disimpan otomatis. Ringkasan dikirim ulang dan menunggu OK dari pembeli."
 	notifyAIReasonLabel         = " Catatan AI: "
 )
 
@@ -75,16 +77,17 @@ const lfHandoffReasonRunes = 120
 
 // Reasons recorded in message metadata when the model's reply was replaced.
 const (
-	lfReplacedCancel        = "cancel_template"
-	lfReplacedCancelPaid    = "cancel_paid_template"
-	lfReplacedPersistFailed = "order_persist_failed"
+	lfReplacedCancel         = "cancel_template"
+	lfReplacedCancelPaid     = "cancel_paid_template"
+	lfReplacedPersistFailed  = "order_persist_failed"
+	lfReplacedVariantMissing = "variant_missing"
 )
 
 // lfApplyIntent applies the accepted decision of a turn. An error means a write that must be
 // retried by the job (a failed cancel); a failed order save is answered honestly instead and is
 // not an error. IntentStatus is not handled here: the shell hands it to the order-status handler.
 func lfApplyIntent(ctx context.Context, fx lfFX, in lfApplyIn) (lfOutcome, error) {
-	out := lfOutcome{Reply: in.Plan.Reply, Author: "ai"}
+	out := lfOutcome{Reply: in.Plan.Reply, Author: "ai", ReplacedReason: in.Plan.ReplacedReason}
 	var err error
 	switch in.Plan.Decision.Intent {
 	case salesbrain.IntentOrder, salesbrain.IntentAmend:
@@ -128,6 +131,11 @@ func lfApplyCart(ctx context.Context, fx lfFX, in lfApplyIn, out *lfOutcome) {
 			next.ForceNewOrder = true // a cart without a draft of its own never merges into a parked one
 		}
 		fx.setState(ctx, *next)
+		if next.Step == lfStepConfirm && len(p.Issues) == 0 && (in.State == nil || in.State.Step != lfStepConfirm) {
+			// The last open question (a size) was answered and everything else was collected before:
+			// the buyer gets the full summary (items, address) for the final OK.
+			out.Reply = p.Decision.Reply + "\n\n" + lfConfirmBlock(next, p.Lang)
+		}
 		lfScheduleEarlyDraft(fx, in, *next, out)
 	case offers && in.State != nil && !in.State.UpsellShown:
 		st := *in.State
@@ -244,6 +252,17 @@ func lfApplyConfirm(ctx context.Context, fx lfFX, in lfApplyIn, out *lfOutcome) 
 	next := *st
 	next.Items = append([]orderLineState(nil), st.Items...)
 
+	if lfCartMissingVariant(cartFromState(&next)) {
+		// A line still lacks its size or colour (state written before the variant was asked):
+		// nothing can be saved honestly. Go back one step and ask.
+		next.Step = lfStepAskVariant
+		fx.setState(ctx, next)
+		out.Reply = salesbrain.T(salesbrain.TplAskVariant, p.Lang, lfFirstMissingVariantName(&next))
+		out.Author = "system"
+		out.ReplacedReason = lfReplacedVariantMissing
+		return
+	}
+
 	id, err := lfPersistOrder(ctx, fx, next)
 	if err != nil {
 		// The model's reply (probably "your order is confirmed") would be false: say so honestly
@@ -266,6 +285,16 @@ func lfApplyConfirm(ctx context.Context, fx lfFX, in lfApplyIn, out *lfOutcome) 
 		fx.clearState(ctx)
 		return nil
 	}
+}
+
+// lfFirstMissingVariantName is the product of the first cart line that lacks its variant.
+func lfFirstMissingVariantName(st *orderState) string {
+	for _, l := range cartFromState(st) {
+		if l.VariantMissing {
+			return bf.ProductBaseName(l.Name)
+		}
+	}
+	return ""
 }
 
 // lfPersistOrder saves the checkout. Without a pinned draft it is a new order, never a merge into a

@@ -67,10 +67,39 @@ var knownIntents = map[Intent]bool{
 }
 
 // ItemOp is a cart change proposed by the model. No is the 1-based catalog row number shown
-// in the prompt; Qty is the desired quantity for that product (0 = remove the line).
+// in the prompt; Qty is the desired quantity for that product (0 = remove the line). Size and
+// Color are the buyer's own words for the variant of a product that needs one; code accepts them
+// only when they also appear in the buyer's messages (ResolveCartOps).
 type ItemOp struct {
-	No  int `json:"no"`
-	Qty int `json:"qty"`
+	No    int    `json:"no"`
+	Qty   int    `json:"qty"`
+	Size  string `json:"size,omitempty"`
+	Color string `json:"color,omitempty"`
+}
+
+// UnmarshalJSON accepts numbers as well as strings for size and colour ("size": 38 is common for
+// shoes); a number would otherwise make the whole decision unparseable.
+func (o *ItemOp) UnmarshalJSON(b []byte) error {
+	var raw struct {
+		No    int `json:"no"`
+		Qty   int `json:"qty"`
+		Size  any `json:"size"`
+		Color any `json:"color"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	text := func(v any) string {
+		switch x := v.(type) {
+		case string:
+			return strings.TrimSpace(x)
+		case float64:
+			return strconv.FormatFloat(x, 'f', -1, 64)
+		}
+		return ""
+	}
+	*o = ItemOp{No: raw.No, Qty: raw.Qty, Size: text(raw.Size), Color: text(raw.Color)}
+	return nil
 }
 
 // HandoffLevel: note keeps the AI active (owner is notified); takeover pauses it with auto-resume.

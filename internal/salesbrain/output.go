@@ -14,7 +14,7 @@ var (
 
 // ParseDecision extracts the JSON decision from raw model output (code fences and stray text
 // tolerated), then normalises it: unknown intent → other, items kept only for order/amend and
-// only with no ≥ 1 and 0 ≤ qty ≤ 999, fields kept (trimmed) only for field_answer, invalid
+// only with no ≥ 1 and 0 ≤ qty ≤ 999 (size and colour trimmed), fields kept (trimmed) only for field_answer, invalid
 // handoff dropped, language_switch normalised.
 func ParseDecision(raw string) (Decision, error) {
 	s := strings.TrimSpace(raw)
@@ -50,6 +50,7 @@ func ParseDecision(raw string) (Decision, error) {
 	var items []ItemOp
 	for _, it := range d.Items {
 		if it.No >= 1 && it.Qty >= 0 && it.Qty <= 999 {
+			it.Size, it.Color = strings.TrimSpace(it.Size), strings.TrimSpace(it.Color)
 			items = append(items, it)
 		}
 	}

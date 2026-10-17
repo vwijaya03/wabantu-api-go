@@ -196,20 +196,25 @@ func lfStateFromOpenOrder(o *persistedOrder) (*orderState, bool) {
 // ── catalog, KB, profile ─────────────────────────────────────────────────────
 
 // lfCatalogFacts numbers the catalog 1-based in load order, the numbering the model answers with
-// (ItemOp.No). Stock is shown only for items whose stock is tracked.
+// (ItemOp.No). Stock is shown only for items whose stock is tracked. Variant data (size of the row,
+// base name shared by sibling sizes, "needs a size or colour") is derived from the row with the
+// legacy buyerflow rules, never from the model.
 func lfCatalogFacts(catalog []dbCatalogItem) []salesbrain.CatalogFact {
 	facts := make([]salesbrain.CatalogFact, len(catalog))
-	for i, it := range catalog {
-		stock := ""
+	for i := range catalog {
+		it := catalog[i]
+		stock, stockQty := "", 0.0
 		if it.StockTracked {
-			stock = "habis"
+			stock, stockQty = salesbrain.StockOut, it.StockAvailable
 			if it.StockAvailable > 0 {
-				stock = "tersedia"
+				stock = salesbrain.StockIn
 			}
 		}
 		facts[i] = salesbrain.CatalogFact{
 			No: i + 1, ID: it.ID, Name: it.Name, Price: lfRoundPrice(it.SellPrice), Unit: it.SellUnit,
 			Stock: stock, Description: it.Description, Code: it.ExternalCode,
+			BaseName: bf.ProductBaseName(it.Name), Size: bf.ExtractSizeFromProductName(it.Name),
+			NeedsVariant: bf.CatalogItemNeedsVariant(&it), StockQty: stockQty,
 		}
 	}
 	return facts
@@ -276,6 +281,20 @@ func topKCatalog(catalog []salesbrain.CatalogFact, query string, cart []salesbra
 			keep[i] = true
 		}
 	}
+	// The other sizes of a kept product stay: they are the alternatives of a sold-out size and the
+	// rows the model needs to pick another size.
+	idxByNo := make(map[int]int, len(catalog))
+	for i, c := range catalog {
+		idxByNo[c.No] = i
+	}
+	for i := range catalog {
+		if !keep[i] {
+			continue
+		}
+		for _, sib := range salesbrain.Siblings(catalog, catalog[i]) {
+			keep[idxByNo[sib.No]] = true
+		}
+	}
 	out := make([]salesbrain.CatalogFact, 0, len(keep))
 	for i, c := range catalog {
 		if keep[i] {
@@ -339,11 +358,12 @@ func lfBuildPlanInput(in lfInputs) planInput {
 	}
 
 	return planInput{
-		Lang:       in.Lang,
-		LangLocked: in.LangLocked,
-		Profile:    lfProfileFact(in.Profile),
-		Catalog:    facts,
-		KB:         kb,
+		PendingAfterVariant: pendingFieldAfterVariant(in.State),
+		Lang:                in.Lang,
+		LangLocked:          in.LangLocked,
+		Profile:             lfProfileFact(in.Profile),
+		Catalog:             facts,
+		KB:                  kb,
 		State: salesbrain.TurnState{
 			Greeting:        greetingFor(in.Now),
 			Now:             formatNowID(in.Now),

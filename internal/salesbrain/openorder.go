@@ -31,6 +31,12 @@ type OrderLine struct {
 	Name      string
 	Qty       int
 	UnitPrice int64
+	// Variant of the line. Size is the size of the row itself (from its name) or the one the buyer
+	// chose; Color is the buyer's. VariantMissing marks a line of a product that needs a size or
+	// colour the buyer has not given yet: the order cannot move on until it is filled.
+	Size           string
+	Color          string
+	VariantMissing bool
 }
 
 // OrderSnapshot is the caller's view of one cart/order of this buyer.
@@ -135,7 +141,7 @@ func describeLines(lines []OrderLine, lang Lang) string {
 			}
 			break
 		}
-		parts = append(parts, fmt.Sprintf("%dx %s", l.Qty, l.Name))
+		parts = append(parts, fmt.Sprintf("%dx %s", l.Qty, LineLabel(l, lang)))
 	}
 	return strings.Join(parts, " + ")
 }

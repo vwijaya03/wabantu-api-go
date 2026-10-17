@@ -110,7 +110,7 @@ func TestLLMFirstOrdersStateWithCartMovesStepAndKeepsFields(t *testing.T) {
 	for from, want := range map[string]string{
 		"":                 "ask_recipient",
 		"ask_product":      "ask_recipient",
-		"ask_variant":      "ask_recipient",
+		"ask_variant":      "confirm", // the state below holds the full shipping data: nothing is left to ask
 		"ask_qty":          "ask_recipient",
 		"ask_recipient":    "ask_recipient",
 		"ask_address_full": "ask_address_full",
@@ -186,8 +186,11 @@ func TestLLMFirstOrdersStateWithCartMultiLine(t *testing.T) {
 	if got.CatalogItemID != "salmon-100" || got.Qty != 4 || got.UnitPrice != 75000 {
 		t.Errorf("the single-item fields must mirror the first line, got %+v", *got)
 	}
-	if back := cartFromState(got); !reflect.DeepEqual(back, cart) {
-		t.Errorf("round trip changed the cart:\n got %+v\nwant %+v", back, cart)
+	// The only change on the way back: the first line keeps the variant it had (the cart named none).
+	wantBack := append([]salesbrain.OrderLine(nil), cart...)
+	wantBack[0].Size, wantBack[0].Color = "M", "Pink"
+	if back := cartFromState(got); !reflect.DeepEqual(back, wantBack) {
+		t.Errorf("round trip changed the cart:\n got %+v\nwant %+v", back, wantBack)
 	}
 }
 

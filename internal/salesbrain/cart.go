@@ -66,7 +66,7 @@ func RenderCartSummary(cart []OrderLine, lang Lang) string {
 		b.WriteString("Ringkasan pesanan:\n")
 	}
 	for i, l := range cart {
-		fmt.Fprintf(&b, "%d. %dx %s — %s\n", i+1, l.Qty, l.Name, FormatRupiah(int64(l.Qty)*l.UnitPrice))
+		fmt.Fprintf(&b, "%d. %dx %s — %s\n", i+1, l.Qty, LineLabel(l, lang), FormatRupiah(int64(l.Qty)*l.UnitPrice))
 	}
 	if lang == LangEN {
 		fmt.Fprintf(&b, "Subtotal: %s (shipping not included)", FormatRupiah(CartSubtotal(cart)))
@@ -85,6 +85,8 @@ func ResumeLineFor(field string, lang Lang) string {
 		return T(TplResumeAddress, lang)
 	case "confirm":
 		return T(TplResumeConfirm, lang)
+	case "variant":
+		return T(TplResumeVariant, lang)
 	}
 	return ""
 }

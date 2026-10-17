@@ -38,6 +38,8 @@ const (
 	lfKBLoad      = 50 // FAQ rows loaded; the prompt gets them all when they fit the budget
 	lfTopKRows    = 12 // catalog rows kept when the catalog does not fit the full-context budget
 
+	lfReplacedConfirmHold = "confirm_fail_closed" // message metadata: the summary was re-sent because the turn failed at the confirm step
+
 	lfRemindTTL   = 72 * time.Hour
 	lfConfusedTTL = 24 * time.Hour
 )
@@ -48,6 +50,8 @@ var (
 	llmFirstChatFor = lfNewChat
 	llmFirstNow     = time.Now
 	llmFirstLoad    = (*AutoReplyService).loadLLMFirst
+	// llmFirstTokenSink writes the ai_token_llm_first event; tests capture it.
+	llmFirstTokenSink = usage.RecordLLMFirstTokens
 )
 
 // lfTurn bundles what ProcessAutoReply already loaded for this inbound message.
@@ -178,10 +182,16 @@ func (s *AutoReplyService) runLLMFirst(ctx context.Context, t lfTurn) (bool, err
 		usage.RecordAITokens(ctx, tenantID, t.convo.ID, tokens)
 		_ = usage.RecordEvent(ctx, schema, "ai_token", tokens, nil)
 	}
+	lfRecordLLMFirstTokens(ctx, schema, t.convo.ID, lfPipeline, plan)
 	if plan.Fallback {
 		rlog.Warn("llm_first fallback",
 			"convoId", t.convo.ID, "why", plan.FallbackWhy, "attempts", plan.Attempts,
 			"violations", lfViolationCodes(plan.Violations), "model", plan.Usage.Model, "tokens", tokens)
+		if lfAtConfirmWithShipping(ld.state) {
+			// Fail-closed: the buyer is looking at the final summary and the pipeline could not read
+			// the reply. The legacy flow must not guess whether it was an approval.
+			return s.lfHoldConfirm(ctx, t, ld, plan)
+		}
 		return false, nil
 	}
 	rlog.Info("llm_first plan",
@@ -234,6 +244,49 @@ func (s *AutoReplyService) runLLMFirst(ctx context.Context, t lfTurn) (bool, err
 	}
 	s.lfRecordBookkeeping(ctx, t, ld, in, plan, out.Reply)
 	return true, afterErr
+}
+
+// lfAtConfirmWithShipping: the checkout waits on the buyer's final OK (confirm step, complete
+// shipping data, at least one line).
+func lfAtConfirmWithShipping(st *orderState) bool {
+	return st != nil && st.Step == lfStepConfirm && st.ShippingComplete() && len(cartFromState(st)) > 0
+}
+
+// lfHoldConfirm answers a failed turn that arrives while the checkout waits for the final OK:
+// the Redis state and the draft stay untouched, nothing is saved, and the buyer gets the summary
+// again with the question for the OK (templates, locked language). The owner is told, because the
+// buyer is stuck at the last step until the pipeline works again (the notification is deduped per
+// conversation and hour). Not a pause and not an error: the turn is handled.
+func (s *AutoReplyService) lfHoldConfirm(ctx context.Context, t lfTurn, ld lfLoaded, plan turnPlan) (bool, error) {
+	lang := plan.Lang
+	reply := salesbrain.T(salesbrain.TplConfirmHold, lang) + "\n\n" + lfConfirmBlock(ld.state, lang)
+	meta := AiReplyMeta{
+		Reason: reasonAIGenerated, Path: PathLLMFirst, Model: plan.Usage.Model, LLMUsed: plan.Attempts > 0,
+		Pipeline: lfPipeline, Lang: string(lang), Attempts: plan.Attempts, ReplacedReason: lfReplacedConfirmHold,
+	}
+	meta.LogAndRecord(ctx, t.convo.ID, t.payload.InboundMessageID,
+		int(plan.Usage.InputTokens), int(plan.Usage.OutputTokens+plan.Usage.ThoughtsTokens))
+	if err := s.sendAiMessage(ctx, t.ts, t.payload.TenantID, t.convo, t.channel, t.contact, reply, "system",
+		t.payload.InboundMessageID, meta); err != nil {
+		return false, err
+	}
+	s.notifyOwner(ctx, t.payload.TenantID, t.convo.ID, notifyKindSystemError, notifyTitleSystemError,
+		ownerNotificationSummary(t.userText, notifyReasonConfirmHeld))
+	return true, nil
+}
+
+// lfRecordLLMFirstTokens writes the ai_token_llm_first event of a turn (analytics only: it has no
+// plan quota). A failed write is logged, never returned.
+func lfRecordLLMFirstTokens(ctx context.Context, schema, convoID, pipeline string, plan turnPlan) {
+	err := llmFirstTokenSink(ctx, schema, usage.LLMFirstTokens{
+		Pipeline: pipeline, ConversationID: convoID, Provider: plan.Usage.Provider, Model: plan.Usage.Model,
+		Intent: string(plan.Decision.Intent), Fallback: plan.Fallback, Attempts: plan.Attempts,
+		InputTokens: int(plan.Usage.InputTokens), OutputTokens: int(plan.Usage.OutputTokens),
+		ThoughtsTokens: int(plan.Usage.ThoughtsTokens),
+	})
+	if err != nil {
+		rlog.Warn("llm_first: token event not recorded", "convoId", convoID, "pipeline", pipeline, "err", err)
+	}
 }
 
 // lfTokens is what a turn cost: input + output + thinking tokens.
@@ -308,10 +361,22 @@ func (s *AutoReplyService) loadLLMFirst(ctx context.Context, t lfTurn) (lfLoaded
 
 // ── LLM call ─────────────────────────────────────────────────────────────────
 
-// lfNewChat is the chat primitive of planTurn: the tenant's "chat" chain through llm.RunChat with
-// a 15-second limit per call. JSON mode, temperature and the token cap come from planTurn's request.
+// lfAnthropicConfig is the legacy-client config behind the registry of the pipeline: its model is
+// what an Anthropic link without a model resolves to, so it is Haiku (never defaultAnthropicModel,
+// which is Sonnet).
+func lfAnthropicConfig() AnthropicConfig {
+	return AnthropicConfig{Model: DefaultHaikuAPIID(), MaxTokens: lfMaxTokens}
+}
+
+// lfNewChat is the chat primitive of planTurn: the tenant's "chat" chain (tenant row, then global
+// row, then code default) through llm.RunChat with a 15-second limit per call. JSON mode, temperature
+// and the token cap come from planTurn's request.
+//
+// The Anthropic client only matters for a chain link without a model, i.e. the code default when
+// nothing is configured (Encore without a Gemini key): that link is Haiku, never Sonnet, so an
+// unconfigured tenant cannot silently pay the Sonnet price on every message.
 func lfNewChat(tenantID string) chatFunc {
-	reg := LLMRegistry(secrets.AnthropicAPIKey, AnthropicConfig{Model: defaultAnthropicModel, MaxTokens: defaultAnthropicMaxToks})
+	reg := LLMRegistry(secrets.AnthropicAPIKey, lfAnthropicConfig())
 	return func(ctx context.Context, req llm.ChatRequest) (llm.ChatResponse, error) {
 		cctx, cancel := context.WithTimeout(ctx, lfCallTimeout)
 		defer cancel()
@@ -439,7 +504,8 @@ func (s *AutoReplyService) startLLMFirstShadow(ctx context.Context, t lfTurn) {
 }
 
 // shadowLLMFirst loads, decides the language and plans the turn, then logs one line. It records the
-// call as an AI activity (purpose llm_first_shadow, so the cost shows in the dashboards) but not as
+// call as an AI activity (purpose llm_first_shadow, so the cost shows in the dashboards) and as an
+// ai_token_llm_first event (pipeline llm_first_shadow) to measure the cost per message, but never as
 // an ai_token event: shadow tokens are our experiment and must not eat the tenant's quota.
 func (s *AutoReplyService) shadowLLMFirst(ctx context.Context, t lfTurn) {
 	ld, err := llmFirstLoad(s, ctx, t)
@@ -458,6 +524,7 @@ func (s *AutoReplyService) shadowLLMFirst(ctx context.Context, t lfTurn) {
 	plan := planTurn(ctx, in, llmFirstChatFor(t.payload.TenantID))
 
 	if tokens := lfTokens(plan); tokens > 0 {
+		lfRecordLLMFirstTokens(ctx, t.payload.TenantSchema, t.convo.ID, lfShadowPurpose, plan)
 		meta := AiReplyMeta{
 			Reason: reasonAIGenerated, Path: PathLLMFirst, Model: plan.Usage.Model, LLMUsed: true,
 			Pipeline: lfPipeline, Intent: string(plan.Decision.Intent), Lang: string(plan.Lang), Attempts: plan.Attempts,

@@ -18,6 +18,12 @@ type CatalogFact struct {
 	Stock       string // "" when stock is not tracked
 	Description string
 	Code        string // internal external_code; never shown to the model or the buyer
+
+	// Variant data, derived by the caller from the catalog row (never from the model).
+	BaseName     string  // the name without its trailing size ("… - L"); rows that share it are sibling SKUs
+	Size         string  // the size carried by the row's own name ("" when it has none)
+	NeedsVariant bool    // a size or colour is part of the product (sized name, or apparel such as a T-shirt)
+	StockQty     float64 // units available; only meaningful when Stock != ""
 }
 
 // KBFact is one knowledge-base row.

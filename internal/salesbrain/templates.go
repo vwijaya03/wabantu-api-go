@@ -10,24 +10,32 @@ import (
 type TemplateKey string
 
 const (
-	TplLanguageChoice   TemplateKey = "language_choice"    // %[1]s shop name (bilingual by design)
-	TplSwitchConfirm    TemplateKey = "switch_confirm"     // no args
-	TplSystemBusy       TemplateKey = "system_busy"        // %[1]s shop name
-	TplHandoffTakeover  TemplateKey = "handoff_takeover"   // %[1]s shop name, %[2]s opening-hours sentence (may be "")
-	TplHandoffResumed   TemplateKey = "handoff_resumed"    // no args
-	TplQuotaExhausted   TemplateKey = "quota_exhausted"    // %[1]s shop name
-	TplResumeRecipient  TemplateKey = "resume_recipient"   // no args
-	TplResumeAddress    TemplateKey = "resume_address"     // no args
-	TplResumeConfirm    TemplateKey = "resume_confirm"     // no args
-	TplOpenOrderOptions TemplateKey = "open_order_options" // %[1]s DescribeOrder text
-	TplOpenOrderPick    TemplateKey = "open_order_pick"    // %[1]s numbered list
-	TplOrderCancelled   TemplateKey = "order_cancelled"    // %[1]s order ref
-	TplCancelPaidOrder  TemplateKey = "cancel_paid_order"  // %[1]s order ref, %[2]s shop name
-	TplNewOrderParked   TemplateKey = "new_order_parked"   // %[1]s order ref
-	TplCheckWithTeam    TemplateKey = "check_with_team"    // no args
-	TplOrderRef         TemplateKey = "order_ref"          // %[1]s order ref, appended after the order was saved
-	TplFieldProblems    TemplateKey = "field_problems"     // %[1]s invalid-data fragments joined by the caller
-	TplShippingSummary  TemplateKey = "shipping_summary"   // %[1]s name, %[2]s phone, %[3]s address line
+	TplLanguageChoice      TemplateKey = "language_choice"      // %[1]s shop name (bilingual by design)
+	TplSwitchConfirm       TemplateKey = "switch_confirm"       // no args
+	TplSystemBusy          TemplateKey = "system_busy"          // %[1]s shop name
+	TplHandoffTakeover     TemplateKey = "handoff_takeover"     // %[1]s shop name, %[2]s opening-hours sentence (may be "")
+	TplHandoffResumed      TemplateKey = "handoff_resumed"      // no args
+	TplQuotaExhausted      TemplateKey = "quota_exhausted"      // %[1]s shop name
+	TplResumeRecipient     TemplateKey = "resume_recipient"     // no args
+	TplResumeAddress       TemplateKey = "resume_address"       // no args
+	TplResumeConfirm       TemplateKey = "resume_confirm"       // no args
+	TplOpenOrderOptions    TemplateKey = "open_order_options"   // %[1]s DescribeOrder text
+	TplOpenOrderPick       TemplateKey = "open_order_pick"      // %[1]s numbered list
+	TplOrderCancelled      TemplateKey = "order_cancelled"      // %[1]s order ref
+	TplCancelPaidOrder     TemplateKey = "cancel_paid_order"    // %[1]s order ref, %[2]s shop name
+	TplNewOrderParked      TemplateKey = "new_order_parked"     // %[1]s order ref
+	TplCheckWithTeam       TemplateKey = "check_with_team"      // no args
+	TplOrderRef            TemplateKey = "order_ref"            // %[1]s order ref, appended after the order was saved
+	TplFieldProblems       TemplateKey = "field_problems"       // %[1]s invalid-data fragments joined by the caller
+	TplShippingSummary     TemplateKey = "shipping_summary"     // %[1]s name, %[2]s phone, %[3]s address line
+	TplConfirmHold         TemplateKey = "confirm_hold"         // no args; lead-in when the confirm step is held (fail-closed)
+	TplResumeVariant       TemplateKey = "resume_variant"       // no args
+	TplAskVariant          TemplateKey = "ask_variant"          // %[1]s product name
+	TplAskVariantChoices   TemplateKey = "ask_variant_choices"  // %[1]s product name, %[2]s sizes in stock
+	TplVariantNotFound     TemplateKey = "variant_not_found"    // %[1]s product name, %[2]s sizes in stock
+	TplVariantSoldOut      TemplateKey = "variant_sold_out"     // %[1]s product name, %[2]s alternatives sentence (may be "")
+	TplVariantAlternatives TemplateKey = "variant_alternatives" // %[1]s sizes in stock
+	TplStockLimit          TemplateKey = "stock_limit"          // %[1]s product name, %[2]d units left
 )
 
 var templates = map[TemplateKey]map[Lang]string{
@@ -102,6 +110,38 @@ var templates = map[TemplateKey]map[Lang]string{
 	TplShippingSummary: {
 		LangID: "Dikirim ke:\n%[1]s (%[2]s)\n%[3]s",
 		LangEN: "Shipping to:\n%[1]s (%[2]s)\n%[3]s",
+	},
+	TplConfirmHold: {
+		LangID: "Maaf Kak, balasan Kakak barusan belum bisa aku proses dengan pasti, jadi pesanan belum aku simpan atau ubah. Ini ringkasannya:",
+		LangEN: "Sorry, I couldn't process your last message reliably, so your order has not been saved or changed. Here is the summary:",
+	},
+	TplResumeVariant: {
+		LangID: "Lanjut ya Kak: ukuran atau warna yang mana untuk pesanannya?",
+		LangEN: "Back to your order: which size or color would you like?",
+	},
+	TplAskVariant: {
+		LangID: "Untuk %[1]s, Kakak mau ukuran atau warna apa?",
+		LangEN: "Which size or color would you like for %[1]s?",
+	},
+	TplAskVariantChoices: {
+		LangID: "%[1]s ada dalam ukuran: %[2]s. Kakak mau yang mana?",
+		LangEN: "%[1]s comes in these sizes: %[2]s. Which one would you like?",
+	},
+	TplVariantNotFound: {
+		LangID: "Maaf Kak, ukuran itu tidak ada untuk %[1]s. Yang tersedia: %[2]s. Kakak mau yang mana?",
+		LangEN: "Sorry, that size isn't available for %[1]s. Available: %[2]s. Which one would you like?",
+	},
+	TplVariantSoldOut: {
+		LangID: "Maaf Kak, %[1]s sedang habis. %[2]s",
+		LangEN: "Sorry, %[1]s is out of stock. %[2]s",
+	},
+	TplVariantAlternatives: {
+		LangID: "Yang masih tersedia: %[1]s. Mau pilih yang mana, Kak?",
+		LangEN: "Still available: %[1]s. Which would you like?",
+	},
+	TplStockLimit: {
+		LangID: "Maaf Kak, stok %[1]s tinggal %[2]d. Mau pesan sejumlah itu?",
+		LangEN: "Sorry, only %[2]d of %[1]s left. Would you like that many?",
 	},
 }
 

@@ -496,6 +496,44 @@ func advanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 		st.Step = "ask_address_full"
 		return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: tmpl.AskAddressFull}
 
+	case "confirm":
+		// Final-summary step written by the LLM-first pipeline. Fail-closed: the order is saved only
+		// when the buyer explicitly approved it. Any other text keeps the draft and shows the
+		// summary again; incomplete data goes back to the step that asks for it.
+		st := stateNorm
+		if st.RecipientName == "" || st.RecipientPhone == "" {
+			st.Step = "ask_recipient"
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: tmpl.AskRecipient}
+		}
+		if !st.ShippingComplete() {
+			st.Step = "ask_address_full"
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: tmpl.AskAddressFull}
+		}
+		if !IsExplicitOrderConfirm(userText) {
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: orderReconfirmReply(st, userText)}
+		}
+		if missing := missingOrderDataPrompt(st, tmpl); missing != "" {
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: buildOrderFlowReply(st, missing, catalog)}
+		}
+		st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
+		if blocked {
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
+		}
+		if persist != nil {
+			orderID, err := persist(st)
+			if err != nil {
+				return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: buildOrderFlowReply(st, tmpl.RetryStep, catalog)}
+			}
+			return OrderFlowResult{
+				Cleared: true, Completed: true, OrderID: orderID, Path: PathOrderFlow,
+				Reply: orderCompleteMessageWithRef(orderID, st, tmpl),
+			}
+		}
+		return OrderFlowResult{
+			Cleared: true, Completed: true, OrderID: "sim-order-id", Path: PathOrderFlow,
+			Reply: orderCompleteMessageWithRef("sim-order-id", st, tmpl),
+		}
+
 	case "ask_address", "ask_address_full":
 		st := copyBase(stateNorm)
 		if handled, reply := tryCheckoutCartEdits(&st, userText, catalog, tmpl, formal); handled {
