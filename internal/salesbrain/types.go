@@ -4,7 +4,11 @@
 // `go test`; the ai package maps its own types into the input structs defined here.
 package salesbrain
 
-import "strings"
+import (
+	"encoding/json"
+	"strconv"
+	"strings"
+)
 
 // Lang is the buyer reply language.
 type Lang string
@@ -93,6 +97,29 @@ type FieldData struct {
 	City       string `json:"city"`
 	Province   string `json:"province"`
 	PostalCode string `json:"postal_code"`
+}
+
+// UnmarshalJSON accepts numbers as well as strings for every field: models sometimes emit
+// "postal_code": 60177, which would otherwise make the whole decision unparseable.
+func (f *FieldData) UnmarshalJSON(b []byte) error {
+	var raw map[string]any
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	get := func(k string) string {
+		switch v := raw[k].(type) {
+		case string:
+			return v
+		case float64:
+			return strconv.FormatFloat(v, 'f', -1, 64)
+		}
+		return ""
+	}
+	*f = FieldData{
+		Name: get("name"), Phone: get("phone"), Street: get("street"), District: get("district"),
+		City: get("city"), Province: get("province"), PostalCode: get("postal_code"),
+	}
+	return nil
 }
 
 // trim strips surrounding whitespace from every field. A nil receiver is left alone.

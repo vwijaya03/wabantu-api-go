@@ -88,3 +88,10 @@ func TestParseDecisionFieldsNullStaysNil(t *testing.T) {
 		t.Fatalf("null fields must stay nil without panicking, got %+v err=%v", d.Fields, err)
 	}
 }
+
+func TestParseDecisionFieldsAcceptsNumbers(t *testing.T) {
+	d, err := ParseDecision(`{"intent":"field_answer","fields":{"name":"Ana","city":"Surabaya","postal_code":60177},"reply":"Thanks."}`)
+	if err != nil || d.Fields == nil || d.Fields.PostalCode != "60177" {
+		t.Fatalf("got %+v err=%v", d.Fields, err)
+	}
+}
