@@ -235,6 +235,10 @@ func applyFieldAnswer(st *orderState, f *salesbrain.FieldData, buyerText string,
 		return nil
 	}
 
+	// The deterministic parser reads the buyer's own words first; the model's grounded fields only
+	// fill what the parser left empty (a mislabelled city/province once lost a whole address).
+	parsed := lfParseShipping(st, f, buyerText)
+
 	if name := strings.TrimSpace(f.Name); name != "" && lfTextContains(buyerText, name) &&
 		bf.PlausibleNameLine(name) && !lfQuestionBlocksName(buyerText) {
 		st.RecipientName = name
@@ -256,19 +260,7 @@ func applyFieldAnswer(st *orderState, f *salesbrain.FieldData, buyerText string,
 		}
 	}
 
-	for _, field := range []struct {
-		dst   *string
-		value string
-	}{
-		{&st.Street, f.Street},
-		{&st.Kecamatan, f.District},
-		{&st.City, f.City},
-		{&st.Province, f.Province},
-	} {
-		if v := strings.TrimSpace(field.value); v != "" && lfTextContains(buyerText, v) {
-			*field.dst = v
-		}
-	}
+	lfApplyModelAddress(st, f, buyerText, parsed)
 
 	if st.Step == lfStepAskRecipient && st.RecipientName != "" && st.RecipientPhone != "" {
 		st.Step = lfStepAskAddressFull
@@ -277,6 +269,106 @@ func applyFieldAnswer(st *orderState, f *salesbrain.FieldData, buyerText string,
 		st.Step = lfStepConfirm
 	}
 	return problems
+}
+
+// lfParsedFields records which address fields the deterministic parser filled in this turn.
+type lfParsedFields struct{ street, city, province bool }
+
+// lfParseShipping (f: the model's fields) runs bf.MergeShippingText on a copy of st and takes over what it found: the
+// recipient (name never from a question, phone only when valid), the postal code and the
+// address fields. The returned set names the address fields it changed, so the model's values
+// do not overwrite them.
+func lfParseShipping(st *orderState, f *salesbrain.FieldData, buyerText string) lfParsedFields {
+	merged := *st
+	merged.Items = append([]orderLineState(nil), st.Items...)
+	bf.MergeShippingText(&merged, buyerText)
+
+	var p lfParsedFields
+	if merged.RecipientName != st.RecipientName && !lfQuestionBlocksName(buyerText) && bf.PlausibleNameLine(merged.RecipientName) {
+		st.RecipientName = merged.RecipientName
+	}
+	if merged.RecipientPhone != st.RecipientPhone {
+		// Only a number the buyer typed whole (a truncated long number is not a phone).
+		digits := lfDigits(merged.RecipientPhone)
+		if phone, ok := lfValidPhone(digits); ok && lfTextHasNumber(buyerText, lfPhoneVariants(digits)) {
+			st.RecipientPhone = phone
+		}
+	}
+	if merged.PostalCode != st.PostalCode && len(merged.PostalCode) == 5 {
+		st.PostalCode = merged.PostalCode
+	}
+	// The parser dumps a whole message into Street when it only hints at an address; that is kept
+	// only when the model also found a street in the buyer's words.
+	if strings.TrimSpace(merged.Street) == strings.TrimSpace(buyerText) {
+		if ms := strings.TrimSpace(f.Street); ms == "" || !lfTextContains(buyerText, ms) {
+			merged.Street = st.Street
+		}
+	}
+	// A street cut out in front of a city hint ("ana from") counts only when it looks like one.
+	if merged.Street != st.Street && !bf.OrderAddrHintRe.MatchString(merged.Street) {
+		merged.Street = st.Street
+	}
+	take := func(dst *string, v string, flag *bool) {
+		if v = strings.TrimSpace(v); v != "" && v != *dst {
+			*dst, *flag = v, true
+		}
+	}
+	take(&st.Street, merged.Street, &p.street)
+	take(&st.City, merged.City, &p.city)
+	take(&st.Province, merged.Province, &p.province)
+	return p
+}
+
+// lfApplyModelAddress writes the model's grounded street, district, city and province. A value
+// the parser set this turn is kept. A "city" that is really a province name or alias ("DKI
+// Jakarta") becomes the province when that is empty, and the model's district then stands in
+// for the missing city; a "district" that is the city the parser already recognised is dropped.
+func lfApplyModelAddress(st *orderState, f *salesbrain.FieldData, buyerText string, parsed lfParsedFields) {
+	grounded := func(v string) string {
+		if v = strings.TrimSpace(v); v != "" && lfTextContains(buyerText, v) {
+			return v
+		}
+		return ""
+	}
+	street, district, city, province := grounded(f.Street), grounded(f.District), grounded(f.City), grounded(f.Province)
+
+	if canon, ok := bf.CanonicalProvince(city); ok {
+		// The model put a province name in the city slot.
+		if province == "" && strings.TrimSpace(st.Province) == "" {
+			province = canon
+		}
+		city = ""
+		if district != "" && strings.TrimSpace(st.City) == "" {
+			city, district = district, ""
+		}
+	}
+	if district != "" {
+		if known, ok := bf.KnownCityHint(district); ok && strings.EqualFold(known, strings.TrimSpace(st.City)) {
+			district = ""
+		}
+	}
+
+	// The parser may leave postal code or province glued to the street; the model's own street
+	// is then the cleaner value.
+	if strings.TrimSpace(st.Street) != "" && street != "" && parsed.street &&
+		len(street) < len(st.Street) && strings.Contains(strings.ToLower(st.Street), strings.ToLower(street)) {
+		parsed.street = false
+	}
+
+	for _, field := range []struct {
+		dst    *string
+		value  string
+		parsed bool
+	}{
+		{&st.Street, street, parsed.street},
+		{&st.Kecamatan, district, false},
+		{&st.City, city, parsed.city},
+		{&st.Province, province, parsed.province},
+	} {
+		if field.value != "" && !field.parsed {
+			*field.dst = field.value
+		}
+	}
 }
 
 func lfRoundPrice(p float64) int64 { return int64(math.Round(p)) }

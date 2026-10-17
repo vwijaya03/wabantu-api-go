@@ -209,13 +209,13 @@ func TestLLMFirstApplyFieldAnswerWithProblemsNamesThemAndAsksAgain(t *testing.T)
 	if len(fx.states) != 1 || fx.states[0].RecipientName != "Ana" || fx.states[0].RecipientPhone != "" {
 		t.Fatalf("the valid name is kept and the bad phone is not written: %+v", fx.states)
 	}
-	for _, want := range []string{"Thanks Ana.", "Sorry, the phone number 98822123 has 8 digits", salesbrain.ResumeLineFor("recipient", salesbrain.LangEN)} {
+	for _, want := range []string{"Noted: name Ana.", "Sorry, the phone number 98822123 has 8 digits", salesbrain.ResumeLineFor("recipient", salesbrain.LangEN)} {
 		if !strings.Contains(out.Reply, want) {
 			t.Errorf("reply missing %q:\n%s", want, out.Reply)
 		}
 	}
-	if strings.Index(out.Reply, "Thanks Ana.") > strings.Index(out.Reply, "Sorry,") || strings.Index(out.Reply, "Sorry,") > strings.Index(out.Reply, "Back to your order") {
-		t.Errorf("order must be model reply, problems, resume line:\n%s", out.Reply)
+	if strings.Index(out.Reply, "Noted:") > strings.Index(out.Reply, "Sorry,") || strings.Index(out.Reply, "Sorry,") > strings.Index(out.Reply, "Back to your order") {
+		t.Errorf("order must be what was saved, problems, resume line:\n%s", out.Reply)
 	}
 }
 

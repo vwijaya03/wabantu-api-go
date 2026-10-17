@@ -367,6 +367,7 @@ func lfBuildPlanInput(in lfInputs) planInput {
 		State: salesbrain.TurnState{
 			Greeting:        greetingFor(in.Now),
 			Now:             formatNowID(in.Now),
+			ShipIfPaidNow:   salesbrain.ShipIfPaidNow(in.Now.In(lfWIB), lfKBFacts(in.KBAll)),
 			ReturningBuyer:  !prev.IsZero(),
 			OpenOrders:      open,
 			RemindAllowed:   remindAllowed,

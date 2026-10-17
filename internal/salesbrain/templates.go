@@ -27,6 +27,8 @@ const (
 	TplCheckWithTeam       TemplateKey = "check_with_team"      // no args
 	TplOrderRef            TemplateKey = "order_ref"            // %[1]s order ref, appended after the order was saved
 	TplFieldProblems       TemplateKey = "field_problems"       // %[1]s invalid-data fragments joined by the caller
+	TplFieldSaved          TemplateKey = "field_saved"          // %[1]s what was stored this turn (name, phone, address)
+	TplFieldMissing        TemplateKey = "field_missing"        // %[1]s what is still missing
 	TplShippingSummary     TemplateKey = "shipping_summary"     // %[1]s name, %[2]s phone, %[3]s address line
 	TplConfirmHold         TemplateKey = "confirm_hold"         // no args; lead-in when the confirm step is held (fail-closed)
 	TplResumeVariant       TemplateKey = "resume_variant"       // no args
@@ -107,6 +109,14 @@ var templates = map[TemplateKey]map[Lang]string{
 	TplFieldProblems: {
 		LangID: "Maaf Kak, %[1]s.",
 		LangEN: "Sorry, %[1]s.",
+	},
+	TplFieldSaved: {
+		LangID: "Sudah kucatat ya Kak: %[1]s.",
+		LangEN: "Noted: %[1]s.",
+	},
+	TplFieldMissing: {
+		LangID: "Yang masih kurang: %[1]s.",
+		LangEN: "Still missing: %[1]s.",
 	},
 	TplShippingSummary: {
 		LangID: "Dikirim ke:\n%[1]s (%[2]s)\n%[3]s",

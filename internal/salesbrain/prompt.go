@@ -45,7 +45,9 @@ type TurnState struct {
 	ResumeLine      string // sentence in Lang that re-asks PendingField
 	LastBotQuestion string
 	UpsellDone      bool
-	Misunderstood   int
+	// ShipIfPaidNow is computed by code from the clock and the FAQ window ("" = not known).
+	ShipIfPaidNow string
+	Misunderstood int
 }
 
 // PromptInput is everything BuildPrompt renders.
@@ -189,6 +191,9 @@ func writeState(b *strings.Builder, s TurnState) {
 	if s.Now != "" {
 		fmt.Fprintf(b, "waktu: %s\n", s.Now)
 	}
+	if s.ShipIfPaidNow != "" {
+		fmt.Fprintf(b, "pengiriman_jika_bayar_sekarang: %s\n", s.ShipIfPaidNow)
+	}
 	fmt.Fprintf(b, "pelanggan_kembali: %s\n", yesNo(s.ReturningBuyer))
 	if len(s.OpenOrders) == 0 {
 		b.WriteString("pesanan_terbuka: tidak ada\n")
@@ -296,7 +301,7 @@ BAHASA
 - Isi language_switch hanya bila pembeli jelas meminta ganti bahasa atau bilang tidak bisa membaca bahasa sekarang. Jangan mengomentari bahasa pembeli.
 
 GAYA
-- Hangat dan singkat: 1-4 kalimat, daftar pakai baris baru. Gaya toko: %[2]s. Dalam Bahasa Indonesia sapa "Kak"; dalam English pakai sapaan netral. Tetap sopan walau pembeli kasar. Maksimal 1 emoji, tanpa emoji saat komplain. Tanpa markdown (tanpa ** atau #). Satu pertanyaan atau ajakan di akhir.
+- Hangat dan singkat: 1-4 kalimat, daftar pakai baris baru. Gaya toko: %[2]s. Dalam Bahasa Indonesia sapa "Kak"; dalam English pakai sapaan netral. Tetap sopan walau pembeli kasar. Maksimal 1 emoji, tanpa emoji saat komplain. Tanpa markdown (tanpa ** atau #). Satu pertanyaan atau ajakan di akhir bila memang perlu; jawaban informasi boleh berakhir tanpa ajakan.
 
 MELAYANI
 - Jawab dulu yang ditanya, baru tanya balik. Bertanya tentang produk BUKAN berarti membeli.
@@ -313,8 +318,10 @@ PESANAN
 - intent "field_answer" hanya bila pesan berisi data untuk STATE.kolom_tertunda (nama/HP/alamat). intent "confirm" hanya bila pembeli menyetujui ringkasan (OK, ya benar, lanjut proses).
 - Batal: tanpa nama produk berarti batalkan seluruh pesanan (intent "cancel"); menyebut produk berarti hapus baris itu (intent "amend", qty 0).
 - Bayar: metode dan rekening HANYA dari FAQ. Jangan bilang pembayaran diterima atau lunas; bukti transfer "sedang dicek".
-- Kirim: pakai aturan jam kirim dan estimasi dari FAQ bersama STATE.waktu; jangan menjanjikan tanggal tiba.
+- Jangan memberi instruksi pembayaran atau bilang pesanan siap dibayar sebelum STATE menunjukkan pesanan sudah dikonfirmasi; jawab pertanyaan metode bayar dengan menyebut metode saja bila belum ada pesanan.
+- Kirim: pakai aturan jam kirim dan estimasi dari FAQ; jangan menjanjikan tanggal tiba. Bila STATE.pengiriman_jika_bayar_sekarang ada, pakai nilainya apa adanya untuk menjawab kapan pesanan dikirim dan JANGAN menghitung atau menyimpulkan jam sendiri dari STATE.waktu.
 - Upsell: maksimal satu kali per pesanan, setelah kebutuhan utama jelas dan relevan. Bila STATE.upsell_sudah = ya, jangan menawarkan lagi.
+- Tawaran menambah ke pesanan ("mau ditambahkan ke pesanan?") paling banyak SEKALI per topik, dan jangan menutup setiap jawaban dengan tawaran itu. Jawaban atas pertanyaan cukup dijawab; jangan mendorong penjualan di setiap balasan.
 
 PESANAN TERBUKA
 - STATE.pesanan_terbuka berisi pesanan yang belum selesai. Bila STATE.boleh_ingatkan = ya, sebut SEKALI: nomor, isi, total, tinggal apa; tawarkan lanjutkan, pesanan baru, atau batalkan. Bila pembeli bertanya hal lain, jawab dulu lalu beri satu kalimat pengingat. Bila boleh_ingatkan = tidak, jangan singgung kecuali ditanya.
