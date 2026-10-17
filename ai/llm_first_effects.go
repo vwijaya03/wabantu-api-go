@@ -258,7 +258,7 @@ func lfApplyConfirm(ctx context.Context, fx lfFX, in lfApplyIn, out *lfOutcome) 
 		// nothing can be saved honestly. Go back one step and ask.
 		next.Step = lfStepAskVariant
 		fx.setState(ctx, next)
-		out.Reply = salesbrain.T(salesbrain.TplAskVariant, p.Lang, lfFirstMissingVariantName(&next))
+		out.Reply = lfAskVariantReply(in.Facts, &next, p.Lang)
 		out.Author = "system"
 		out.ReplacedReason = lfReplacedVariantMissing
 		return
@@ -297,6 +297,15 @@ func lfApplyConfirm(ctx context.Context, fx lfFX, in lfApplyIn, out *lfOutcome) 
 }
 
 // lfFirstMissingVariantName is the product of the first cart line that lacks its variant.
+func lfAskVariantReply(facts []salesbrain.CatalogFact, st *orderState, lang salesbrain.Lang) string {
+	for _, l := range cartFromState(st) {
+		if l.VariantMissing {
+			return salesbrain.AskVariantReply(facts, l, bf.ProductBaseName(l.Name), lang)
+		}
+	}
+	return salesbrain.T(salesbrain.TplAskVariant, lang, "")
+}
+
 func lfFirstMissingVariantName(st *orderState) string {
 	for _, l := range cartFromState(st) {
 		if l.VariantMissing {

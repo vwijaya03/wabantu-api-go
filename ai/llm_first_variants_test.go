@@ -160,7 +160,7 @@ func TestPlanMultiLineVariantsOfOneProduct(t *testing.T) {
 			t.Errorf("reply missing %q:\n%s", want, plan.Reply)
 		}
 	}
-	if !strings.Contains(fake.requests[0].System, "ukuran lain: no 2 (M, tersedia); no 3 (XL, habis)") {
+	if !strings.Contains(fake.requests[0].System, "varian lain: no 2 (M, Rp54.900, tersedia); no 3 (XL, Rp58.900, habis)") {
 		t.Errorf("the prompt must name the sibling rows:\n%s", fake.requests[0].System)
 	}
 }
@@ -181,7 +181,7 @@ func TestPlanAsksOnceForAMissingVariantAndKeepsTheQuantity(t *testing.T) {
 	if strings.Contains(plan.Reply, "sudah masuk keranjang") {
 		t.Errorf("the model's promise must not be sent while the variant is open:\n%s", plan.Reply)
 	}
-	if n := strings.Count(plan.Reply, "?"); n != 1 || !strings.HasPrefix(plan.Reply, "Untuk Kaos Polos Premium, Kakak mau ukuran atau warna apa?") {
+	if n := strings.Count(plan.Reply, "?"); n != 1 || !strings.HasPrefix(plan.Reply, "Untuk Kaos Polos Premium, pilihan yang tersedia: hitam, putih. Kakak mau yang mana?") {
 		t.Errorf("exactly one question, in the template wording:\n%s", plan.Reply)
 	}
 }
@@ -386,7 +386,7 @@ func TestLLMFirstFlowMissingVariantAsksOnceAndWaitsWithoutADraft(t *testing.T) {
 		t.Fatalf("state = %+v", st)
 	}
 	sent := f.sent[0]
-	if !strings.Contains(sent.text, "Untuk Kaos Polos Premium, Kakak mau ukuran atau warna apa?") || strings.Contains(sent.text, "sudah masuk") ||
+	if !strings.Contains(sent.text, "Untuk Kaos Polos Premium, pilihan yang tersedia: hitam, putih. Kakak mau yang mana?") || strings.Contains(sent.text, "sudah masuk") ||
 		sent.meta.ReplacedReason != lfReplacedCartIssue {
 		t.Fatalf("sent = %+v", sent)
 	}

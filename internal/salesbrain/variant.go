@@ -153,7 +153,7 @@ func ResolveCartOps(in ResolveInput) CartResolution {
 				res.Changed = true
 				continue
 			}
-			res.Issues = append(res.Issues, OpIssue{Kind: IssueVariantMissing, No: c.No, Name: displayName(c)})
+			res.Issues = append(res.Issues, OpIssue{Kind: IssueVariantMissing, No: c.No, Name: displayName(c), Options: variantChoices(in.Catalog, c)})
 			continue
 		}
 
@@ -193,7 +193,7 @@ func ResolveCartOps(in ResolveInput) CartResolution {
 			line := OrderLine{ID: c.ID, Name: c.Name, Qty: op.Qty, UnitPrice: c.Price, Size: size, Color: color}
 			line.VariantMissing = c.NeedsVariant && size == "" && color == ""
 			if line.VariantMissing {
-				res.Issues = append(res.Issues, OpIssue{Kind: IssueVariantMissing, No: c.No, Name: displayName(c)})
+				res.Issues = append(res.Issues, OpIssue{Kind: IssueVariantMissing, No: c.No, Name: displayName(c), Options: variantChoices(in.Catalog, c)})
 			}
 			res.Cart = append(res.Cart, line)
 			res.Changed = true
@@ -227,9 +227,9 @@ func poolQtyInCart(cart []OrderLine, c CatalogFact, skipIdx int) int {
 func stockIssueForLine(catalog []CatalogFact, cart []OrderLine, c CatalogFact, qty int, lineIdx int) *OpIssue {
 	switch {
 	case c.Stock == StockOut:
-		return &OpIssue{Kind: IssueSoldOut, No: c.No, Name: c.Name, Options: sizesInStock(catalog, c)}
+		return &OpIssue{Kind: IssueSoldOut, No: c.No, Name: c.Name, Options: variantChoices(catalog, c)}
 	case c.Stock != "" && c.StockQty > 0 && c.StockQty < 1:
-		return &OpIssue{Kind: IssueSoldOut, No: c.No, Name: displayName(c), Options: sizesInStock(catalog, c)}
+		return &OpIssue{Kind: IssueSoldOut, No: c.No, Name: displayName(c), Options: variantChoices(catalog, c)}
 	case c.Stock != "" && int(c.StockQty) >= 1:
 		other := poolQtyInCart(cart, c, lineIdx)
 		if other+qty > int(c.StockQty) {
@@ -466,6 +466,59 @@ func colorAllowed(catalog []CatalogFact, c CatalogFact, color string) bool {
 	return false
 }
 
+// rowColor is the colour a catalog row carries in its name suffix ("Kaos Polos - Hitam"), or "".
+func rowColor(c CatalogFact) string { return colorSuffixFromName(c.Name, c.Size) }
+
+// variantLabel names the variant a row is: its size and/or its colour ("L", "Hitam", "L Hitam"),
+// "" for a row that is not a variant of anything.
+func variantLabel(c CatalogFact) string {
+	return strings.TrimSpace(c.Size + " " + rowColor(c))
+}
+
+// variantSiblings are the other rows of the same product that are variants (another size or colour).
+func variantSiblings(catalog []CatalogFact, c CatalogFact) []CatalogFact {
+	var out []CatalogFact
+	for _, o := range catalog {
+		if o.No == c.No || variantLabel(o) == "" || !sameStockProduct(o, c) {
+			continue
+		}
+		out = append(out, o)
+	}
+	return out
+}
+
+// variantChoices lists what the buyer can still pick for c's product: the label of every variant
+// row (size and/or colour) that is not sold out, in catalog order, plus the colours the
+// description declares when no row carries its own colour. It is what "ask once" and "sold out,
+// here are the alternatives" offer, so both only name variants that exist and have stock.
+func variantChoices(catalog []CatalogFact, c CatalogFact) []string {
+	rows := append([]CatalogFact{c}, variantSiblings(catalog, c)...)
+	sort.SliceStable(rows, func(i, j int) bool { return rows[i].No < rows[j].No })
+	var out []string
+	seen := map[string]bool{}
+	add := func(label string) {
+		if k := strings.ToLower(label); label != "" && !seen[k] {
+			seen[k] = true
+			out = append(out, label)
+		}
+	}
+	anyRowColor := false
+	for _, r := range rows {
+		if rowColor(r) != "" {
+			anyRowColor = true
+		}
+		if r.Stock != StockOut {
+			add(variantLabel(r))
+		}
+	}
+	if !anyRowColor && c.Stock != StockOut {
+		for _, col := range soldColorsForProduct(catalog, c) {
+			add(col)
+		}
+	}
+	return out
+}
+
 // sizesInStock lists the sizes of c and its siblings that still have stock (c itself included
 // only when it is in stock), in catalog order.
 func sizesInStock(catalog []CatalogFact, c CatalogFact) []string {
@@ -640,6 +693,9 @@ func RenderIssue(is OpIssue, lang Lang) string {
 	choices := strings.Join(is.Options, ", ")
 	switch is.Kind {
 	case IssueVariantMissing:
+		if choices != "" {
+			return T(TplAskVariantOptions, lang, is.Name, choices)
+		}
 		return T(TplAskVariant, lang, is.Name)
 	case IssueChooseVariant:
 		if choices == "" {
@@ -666,6 +722,16 @@ func RenderIssue(is OpIssue, lang Lang) string {
 		return T(TplStockLimit, lang, is.Name, is.Available)
 	}
 	return ""
+}
+
+// AskVariantReply is the one question for a cart line whose size or colour is still open, listing
+// the variants of its product that exist and have stock (the generic question when none is known).
+func AskVariantReply(catalog []CatalogFact, l OrderLine, name string, lang Lang) string {
+	is := OpIssue{Kind: IssueVariantMissing, Name: name}
+	if row, ok := catalogRowForLine(catalog, l); ok {
+		is.No, is.Options = row.No, variantChoices(catalog, row)
+	}
+	return RenderIssue(is, lang)
 }
 
 // RenderIssues joins the sentences of all issues, one paragraph each.

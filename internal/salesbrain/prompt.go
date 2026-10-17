@@ -141,21 +141,27 @@ func writeCatalog(b *strings.Builder, items []CatalogFact) {
 	}
 }
 
-// writeVariantInfo tells the model what a row needs and which sibling rows are the other sizes of
-// the same product (their row numbers and stock), so it can pick the right row for a size.
+// writeVariantInfo tells the model what a row needs and which sibling rows are the other sizes or
+// colours of the same product (their row numbers, price and stock), so it can pick the right row
+// and never has to guess a price or a stock level.
 func writeVariantInfo(b *strings.Builder, items []CatalogFact, c CatalogFact) {
 	if c.Size != "" {
 		fmt.Fprintf(b, " | ukuran: %s", c.Size)
+	}
+	if col := rowColor(c); col != "" {
+		fmt.Fprintf(b, " | warna: %s", col)
+	}
+	if variantLabel(c) != "" {
 		var sibs []string
-		for _, o := range Siblings(items, c) {
+		for _, o := range variantSiblings(items, c) {
 			stock := o.Stock
 			if stock == "" {
 				stock = "stok tidak dilacak"
 			}
-			sibs = append(sibs, fmt.Sprintf("no %d (%s, %s)", o.No, o.Size, stock))
+			sibs = append(sibs, fmt.Sprintf("no %d (%s, %s, %s)", o.No, variantLabel(o), FormatRupiah(o.Price), stock))
 		}
 		if len(sibs) > 0 {
-			fmt.Fprintf(b, " | ukuran lain: %s", strings.Join(sibs, "; "))
+			fmt.Fprintf(b, " | varian lain: %s", strings.Join(sibs, "; "))
 		}
 	}
 	if c.NeedsVariant && c.Size == "" {
