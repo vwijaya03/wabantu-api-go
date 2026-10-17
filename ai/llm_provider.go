@@ -61,6 +61,10 @@ func (p *AnthropicProvider) Chat(ctx context.Context, r llm.ChatRequest) (llm.Ch
 	if r.System != "" {
 		params.System = []anthropic.TextBlockParam{{Text: r.System}}
 	}
+	// r.JSON is intentionally ignored: Anthropic has no JSON mode here, callers ask for JSON in the prompt.
+	if r.Temperature != nil {
+		params.Temperature = anthropic.Float(*r.Temperature)
+	}
 	resp, err := p.Client.client.Messages.New(ctx, params)
 	if err != nil {
 		return llm.ChatResponse{Usage: llm.Usage{Provider: "anthropic", Model: model}}, fmt.Errorf("anthropic API error: %w", err)
