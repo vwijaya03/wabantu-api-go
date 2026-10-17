@@ -11,20 +11,17 @@ import (
 // semua, cuma tuna" must not.
 func TestCancelPrecedenceWholeOrderCancelText(t *testing.T) {
 	cases := []struct {
-		text       string
-		want       bool
-		needsPartC bool // English phrases only become a whole-order cancel once Part C is merged
+		text string
+		want bool
 	}{
-		{"batalkan pesanan", true, false},
-		{"please cancel my previous order", true, true},
-		{"cancel the tuna", false, false},
-		{"bukan batal semua, cuma tuna", false, false},
+		{"batalkan pesanan", true},
+		{"please cancel my previous order", true},
+		{"cancel my previous order", true},
+		{"cancel the tuna", false},
+		{"bukan batal semua, cuma tuna", false},
 	}
 	for _, c := range cases {
 		t.Run(c.text, func(t *testing.T) {
-			if c.needsPartC && IsCartLineCorrectionIntent(c.text) {
-				t.Skip("needs Part C buyerflow phrases")
-			}
 			if got := isWholeOrderCancelText(c.text); got != c.want {
 				t.Fatalf("isWholeOrderCancelText(%q) = %v, want %v", c.text, got, c.want)
 			}
