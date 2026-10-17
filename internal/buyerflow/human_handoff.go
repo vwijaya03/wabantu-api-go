@@ -22,8 +22,27 @@ var humanHandoffExplicit = []string{
 	"tolong cs", "panggil cs", "panggilkan cs",
 }
 
-var humanHandoffVerbRe = regexp.MustCompile(`(?i)\b(minta|tolong|mau|bisa|boleh|hubung|sambung|chat|bicara|ngobrol|panggil|connect|terhubung)\b`)
-var humanSupportTargetRe = regexp.MustCompile(`(?i)\b(manusia|operator|agent|admin)\b|customer service|\bcs\b`)
+const (
+	// humanTalkVerbPat — verbs that mean "put me through to someone". The generic
+	// minta/tolong/mau/bisa/boleh live only in humanHandoffVerbRe: next to a plain noun
+	// ("mau beli human hair", "bisa untuk 3 orang") they are not a request for staff.
+	humanTalkVerbPat = `hubung(?:kan|i)?|sambung(?:kan)?|chat|bicara|ngobrol|panggil(?:kan)?|connect|terhubung|contact|talk|speak|call|reach|complain`
+	// humanCoreTargetPat — support words that are a target on their own ("cs dong", "admin please").
+	humanCoreTargetPat = `\b(manusia|operator|agent|admin)\b|customer service|\bcs\b`
+	// humanRoleTargetPat — staff roles; a target together with any request verb.
+	humanRoleTargetPat = `\b(administrator|owner|pemilik|manager|manajer|staff|staf)\b|real person`
+	// humanGenericTargetPat — plain nouns (headcounts, products); a target only with a talk verb.
+	humanGenericTargetPat = `\b(person|human|orang|penjual|seller)\b`
+)
+
+var humanHandoffVerbRe = regexp.MustCompile(`(?i)\b(minta|tolong|mau|bisa|boleh|` + humanTalkVerbPat + `)\b`)
+var humanTalkVerbRe = regexp.MustCompile(`(?i)\b(` + humanTalkVerbPat + `)\b`)
+var humanCoreTargetRe = regexp.MustCompile(`(?i)` + humanCoreTargetPat)
+var humanNamedTargetRe = regexp.MustCompile(`(?i)` + humanCoreTargetPat + `|` + humanRoleTargetPat)
+var humanGenericTargetRe = regexp.MustCompile(`(?i)` + humanGenericTargetPat)
+
+// humanSupportTargetRe — every target word; the exclusion helpers below use it unchanged.
+var humanSupportTargetRe = regexp.MustCompile(`(?i)` + humanCoreTargetPat + `|` + humanRoleTargetPat + `|` + humanGenericTargetPat)
 var customerServiceInfoCueRe = regexp.MustCompile(`(?i)\b(jam|buka|tutup|operasional|hours|open|close|kontak|nomor|telepon|whatsapp|email)\b`)
 
 // HumanHandoffReply — singkat, sopan; tidak memulai order baru.
@@ -60,10 +79,12 @@ func IsHumanEscalationRequest(userText string) bool {
 			return true
 		}
 	}
-	if humanHandoffVerbRe.MatchString(text) && humanSupportTargetRe.MatchString(text) {
+	if humanHandoffVerbRe.MatchString(text) &&
+		(humanNamedTargetRe.MatchString(text) ||
+			(humanGenericTargetRe.MatchString(text) && humanTalkVerbRe.MatchString(text))) {
 		return true
 	}
-	if humanSupportTargetRe.MatchString(text) &&
+	if humanCoreTargetRe.MatchString(text) &&
 		(strings.Contains(text, "dong") || strings.Contains(text, "please") ||
 			strings.HasSuffix(strings.TrimSpace(text), "cs") || strings.HasPrefix(text, "cs ")) {
 		return true

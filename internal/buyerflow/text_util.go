@@ -5,8 +5,20 @@ import (
 	"strings"
 )
 
-// 500gram / 128gb / 193g → pecah jadi angka + satuan supaya SKU unik ketemu.
-var gluedMeasureRe = regexp.MustCompile(`^(\d+(?:[.,]\d+)?)(gram|gr|kg|ml|gb|pcs|g)$`)
+// 500gram / 500grams / 128gb / 193g → pecah jadi angka + satuan supaya SKU unik ketemu.
+var gluedMeasureRe = regexp.MustCompile(`^(\d+(?:[.,]\d+)?)(gram|grams|gramm|grm|grs|gr|kgs|kg|ml|gb|pcs|g)$`)
+
+// canonicalUnitToken maps the unit spellings buyers type ("500grams", "100gr", "2kgs") to the
+// spelling catalogs use, so "salmon 250 grams" overlaps "Salmon Steak 250 Gram".
+func canonicalUnitToken(tok string) string {
+	switch tok {
+	case "gr", "grs", "grm", "grams", "gramm":
+		return "gram"
+	case "kgs":
+		return "kg"
+	}
+	return tok
+}
 
 // apparelSizeTokens are single-letter size suffixes dropped by the old len>=2 filter.
 var apparelSizeTokens = map[string]struct{}{
@@ -37,7 +49,7 @@ func tokenize(text string) []string {
 	for _, w := range words {
 		for _, part := range splitGluedMeasureToken(w) {
 			if len(part) >= 2 || isApparelSizeToken(part) {
-				out = append(out, part)
+				out = append(out, canonicalUnitToken(part))
 			}
 		}
 	}

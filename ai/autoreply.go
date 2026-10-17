@@ -17,6 +17,7 @@ import (
 
 	appflag "encore.app/wabantu/flag"
 	bf "encore.app/wabantu/internal/buyerflow"
+	"encore.app/wabantu/internal/salesbrain"
 	appdb "encore.app/wabantu/shared/db"
 	"encore.app/wabantu/shared/pii"
 	"encore.app/wabantu/shared/retrieval"
@@ -31,6 +32,10 @@ import (
 
 // ErrAIHandoffPaused means staff has taken over the conversation; inbound AI must not reply or retry.
 var ErrAIHandoffPaused = errors.New("AI_HANDOFF_PAUSED")
+
+// errEmptyReply: sendAiMessage never sends a blank WhatsApp body (Meta rejects it and the buyer
+// sees nothing); the job fails visibly instead and its retry/fallback handling takes over.
+var errEmptyReply = errors.New("ai: refusing to send an empty reply")
 
 const (
 	reasonAIGenerated       = "ai_generated"
@@ -180,9 +185,20 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return false, nil
 	}
 
+	// A paused conversation stays paused unless the pause was the AI's own and went AutoResumeAfter
+	// without a staff reply (handoff_v2.go); staff takeovers never resume. The resume itself sends
+	// one apology, so it happens below once the channel is known to be usable.
+	autoResume := false
 	if !convo.AIHandled {
-		rlog.Warn("AI job: convo.aiHandled=false", "convoId", convo.ID)
-		return false, ErrAIHandoffPaused
+		ok, rerr := pausedConversationMayResume(ctx, ts, convo)
+		if rerr != nil {
+			rlog.Warn("AI job: auto-resume check failed, keeping the conversation paused", "convoId", convo.ID, "err", rerr)
+		}
+		if !ok {
+			rlog.Warn("AI job: convo.aiHandled=false", "convoId", convo.ID)
+			return false, ErrAIHandoffPaused
+		}
+		autoResume = true
 	}
 	if inbound.Direction != "in" || inbound.Author != "contact" {
 		rlog.Warn("AI job: inbound not a contact inbound")
@@ -229,8 +245,11 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	}
 	popBuyerLang := PushSavedBuyerLang(contactPreferredLanguage(contact))
 	defer popBuyerLang()
+	// Taken before this turn sends anything (afterwards the last outbound message is our own reply):
+	// was the language question the last thing we said? Only then is a bare "1" a language choice.
+	languageAsked := languageQuestionAsked(ctx, ts, convo.ID, userText)
 	defer func() {
-		s.applyBuyerLanguageFromMessage(ctx, ts, contact, userText)
+		s.applyBuyerLanguageFromMessage(ctx, ts, contact, userText, languageAsked)
 	}()
 	if contact.PreferredLanguage == nil {
 		if pref, perr := loadContactPreferredLanguage(ctx, ts, contact.ID); perr == nil && pref != nil {
@@ -246,6 +265,12 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 			"reason", why,
 		)
 		return false, nil
+	}
+
+	if autoResume {
+		if err := s.resumeAIAfterPause(ctx, ts, payload, convo, channel, contact, userText); err != nil {
+			return false, err
+		}
 	}
 
 	bp := toBusinessProfile(profile)
@@ -269,6 +294,12 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return s.handleThirdPartyBuyerLookupDenied(ctx, ts, payload, convo, channel, contact)
 	}
 
+	// LLM-first pipeline (flag ai_llm_first, per tenant): answers before the legacy interceptors below;
+	// (false, nil) falls through to them, so a tenant without the flag is untouched.
+	if handled, err := s.tryLLMFirst(ctx, ts, payload, convo, channel, contact, profile, userText); handled || err != nil {
+		return handled, err
+	}
+
 	// Status inquiry sebelum greeting — "halo min punya pesanan aktif?" bukan sapaan murni.
 	// Recap keranjang chat dulu (trace Redis), baru status DB jika checkout kosong.
 	if earlySt, _ := s.getOrderState(ctx, payload.TenantID, convo.ID); PreferCheckoutRecapOverDBStatus(userText, CheckoutStateHasRecap(earlySt)) {
@@ -285,7 +316,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return s.handleCustomerOrderStatus(ctx, ts, payload.TenantSchema, payload, convo, channel, contact, userText, nil)
 	}
 
-	if handled, err := s.handleBuyerLanguageRouting(ctx, ts, payload, convo, channel, contact, userText); handled || err != nil {
+	if handled, err := s.handleBuyerLanguageRouting(ctx, ts, payload, convo, channel, contact, userText, languageAsked); handled || err != nil {
 		return handled, err
 	}
 
@@ -355,11 +386,9 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		}
 	}
 
-	if IsCartLineCorrectionIntent(userText) || IsOrderAmendMessage(userText) {
-		return s.handleOrderAmend(ctx, ts, payload, convo, channel, contact, userText, profile, history)
-	}
-
-	if IsOrderCancelRequest(userText) && !IsCartLineCorrectionIntent(userText) && !IsNegatedFullOrderCancel(userText) {
+	// Whole-order cancel is decided BEFORE amend: "cancel my previous order" / "batalkan pesanan" must
+	// not fall into the amend flow (which used to re-add lines from the chat history).
+	if isWholeOrderCancelText(userText) {
 		orderSt, _ := s.getOrderState(ctx, payload.TenantID, convo.ID)
 		if orderSt != nil && strings.TrimSpace(orderSt.PersistedOrderID) != "" {
 			scope := orderAccessScope{ConversationID: convo.ID, ContactID: contact.ID}
@@ -390,6 +419,10 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact,
 			orderNoneToCancelReply(userText), "system", payload.InboundMessageID, out)
 		return err == nil, err
+	}
+
+	if IsCartLineCorrectionIntent(userText) || IsOrderAmendMessage(userText) {
+		return s.handleOrderAmend(ctx, ts, payload, convo, channel, contact, userText, profile, history)
 	}
 	if IsThirdPartyBuyerLookup(userText) {
 		return s.handleThirdPartyBuyerLookupDenied(ctx, ts, payload, convo, channel, contact)
@@ -532,7 +565,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	)
 
 	// ── Order flow — prioritas sebelum katalog statis ─────────────────────
-	if inScope && !isStructuredOrderCheckoutBreak(userText) &&
+	if inScope && !structuredListBreaksCheckout(userText, orderActiveNow) &&
 		(classifier.Label == "order_intent" || IsStructuredOrderList(userText) ||
 			isHistoryBackedPurchaseIntent(userText, history, catalog)) {
 		sent, oErr := s.handleOrderFlow(ctx, ts, payload.TenantSchema, payload.TenantID, convo, channel, contact,
@@ -574,7 +607,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	if inScope {
 		if catReply, ok := s.replyFromBusinessCatalogHybrid(ctx, payload.TenantID, payload.TenantSchema, userText, ts, profile, catalog, history); ok {
 			if ShouldHandoffForCatalogMiss(userText) && IsCatalogNotFoundReply(catReply) {
-				return s.handleAiNoAnswerHandoff(ctx, ts, payload, convo, channel, contact, profile, userText)
+				return s.handleAiNoAnswerHandoff(ctx, ts, payload, convo, channel, contact, userText)
 			}
 			if clearedOrderForCorrection {
 				catReply = prependSalesCorrection(strOrEmpty(profile.Tone) == "formal", catReply)
@@ -617,13 +650,15 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		if err != nil {
 			return false, err
 		}
-		return true, pauseAI(ctx, ts, convo.ID, "Sensitive/escalate detected")
+		return true, pauseAI(ctx, ts, convo.ID, handoffReasonSensitiveEscalate)
 	}
 
-	// ── Handle: out of scope → no-answer handoff (no scolding) ───────────
+	// ── Out of scope: no handoff and no pause. The turn continues to the FAQ cache, the FAQ direct
+	// answer and the LLM exactly like an in-scope question (the LLM can decline politely); the
+	// classifier label stays in the activity context (ac.Classifier) for observability.
 	if classifier.Label == "out_of_scope" {
-		rlog.Warn("AI job: out-of-business-scope → ai_no_answer handoff")
-		return s.handleAiNoAnswerHandoff(ctx, ts, payload, convo, channel, contact, profile, userText)
+		rlog.Info("AI job: out-of-business-scope, continuing to FAQ/LLM without handoff",
+			"salesState", intent.State, "salesTopic", intent.Topic)
 	}
 
 	// ── Handle: in-scope non-question ────────────────────────────────────
@@ -642,11 +677,11 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 
 	// ── Handle: low-confidence question → handoff ──────────────────────────
 	if classifier.Label == "in_scope_question" && classifier.Confidence < llmConfidenceThreshold {
-		return s.handleAiNoAnswerHandoff(ctx, ts, payload, convo, channel, contact, profile, userText)
+		return s.handleAiNoAnswerHandoff(ctx, ts, payload, convo, channel, contact, userText)
 	}
 
 	// ── Handle: order intent state machine ───────────────────────────────
-	if !isStructuredOrderCheckoutBreak(userText) &&
+	if !structuredListBreaksCheckout(userText, orderActiveNow) &&
 		(classifier.Label == "order_intent" || (IsOrderContinuationMessage(userText) && hasOrderIntentText(userText))) {
 		sent, oErr := s.handleOrderFlow(ctx, ts, payload.TenantSchema, payload.TenantID, convo, channel, contact,
 			userText, profile, kbEntries, history, payload.InboundMessageID)
@@ -654,7 +689,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	}
 	if inScope && (IsOrderRevisionMessage(userText) ||
 		(mentionsOrderQty(userText) && IsActiveCheckoutFromHistory(history, userText) &&
-			!isStructuredOrderCheckoutBreak(userText))) {
+			!structuredListBreaksCheckout(userText, orderActiveNow))) {
 		sent, oErr := s.handleOrderFlow(ctx, ts, payload.TenantSchema, payload.TenantID, convo, channel, contact,
 			userText, profile, kbEntries, history, payload.InboundMessageID)
 		return sent, oErr
@@ -741,8 +776,16 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return err == nil, err
 	}
 
-	kbForPrompt := make([]KBEntry, len(kbHybrid))
-	for i, e := range kbHybrid {
+	// A tenant KB of at most kbPromptFullMax rows goes to the model whole (O6); one bounded extra
+	// query tells whether it is that small. Bigger KBs keep using the retrieved rows.
+	allKB, allKBErr := loadKBEntries(ctx, ts, kbPromptFullMax+1)
+	if allKBErr != nil {
+		rlog.Warn("AI job: full KB load failed, using retrieved KB only", "err", allKBErr)
+		allKB = nil
+	}
+	promptKB := kbForLLMPrompt(allKB, kbHybrid)
+	kbForPrompt := make([]KBEntry, len(promptKB))
+	for i, e := range promptKB {
 		cat := ""
 		if e.Category != nil {
 			cat = *e.Category
@@ -797,14 +840,16 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 			"tenantId", payload.TenantID,
 			"convoId", convo.ID,
 		)
-		return s.handleAiNoAnswerHandoff(ctx, ts, payload, convo, channel, contact, profile, userText)
+		return s.handleAiSystemError(ctx, ts, payload, convo, channel, contact, profile, userText,
+			metaNoLLM(reasonAIGenerated, PathHumanHandoff), notifyReasonLLMError)
 	}
 
 	if chatModel != "" {
 		route.Model = chatModel // record the model actually used (may be Gemini or a fallback)
 	}
 
-	groundedReply, wasGrounded, groundReason := groundLLMReply(reply, userText, profile, catalog, history,
+	groundedReply, wasGrounded, groundReason := groundLLMReply(reply, userText, buyerReplyLang(userText, contact),
+		profile, catalog, mergeKBEntries(mergeKBEntries(kbEntries, kbHybrid), promptKB), orderActiveNow, history,
 		func(ut string, p *dbBusinessProfile, c []dbCatalogItem, h []dbMessage) (string, bool) {
 			return s.replyFromBusinessCatalogHybrid(ctx, payload.TenantID, payload.TenantSchema, ut, ts, p, c, h)
 		})
@@ -828,6 +873,9 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		llmPath = PathLLMGrounded
 	}
 	out := metaFromRoute(reasonAIGenerated, llmPath, route)
+	if wasGrounded {
+		out.GroundReason = groundReason
+	}
 	out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, compUsage.InputTokens, compUsage.OutputTokens)
 	err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, finalReply, "ai", payload.InboundMessageID, out)
 	if err != nil {
@@ -844,7 +892,9 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	return true, nil
 }
 
-// FallbackAutoReply sends a generic fallback and pauses AI on the conversation.
+// FallbackAutoReply runs after the AI job exhausted its retries: an honest "busy" message in the
+// buyer's language and an owner notification. It does NOT pause the AI; a technical failure must
+// never silence the conversation.
 func (s *AutoReplyService) FallbackAutoReply(ctx context.Context, payload AiReplyJobPayload) error {
 	ts, err := openTenantScope(ctx, payload.TenantSchema)
 	if err != nil {
@@ -867,15 +917,15 @@ func (s *AutoReplyService) FallbackAutoReply(ctx context.Context, payload AiRepl
 		return nil
 	}
 
-	out := metaNoLLM(reasonNonQuestion, PathAutoFallback)
-	out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-	err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact,
-		"Maaf kak, saat ini sistem kami sedang sibuk. Tim kami akan bantu balas secepatnya ya 🙏",
-		"system", payload.InboundMessageID, out)
-	if err != nil {
-		return err
+	// Best effort: the shop name and the buyer's message only choose the wording and language.
+	profile, _ := loadBusinessProfile(ctx, ts)
+	userText := ""
+	if inbound, ierr := loadMessage(ctx, ts, payload.InboundMessageID); ierr == nil && inbound != nil {
+		userText, _ = inboundTextForAutoReply(inbound.Type, inbound.Body)
 	}
-	return pauseAI(ctx, ts, convo.ID, "Auto fallback setelah retry AI gagal")
+	_, err = s.handleAiSystemError(ctx, ts, payload, convo, channel, contact, profile, userText,
+		metaNoLLM(reasonNonQuestion, PathAutoFallback), notifyReasonFallback)
+	return err
 }
 
 func (s *AutoReplyService) handleCustomerOrderCancel(
@@ -992,53 +1042,90 @@ func (s *AutoReplyService) handleCustomerOrderStatus(
 	}
 	meta := metaNoLLM(reasonAIGenerated, PathOrderStatus)
 	meta.OrderAction = "status"
-	send := func(text string) (bool, error) {
-		meta.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-		err := s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, text, "system", payload.InboundMessageID, meta)
-		return err == nil, err
+	draftSummary := func() string {
+		if orderSt, err := s.getOrderState(ctx, payload.TenantID, convo.ID); err == nil && orderSt != nil && orderSt.ProductComplete() {
+			return formatOrderSummary(*orderSt)
+		}
+		return ""
 	}
-	if res.AccessDenied {
-		return send(orderAccessDeniedReply())
-	}
-	if res.NotFound {
-		return send(orderRefNotFoundReply(parseOrderRefFromMessage(userText)))
-	}
-	if res.RecipientHintNotFound {
-		return send(orderRecipientHintNotFoundReply())
-	}
-	if res.ActiveOnly && res.Order == nil {
-		return send(orderNoActiveOrdersReply())
-	}
-	if res.NeedPick {
-		return send(orderStatusPickRefReply(res.List))
+	text, orderID := orderStatusReplyFor(res, userText, buyerEnglish(userText, contact), scope, contact, draftSummary)
+	meta.OrderID = orderID
+	meta.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
+	err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, text, "system", payload.InboundMessageID, meta)
+	return err == nil, err
+}
+
+// buyerEnglish: the language the buyer's fixed status text must use: an explicit switch in the
+// message, the locked preference, a clear message language, the turn's saved language, else Indonesian.
+func buyerEnglish(userText string, contact *dbContact) bool {
+	return ResolveBuyerLanguage(userText, contactPreferredLanguage(contact)) == bf.LangEN
+}
+
+// orderStatusReplyFor is the text of the order-status answer and the id of the order it is about
+// ("" when none). Pure apart from draftSummary, which is only called when no saved order matched and
+// returns the buyer's unsaved checkout summary ("" when there is none).
+func orderStatusReplyFor(res persistedOrderResolve, userText string, en bool, scope orderAccessScope, contact *dbContact, draftSummary func() string) (string, string) {
+	switch {
+	case res.AccessDenied:
+		return orderAccessDeniedReplyL(en), ""
+	case res.NotFound:
+		return orderRefNotFoundReplyL(parseOrderRefFromMessage(userText), en), ""
+	case res.RecipientHintNotFound:
+		return orderRecipientHintNotFoundReplyL(en), ""
+	case res.ActiveOnly && res.Order == nil:
+		return orderNoActiveOrdersReply(en), ""
+	case res.NeedPick:
+		return orderStatusPickRefReply(res.List, en), ""
 	}
 	o := res.Order
 	if o == nil {
-		if orderSt, err := s.getOrderState(ctx, payload.TenantID, convo.ID); err == nil && orderSt != nil && orderSt.ProductComplete() {
-			body := formatOrderSummary(*orderSt)
-			if body != "" {
-				body += "\n\n(Ini draft pesanan dari chat — belum dikonfirmasi ke toko.)"
-				return send(body)
+		if draftSummary != nil {
+			if body := draftSummary(); body != "" {
+				if en {
+					return body + "\n\n(This is a draft order from the chat — not yet confirmed with the shop.)", ""
+				}
+				return body + "\n\n(Ini draft pesanan dari chat — belum dikonfirmasi ke toko.)", ""
 			}
 		}
-		return send(orderNoneFoundReply())
+		return orderNoneFoundReply(en), ""
 	}
 	if contact != nil && !OrderChatAccessAllowed(o, scope, contact.PhoneNumber, contact.PhoneNumber) {
-		return send(orderAccessDeniedReply())
+		return orderAccessDeniedReplyL(en), ""
 	}
-	meta.OrderID = o.ID
-	body := formatPersistedOrderSummary(o)
-	if strings.EqualFold(o.Status, "cancelled") {
-		body += "\n\nPesanan ini sudah dibatalkan."
-	} else if cancellableOrderStatuses[o.Status] {
-		body += "\n\nUntuk membatalkan, ketik saja: batalkan pesanan."
+	body := formatPersistedOrderSummaryL(o, en)
+	switch {
+	case strings.EqualFold(o.Status, "cancelled"):
+		if en {
+			body += "\n\nThis order has been cancelled."
+		} else {
+			body += "\n\nPesanan ini sudah dibatalkan."
+		}
+	case cancellableOrderStatuses[o.Status]:
+		if en {
+			body += "\n\nTo cancel, just type: cancel order."
+		} else {
+			body += "\n\nUntuk membatalkan, ketik saja: batalkan pesanan."
+		}
 	}
-	return send(body)
+	return body, o.ID
 }
 
 // isStructuredOrderCheckoutBreak — multi-line order pasted mid-checkout (bukan append lalu/tambah/nambah).
+// It looks at the text only; use structuredListBreaksCheckout wherever a cart may not exist.
 func isStructuredOrderCheckoutBreak(userText string) bool {
 	return bf.IsStructuredOrderCheckoutBreak(userText)
+}
+
+// structuredListBreaksCheckout: a pasted multi-line order is a "break" only of a checkout that
+// exists. With no cart it is a new order and has to reach the order flow; the text-only
+// isStructuredOrderCheckoutBreak used to skip the order flow gates even then.
+func structuredListBreaksCheckout(text string, st *orderState) bool {
+	return orderStateHasItems(st) && isStructuredOrderCheckoutBreak(text)
+}
+
+// orderStateHasItems: the cart holds at least one product (Items, or the single-product fields).
+func orderStateHasItems(st *orderState) bool {
+	return st != nil && (len(st.Items) > 0 || strings.TrimSpace(st.ProductName) != "")
 }
 
 // ─── Message classifier ──────────────────────────────────────────────────────
@@ -1480,6 +1567,11 @@ func (s *AutoReplyService) sendAiMessage(
 ) error {
 	meta = metaForSend(meta, inboundMessageID)
 
+	if strings.TrimSpace(text) == "" {
+		rlog.Error("AI job: refusing to send empty reply", "path", meta.Path, "inboundId", inboundMessageID)
+		return errEmptyReply
+	}
+
 	if shouldDropCoalescedSend(ctx) {
 		rlog.Info("AI job: drop outbound, newer inbound in burst", "inboundId", inboundMessageID)
 		return errDropSuperseded
@@ -1594,17 +1686,27 @@ func (s *AutoReplyService) handleBuyerHumanHandoff(
 	profile *dbBusinessProfile,
 	userText string,
 ) (bool, error) {
-	formal := strOrEmpty(profile.Tone) == "formal"
-	finalReply := applyOutputPolicy(HumanHandoffReplyFor(userText, formal))
+	lang := buyerReplyLang(userText, contact)
+	finalReply := applyOutputPolicy(salesbrain.T(salesbrain.TplHandoffTakeover, lang, shopLabel(profile, lang),
+		salesbrain.OpeningHoursSentence(strOrEmpty(profile.OpeningHours), lang)))
 	out := metaNoLLM(reasonAIGenerated, PathHumanHandoff)
 	out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 	err := s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, finalReply, "system", payload.InboundMessageID, out)
 	if err != nil {
 		return false, err
 	}
-	return true, pauseAI(ctx, ts, convo.ID, "buyer_requested_human")
+	// Hard handoff: pause as human_request (the AI resumes after AutoResumeAfter if no staff
+	// replied) and tell the owner, also when the pause itself failed.
+	pauseErr := pauseAI(ctx, ts, convo.ID, HandoffReasonHumanRequest)
+	s.notifyOwner(ctx, payload.TenantID, convo.ID, notifyKindHandoff, notifyTitleHumanRequest,
+		ownerNotificationSummary(userText, notifyReasonHumanRequest))
+	return true, pauseErr
 }
 
+// handleAiNoAnswerHandoff is the soft handoff: the AI has no grounded answer (catalog miss or a
+// low-confidence question). It tells the buyer honestly, notifies the owner and keeps serving; it
+// no longer pauses the conversation (that silenced chats for hours). Technical failures go through
+// handleAiSystemError instead.
 func (s *AutoReplyService) handleAiNoAnswerHandoff(
 	ctx context.Context,
 	ts tenantScopedQuerier,
@@ -1612,18 +1714,19 @@ func (s *AutoReplyService) handleAiNoAnswerHandoff(
 	convo *dbConversation,
 	channel *dbChannel,
 	contact *dbContact,
-	profile *dbBusinessProfile,
 	userText string,
 ) (bool, error) {
-	formal := strOrEmpty(profile.Tone) == "formal"
-	finalReply := applyOutputPolicy(NoAnswerHandoffReply(formal, userText))
+	lang := buyerReplyLang(userText, contact)
+	finalReply := applyOutputPolicy(salesbrain.T(salesbrain.TplCheckWithTeam, lang))
 	out := metaNoLLM(reasonAIGenerated, PathHumanHandoff)
 	out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 	err := s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, finalReply, "system", payload.InboundMessageID, out)
 	if err != nil {
 		return false, err
 	}
-	return true, pauseAI(ctx, ts, convo.ID, AiNoAnswerPauseReason)
+	s.notifyOwner(ctx, payload.TenantID, convo.ID, notifyKindHandoff, notifyTitleNoAnswer,
+		ownerNotificationSummary(userText, notifyReasonNoAnswer))
+	return true, nil
 }
 
 func pauseAI(ctx context.Context, ts tenantScopedQuerier, convoID, reason string) error {

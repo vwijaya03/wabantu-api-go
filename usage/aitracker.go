@@ -2,6 +2,7 @@ package usage
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -90,4 +91,39 @@ func CheckAICostLimit(ctx context.Context, tenantSchema, tenantID string) (allow
 	}
 
 	return true, ""
+}
+
+// ---------- LLM-first token analytics ----------
+
+// EventAITokenLLMFirst is the usage event of the LLM-first pipeline (live and shadow). It is for
+// measuring that pipeline per message only: planQuotas has no entry for it, so CheckQuota never
+// limits on it and the plan quotas of ai_token stay exactly as they were.
+const EventAITokenLLMFirst = "ai_token_llm_first"
+
+// LLMFirstTokens describes one LLM-first turn for the ai_token_llm_first event.
+type LLMFirstTokens struct {
+	Pipeline       string `json:"pipeline"` // "llm_first" (live) or "llm_first_shadow"
+	ConversationID string `json:"conversationId,omitempty"`
+	Provider       string `json:"provider,omitempty"`
+	Model          string `json:"model,omitempty"`
+	Intent         string `json:"intent,omitempty"`
+	Fallback       bool   `json:"fallback"`
+	Attempts       int    `json:"attempts,omitempty"`
+	InputTokens    int    `json:"inputTokens"`
+	OutputTokens   int    `json:"outputTokens"`
+	ThoughtsTokens int    `json:"thoughtsTokens"`
+}
+
+// RecordLLMFirstTokens writes one ai_token_llm_first event (quantity = input + output + thinking)
+// with the breakdown in its metadata. Nothing is written for a turn that spent no tokens.
+func RecordLLMFirstTokens(ctx context.Context, tenantSchema string, t LLMFirstTokens) error {
+	total := t.InputTokens + t.OutputTokens + t.ThoughtsTokens
+	if total <= 0 {
+		return nil
+	}
+	meta, err := json.Marshal(t)
+	if err != nil {
+		return err
+	}
+	return RecordEvent(ctx, tenantSchema, EventAITokenLLMFirst, total, meta)
 }

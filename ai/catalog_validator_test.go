@@ -3,6 +3,8 @@ package ai
 import (
 	"strings"
 	"testing"
+
+	"encore.app/wabantu/internal/salesbrain"
 )
 
 func TestValidateReplyAgainstCatalog_ok(t *testing.T) {
@@ -10,7 +12,7 @@ func TestValidateReplyAgainstCatalog_ok(t *testing.T) {
 		Name: "[3 PCS] CELANA DALAM BOXER PRIA MOTIF MONO SPOT - M", SellPrice: 56900, SellUnit: "pcs",
 	}}
 	reply := "Kak, [3 PCS] CELANA DALAM BOXER PRIA MOTIF MONO SPOT harganya Rp56900/paket (isi 3 pcs)."
-	v := validateReplyAgainstCatalog(reply, catalog)
+	v := validateReplyAgainstCatalog(reply, catalog, groundingFacts(catalog, nil, nil))
 	if !v.OK {
 		t.Fatalf("expected ok, got %s", v.Reason)
 	}
@@ -21,7 +23,7 @@ func TestValidateReplyAgainstCatalog_priceMismatch(t *testing.T) {
 		Name: "[3 PCS] CELANA DALAM BOXER PRIA MOTIF MONO SPOT - M", SellPrice: 56900, SellUnit: "pcs",
 	}}
 	reply := "Boxer mono spot Rp99999/pcs ya kak."
-	v := validateReplyAgainstCatalog(reply, catalog)
+	v := validateReplyAgainstCatalog(reply, catalog, groundingFacts(catalog, nil, nil))
 	if v.OK {
 		t.Fatal("expected price mismatch")
 	}
@@ -34,7 +36,7 @@ func TestGroundLLMReply_fallback(t *testing.T) {
 	}}
 	history := []dbMessage{{Direction: "out", Body: "Harga boxer Rp56900/paket"}}
 	bad := "Boxer mono spot cuma Rp99999/pcs, bahan katun premium."
-	got, grounded, reason := groundLLMReply(bad, "itu harga per biji berapa", profile, catalog, history, nil)
+	got, grounded, reason := groundLLMReply(bad, "itu harga per biji berapa", salesbrain.LangID, profile, catalog, nil, nil, history, nil)
 	if !grounded || reason == "" {
 		t.Fatalf("expected grounded reply, reason=%s", reason)
 	}
@@ -50,7 +52,7 @@ func TestGroundLLMReply_exclusionBrowse(t *testing.T) {
 		{Name: "Maggi Bumbu Ayam Goreng - Ayam Percik", SellPrice: 70000, SellUnit: "pcs"},
 	}
 	bad := "Saya belum menemukan data tersebut di katalog."
-	got, grounded, _ := groundLLMReply(bad, "selain abon sapi ada list lainnya?", profile, catalog, nil, nil)
+	got, grounded, _ := groundLLMReply(bad, "selain abon sapi ada list lainnya?", salesbrain.LangID, profile, catalog, nil, nil, nil, nil)
 	if !grounded {
 		t.Fatal("expected exclusion browse fallback")
 	}

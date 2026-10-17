@@ -59,6 +59,7 @@ type CatalogItem struct {
 	Name             string
 	SellPrice        float64
 	SellUnit         string
+	Description      string // business_catalog_item.description; reaches the LLM catalog context, tools and search
 	StockTracked     bool
 	StockAvailable   float64
 	StockByWarehouse []CatalogStockLine
@@ -114,4 +115,10 @@ type OrderState struct {
 
 	// ForceNewOrder — "pesanan baru": INSERT draft baru, jangan upsert ke leftover.
 	ForceNewOrder bool `json:"forceNewOrder,omitempty"`
+
+	// UpsellShown — blok rekomendasi tambahan sudah ditampilkan untuk pesanan ini (maks 1 kali).
+	UpsellShown bool `json:"upsellShown,omitempty"`
+
+	// ReconfirmAfterShipping — pembeli mengubah alamat dari langkah confirm; setelah alamat lengkap kembali ke confirm, bukan langsung simpan.
+	ReconfirmAfterShipping bool `json:"reconfirmAfterShipping,omitempty"`
 }

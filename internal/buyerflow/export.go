@@ -1,5 +1,7 @@
 package buyerflow
 
+import "strings"
+
 // PersistOrderFunc — callback when checkout FSM completes (production: DB persist).
 type PersistOrderFunc func(st OrderState) (string, error)
 
@@ -248,3 +250,29 @@ func ResolveOrderWarehouse(lines []CatalogStockLine, qty int, preferredWarehouse
 func StockQtyRejectReply(st OrderState, lines []CatalogStockLine, formal bool) string {
 	return stockQtyRejectReply(st, lines, formal)
 }
+
+// PlausibleNameLine — 1–4 words, letters and . ' - only, no common non-name word.
+func PlausibleNameLine(line string) bool { return plausibleNameLine(line) }
+
+// LooksLikeBuyerQuestion — '?' anywhere, a question word first, an "X or Y" day choice, or an
+// ask-statement. A question mid-checkout is never a recipient name (see ParseRecipientLine).
+func LooksLikeBuyerQuestion(text string) bool { return looksLikeBuyerQuestion(text) }
+
+// ExtractSizeFromProductName returns the size a catalog name ends with ("… - L" → "L"), or "".
+func ExtractSizeFromProductName(name string) string { return extractSizeFromProductName(name) }
+
+// ProductBaseName is the catalog name without its trailing size ("… - L" → "…"). Rows that share
+// it are the sibling sizes of one product. Names without a size are returned trimmed.
+func ProductBaseName(name string) string {
+	trimmed := strings.TrimSpace(name)
+	if sz := extractSizeFromProductName(trimmed); sz != "" {
+		if weightSuffixRe.MatchString(trimmed) {
+			trimmed = strings.TrimSpace(weightSuffixRe.ReplaceAllString(trimmed, ""))
+		}
+		trimmed = strings.TrimSpace(productSizeSuffixRe.ReplaceAllString(trimmed, ""))
+	}
+	return strings.TrimSpace(stripColorSuffixFromProductName(trimmed))
+}
+
+// LineVariantComplete reports whether an order line has the size or colour its product needs.
+func LineVariantComplete(line OrderLineState) bool { return lineVariantComplete(line) }

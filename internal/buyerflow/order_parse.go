@@ -609,7 +609,7 @@ func IsActiveCheckoutFromHistory(history []Message, userText string) bool {
 	return recentCheckoutOutboundInHistory(history)
 }
 
-var orderAddrHintRe = regexp.MustCompile(`(?i)(jalan|\bjl\.?\b|rt|rw|kel\.|kec\.|kota|kab\.|kode pos|taman|setiabudi)`)
+var orderAddrHintRe = regexp.MustCompile(`(?i)(\bjalan\b|\bjl\b\.?|\brt\b|\brw\b|\bkel\.|\bkec\.|\bkota\b|\bkab\.|\bkode pos\b|\btaman\b|setiabudi)`)
 
 // ShouldBreakOrderFlow — new intent (greeting, harga, tanya produk) while Redis order state is active.
 func ShouldBreakOrderFlow(userText, step string, catalog []CatalogItem) bool {
@@ -698,6 +698,10 @@ func ShouldBreakOrderFlow(userText, step string, catalog []CatalogItem) bool {
 		}
 		if phoneIDRe.MatchString(text) {
 			return false
+		}
+		// A question is not an answer to the recipient/address prompt: break out so it gets answered.
+		if looksLikeBuyerQuestion(userText) && !HasCheckoutDataInMessage(userText) {
+			return true
 		}
 		if name, _ := parseRecipientLine(userText); name != "" {
 			return false

@@ -37,9 +37,49 @@ func IsOrderRevisionMessage(userText string) bool {
 	return orderRevisionSignals(text, userText)
 }
 
+// qtyNumberWord — Indonesian number words parseOrderQty also understands.
+const qtyNumberWord = `satu|dua|tiga|empat|lima|enam|tujuh|delapan|sembilan|sepuluh`
+
+var (
+	// explicitQtyUnitRe — a unit word attached to a number ("2 pcs", "3pcs", "dua buah", "pcs: 3").
+	// A bare unit word does not count, so "Jl. Buah Batu No 12" is not a quantity statement.
+	explicitQtyUnitRe = regexp.MustCompile(
+		`(?:\d|\b(?:` + qtyNumberWord + `))\s*(?:pcs|pc|buah|biji|porsi|pack|paket)\b` +
+			`|\b(?:pcs|pc|buah|biji|porsi|pack|paket)\s*[:=]?\s*(?:\d|\b(?:` + qtyNumberWord + `)\b)`)
+	explicitQtyTimesRe = regexp.MustCompile(`\b\d+\s*x\b`)
+)
+
+// qtyRevisionCueWords — verbs/labels with which a buyer revises the quantity.
+var qtyRevisionCueWords = []string{
+	"qty", "jumlah", "jadi ", "ubah", "revisi", "ganti", "make it", "change to", "change it to",
+}
+
+// hasExplicitQtyCue — the (lowercased) text states a quantity, not just digits.
+func hasExplicitQtyCue(lowerText string) bool {
+	for _, cue := range qtyRevisionCueWords {
+		if strings.Contains(lowerText, cue) {
+			return true
+		}
+	}
+	return explicitQtyUnitRe.MatchString(lowerText) || explicitQtyTimesRe.MatchString(lowerText)
+}
+
+func isRecipientOrAddressStep(step string) bool {
+	switch step {
+	case "ask_recipient", "ask_address", "ask_address_full":
+		return true
+	}
+	return false
+}
+
 // tryApplyQtyRevision updates qty when customer revises count mid-checkout.
 func tryApplyQtyRevision(st *OrderState, userText string) bool {
 	if st == nil {
+		return false
+	}
+	// At the recipient/address steps digits are a phone number, house number or postal code
+	// unless the buyer states a quantity explicitly.
+	if isRecipientOrAddressStep(st.Step) && !hasExplicitQtyCue(strings.ToLower(userText)) {
 		return false
 	}
 	q, ok := parseOrderQty(userText)
@@ -65,6 +105,26 @@ func tryApplyQtyRevision(st *OrderState, userText string) bool {
 		}
 	}
 	return true
+}
+
+var addOneMoreRe = regexp.MustCompile(`(?i)^(?:tambah|nambah)\s*1\s+lagi(?:\s+ya)?(?:\s+kak)?[.!?]*$|^1\s+lagi(?:\s+ya)?(?:\s+kak)?[.!?]*$`)
+
+// tryApplyAddOneMore increments qty by one when the buyer says "tambah 1 lagi" with a single-line cart.
+func tryApplyAddOneMore(st *OrderState, userText string) bool {
+	if st == nil || !addOneMoreRe.MatchString(strings.TrimSpace(userText)) {
+		return false
+	}
+	ensureMultiItemsFromSingle(st)
+	if len(st.Items) == 1 {
+		st.Items[0].Qty++
+		st.Qty = st.Items[0].Qty
+		return true
+	}
+	if len(st.Items) == 0 && st.Qty > 0 {
+		st.Qty++
+		return true
+	}
+	return false
 }
 
 // IsCasualPraiseLike — pujian singkat ke bot, tetap in-scope.

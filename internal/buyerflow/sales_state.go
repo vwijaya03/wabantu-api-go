@@ -200,7 +200,12 @@ func isOrderProductContinuationStep(step string) bool {
 }
 
 func isCheckoutAppendStep(step string) bool {
-	return isOrderProductContinuationStep(step)
+	switch step {
+	case "ask_product", "ask_variant", "ask_qty", "ask_recipient", "ask_address", "ask_address_full", "confirm":
+		return true
+	default:
+		return false
+	}
 }
 
 // isNamedProductWithQtyMessage — buyer names a catalog SKU with qty during checkout.

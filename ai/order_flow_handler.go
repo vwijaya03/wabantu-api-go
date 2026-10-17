@@ -6,6 +6,9 @@ import (
 	"strings"
 
 	"encore.dev/rlog"
+
+	bf "encore.app/wabantu/internal/buyerflow"
+	"encore.app/wabantu/internal/salesbrain"
 )
 
 // handleOrderFlow delegates checkout FSM to internal/buyerflow (satu implementasi dengan simulator).
@@ -90,9 +93,16 @@ func (s *AutoReplyService) handleOrderFlow(
 	}
 
 	if IsStructuredOrderList(userText) {
+		// A list pasted into a live checkout joins the cart (recipient and address stay); only an
+		// explicit "pesanan baru" starts over. It used to wipe the cart whatever the buyer meant.
+		var cart *orderState
 		if state != nil {
-			s.clearOrderState(ctx, tenantID, convo.ID)
-			state = nil
+			if forceNew {
+				s.clearOrderState(ctx, tenantID, convo.ID)
+				state = nil
+			} else {
+				cart = state
+			}
 		}
 		outcome := evaluateStructuredOrder(userText, catalog, formal, vctx)
 		if outcome.Matched {
@@ -101,6 +111,13 @@ func (s *AutoReplyService) handleOrderFlow(
 					return send(structuredOrderUnmatchedReply(formal, outcome.Unmatched), PathOrderFlow)
 				}
 			} else {
+				if cart != nil {
+					unmatched := outcome.Unmatched
+					outcome = mergeStructuredIntoCart(*cart, outcome.Lines, func(st orderState) (orderState, string, bool) {
+						return guardStructuredOrderStock(st, catalog, formal)
+					})
+					outcome.Unmatched = unmatched
+				}
 				if forceNew {
 					outcome.State.ForceNewOrder = true
 					outcome.State.PersistedOrderID = ""
@@ -119,6 +136,9 @@ func (s *AutoReplyService) handleOrderFlow(
 				}
 				s.setOrderState(ctx, tenantID, convo.ID, outcome.State)
 				prompt := tmpl.AskRecipient
+				if cart != nil {
+					prompt = nextCheckoutPrompt(outcome.State, tmpl, buyerReplyLang(userText, contact))
+				}
 				if len(outcome.Unmatched) > 0 {
 					prompt = structuredOrderUnmatchedReply(formal, outcome.Unmatched) + "\n\n" + prompt
 				}
@@ -210,4 +230,74 @@ func (s *AutoReplyService) handleOrderFlow(
 		return send(res.Reply, PathOutOfScope)
 	}
 	return send(res.Reply, path)
+}
+
+// cartLinesOf returns the cart's product lines: Items, or the single-product fields as one line.
+// A single product still waiting for its quantity is a selection, not a cart line.
+func cartLinesOf(st orderState) []orderLineState {
+	if len(st.Items) > 0 {
+		return append([]orderLineState(nil), st.Items...)
+	}
+	if st.Qty < 1 || (strings.TrimSpace(st.CatalogItemID) == "" && strings.TrimSpace(st.ProductName) == "") {
+		return nil
+	}
+	return []orderLineState{{
+		CatalogItemID: st.CatalogItemID, ExternalCode: st.ExternalCode, ProductName: st.ProductName,
+		Size: st.Size, Color: st.Color, Qty: st.Qty, UnitPrice: st.UnitPrice,
+		SellUnit: st.SellUnit, WarehouseID: st.WarehouseID,
+	}}
+}
+
+// mergeStructuredIntoCart joins the lines of a pasted order list to the existing cart with
+// MergeOrderLines (the same product adds quantity). Everything else the cart already holds,
+// the recipient and the address included, is kept. The merged cart (not just the new lines) gets
+// the variant check and the stock guard a fresh list gets, and the step to resume at: variants,
+// then recipient, then address.
+func mergeStructuredIntoCart(existing orderState, lines []orderLineState, stockGuard func(orderState) (orderState, string, bool)) structuredOrderFlowOutcome {
+	out := structuredOrderFlowOutcome{Matched: true, Lines: lines}
+	if len(lines) == 0 {
+		return out
+	}
+	merged := existing
+	merged.Items = MergeOrderLines(cartLinesOf(existing), lines)
+	if len(merged.Items) > 0 {
+		bf.ApplyLineToOrderState(&merged, merged.Items[0])
+	}
+	if !merged.StructuredLinesReady() {
+		merged.Step = "ask_variant"
+		out.State = merged
+		out.NeedVariant = true
+		return out
+	}
+	merged, reply, blocked := stockGuard(merged)
+	if blocked {
+		out.Blocked = true
+		out.BlockReply = reply
+		return out
+	}
+	switch {
+	case strings.TrimSpace(merged.RecipientName) == "" || strings.TrimSpace(merged.RecipientPhone) == "":
+		merged.Step = "ask_recipient"
+	default:
+		merged.Step = "ask_address_full"
+	}
+	out.State = merged
+	return out
+}
+
+// nextCheckoutPrompt asks only for what a merged cart still lacks: variants, then the
+// recipient, then the address. A cart with everything gets the "reply OK" confirmation.
+func nextCheckoutPrompt(st orderState, tmpl orderFlowTemplates, lang salesbrain.Lang) string {
+	switch {
+	case !st.StructuredLinesReady():
+		return tmpl.AskVariant
+	case strings.TrimSpace(st.RecipientName) == "" || strings.TrimSpace(st.RecipientPhone) == "":
+		return tmpl.AskRecipient
+	case st.ShippingComplete():
+		return salesbrain.T(salesbrain.TplResumeConfirm, lang)
+	case strings.TrimSpace(st.Street) == "" && strings.TrimSpace(st.City) == "" && strings.TrimSpace(st.PostalCode) == "":
+		return tmpl.AskAddressFull
+	default:
+		return tmpl.ClarifyAddress
+	}
 }
