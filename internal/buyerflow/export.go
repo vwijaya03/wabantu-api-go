@@ -248,3 +248,10 @@ func ResolveOrderWarehouse(lines []CatalogStockLine, qty int, preferredWarehouse
 func StockQtyRejectReply(st OrderState, lines []CatalogStockLine, formal bool) string {
 	return stockQtyRejectReply(st, lines, formal)
 }
+
+// PlausibleNameLine — 1–4 words, letters and . ' - only, no common non-name word.
+func PlausibleNameLine(line string) bool { return plausibleNameLine(line) }
+
+// LooksLikeBuyerQuestion — '?' anywhere, a question word first, an "X or Y" day choice, or an
+// ask-statement. A question mid-checkout is never a recipient name (see ParseRecipientLine).
+func LooksLikeBuyerQuestion(text string) bool { return looksLikeBuyerQuestion(text) }
