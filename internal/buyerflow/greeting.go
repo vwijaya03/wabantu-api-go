@@ -3,6 +3,7 @@ package buyerflow
 import (
 	"strings"
 	"time"
+	"unicode"
 )
 
 // GreetingPeriod is the time-of-day bucket for Indonesian salutations.
@@ -43,6 +44,14 @@ var periodPatterns = []struct {
 	{"good night", GreetNight},
 }
 
+// periodWords — bare time-of-day words, English and Indonesian, for the short-greeting fallback.
+var periodWords = map[string]GreetingPeriod{
+	"morning": GreetMorning, "pagi": GreetMorning,
+	"afternoon": GreetAfternoon, "siang": GreetAfternoon,
+	"evening": GreetEvening, "sore": GreetEvening,
+	"night": GreetNight, "malam": GreetNight,
+}
+
 var periodPhrase = map[GreetingPeriod]string{
 	GreetMorning:   "Selamat pagi",
 	GreetAfternoon: "Selamat siang",
@@ -67,6 +76,14 @@ func DetectGreetingPeriodFromText(userText string) (GreetingPeriod, bool) {
 	for word, period := range standalone {
 		if text == word || strings.HasPrefix(text, word+" ") {
 			return period, true
+		}
+	}
+	// Short greeting with the time word anywhere ("Hello morning", "hai kak sore"): first one wins.
+	if toks := strings.FieldsFunc(text, func(r rune) bool { return !unicode.IsLetter(r) }); len(toks) <= 6 {
+		for _, w := range toks {
+			if period, ok := periodWords[w]; ok {
+				return period, true
+			}
 		}
 	}
 	return "", false

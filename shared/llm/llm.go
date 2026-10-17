@@ -30,6 +30,10 @@ type Usage struct {
 	ImageCount                int64
 	// Anthropic prompt-cache counters (0 for other providers).
 	CacheReadInputTokens, CacheCreationInputTokens int64
+	// Gemini extras (0/"" for other providers).
+	ThoughtsTokens int64
+	CachedTokens   int64
+	FinishReason   string
 }
 
 type Message struct {
@@ -42,6 +46,11 @@ type ChatRequest struct {
 	System    string
 	Messages  []Message
 	MaxTokens int64
+	// JSON asks for a JSON-only reply. Gemini: responseMimeType=application/json.
+	// Anthropic: ignored (callers instruct JSON in the prompt and parse defensively).
+	JSON bool
+	// Temperature: nil = provider default; pointer so 0 is expressible.
+	Temperature *float64
 }
 
 type ChatResponse struct {

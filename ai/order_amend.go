@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"encore.dev/rlog"
@@ -509,8 +510,9 @@ func (s *AutoReplyService) handleOrderAmend(
 		}
 	}
 	if len(added) == 0 {
-		histLines := bf.ExtractAmendLinesFromHistory(bfHistory, bfCat, existingIDs, vctx)
-		added = histLines
+		// Never for a cancel/remove message: "cancel my previous order" would re-add whatever the
+		// buyer listed earlier in the chat.
+		added = amendLinesFromHistory(userText, bfHistory, bfCat, existingIDs, vctx)
 	}
 	if len(added) == 0 {
 		if formal {
@@ -537,12 +539,37 @@ func (s *AutoReplyService) handleOrderAmend(
 	return send(reply)
 }
 
+// isWholeOrderCancelText: the buyer wants the whole order cancelled ("batalkan pesanan", "cancel my
+// previous order"): a cancel phrase that is neither a one-line correction ("cancel the tuna") nor
+// negated ("bukan batal semua"). ProcessAutoReply decides this before amend.
+func isWholeOrderCancelText(text string) bool {
+	return IsOrderCancelRequest(text) && !IsCartLineCorrectionIntent(text) && !IsNegatedFullOrderCancel(text)
+}
+
+// cancelOrRemoveVerbRe: cancel, batal(kan/in), hapus, remove, delete, gak/ga/nggak jadi (and the
+// usual inflections), as whole words.
+var cancelOrRemoveVerbRe = regexp.MustCompile(`(?i)\b(?:cancel(?:l?ed|l?ing|s)?|(?:di|mem|pem)?batal(?:kan|in|an)?|hapus(?:in|kan)?|dihapus|remov(?:e|es|ed|ing)|delet(?:e|es|ed|ing)|(?:gak|ga|gk|nggak|ngga|enggak|engga|tidak)\s+jadi|gajadi)\b`)
+
+// textHasCancelOrRemoveVerb reports a cancel/remove instruction anywhere in the message.
+func textHasCancelOrRemoveVerb(text string) bool {
+	return cancelOrRemoveVerbRe.MatchString(text)
+}
+
+// amendLinesFromHistory recovers order lines the buyer listed earlier in the chat, for a short
+// "add that" message. A cancel/remove message never adds lines.
+func amendLinesFromHistory(userText string, history []bf.Message, catalog []bf.CatalogItem, existingIDs map[string]bool, vctx *bf.CatalogVectorContext) []bf.OrderLineState {
+	if textHasCancelOrRemoveVerb(userText) {
+		return nil
+	}
+	return bf.ExtractAmendLinesFromHistory(history, catalog, existingIDs, vctx)
+}
+
 func toBFCatalogSlice(catalog []dbCatalogItem) []bf.CatalogItem {
 	out := make([]bf.CatalogItem, len(catalog))
 	for i, c := range catalog {
 		out[i] = bf.CatalogItem{
 			ID: c.ID, ExternalCode: c.ExternalCode, Name: c.Name,
-			SellPrice: c.SellPrice, SellUnit: c.SellUnit,
+			SellPrice: c.SellPrice, SellUnit: c.SellUnit, Description: c.Description,
 		}
 	}
 	return out

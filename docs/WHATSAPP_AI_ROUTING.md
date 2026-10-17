@@ -282,6 +282,7 @@ Semua konstanta di `ai/reply_meta.go`:
 | `llm` | Balasan Anthropic (Haiku/Sonnet) | true |
 | `llm_tools` | LLM + tool katalog | true |
 | `llm_grounded` | LLM dengan grounding KB | true |
+| `llm_first` | Pipeline LLM-first (flag `ai_llm_first`): satu panggilan JSON per giliran, metadata `pipeline`, `intent`, `lang`, `attempts`, `replacedReason`, `rawOutput`. Lihat [LLM_FIRST_PIPELINE.md](./LLM_FIRST_PIPELINE.md) | true |
 | `cost_limit` | Kuota AI habis | false |
 | `auto_fallback` | Fallback LLM gagal atau retry job habis (`scopeDirectionReply`) | false |
 

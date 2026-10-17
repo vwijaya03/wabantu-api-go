@@ -49,8 +49,17 @@ func buildOrderFlowReply(st OrderState, prompt string, catalog []CatalogItem) st
 	return prompt
 }
 
-// AdvanceOrderFlow advances checkout FSM without side effects.
+// AdvanceOrderFlow advances checkout FSM without side effects. Once a reply carries the upsell
+// block, the returned state is marked so later turns of the same order do not repeat it.
 func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResult {
+	res := advanceOrderFlow(in, persist)
+	if res.State != nil && replyHasUpsellBlock(res.Reply) {
+		res.State.UpsellShown = true
+	}
+	return res
+}
+
+func advanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResult {
 	userText := in.UserText
 	catalog := in.Catalog
 	history := in.History
@@ -487,6 +496,86 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 		st.Step = "ask_address_full"
 		return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: tmpl.AskAddressFull}
 
+	case "confirm":
+		// Final-summary step written by the LLM-first pipeline. Fail-closed: the order is saved only
+		// when the buyer explicitly approved it. Any other text keeps the draft and shows the
+		// summary again; incomplete data goes back to the step that asks for it.
+		st := stateNorm
+		if st.RecipientName == "" || st.RecipientPhone == "" {
+			st.Step = "ask_recipient"
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: tmpl.AskRecipient}
+		}
+		if !st.ShippingComplete() {
+			st.Step = "ask_address_full"
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: tmpl.AskAddressFull}
+		}
+		if handled, reply := tryCheckoutCartEdits(&st, userText, catalog, tmpl, formal); handled {
+			st.Step = "confirm"
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
+		}
+		if reply, ok := checkoutAddItemsPolicyReplyIfNeeded(st, userText, catalog, formal); ok {
+			st.Step = "confirm"
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
+		}
+		if handled, reply := TryAppendItemsDuringCheckout(&st, userText, catalog, tmpl, formal, in.VectorCtx); handled {
+			st.Step = "confirm"
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
+		}
+		if tryApplyAddOneMore(&st, userText) {
+			st.Step = "confirm"
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: orderReconfirmReply(st, userText)}
+		}
+		if !namesOtherCheckoutSKU(st, userText, catalog) && tryApplyQtyRevision(&st, userText) {
+			st.Step = "confirm"
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: orderReconfirmReply(st, userText)}
+		}
+		addrBody := ShippingAmendBody(userText)
+		if IsShippingAmendIntent(userText) || isCheckoutFormFieldMessage(addrBody) {
+			if isCheckoutFormFieldMessage(addrBody) || isCheckoutFormFieldMessage(userText) {
+				clearShippingAddress(&st)
+				mergeShippingText(&st, addrBody)
+				if st.ShippingComplete() {
+					st.Step = "confirm"
+					st.ReconfirmAfterShipping = false
+					return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: orderReconfirmReply(st, userText)}
+				}
+			}
+			if IsShippingAmendIntent(userText) {
+				st.ReconfirmAfterShipping = true
+				st.Step = "ask_address_full"
+				return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: tmpl.AskAddressFull}
+			}
+		}
+		if isCheckoutFormFieldMessage(userText) {
+			mergeShippingText(&st, userText)
+			st.Step = "confirm"
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: orderReconfirmReply(st, userText)}
+		}
+		if !IsExplicitOrderConfirm(userText) {
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: orderReconfirmReply(st, userText)}
+		}
+		if missing := missingOrderDataPrompt(st, tmpl); missing != "" {
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: buildOrderFlowReply(st, missing, catalog)}
+		}
+		st, reply, blocked := guardOrderQtyStep(st, catalog, formal, "ask_qty")
+		if blocked {
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
+		}
+		if persist != nil {
+			orderID, err := persist(st)
+			if err != nil {
+				return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: buildOrderFlowReply(st, tmpl.RetryStep, catalog)}
+			}
+			return OrderFlowResult{
+				Cleared: true, Completed: true, OrderID: orderID, Path: PathOrderFlow,
+				Reply: orderCompleteMessageWithRef(orderID, st, tmpl),
+			}
+		}
+		return OrderFlowResult{
+			Cleared: true, Completed: true, OrderID: "sim-order-id", Path: PathOrderFlow,
+			Reply: orderCompleteMessageWithRef("sim-order-id", st, tmpl),
+		}
+
 	case "ask_address", "ask_address_full":
 		st := copyBase(stateNorm)
 		if handled, reply := tryCheckoutCartEdits(&st, userText, catalog, tmpl, formal); handled {
@@ -508,9 +597,17 @@ func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 				Reply: buildOrderFlowReply(st, tmpl.AskRecipient, catalog),
 			}
 		}
+		if st.ReconfirmAfterShipping {
+			clearShippingAddress(&st)
+		}
 		mergeShippingText(&st, userText)
 		if !st.ShippingComplete() {
 			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: tmpl.ClarifyAddress}
+		}
+		if st.ReconfirmAfterShipping {
+			st.ReconfirmAfterShipping = false
+			st.Step = "confirm"
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: orderReconfirmReply(st, userText)}
 		}
 		if missing := missingOrderDataPrompt(st, tmpl); missing != "" {
 			return OrderFlowResult{

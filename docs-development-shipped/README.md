@@ -43,6 +43,7 @@ Entri lama tanpa prefix datetime (mis. `inbox-media-fase1.md`) tetap valid; entr
 
 | File | Isi | Status |
 |------|-----|--------|
+| [20261017_pelayan-toko-llm-first.md](./20261017_pelayan-toko-llm-first.md) | Pipeline LLM-first Pelayan Toko di belakang flag per tenant (`ai_llm_first`, shadow, kill switch) + perbaikan jalur lama | Branch `feat/pelayan-toko-llm-first` (belum merge) |
 | [2026-10-14_141300_omah-shipping-kb-runbook.md](./2026-10-14_141300_omah-shipping-kb-runbook.md) | Runbook KB kategori Pengiriman tenant demo (ETA 2–3 hari) + SQL seed opsional | Ops (approve Viko) |
 | [2026-10-14_141300_simulator-firebase-checklist.md](./2026-10-14_141300_simulator-firebase-checklist.md) | Checklist env Firebase Vercel, rules, allowlist simulator, sesi | Ops / QA lomba |
 | [2026-10-14_141300_gemini-local-ops.md](./2026-10-14_141300_gemini-local-ops.md) | Gemini lokal: #219/#220 + setup-secrets; tanpa encore-run-local.sh | Verifikasi master |

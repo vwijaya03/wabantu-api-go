@@ -79,11 +79,37 @@ func BuildBusinessContext(p BusinessProfile) string {
 	return strings.Join(lines, "\n")
 }
 
+// A tenant KB of at most kbPromptFullMax rows goes to the model in full (O6); beyond that only the
+// retrieved rows do. kbPromptFallbackHead bounds the newest-rows fallback when retrieval finds
+// nothing in a bigger KB.
+const (
+	kbPromptFullMax      = 30
+	kbPromptFallbackHead = 8
+)
+
+// kbForLLMPrompt picks the KB rows for the LLM prompt. all is the tenant's active rows, loaded with
+// kbPromptFullMax+1 as the limit so that "more than kbPromptFullMax" is visible; retrieved is what
+// hybrid retrieval selected for this message. A small KB is sent whole so the model never says
+// there is no FAQ when there is one; a big KB uses the retrieved rows, and when retrieval found
+// nothing the newest few rows stand in (an empty list would read as "FAQ: (belum ada)").
+func kbForLLMPrompt(all []dbKBEntry, retrieved []dbKBEntry) []dbKBEntry {
+	if len(all) == 0 {
+		return retrieved
+	}
+	if len(all) <= kbPromptFullMax {
+		return all
+	}
+	if len(retrieved) > 0 {
+		return retrieved
+	}
+	return all[:kbPromptFallbackHead]
+}
+
 func BuildKnowledgeContext(entries []KBEntry) string {
 	if len(entries) == 0 {
 		return "FAQ: (belum ada)"
 	}
-	limit := 20
+	limit := kbPromptFullMax
 	if len(entries) < limit {
 		limit = len(entries)
 	}

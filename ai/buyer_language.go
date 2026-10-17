@@ -3,10 +3,14 @@ package ai
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
+	"encore.dev/rlog"
+
 	bf "encore.app/wabantu/internal/buyerflow"
+	"encore.app/wabantu/internal/salesbrain"
 )
 
 func contactPreferredLanguage(c *dbContact) string {
@@ -14,6 +18,18 @@ func contactPreferredLanguage(c *dbContact) string {
 		return ""
 	}
 	return strings.TrimSpace(*c.PreferredLanguage)
+}
+
+// buyerReplyLang is the language fixed system text (templates) must use for this buyer this
+// turn. It is the legacy flow's ResolveBuyerLanguage (explicit request, clear message language,
+// saved preference) mapped to salesbrain.Lang; an unresolved language means Indonesian, the
+// tenant default. Canned text must always go through salesbrain.T with this value so an English
+// buyer never receives an Indonesian-only sentence.
+func buyerReplyLang(userText string, contact *dbContact) salesbrain.Lang {
+	if l := salesbrain.ParseLang(ResolveBuyerLanguage(userText, contactPreferredLanguage(contact))); l != "" {
+		return l
+	}
+	return salesbrain.LangID
 }
 
 func saveContactPreferredLanguage(ctx context.Context, ts tenantScopedQuerier, contactID, lang string) error {
@@ -30,11 +46,79 @@ func saveContactPreferredLanguage(ctx context.Context, ts tenantScopedQuerier, c
 	return err
 }
 
+// languageAskMarkers are the fragments of the language question (LanguagePreferenceAskReply and
+// salesbrain.TplLanguageChoice, Indonesian and English line) that identify it in a stored message.
+var languageAskMarkers = []string{"bahasa indonesia atau english", "bahasa indonesia or english"}
+
+// lastOutboundWasLanguageAsk reports that body is the bilingual language question the bot sends
+// to an unlocked buyer. Only the reply to that message is a language choice: a bare "1" after
+// "How many pcs?" is a quantity.
+func lastOutboundWasLanguageAsk(body string) bool {
+	low := strings.ToLower(body)
+	for _, m := range languageAskMarkers {
+		if strings.Contains(low, m) {
+			return true
+		}
+	}
+	ask := strings.TrimSpace(bf.LanguagePreferenceAskReply())
+	return ask != "" && strings.Contains(body, ask)
+}
+
+// lastAIOutboundBody is the body of the newest outbound message of the conversation ("" when none).
+func lastAIOutboundBody(ctx context.Context, ts tenantScopedQuerier, convoID string) (string, error) {
+	var body string
+	err := ts.QueryRowContext(ctx, fmt.Sprintf(`
+		SELECT COALESCE(body, '') FROM %s
+		WHERE conversation_id = $1 AND direction = 'out'
+		ORDER BY created_at DESC LIMIT 1`, ts.T("message")), convoID).Scan(&body)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return body, err
+}
+
+// languageQuestionAsked reports whether the last message we sent was the language question.
+// It must run before this turn sends anything (afterwards the last outbound is our own reply).
+// A text that cannot be a language answer short-circuits without a query, because both consumers
+// only look at the result for answer-like texts. A read error counts as "not asked": switching a
+// buyer's language unprompted is the bug this guards against.
+func languageQuestionAsked(ctx context.Context, ts tenantScopedQuerier, convoID, userText string) bool {
+	if _, answerLike := bf.ParseLanguagePreferenceAnswer(userText); !answerLike {
+		return false
+	}
+	body, err := lastAIOutboundBody(ctx, ts, convoID)
+	if err != nil {
+		rlog.Warn("AI job: could not read the last outbound message for the language check", "convoId", convoID, "err", err)
+		return false
+	}
+	return lastOutboundWasLanguageAsk(body)
+}
+
+// languageFromBareAnswerOnly: with no language saved yet, bf.LanguageToPersist also reads a bare
+// answer ("1", "2") as the buyer's choice. This reports that text is only that: not an explicit
+// request and not a clear-language message, so the choice is valid only if the question was asked.
+func languageFromBareAnswerOnly(userText, saved string) bool {
+	if strings.TrimSpace(saved) != "" {
+		return false
+	}
+	if _, explicit := bf.ParseExplicitLanguageSwitch(userText); explicit {
+		return false
+	}
+	if _, clear := bf.ClearMessageLanguage(userText); clear {
+		return false
+	}
+	_, answer := bf.ParseLanguagePreferenceAnswer(userText)
+	return answer
+}
+
+// applyBuyerLanguageFromMessage runs after the turn and locks the buyer's language when the
+// message decides it. languageAsked is the result of languageQuestionAsked taken before the turn.
 func (s *AutoReplyService) applyBuyerLanguageFromMessage(
 	ctx context.Context,
 	ts tenantScopedQuerier,
 	contact *dbContact,
 	userText string,
+	languageAsked bool,
 ) {
 	if contact == nil {
 		return
@@ -44,6 +128,9 @@ func (s *AutoReplyService) applyBuyerLanguageFromMessage(
 	if !ok {
 		return
 	}
+	if !languageAsked && languageFromBareAnswerOnly(userText, saved) {
+		return // a quantity or other bare number, not an answer to a question we never asked
+	}
 	if err := saveContactPreferredLanguage(ctx, ts, contact.ID, lang); err != nil {
 		return
 	}
@@ -51,7 +138,15 @@ func (s *AutoReplyService) applyBuyerLanguageFromMessage(
 	bf.SetSavedBuyerLang(lang)
 }
 
+// switchConfirmReply is the one-sentence confirmation after a language switch, in the new language.
+func switchConfirmReply(lang string) string {
+	return salesbrain.T(salesbrain.TplSwitchConfirm, salesbrain.ParseLang(lang))
+}
+
 // handleBuyerLanguageRouting returns handled=true when the pipeline should stop after outbound.
+// languageAsked is languageQuestionAsked for this turn: only then is a bare reply such as "1" or
+// "english" read as the answer to the language question. Explicit requests ("please reply in
+// English") work at any time.
 func (s *AutoReplyService) handleBuyerLanguageRouting(
 	ctx context.Context,
 	ts tenantScopedQuerier,
@@ -60,10 +155,11 @@ func (s *AutoReplyService) handleBuyerLanguageRouting(
 	channel *dbChannel,
 	contact *dbContact,
 	userText string,
+	languageAsked bool,
 ) (handled bool, err error) {
 	saved := contactPreferredLanguage(contact)
 
-	if lang, ok := bf.ParseLanguagePreferenceAnswer(userText); ok {
+	if lang, ok := bf.ParseLanguagePreferenceAnswer(userText); ok && languageAsked {
 		if err := saveContactPreferredLanguage(ctx, ts, contact.ID, lang); err != nil {
 			return false, err
 		}
@@ -72,7 +168,7 @@ func (s *AutoReplyService) handleBuyerLanguageRouting(
 		out := metaNoLLM(reasonNonQuestion, PathBuyerLanguage)
 		out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact,
-			bf.LanguageSwitchConfirmReply(lang), "ai", payload.InboundMessageID, out)
+			switchConfirmReply(lang), "ai", payload.InboundMessageID, out)
 		return err == nil, err
 	}
 
@@ -86,7 +182,7 @@ func (s *AutoReplyService) handleBuyerLanguageRouting(
 			out := metaNoLLM(reasonNonQuestion, PathBuyerLanguage)
 			out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 			err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact,
-				bf.LanguageSwitchConfirmReply(lang), "ai", payload.InboundMessageID, out)
+				switchConfirmReply(lang), "ai", payload.InboundMessageID, out)
 			return err == nil, err
 		}
 		return false, nil

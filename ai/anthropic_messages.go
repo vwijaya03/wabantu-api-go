@@ -109,9 +109,47 @@ func appendAnthropicTurn(msgs []anthropic.MessageParam, role anthropic.MessagePa
 	return append(msgs, anthropic.NewUserMessage(anthropic.NewTextBlock(text)))
 }
 
+// dropTrailingCurrentInbound removes the current inbound message from the end of the history.
+// The message that triggered the reply is already stored, so it is the last history entry, and
+// appending UserText on top showed the model the same text twice. It drops the last element when it
+// is a contact message whose trimmed body equals the trimmed userText; for a coalesced burst
+// (UserText is the trailing contact bodies joined by newlines) it drops that whole run. Anything
+// else, including a differing text or a non-contact last message, is returned unchanged.
+func dropTrailingCurrentInbound(history []HistoryMessage, userText string) []HistoryMessage {
+	want := strings.TrimSpace(userText)
+	if want == "" || len(history) == 0 {
+		return history
+	}
+	joined := ""
+	for i := len(history) - 1; i >= 0; i-- {
+		m := history[i]
+		body := strings.TrimSpace(m.Body)
+		if m.Author != "contact" || body == "" {
+			break
+		}
+		if joined == "" {
+			joined = body
+		} else {
+			joined = body + "\n" + joined
+		}
+		if joined == want {
+			return history[:i]
+		}
+		if len(joined) >= len(want) {
+			break
+		}
+	}
+	return history
+}
+
 func buildSalesMessages(req SalesReplyRequest) []anthropic.MessageParam {
-	messages := HistoryMessagesToAnthropic(req.History, historyTurnLimit)
 	userText := strings.TrimSpace(req.UserText)
+	history := req.History
+	if userText != "" {
+		// Before the turn window is applied, so the window keeps real history only.
+		history = dropTrailingCurrentInbound(history, userText)
+	}
+	messages := HistoryMessagesToAnthropic(history, historyTurnLimit)
 	if userText == "" {
 		return messages
 	}

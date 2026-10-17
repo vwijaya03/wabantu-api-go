@@ -259,6 +259,35 @@ func formatFeaturedProductsBody(items []CatalogItem) string {
 	return strings.Join(lines, "\n\n")
 }
 
+// productColorSuffixWords — suffix after " - " on catalog names (not sizes).
+var productColorSuffixWords = map[string]bool{
+	"hitam": true, "putih": true, "merah": true, "biru": true, "pink": true, "cream": true, "navy": true,
+	"abu": true, "coklat": true, "hijau": true, "kuning": true, "ungu": true, "orange": true, "gold": true,
+	"silver": true, "maroon": true, "tosca": true, "beige": true, "brown": true, "black": true, "white": true,
+	"blue": true, "red": true, "green": true, "yellow": true, "grey": true, "gray": true, "purple": true,
+	"nude": true, "mocha": true, "olive": true,
+}
+
+func stripColorSuffixFromProductName(name string) string {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" || extractSizeFromProductName(trimmed) != "" {
+		return trimmed
+	}
+	i := strings.LastIndex(trimmed, " - ")
+	if i < 0 {
+		return trimmed
+	}
+	suf := strings.TrimSpace(trimmed[i+3:])
+	if suf == "" {
+		return trimmed
+	}
+	words := strings.Fields(strings.ToLower(suf))
+	if len(words) == 0 || !productColorSuffixWords[words[0]] {
+		return trimmed
+	}
+	return strings.TrimSpace(trimmed[:i])
+}
+
 func extractSizeFromProductName(name string) string {
 	trimmed := strings.TrimSpace(name)
 	if trimmed == "" {
@@ -479,17 +508,31 @@ func suggestRelatedProducts(st OrderState, catalog []CatalogItem, max int) []Cat
 	return out
 }
 
+// Upsell block headers; AdvanceOrderFlow detects them in the reply to set OrderState.UpsellShown.
+const (
+	upsellHeaderEN = "💡 You might also like (optional):"
+	upsellHeaderID = "💡 Rekomendasi tambahan (tidak wajib):"
+)
+
+func replyHasUpsellBlock(reply string) bool {
+	return strings.Contains(reply, upsellHeaderEN) || strings.Contains(reply, upsellHeaderID)
+}
+
+// formatUpsellBlock suggests at most one related product, and only once per order.
 func formatUpsellBlock(st OrderState, catalog []CatalogItem) string {
-	suggestions := suggestRelatedProducts(st, catalog, 2)
+	if st.UpsellShown {
+		return ""
+	}
+	suggestions := suggestRelatedProducts(st, catalog, 1)
 	if len(suggestions) == 0 {
 		return ""
 	}
 	en := ResolveBuyerLanguage("", CurrentSavedBuyerLang()) == LangEN
 	var lines []string
 	if en {
-		lines = append(lines, "💡 You might also like (optional):")
+		lines = append(lines, upsellHeaderEN)
 	} else {
-		lines = append(lines, "💡 Rekomendasi tambahan (tidak wajib):")
+		lines = append(lines, upsellHeaderID)
 	}
 	for i, it := range suggestions {
 		lines = append(lines, fmt.Sprintf("%d. %s\n%s", i+1, it.Name, formatCatalogPrice(&it)))

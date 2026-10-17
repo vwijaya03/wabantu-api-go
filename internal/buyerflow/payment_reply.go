@@ -1,6 +1,27 @@
 package buyerflow
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
+
+// accountNumberRe — a run of 6+ digits: the KB entry that actually carries bank account numbers.
+var accountNumberRe = regexp.MustCompile(`\d{6,}`)
+
+// asksWhereToPay — the buyer asks where/how to send the money, so the KB entry with the account
+// numbers must beat the generic "we accept transfer and QRIS" entry.
+func asksWhereToPay(query string) bool {
+	q := strings.ToLower(query)
+	for _, s := range []string{
+		"rekening", "transfer ke", "bayar ke mana", "kemana",
+		"where", "which account", "account number", "send payment", "how do i pay", "how to pay",
+	} {
+		if strings.Contains(q, s) {
+			return true
+		}
+	}
+	return false
+}
 
 func isPaymentKBEntry(question, category, answer string) bool {
 	question = strings.ToLower(strings.TrimSpace(question))
@@ -76,6 +97,7 @@ func tryPaymentFAQAnswer(query string, kb []KBEntry) (string, bool) {
 	var fallback KBEntry
 	var fallbackPri int
 	var hasFallback bool
+	whereToPay := asksWhereToPay(query)
 	for _, e := range kb {
 		if !e.IsActive {
 			continue
@@ -94,6 +116,9 @@ func tryPaymentFAQAnswer(query string, kb []KBEntry) (string, bool) {
 			hasFallback = true
 		}
 		score := paymentKBEntryScore(query, e)
+		if whereToPay && accountNumberRe.MatchString(e.Answer) {
+			score += 0.5
+		}
 		if score > bestScore {
 			bestScore = score
 			best = e
@@ -104,9 +129,12 @@ func tryPaymentFAQAnswer(query string, kb []KBEntry) (string, bool) {
 		pick = fallback
 	}
 	if bestScore > 0 || hasFallback {
-		ans := strings.TrimSpace(pick.Answer)
-		if ans != "" {
-			return LocalizeKBAnswerForBuyer(ans, query), true
+		if ans := strings.TrimSpace(pick.Answer); ans != "" {
+			// An empty localization (Indonesian-only KB text for an English buyer) is "no answer":
+			// never return ("", true); fall through to the direct FAQ match / the next routing step.
+			if localized := strings.TrimSpace(LocalizeKBAnswerForBuyer(ans, query)); localized != "" {
+				return localized, true
+			}
 		}
 	}
 	if direct, ok := tryFAQDirectAnswer(query, kb); ok {

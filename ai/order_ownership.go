@@ -66,7 +66,12 @@ func OrderChatAccessAllowed(o *persistedOrder, scope orderAccessScope, requester
 	return OrderAccessibleByPhone(o, requesterPhone, orderContactPhone)
 }
 
-func orderAccessDeniedReply() string {
+func orderAccessDeniedReply() string { return orderAccessDeniedReplyL(false) }
+
+func orderAccessDeniedReplyL(en bool) string {
+	if en {
+		return "That order is not registered to this WhatsApp number. Only the order owner can check or cancel it through this chat."
+	}
 	return "Pesanan tersebut bukan terdaftar atas nomor WhatsApp ini ya kak. Hanya pemilik pesanan yang bisa cek atau batalkan lewat chat ini."
 }
 
