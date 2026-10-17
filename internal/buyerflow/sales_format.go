@@ -479,17 +479,31 @@ func suggestRelatedProducts(st OrderState, catalog []CatalogItem, max int) []Cat
 	return out
 }
 
+// Upsell block headers; AdvanceOrderFlow detects them in the reply to set OrderState.UpsellShown.
+const (
+	upsellHeaderEN = "💡 You might also like (optional):"
+	upsellHeaderID = "💡 Rekomendasi tambahan (tidak wajib):"
+)
+
+func replyHasUpsellBlock(reply string) bool {
+	return strings.Contains(reply, upsellHeaderEN) || strings.Contains(reply, upsellHeaderID)
+}
+
+// formatUpsellBlock suggests at most one related product, and only once per order.
 func formatUpsellBlock(st OrderState, catalog []CatalogItem) string {
-	suggestions := suggestRelatedProducts(st, catalog, 2)
+	if st.UpsellShown {
+		return ""
+	}
+	suggestions := suggestRelatedProducts(st, catalog, 1)
 	if len(suggestions) == 0 {
 		return ""
 	}
 	en := ResolveBuyerLanguage("", CurrentSavedBuyerLang()) == LangEN
 	var lines []string
 	if en {
-		lines = append(lines, "💡 You might also like (optional):")
+		lines = append(lines, upsellHeaderEN)
 	} else {
-		lines = append(lines, "💡 Rekomendasi tambahan (tidak wajib):")
+		lines = append(lines, upsellHeaderID)
 	}
 	for i, it := range suggestions {
 		lines = append(lines, fmt.Sprintf("%d. %s\n%s", i+1, it.Name, formatCatalogPrice(&it)))

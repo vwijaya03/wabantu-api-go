@@ -25,6 +25,9 @@ func isWholeOrderCancelPhrase(text string) bool {
 		"cancel pesanan", "batal order", "batal pesan",
 		"cancel the order", "cancel my order",
 		"cancel the whole order", "cancel my whole order",
+		"cancel my previous order", "cancel the previous order", "cancel previous order",
+		"cancel my last order", "cancel my orders",
+		"batalkan pesanan sebelumnya", "batalin pesanan", "batalkan semua pesanan",
 	} {
 		if strings.Contains(text, p) {
 			return true
@@ -47,6 +50,13 @@ var skuCancelFiller = map[string]struct{}{
 	"semua": {}, "bisa": {}, "dan": {}, "nambah": {}, "tambah": {}, "nya": {},
 	"mau": {}, "saya": {}, "lanjutkan": {}, "pada": {}, "wb": {}, "lalu": {}, "tolong": {},
 	"batal": {}, "batalkan": {}, "batalin": {}, "cancel": {}, "dibatalkan": {}, "dibatalin": {},
+	// English fillers around a whole-order cancel ("please cancel my previous order").
+	"please": {}, "pls": {}, "my": {}, "the": {}, "previous": {}, "last": {}, "orders": {},
+	"it": {}, "this": {}, "that": {}, "all": {}, "everything": {}, "whole": {}, "entire": {},
+	"again": {}, "now": {}, "just": {}, "kindly": {}, "can": {}, "you": {}, "i": {},
+	"want": {}, "to": {}, "would": {}, "like": {}, "b": {},
+	// Line-removal verbs: stripped like cancel words so only the SKU text counts as remainder.
+	"remove": {}, "delete": {}, "hapus": {},
 }
 
 func skuCancelRemainder(text string) bool {

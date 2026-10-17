@@ -71,6 +71,10 @@ func splitInlineOrderSegments(userText string) []string {
 //   - "and" polos: minimal dua segmen tampak seperti baris order (hindari "salt and pepper").
 //
 // Segmen hasil split yang masih berisi koma ("1 salmon, 1 tuna, and 2 beef") dipecah lagi.
+//
+// Segmen pertanyaan di belakang ("... and can you do same day delivery?") bukan baris order:
+// segmen itu dibuang dan baris order sebelumnya tetap dipertahankan. Segmen yang tampak seperti
+// baris order tetap dipakai walau berakhir "please?" (mis. "can i order 1 tuna and 1 beef please?").
 func splitEnglishAndSegments(text string) []string {
 	anchors := 1
 	parts := trimNonEmpty(commaAndConjunctionRe.Split(text, -1))
@@ -82,19 +86,22 @@ func splitEnglishAndSegments(text string) []string {
 		return nil
 	}
 	n := 0
+	kept := make([]string, 0, len(parts))
 	for i, p := range parts {
-		if looksLikeOrderSegment(p) {
+		isOrder := looksLikeOrderSegment(p)
+		if i > 0 && !isOrder && (strings.Contains(p, "?") || questionSegmentStartRe.MatchString(p)) {
+			continue
+		}
+		if isOrder {
 			n++
 		}
-		if i > 0 && (strings.Contains(p, "?") || questionSegmentStartRe.MatchString(p)) {
-			return nil
-		}
+		kept = append(kept, p)
 	}
-	if n < anchors {
+	if n < anchors || len(kept) < 2 {
 		return nil
 	}
 	var out []string
-	for _, p := range parts {
+	for _, p := range kept {
 		if sub := splitLooseCommaProductSegments(p); len(sub) >= 2 {
 			out = append(out, sub...)
 			continue
@@ -349,12 +356,24 @@ func MergeOrderLines(existing, added []OrderLineState) []OrderLineState {
 }
 
 func parseAppendSegments(userText string, catalog []CatalogItem, vctx *CatalogVectorContext) (qtyOnly *int, newLines []OrderLineState) {
+	qtyOnly, newLines, _ = parseAppendSegmentsDetailed(userText, catalog, vctx)
+	return qtyOnly, newLines
+}
+
+// parseAppendSegmentsDetailed is parseAppendSegments plus the segments that name a product line
+// with several variants ("australian beef") and so were not added. Callers ask the buyer which
+// variant they mean instead of dropping the segment silently.
+func parseAppendSegmentsDetailed(userText string, catalog []CatalogItem, vctx *CatalogVectorContext) (qtyOnly *int, newLines []OrderLineState, ambiguous []string) {
 	segments := splitOrderTextSegments(userText)
 	if len(segments) >= 2 {
 		for _, seg := range segments {
 			line := parseStructuredOrderLine(seg, catalog, vctx)
 			if line.CatalogItemID != "" {
 				newLines = append(newLines, line)
+				continue
+			}
+			if lexicalBrandAmbiguous(seg, catalog) {
+				ambiguous = append(ambiguous, seg)
 				continue
 			}
 			if q, ok := parseOrderQty(seg); ok && matchCatalogLine(seg, catalog, vctx) == nil {
@@ -364,7 +383,7 @@ func parseAppendSegments(userText string, catalog []CatalogItem, vctx *CatalogVe
 		if len(newLines) == 0 {
 			newLines = appendLinesFromIdentifiedCatalog(userText, catalog, newLines)
 		}
-		return qtyOnly, newLines
+		return qtyOnly, newLines, ambiguous
 	}
 	// Conjunction (lalu/plus) is a multi-line splitter, not an append permission.
 	// "lalu maggi percik 1" while percik is already in cart still needs this branch
@@ -376,7 +395,25 @@ func parseAppendSegments(userText string, catalog []CatalogItem, vctx *CatalogVe
 		}
 		newLines = appendLinesFromIdentifiedCatalog(userText, catalog, newLines)
 	}
-	return qtyOnly, newLines
+	return qtyOnly, newLines, nil
+}
+
+// ambiguousSegmentsQuestion asks which variant the buyer means for each segment that named a
+// multi-variant product line (one list per brand). userText picks the reply language.
+func ambiguousSegmentsQuestion(formal bool, segments []string, catalog []CatalogItem, userText string) string {
+	var asks []string
+	seen := map[string]bool{}
+	for _, seg := range segments {
+		brand := brandTokenFromText(seg, catalog)
+		if brand == "" || seen[brand] {
+			continue
+		}
+		seen[brand] = true
+		if body := formatBrandVariantListBody(formal, brand, catalogItemsForBrand(brand, catalog), 5, userText); body != "" {
+			asks = append(asks, body)
+		}
+	}
+	return strings.Join(asks, "\n\n")
 }
 
 func appendLinesFromIdentifiedCatalog(userText string, catalog []CatalogItem, existing []OrderLineState) []OrderLineState {
@@ -397,7 +434,13 @@ func appendLinesFromIdentifiedCatalog(userText string, catalog []CatalogItem, ex
 	return out
 }
 
-// isProductQuestionNotCartAdd — "I want to ask about tuna" must not append a line to the draft.
+// explicitAddWithQtyRe — an add/order verb followed by a number ("tambah 1 tuna", "can i order 2").
+var explicitAddWithQtyRe = regexp.MustCompile(`(?i)\b(?:tambah|nambah|add|order|pesan|beli|mau|want)\b[^?\d]*\b\d+\b`)
+
+// productQuestionHintRe — product facts a buyer asks about ("how much", "is it frozen", "ready kak").
+var productQuestionHintRe = regexp.MustCompile(`(?i)\b(?:how much|berapa|harga|price|frozen|fresh|beku|segar|weight|berat|ready|stock|stok|available|is it|is the)\b`)
+
+// isProductQuestionNotCartAdd — "I want to ask about tuna" / "is the tuna frozen?" must not append a line to the draft.
 func isProductQuestionNotCartAdd(userText string) bool {
 	text := strings.ToLower(strings.TrimSpace(userText))
 	if text == "" || mentionsOrderQty(text) {
@@ -413,7 +456,11 @@ func isProductQuestionNotCartAdd(userText string) bool {
 			return true
 		}
 	}
-	return false
+	// A question or product-fact hint only counts when the buyer is not explicitly adding a qty.
+	if explicitAddWithQtyRe.MatchString(text) {
+		return false
+	}
+	return looksLikeBuyerQuestion(text) || productQuestionHintRe.MatchString(text)
 }
 
 // TryAppendItemsDuringCheckout appends parsed items to active checkout state.
@@ -458,7 +505,7 @@ func TryAppendItemsDuringCheckout(st *OrderState, userText string, catalog []Cat
 		}
 	}
 
-	qtyOnly, newLines := parseAppendSegments(userText, catalog, vctx)
+	qtyOnly, newLines, ambiguousSegs := parseAppendSegmentsDetailed(userText, catalog, vctx)
 	if len(newLines) < 2 && lexicalBrandAmbiguous(userText, catalog) {
 		if reply, ok := orderLexicalBrandPickerReply(formal, userText, catalog); ok {
 			return true, reply
@@ -468,6 +515,14 @@ func TryAppendItemsDuringCheckout(st *OrderState, userText string, catalog []Cat
 		if line := parseCheckoutAppendLine(*st, userText, catalog, vctx); line.CatalogItemID != "" {
 			newLines = []OrderLineState{line}
 		}
+	}
+	// Segments naming a multi-variant line ("australian beef") are asked, never dropped silently.
+	variantAsk := ambiguousSegmentsQuestion(formal, ambiguousSegs, catalog, userText)
+	if len(newLines) == 0 && variantAsk != "" {
+		return true, variantAsk
+	}
+	if variantAsk != "" {
+		variantAsk = "\n\n" + variantAsk
 	}
 	if len(newLines) == 0 && !IsAddItemToOrderMessage(userText) && !IsCheckoutMergeIntent(userText) {
 		if qtyOnly != nil {
@@ -501,12 +556,12 @@ func TryAppendItemsDuringCheckout(st *OrderState, userText string, catalog []Cat
 	if !st.StructuredLinesReady() {
 		if checkoutLinesNeedApparelVariant(*st) {
 			st.Step = "ask_variant"
-			return true, checkoutItemAddedAck(formal, userText) + "\n\n" + buildOrderFlowReply(*st, tmpl.AskVariant, catalog)
+			return true, checkoutItemAddedAck(formal, userText) + "\n\n" + buildOrderFlowReply(*st, tmpl.AskVariant, catalog) + variantAsk
 		}
 		st.Step = "ask_qty"
-		return true, checkoutItemAddedAck(formal, userText) + "\n\n" + buildOrderFlowReply(*st, tmpl.AskQty, catalog)
+		return true, checkoutItemAddedAck(formal, userText) + "\n\n" + buildOrderFlowReply(*st, tmpl.AskQty, catalog) + variantAsk
 	}
-	return true, checkoutItemAddedAck(formal, userText) + "\n\n" + buildOrderFlowReply(*st, tmpl.AskRecipient, catalog)
+	return true, checkoutItemAddedAck(formal, userText) + "\n\n" + buildOrderFlowReply(*st, tmpl.AskRecipient, catalog) + variantAsk
 }
 
 func checkoutLinesNeedApparelVariant(st OrderState) bool {

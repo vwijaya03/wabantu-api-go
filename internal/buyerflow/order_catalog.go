@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"encore.app/wabantu/shared/retrieval"
 )
@@ -485,8 +486,83 @@ func buildVariantLabel(size, color string) string {
 	return strings.Join(parts, " | ")
 }
 
+var buyerQuestionStarts = map[string]bool{
+	"what": true, "when": true, "where": true, "why": true, "how": true, "is": true, "are": true,
+	"can": true, "could": true, "do": true, "does": true, "will": true, "would": true, "which": true,
+	"apa": true, "apakah": true, "kapan": true, "dimana": true, "kenapa": true, "mengapa": true,
+	"gimana": true, "bagaimana": true, "berapa": true, "bisakah": true, "bolehkah": true,
+}
+
+var nonNameWords = map[string]bool{
+	"today": true, "tomorrow": true, "delivered": true, "deliver": true, "delivery": true,
+	"ship": true, "shipping": true, "order": true, "cancel": true, "price": true, "frozen": true,
+	"fresh": true, "ask": true, "want": true, "product": true, "kirim": true, "dikirim": true,
+	"besok": true, "hari": true, "pesanan": true, "batal": true, "harga": true, "ongkir": true,
+	"tanya": true, "mau": true, "woi": true, "pay": true, "bayar": true, "transfer": true,
+}
+
+// buyerAskStatementRe — an inquiry worded without '?' or a leading question word
+// ("I want to ask about…", "mau tanya soal…"). Word-bounded so a name like "Tanya" is not matched.
+var buyerAskStatementRe = regexp.MustCompile(`(?i)\b(?:(?:want|wanna|like|need)\s+to\s+ask|ask\s+(?:about|you)|have\s+a\s+question|(?:mau|ingin|pengen|boleh)\s+(?:tanya|nanya|bertanya)|nanya)\b`)
+
+// looksLikeBuyerQuestion — '?' anywhere, a question word first, an "X or Y" day choice,
+// or an ask-statement ("I want to ask about…").
+func looksLikeBuyerQuestion(text string) bool {
+	t := strings.ToLower(strings.TrimSpace(text))
+	if strings.Contains(t, "?") {
+		return true
+	}
+	f := strings.Fields(t)
+	if len(f) > 0 && buyerQuestionStarts[f[0]] {
+		return true
+	}
+	return strings.Contains(t, "today or tomorrow") || strings.Contains(t, "hari ini atau besok") ||
+		buyerAskStatementRe.MatchString(t)
+}
+
+// plausibleNameLine — 1–4 words, letters and . ' - only, no common non-name word.
+func plausibleNameLine(line string) bool {
+	f := strings.Fields(strings.TrimSpace(line))
+	if len(f) == 0 || len(f) > 4 {
+		return false
+	}
+	for _, w := range f {
+		lw := strings.ToLower(strings.Trim(w, ".,'-"))
+		if nonNameWords[lw] {
+			return false
+		}
+		for _, r := range w {
+			if !(unicode.IsLetter(r) || r == '.' || r == '\'' || r == '-') {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// hasRecipientNameLabel — a `Name:` / `Nama:` style labelled line is present.
+func hasRecipientNameLabel(text string) bool {
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if kind, _ := englishRecipientLabel(line); kind == recipientLabelName {
+			return true
+		}
+		if strings.HasPrefix(strings.ToLower(line), "nama") && strings.Contains(line, ":") {
+			return true
+		}
+	}
+	return false
+}
+
 func parseRecipientLine(userText string) (name, phone string) {
 	text := strings.TrimSpace(userText)
+	// A question mid-checkout is never a recipient name (phone, if any, is still kept).
+	if looksLikeBuyerQuestion(text) && !hasRecipientNameLabel(text) {
+		if m := phoneIDRe.FindString(text); m != "" {
+			phone = normalizePhoneID(m)
+		}
+		return "", phone
+	}
 	if m := phoneIDRe.FindString(text); m != "" {
 		phone = normalizePhoneID(m)
 		name = strings.TrimSpace(strings.ReplaceAll(text, m, ""))
@@ -524,7 +600,7 @@ func parseRecipientLine(userText string) (name, phone string) {
 			}
 		} else if phone == "" && phoneIDRe.MatchString(line) {
 			phone = normalizePhoneID(phoneIDRe.FindString(line))
-		} else if name == "" && len(line) > 2 {
+		} else if name == "" && len(line) > 2 && plausibleNameLine(line) {
 			name = line
 		}
 	}
@@ -708,7 +784,7 @@ func mergeShippingText(st *OrderState, userText string) {
 		}
 	}
 
-	if st.Street == "" && orderAddrHintRe.MatchString(text) {
+	if st.Street == "" && !looksLikeBuyerQuestion(text) && orderAddrHintRe.MatchString(text) {
 		st.Street = strings.TrimSpace(text)
 	}
 	parseUnstructuredAddress(st, lower, text)
