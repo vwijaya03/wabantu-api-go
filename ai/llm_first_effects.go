@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 
+	"encore.dev/rlog"
+
 	"encore.app/wabantu/internal/salesbrain"
 )
 
@@ -25,6 +27,10 @@ type lfFX interface {
 	setState(ctx context.Context, st orderState)
 	clearState(ctx context.Context)
 	persistOrder(ctx context.Context, st orderState) (string, error)
+	// persistEarlyDraft saves the cart as a draft order without shipping data
+	// (persistDraftOrderEarly, as the legacy flow does at ask_recipient). needPick means several
+	// drafts compete and none is pinned: nothing was written.
+	persistEarlyDraft(ctx context.Context, st orderState) (id string, needPick bool, err error)
 	cancelOrder(ctx context.Context, orderID string) error
 	pause(ctx context.Context, reason string) error
 	notify(ctx context.Context, kind, title, body string)
@@ -59,6 +65,7 @@ type lfOutcome struct {
 const (
 	notifyTitleCancelPaid       = "Pembeli minta batalkan pesanan yang sudah dibayar"
 	notifyReasonCancelPaid      = "pesanan %s sudah dibayar; pembatalan perlu ditangani tim."
+	notifyReasonDraftSaveFailed = "draft pesanan awal gagal disimpan ke database; keranjang masih ada di sesi, pembeli tetap dibalas. Pengingat pesanan terbuka belum bisa muncul untuk keranjang ini."
 	notifyReasonOrderSaveFailed = "pesanan gagal disimpan setelah pembeli konfirmasi (stok tidak cukup atau data belum lengkap); pembeli sudah diberi tahu."
 	notifyAIReasonLabel         = " Catatan AI: "
 )
@@ -81,7 +88,7 @@ func lfApplyIntent(ctx context.Context, fx lfFX, in lfApplyIn) (lfOutcome, error
 	var err error
 	switch in.Plan.Decision.Intent {
 	case salesbrain.IntentOrder, salesbrain.IntentAmend:
-		lfApplyCart(ctx, fx, in)
+		lfApplyCart(ctx, fx, in, &out)
 	case salesbrain.IntentFieldAnswer:
 		lfApplyFields(ctx, fx, in, &out)
 	case salesbrain.IntentConfirm:
@@ -102,7 +109,9 @@ func lfApplyIntent(ctx context.Context, fx lfFX, in lfApplyIn) (lfOutcome, error
 
 // lfApplyCart stores the cart planTurn computed. The reply (model text, summary, resume line) is
 // already composed. An offer of another product is remembered so the order carries it only once.
-func lfApplyCart(ctx context.Context, fx lfFX, in lfApplyIn) {
+// A changed, non-empty cart is also saved as a draft order once the reply has gone out (spec §4.2:
+// the open-order reminder reads the database, not Redis).
+func lfApplyCart(ctx context.Context, fx lfFX, in lfApplyIn, out *lfOutcome) {
 	p := in.Plan
 	offers := lfReplyOffersUpsell(p.Decision.Reply, in.Facts, p.Cart)
 	switch {
@@ -115,12 +124,69 @@ func lfApplyCart(ctx context.Context, fx lfFX, in lfApplyIn) {
 		if offers {
 			next.UpsellShown = true
 		}
+		if strings.TrimSpace(next.PersistedOrderID) == "" {
+			next.ForceNewOrder = true // a cart without a draft of its own never merges into a parked one
+		}
 		fx.setState(ctx, *next)
+		lfScheduleEarlyDraft(fx, in, *next, out)
 	case offers && in.State != nil && !in.State.UpsellShown:
 		st := *in.State
 		st.UpsellShown = true
 		fx.setState(ctx, st)
 	}
+}
+
+// lfScheduleEarlyDraft queues the draft write after the send. It runs before the steps already
+// queued by the caller's After (none today) and never fails the turn.
+func lfScheduleEarlyDraft(fx lfFX, in lfApplyIn, st orderState, out *lfOutcome) {
+	if !lfStepReachedRecipient(st.Step) || !st.CartReadyForDraft() {
+		return
+	}
+	previous := out.After
+	out.After = func(ctx context.Context) error {
+		var first error
+		if previous != nil {
+			first = previous(ctx)
+		}
+		lfSaveEarlyDraft(ctx, fx, in.UserText, st)
+		return first
+	}
+}
+
+// lfStepReachedRecipient: ask_recipient or later (the stage the legacy flow saves its early draft).
+func lfStepReachedRecipient(step string) bool {
+	switch step {
+	case "", "ask_product", "ask_variant", "ask_qty":
+		return false
+	}
+	return true
+}
+
+// lfSaveEarlyDraft writes or updates the draft order of the live cart through persistDraftOrderEarly
+// and pins its id in the state, so the next amend and the confirm step update the same row. A cart
+// without a pinned draft is always a new draft ("new order" parks the old one; "continue" brings the
+// old one back pinned). When the pinned draft is gone and several drafts compete, the cart is saved
+// as a fresh draft: the pipeline never shows the legacy pick list. Failures are logged and told to
+// the owner; the buyer already has the reply.
+func lfSaveEarlyDraft(ctx context.Context, fx lfFX, userText string, st orderState) {
+	pinned := strings.TrimSpace(st.PersistedOrderID) != ""
+	st.ForceNewOrder = !pinned
+	id, needPick, err := fx.persistEarlyDraft(ctx, st)
+	if err == nil && needPick && pinned {
+		st.PersistedOrderID, st.ForceNewOrder = "", true
+		id, needPick, err = fx.persistEarlyDraft(ctx, st)
+	}
+	if err != nil {
+		rlog.Warn("llm_first: early draft not saved", "err", err)
+		fx.notify(ctx, notifyKindSystemError, notifyTitleSystemError,
+			ownerNotificationSummary(userText, notifyReasonDraftSaveFailed))
+		return
+	}
+	if id == "" || needPick || (id == st.PersistedOrderID && !st.ForceNewOrder) {
+		return
+	}
+	st.PersistedOrderID, st.ForceNewOrder = id, false
+	fx.setState(ctx, st)
 }
 
 // lfApplyFields writes the checkout data the model extracted, after applyFieldAnswer validated it

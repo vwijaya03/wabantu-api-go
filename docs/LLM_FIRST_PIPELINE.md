@@ -32,12 +32,12 @@ Mode `on`, berurutan (`ai/llm_first.go`):
 
 | Intent | Yang dilakukan kode |
 |--------|---------------------|
-| `order`, `amend` | `setOrderState(stateWithCart(...))` bila keranjang berubah; `clearOrderState` bila kosong. Tawaran produk lain menandai `UpsellShown`. Balasan = teks model + ringkasan + kalimat lanjut. |
+| `order`, `amend` | `setOrderState(stateWithCart(...))` bila keranjang berubah; `clearOrderState` bila kosong. Tawaran produk lain menandai `UpsellShown`. Balasan = teks model + ringkasan + kalimat lanjut. **Sesudah kirim**, keranjang yang berubah dan tidak kosong disimpan sebagai draft awal lewat `persistDraftOrderEarly` (fungsi yang sama dengan jalur lama); id draft dipasang di `PersistedOrderID` supaya amend dan `confirm` berikutnya memperbarui baris yang sama. Keranjang tanpa draft sendiri selalu draft baru (`ForceNewOrder`), jadi tidak pernah menyatu ke draft yang diparkir. Gagal simpan: dicatat di log dan owner diberi tahu, balasan tidak terhalang. |
 | `field_answer` | `applyFieldAnswer` (nilai harus muncul di pesan pembeli) lalu `setOrderState`. Data tidak valid disebut persis (template `TplFieldProblems`) dan kolomnya ditanya lagi. Setelah lengkap: ringkasan penuh (item, alamat, minta OK). |
 | `confirm` | Hanya di langkah `confirm` dengan alamat lengkap: `persistDraftOrder` (fungsi yang sama dengan checkout lama). Tanpa draft yang terikat = draft baru. Balasan + `TplOrderRef`. Gagal simpan: `TplSystemBusy` + notifikasi owner, keranjang tetap. |
 | `cancel` | Draft belum bayar: `cancelPersistedOrder` + `clearOrderState`, balasan template `TplOrderCancelled`. Pesanan yang sudah dibayar **tidak pernah** dibatalkan bot: notifikasi owner dulu, lalu `TplCancelPaidOrder`. Nomor `WB-…` di pesan menentukan pesanan; nomor tidak dikenal tidak membatalkan apa pun. Dengan dua pesanan terbuka atau lebih dan tanpa nomor, tidak ada yang dibatalkan (pembeli yang memilih; balasan model tetap dikirim). Keranjang yang belum tersimpan cukup dikosongkan. |
 | `continue_order` | Draft terbuka terbaru (atau yang disebut nomornya) dipulihkan ke Redis dari DB; hanya kolom yang kurang yang ditanya. Pesanan yang menunggu bayar tidak dipulihkan (tidak ada yang tersisa untuk dikumpulkan). |
-| `new_order` | `clearOrderState`; draft lama **tetap** (diparkir). `TplNewOrderParked` bila model belum menyebut nomornya. |
+| `new_order` | `clearOrderState`; draft lama **tetap** di DB (diparkir, tetap muncul di pengingat) dan keranjang berikutnya menjadi draft baru. `TplNewOrderParked` bila model belum menyebut nomornya. |
 | `status` | `handleCustomerOrderStatus` (jalur lama; membalas sendiri). |
 | `human_request`, atau `handoff.level = takeover` | Setelah balasan terkirim: `pauseAI(HandoffReasonHumanRequest)` lalu `notifyOwner("ai.handoff")`. Balasan memuat jam buka tenant. AI lanjut otomatis setelah 2 jam tanpa balasan staf. |
 | `handoff.level = note` | `notifyOwner` saja; AI tetap melayani. |
@@ -306,7 +306,6 @@ Peringatan harga:
 Perilaku yang sengaja atau belum ditangani, supaya tidak mengejutkan saat canary:
 
 - **Intent `status`** dijawab `handleCustomerOrderStatus` (jalur lama): teksnya Indonesia saja, jadi pembeli berbahasa Inggris menerima status dalam bahasa Indonesia. Perlu template status dua bahasa.
-- **Draft tidak disimpan ke DB selama belanja.** Jalur lama menyimpan draft awal begitu keranjang siap; pipeline ini hanya menyimpan keranjang di Redis (2 jam) dan menyimpan draft saat `confirm`. Akibatnya pengingat "pesanan belum selesai" hanya muncul untuk draft dari jalur lama dan pesanan yang sudah dikonfirmasi, dan `new_order` membuang keranjang yang belum tersimpan.
 - **Produk bervarian (ukuran/warna)**, misalnya nama berisi celana, kaos, atau ukuran: pipeline tidak punya kolom varian, jadi menyimpan pesanannya gagal (`ReadyToPersist`) dan pembeli mendapat pesan gangguan sistem plus notifikasi owner. Tenant pilot (steak) tidak terdampak.
 - **Fail-open di langkah `confirm`:** jalur lama tidak mengenal langkah itu dan membalas teks "lanjutkan data order" sampai pembeli mengulang OK atau state kedaluwarsa.
 - **Kuota habis** dijawab template tanpa notifikasi owner (sama dengan jalur lama); spec §4.4 menyebut notifikasi untuk kasus ini.

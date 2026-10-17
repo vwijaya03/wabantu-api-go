@@ -22,6 +22,10 @@ type lfFakeFX struct {
 	notes      []lfNote
 	persistID  string
 	persistErr error
+	early      []orderState // states handed to persistEarlyDraft
+	earlyID    string       // id the early draft gets ("" = a default id)
+	earlyErr   error
+	earlyPick  []bool // needPick answers, consumed one per call (empty: false)
 	cancelErr  error
 	pauseErr   error
 }
@@ -43,6 +47,24 @@ func (f *lfFakeFX) persistOrder(_ context.Context, st orderState) (string, error
 		return "9f1c2d3e-0000-0000-0000-000000000000", nil
 	}
 	return f.persistID, nil
+}
+func (f *lfFakeFX) persistEarlyDraft(_ context.Context, st orderState) (string, bool, error) {
+	f.calls = append(f.calls, "early")
+	f.early = append(f.early, st)
+	if len(f.earlyPick) > 0 {
+		pick := f.earlyPick[0]
+		f.earlyPick = f.earlyPick[1:]
+		if pick {
+			return "", true, nil
+		}
+	}
+	if f.earlyErr != nil {
+		return "", false, f.earlyErr
+	}
+	if f.earlyID == "" {
+		return "7a0b1c2d-0000-0000-0000-000000000000", false, nil
+	}
+	return f.earlyID, false, nil
 }
 func (f *lfFakeFX) cancelOrder(_ context.Context, id string) error {
 	f.calls = append(f.calls, "cancel")
@@ -120,8 +142,11 @@ func TestLLMFirstApplyOrderSavesCartState(t *testing.T) {
 	if out.Reply != plan.Reply || !strings.Contains(out.Reply, "Order summary") || !strings.Contains(out.Reply, "Rp350.000") {
 		t.Fatalf("reply = %q", out.Reply)
 	}
-	if out.Author != "ai" || out.ReplacedReason != "" || out.After != nil {
+	if out.Author != "ai" || out.ReplacedReason != "" {
 		t.Fatalf("outcome = %+v", out)
+	}
+	if fx.did("early") != 0 {
+		t.Fatalf("the draft is written after the send, not before: %v", fx.calls)
 	}
 }
 
@@ -860,5 +885,162 @@ func TestLLMFirstHandoffLevel(t *testing.T) {
 		if got := lfHandoffLevel(c.d); got != c.want {
 			t.Errorf("case %d: got %q want %q", i, got, c.want)
 		}
+	}
+}
+
+// ── early draft (spec §4.2) ──────────────────────────────────────────────────
+
+func TestLLMFirstEarlyDraftIsWrittenAfterTheSendAndPinnedInTheState(t *testing.T) {
+	fx := &lfFakeFX{earlyID: "d1000000-0000-0000-0000-000000000001"}
+	cart := []salesbrain.OrderLine{lfTunaLine()}
+	plan := lfTestPlan(salesbrain.Decision{Intent: salesbrain.IntentOrder, Reply: "Added 1x tuna."}, salesbrain.LangEN, cart, true, "")
+	out, err := lfApplyIntent(context.Background(), fx, lfApplyBase(plan, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fx.did("early") != 0 {
+		t.Fatalf("no DB write before the reply is sent: %v", fx.calls)
+	}
+	if out.After == nil {
+		t.Fatal("the draft write must run in After")
+	}
+	if err := lfRunAfter(t, out); err != nil {
+		t.Fatalf("After must not fail the turn: %v", err)
+	}
+	if len(fx.early) != 1 || !fx.early[0].ForceNewOrder || fx.early[0].PersistedOrderID != "" {
+		t.Fatalf("a fresh cart is a new draft (ForceNewOrder, nothing pinned): %+v", fx.early)
+	}
+	last := fx.states[len(fx.states)-1]
+	if last.PersistedOrderID != "d1000000-0000-0000-0000-000000000001" || last.ForceNewOrder {
+		t.Fatalf("the draft id must be pinned in the state: %+v", last)
+	}
+	if len(last.Items) != 1 {
+		t.Fatalf("the pinned state keeps the cart: %+v", last)
+	}
+}
+
+func TestLLMFirstEarlyDraftAmendUpdatesThePinnedDraft(t *testing.T) {
+	fx := &lfFakeFX{earlyID: "d1000000-0000-0000-0000-000000000001"}
+	st := lfTunaState()
+	st.PersistedOrderID = "d1000000-0000-0000-0000-000000000001"
+	cart := []salesbrain.OrderLine{lfTunaLine()}
+	cart[0].Qty = 3
+	plan := lfTestPlan(salesbrain.Decision{Intent: salesbrain.IntentAmend, Reply: "Now 3."}, salesbrain.LangEN, cart, true, "recipient")
+	out, err := lfApplyIntent(context.Background(), fx, lfApplyBase(plan, st))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := lfRunAfter(t, out); err != nil {
+		t.Fatal(err)
+	}
+	if len(fx.early) != 1 || fx.early[0].PersistedOrderID != st.PersistedOrderID || fx.early[0].ForceNewOrder {
+		t.Fatalf("an amend updates the pinned draft: %+v", fx.early)
+	}
+	if fx.early[0].Items[0].Qty != 3 {
+		t.Fatalf("the draft gets the new quantity: %+v", fx.early[0].Items)
+	}
+	if last := fx.states[len(fx.states)-1]; last.PersistedOrderID != st.PersistedOrderID {
+		t.Fatalf("pin kept: %+v", last)
+	}
+}
+
+func TestLLMFirstEarlyDraftNewOrderKeepsTheParkedDraft(t *testing.T) {
+	orders, open := lfOpenDraftOrders(t)
+	fx := &lfFakeFX{earlyID: "d2000000-0000-0000-0000-000000000002"}
+	cart := []salesbrain.OrderLine{lfTunaLine()}
+	plan := lfTestPlan(salesbrain.Decision{Intent: salesbrain.IntentOrder, Reply: "Added 1x tuna."}, salesbrain.LangEN, cart, true, "")
+	in := lfApplyBase(plan, nil) // the cart was cleared by new_order: no live state
+	in.Orders, in.Open = orders, open
+	out, err := lfApplyIntent(context.Background(), fx, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st := fx.states[0]; !st.ForceNewOrder || st.PersistedOrderID != "" {
+		t.Fatalf("the state of a fresh cart says ForceNewOrder: %+v", st)
+	}
+	if err := lfRunAfter(t, out); err != nil {
+		t.Fatal(err)
+	}
+	if len(fx.early) != 1 || !fx.early[0].ForceNewOrder || fx.early[0].PersistedOrderID != "" {
+		t.Fatalf("the parked draft must not be merged: %+v", fx.early)
+	}
+	if fx.did("cancel") != 0 {
+		t.Fatalf("a parked draft is never cancelled: %v", fx.calls)
+	}
+}
+
+func TestLLMFirstEarlyDraftFailureNotifiesTheOwnerAndNeverBlocks(t *testing.T) {
+	fx := &lfFakeFX{earlyErr: errors.New("db down")}
+	cart := []salesbrain.OrderLine{lfTunaLine()}
+	plan := lfTestPlan(salesbrain.Decision{Intent: salesbrain.IntentOrder, Reply: "Added 1x tuna."}, salesbrain.LangEN, cart, true, "")
+	out, err := lfApplyIntent(context.Background(), fx, lfApplyBase(plan, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Reply != plan.Reply || out.Author != "ai" {
+		t.Fatalf("a failing draft write must not change the reply: %+v", out)
+	}
+	if err := lfRunAfter(t, out); err != nil {
+		t.Fatalf("a failing draft write must not fail the turn: %v", err)
+	}
+	if fx.did("notify") != 1 || fx.notes[0].kind != notifyKindSystemError {
+		t.Fatalf("the owner must hear about it: %+v", fx.notes)
+	}
+	if len(fx.states) != 1 {
+		t.Fatalf("no pin without a draft: %+v", fx.states)
+	}
+}
+
+func TestLLMFirstEarlyDraftPinnedDraftGoneIsSavedAsFreshDraft(t *testing.T) {
+	fx := &lfFakeFX{earlyPick: []bool{true}, earlyID: "d3000000-0000-0000-0000-000000000003"}
+	st := lfTunaState()
+	st.PersistedOrderID = "gone"
+	cart := []salesbrain.OrderLine{lfTunaLine()}
+	cart[0].Qty = 2
+	plan := lfTestPlan(salesbrain.Decision{Intent: salesbrain.IntentAmend, Reply: "Now 2."}, salesbrain.LangEN, cart, true, "recipient")
+	out, err := lfApplyIntent(context.Background(), fx, lfApplyBase(plan, st))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := lfRunAfter(t, out); err != nil {
+		t.Fatal(err)
+	}
+	if len(fx.early) != 2 || !fx.early[1].ForceNewOrder || fx.early[1].PersistedOrderID != "" {
+		t.Fatalf("a pick-list answer retries as a fresh draft: %+v", fx.early)
+	}
+	if last := fx.states[len(fx.states)-1]; last.PersistedOrderID != "d3000000-0000-0000-0000-000000000003" {
+		t.Fatalf("pin = %+v", last)
+	}
+}
+
+func TestLLMFirstEarlyDraftSkippedWhenNothingChanged(t *testing.T) {
+	fx := &lfFakeFX{}
+	plan := lfTestPlan(salesbrain.Decision{Intent: salesbrain.IntentOrder, Reply: "Which salmon?"}, salesbrain.LangEN, []salesbrain.OrderLine{lfTunaLine()}, false, "recipient")
+	out, err := lfApplyIntent(context.Background(), fx, lfApplyBase(plan, lfTunaState()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := lfRunAfter(t, out); err != nil {
+		t.Fatal(err)
+	}
+	if fx.did("early") != 0 {
+		t.Fatalf("no cart change, no draft write: %v", fx.calls)
+	}
+}
+
+func TestLLMFirstEarlyDraftKeepsTheHandoffAfterStep(t *testing.T) {
+	fx := &lfFakeFX{}
+	cart := []salesbrain.OrderLine{lfTunaLine()}
+	d := salesbrain.Decision{Intent: salesbrain.IntentOrder, Reply: "Added.", Handoff: &salesbrain.Handoff{Level: salesbrain.HandoffNote, Reason: "x"}}
+	plan := lfTestPlan(d, salesbrain.LangEN, cart, true, "")
+	out, err := lfApplyIntent(context.Background(), fx, lfApplyBase(plan, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := lfRunAfter(t, out); err != nil {
+		t.Fatal(err)
+	}
+	if fx.did("early") != 1 || fx.did("notify") != 1 {
+		t.Fatalf("both the draft write and the handoff note must run: %v", fx.calls)
 	}
 }

@@ -346,6 +346,11 @@ func (f lfLiveFX) persistOrder(ctx context.Context, st orderState) (string, erro
 	return persistDraftOrder(ctx, f.t.ts, f.t.payload.TenantSchema, f.t.convo.ID, f.t.convo.ContactID, st)
 }
 
+func (f lfLiveFX) persistEarlyDraft(ctx context.Context, st orderState) (string, bool, error) {
+	id, needPick, _, err := persistDraftOrderEarly(ctx, f.t.ts, f.t.payload.TenantSchema, f.t.convo.ID, f.t.convo.ContactID, st)
+	return id, needPick, err
+}
+
 func (f lfLiveFX) cancelOrder(ctx context.Context, orderID string) error {
 	return cancelPersistedOrder(ctx, f.t.ts, f.t.payload.TenantSchema, orderID, f.t.scope())
 }
