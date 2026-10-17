@@ -31,7 +31,7 @@ Non-tujuan hari ini:
 | # | Keputusan | Pilihan |
 |---|---|---|
 | D1 | Urutan | Semua dikerjakan hari ini di belakang flag per tenant. Perbaikan bug legacy aktif tanpa flag. |
-| D2 | Kuota | Stop-gap: `ai_token` di `usage.planQuotas` dinaikkan ×5 (Trial ×10), karena LLM-first memakai ±5× token per pesan. Ditandai jelas di PR. |
+| D2 | Kuota | **Tidak diubah di pekerjaan ini; didiskusikan terpisah.** Catatan: LLM-first memakai ±5× token per pesan, jadi tenant Trial/Starter lebih cepat habis kuota (Trial ±32 pesan/bulan) bila flag diaktifkan untuk mereka. |
 | D3 | Model | Chain `chat` disarankan `gemini-3.1-flash-lite` → `gemini-3.6-flash` (diatur superadmin di AI Provider). Anthropic hanya fallback. Family 2.5 sudah 404 untuk key baru (`shared/llm/gemini.go:24`). |
 | D4 | Pesanan terbuka | Hanya draft yang belum selesai dan pesanan menunggu bayar, berumur ≤ 72 jam. Pesanan paid/processing/shipped/completed hanya disebut bila ditanya. Pengingat maksimal 1 kali per sesi (sesi baru = jeda ≥ 30 menit) dan maksimal 2 kali proaktif per pesanan. "Pesanan baru" tidak membatalkan yang lama. |
 | D5 | Bahasa | Diinfer dari pesan jelas pertama. Bot bertanya hanya bila ambigu, tanpa opsi angka. Default tenant `id`. Ganti hanya atas permintaan eksplisit. |
@@ -203,7 +203,7 @@ Yang tidak dikerjakan hari ini dan dicatat sebagai sisa:
   - Aktivasi untuk Omah dilakukan lewat admin flags (keputusan Viko).
   - Kill switch `ai_llm_first_kill` mematikan jalur baru global dalam ≤60 detik.
 - **Kebocoran:** tidak ada nilai secret di kode, log, atau test; output mentah LLM di metadata diredaksi (HP/email) dan dipotong.
-- **Deploy:** merge ke `master` men-deploy Encore Cloud; Cloud Run di-deploy manual dari `release-cr` lewat `scripts/cloudrun/deploy.sh`. Keduanya hanya setelah Viko setuju.
+- **Deploy:** pekerjaan ini berakhir di PR (tanpa merge). Merge ke `master` men-deploy Encore Cloud; Cloud Run di-deploy manual dari `release-cr` lewat `scripts/cloudrun/deploy.sh`. Keduanya hanya setelah Viko setuju.
 
 ## 7. Pengujian
 
@@ -223,7 +223,7 @@ Yang tidak dikerjakan hari ini dan dicatat sebagai sisa:
 | Risiko | Mitigasi |
 |---|---|
 | Model flash-lite salah intent pada pesan campur/slang | Validator + retry; fail-open; kill switch; tes replay |
-| Kuota habis lebih cepat | D2 stop-gap; pesan kuota habis dilokalkan |
+| Kuota habis lebih cepat | Kuota didiskusikan terpisah (D2); flag diaktifkan dulu hanya untuk tenant pilot; pesan kuota habis dilokalkan |
 | Konflik dua branch | Cherry-pick per commit; diff isi dibandingkan setelahnya; deploy.sh disamakan |
 | Encore Cloud tanpa Gemini | Fallback Anthropic + parse JSON; fail-open ke legacy |
 | Data tenant kontradiktif ("fresh" vs "frozen", KB ganda) | Aturan "deskripsi produk menang"; daftar perbaikan data untuk owner (§9) |
