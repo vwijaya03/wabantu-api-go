@@ -17,6 +17,7 @@ import (
 
 	appflag "encore.app/wabantu/flag"
 	bf "encore.app/wabantu/internal/buyerflow"
+	"encore.app/wabantu/internal/salesbrain"
 	appdb "encore.app/wabantu/shared/db"
 	"encore.app/wabantu/shared/pii"
 	"encore.app/wabantu/shared/retrieval"
@@ -180,9 +181,20 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return false, nil
 	}
 
+	// A paused conversation stays paused unless the pause was the AI's own and went AutoResumeAfter
+	// without a staff reply (handoff_v2.go); staff takeovers never resume. The resume itself sends
+	// one apology, so it happens below once the channel is known to be usable.
+	autoResume := false
 	if !convo.AIHandled {
-		rlog.Warn("AI job: convo.aiHandled=false", "convoId", convo.ID)
-		return false, ErrAIHandoffPaused
+		ok, rerr := pausedConversationMayResume(ctx, ts, convo)
+		if rerr != nil {
+			rlog.Warn("AI job: auto-resume check failed, keeping the conversation paused", "convoId", convo.ID, "err", rerr)
+		}
+		if !ok {
+			rlog.Warn("AI job: convo.aiHandled=false", "convoId", convo.ID)
+			return false, ErrAIHandoffPaused
+		}
+		autoResume = true
 	}
 	if inbound.Direction != "in" || inbound.Author != "contact" {
 		rlog.Warn("AI job: inbound not a contact inbound")
@@ -246,6 +258,12 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 			"reason", why,
 		)
 		return false, nil
+	}
+
+	if autoResume {
+		if err := s.resumeAIAfterPause(ctx, ts, payload, convo, channel, contact, userText); err != nil {
+			return false, err
+		}
 	}
 
 	bp := toBusinessProfile(profile)
@@ -574,7 +592,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	if inScope {
 		if catReply, ok := s.replyFromBusinessCatalogHybrid(ctx, payload.TenantID, payload.TenantSchema, userText, ts, profile, catalog, history); ok {
 			if ShouldHandoffForCatalogMiss(userText) && IsCatalogNotFoundReply(catReply) {
-				return s.handleAiNoAnswerHandoff(ctx, ts, payload, convo, channel, contact, profile, userText)
+				return s.handleAiNoAnswerHandoff(ctx, ts, payload, convo, channel, contact, userText)
 			}
 			if clearedOrderForCorrection {
 				catReply = prependSalesCorrection(strOrEmpty(profile.Tone) == "formal", catReply)
@@ -617,13 +635,15 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		if err != nil {
 			return false, err
 		}
-		return true, pauseAI(ctx, ts, convo.ID, "Sensitive/escalate detected")
+		return true, pauseAI(ctx, ts, convo.ID, handoffReasonSensitiveEscalate)
 	}
 
-	// ── Handle: out of scope → no-answer handoff (no scolding) ───────────
+	// ── Out of scope: no handoff and no pause. The turn continues to the FAQ cache, the FAQ direct
+	// answer and the LLM exactly like an in-scope question (the LLM can decline politely); the
+	// classifier label stays in the activity context (ac.Classifier) for observability.
 	if classifier.Label == "out_of_scope" {
-		rlog.Warn("AI job: out-of-business-scope → ai_no_answer handoff")
-		return s.handleAiNoAnswerHandoff(ctx, ts, payload, convo, channel, contact, profile, userText)
+		rlog.Info("AI job: out-of-business-scope, continuing to FAQ/LLM without handoff",
+			"salesState", intent.State, "salesTopic", intent.Topic)
 	}
 
 	// ── Handle: in-scope non-question ────────────────────────────────────
@@ -642,7 +662,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 
 	// ── Handle: low-confidence question → handoff ──────────────────────────
 	if classifier.Label == "in_scope_question" && classifier.Confidence < llmConfidenceThreshold {
-		return s.handleAiNoAnswerHandoff(ctx, ts, payload, convo, channel, contact, profile, userText)
+		return s.handleAiNoAnswerHandoff(ctx, ts, payload, convo, channel, contact, userText)
 	}
 
 	// ── Handle: order intent state machine ───────────────────────────────
@@ -797,7 +817,8 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 			"tenantId", payload.TenantID,
 			"convoId", convo.ID,
 		)
-		return s.handleAiNoAnswerHandoff(ctx, ts, payload, convo, channel, contact, profile, userText)
+		return s.handleAiSystemError(ctx, ts, payload, convo, channel, contact, profile, userText,
+			metaNoLLM(reasonAIGenerated, PathHumanHandoff), notifyReasonLLMError)
 	}
 
 	if chatModel != "" {
@@ -848,7 +869,9 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	return true, nil
 }
 
-// FallbackAutoReply sends a generic fallback and pauses AI on the conversation.
+// FallbackAutoReply runs after the AI job exhausted its retries: an honest "busy" message in the
+// buyer's language and an owner notification. It does NOT pause the AI; a technical failure must
+// never silence the conversation.
 func (s *AutoReplyService) FallbackAutoReply(ctx context.Context, payload AiReplyJobPayload) error {
 	ts, err := openTenantScope(ctx, payload.TenantSchema)
 	if err != nil {
@@ -871,15 +894,15 @@ func (s *AutoReplyService) FallbackAutoReply(ctx context.Context, payload AiRepl
 		return nil
 	}
 
-	out := metaNoLLM(reasonNonQuestion, PathAutoFallback)
-	out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
-	err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact,
-		"Maaf kak, saat ini sistem kami sedang sibuk. Tim kami akan bantu balas secepatnya ya 🙏",
-		"system", payload.InboundMessageID, out)
-	if err != nil {
-		return err
+	// Best effort: the shop name and the buyer's message only choose the wording and language.
+	profile, _ := loadBusinessProfile(ctx, ts)
+	userText := ""
+	if inbound, ierr := loadMessage(ctx, ts, payload.InboundMessageID); ierr == nil && inbound != nil {
+		userText, _ = inboundTextForAutoReply(inbound.Type, inbound.Body)
 	}
-	return pauseAI(ctx, ts, convo.ID, "Auto fallback setelah retry AI gagal")
+	_, err = s.handleAiSystemError(ctx, ts, payload, convo, channel, contact, profile, userText,
+		metaNoLLM(reasonNonQuestion, PathAutoFallback), notifyReasonFallback)
+	return err
 }
 
 func (s *AutoReplyService) handleCustomerOrderCancel(
@@ -1598,17 +1621,27 @@ func (s *AutoReplyService) handleBuyerHumanHandoff(
 	profile *dbBusinessProfile,
 	userText string,
 ) (bool, error) {
-	formal := strOrEmpty(profile.Tone) == "formal"
-	finalReply := applyOutputPolicy(HumanHandoffReplyFor(userText, formal))
+	lang := buyerReplyLang(userText, contact)
+	finalReply := applyOutputPolicy(salesbrain.T(salesbrain.TplHandoffTakeover, lang, shopLabel(profile, lang),
+		salesbrain.OpeningHoursSentence(strOrEmpty(profile.OpeningHours), lang)))
 	out := metaNoLLM(reasonAIGenerated, PathHumanHandoff)
 	out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 	err := s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, finalReply, "system", payload.InboundMessageID, out)
 	if err != nil {
 		return false, err
 	}
-	return true, pauseAI(ctx, ts, convo.ID, "buyer_requested_human")
+	// Hard handoff: pause as human_request (the AI resumes after AutoResumeAfter if no staff
+	// replied) and tell the owner, also when the pause itself failed.
+	pauseErr := pauseAI(ctx, ts, convo.ID, HandoffReasonHumanRequest)
+	s.notifyOwner(ctx, payload.TenantID, convo.ID, notifyKindHandoff, notifyTitleHumanRequest,
+		ownerNotificationSummary(userText, notifyReasonHumanRequest))
+	return true, pauseErr
 }
 
+// handleAiNoAnswerHandoff is the soft handoff: the AI has no grounded answer (catalog miss or a
+// low-confidence question). It tells the buyer honestly, notifies the owner and keeps serving; it
+// no longer pauses the conversation (that silenced chats for hours). Technical failures go through
+// handleAiSystemError instead.
 func (s *AutoReplyService) handleAiNoAnswerHandoff(
 	ctx context.Context,
 	ts tenantScopedQuerier,
@@ -1616,18 +1649,19 @@ func (s *AutoReplyService) handleAiNoAnswerHandoff(
 	convo *dbConversation,
 	channel *dbChannel,
 	contact *dbContact,
-	profile *dbBusinessProfile,
 	userText string,
 ) (bool, error) {
-	formal := strOrEmpty(profile.Tone) == "formal"
-	finalReply := applyOutputPolicy(NoAnswerHandoffReply(formal, userText))
+	lang := buyerReplyLang(userText, contact)
+	finalReply := applyOutputPolicy(salesbrain.T(salesbrain.TplCheckWithTeam, lang))
 	out := metaNoLLM(reasonAIGenerated, PathHumanHandoff)
 	out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, 0, 0)
 	err := s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, finalReply, "system", payload.InboundMessageID, out)
 	if err != nil {
 		return false, err
 	}
-	return true, pauseAI(ctx, ts, convo.ID, AiNoAnswerPauseReason)
+	s.notifyOwner(ctx, payload.TenantID, convo.ID, notifyKindHandoff, notifyTitleNoAnswer,
+		ownerNotificationSummary(userText, notifyReasonNoAnswer))
+	return true, nil
 }
 
 func pauseAI(ctx context.Context, ts tenantScopedQuerier, convoID, reason string) error {
