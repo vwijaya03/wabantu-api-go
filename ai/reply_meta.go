@@ -35,14 +35,16 @@ func shouldRedactCustomerPreview() bool {
 
 // AiReplyMeta is stored on message.metadata and echoed in structured logs.
 type AiReplyMeta struct {
-	Reason      string `json:"reason"`
-	Path        string `json:"path"`
-	Model       string `json:"model,omitempty"`
-	Tier        string `json:"tier,omitempty"`
-	LLMUsed     bool   `json:"llmUsed"`
-	OrderID         string `json:"orderId,omitempty"`
-	OrderAction     string `json:"orderAction,omitempty"`
-	InboundReplyTo  string `json:"inboundReplyTo,omitempty"`
+	Reason         string `json:"reason"`
+	Path           string `json:"path"`
+	Model          string `json:"model,omitempty"`
+	Tier           string `json:"tier,omitempty"`
+	LLMUsed        bool   `json:"llmUsed"`
+	OrderID        string `json:"orderId,omitempty"`
+	OrderAction    string `json:"orderAction,omitempty"`
+	InboundReplyTo string `json:"inboundReplyTo,omitempty"`
+	// GroundReason is why groundLLMReply replaced the model's reply (empty when it was sent as is).
+	GroundReason string `json:"groundReason,omitempty"`
 }
 
 func metaFromRoute(reason, path string, route RoutingDecision) AiReplyMeta {
@@ -73,6 +75,9 @@ func (m AiReplyMeta) LogOutcome(convoID, inboundID string) {
 	}
 	if m.OrderID != "" {
 		args = append(args, "orderId", m.OrderID, "orderAction", m.OrderAction)
+	}
+	if m.GroundReason != "" {
+		args = append(args, "groundReason", m.GroundReason)
 	}
 	rlog.Info("AI job: outcome", args...)
 }

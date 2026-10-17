@@ -132,7 +132,7 @@ func tryDeterministicJudge(turn AITriageTurn, catalog []dbCatalogItem) determini
 		}
 	}
 
-	if cv := validateReplyAgainstCatalog(turn.ReplyText, catalog); !cv.OK {
+	if cv := validateReplyAgainstCatalog(turn.ReplyText, catalog, groundingFacts(catalog, nil, nil)); !cv.OK {
 		return deterministicJudgeResult{
 			Resolved: true,
 			Verdict:  catalogValidationVerdict(cv),

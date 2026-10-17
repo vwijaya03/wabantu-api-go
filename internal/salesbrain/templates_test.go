@@ -6,8 +6,8 @@ import (
 )
 
 func TestEveryTemplateHasBothLanguages(t *testing.T) {
-	if len(TemplateKeys()) < 14 {
-		t.Fatalf("expected at least 14 templates, got %d", len(TemplateKeys()))
+	if len(TemplateKeys()) < 15 {
+		t.Fatalf("expected at least 15 templates, got %d", len(TemplateKeys()))
 	}
 	for _, k := range TemplateKeys() {
 		for _, l := range []Lang{LangID, LangEN} {
@@ -54,5 +54,16 @@ func TestOpeningHoursSentence(t *testing.T) {
 	}
 	if got := OpeningHoursSentence("08:00 - 19:00 GMT +7", LangEN); got != "They usually reply during opening hours (08:00 - 19:00 GMT +7)." {
 		t.Fatalf("got %q", got)
+	}
+}
+
+// TplCheckWithTeam replaces the old hard-coded Indonesian "Saya belum menemukan data..." that
+// grounding used to send to every buyer whatever their language.
+func TestCheckWithTeamTemplate(t *testing.T) {
+	if got := T(TplCheckWithTeam, LangEN); got != "Let me double-check that with the shop team and get back to you here." {
+		t.Fatalf("EN = %q", got)
+	}
+	if got := T(TplCheckWithTeam, LangID); got != "Sebentar ya Kak, aku cek dulu ke tim toko dan kabari di chat ini." {
+		t.Fatalf("ID = %q", got)
 	}
 }

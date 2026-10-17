@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	bf "encore.app/wabantu/internal/buyerflow"
+	"encore.app/wabantu/internal/salesbrain"
 )
 
 var idrAmountRe = regexp.MustCompile(`(?i)rp\s*\.?\s*([\d.,]+)`)
@@ -18,7 +19,13 @@ type CatalogValidationResult struct {
 }
 
 // validateReplyAgainstCatalog memastikan harga di balasan LLM cocok dengan DB.
-func validateReplyAgainstCatalog(reply string, catalog []dbCatalogItem) CatalogValidationResult {
+//
+// facts is the allow-list built by groundingFacts: catalog prices and qty x price, the buyer's
+// current cart lines and subtotal, and amounts quoted in the KB. A reply whose every Rp amount is
+// in that list is grounded and is accepted before any catalog-matching price rejection; this is
+// what lets "Total: Rp875.000" (the cart) and "2x Salmon = Rp150.000" through. The price
+// matching below still runs for replies that quote something else.
+func validateReplyAgainstCatalog(reply string, catalog []dbCatalogItem, facts salesbrain.Facts) CatalogValidationResult {
 	reply = strings.TrimSpace(reply)
 	if reply == "" {
 		return CatalogValidationResult{OK: false, Reason: "empty_reply"}
@@ -28,10 +35,13 @@ func validateReplyAgainstCatalog(reply string, catalog []dbCatalogItem) CatalogV
 	}
 
 	amounts := extractIDRAmounts(reply)
-	mentioned := findMentionedCatalogItems(reply, catalog)
 	if len(amounts) == 0 {
 		return CatalogValidationResult{OK: true}
 	}
+	if replyAmountsInFacts(reply, facts) {
+		return CatalogValidationResult{OK: true}
+	}
+	mentioned := findMentionedCatalogItems(reply, catalog)
 	if len(mentioned) == 0 {
 		return CatalogValidationResult{OK: false, Reason: "price_without_catalog_match"}
 	}
@@ -143,17 +153,79 @@ func isGenericCatalogNotFound(reply string) bool {
 	return strings.Contains(lower, "belum menemukan data") && strings.Contains(lower, "katalog")
 }
 
+// replyAmountsInFacts reports whether every Rp amount in reply is in the facts allow-list
+// (salesbrain.Validate with only its amount violations kept). A reply without amounts passes.
+func replyAmountsInFacts(reply string, facts salesbrain.Facts) bool {
+	for _, v := range salesbrain.Validate(salesbrain.Decision{Reply: reply}, facts, "") {
+		if v.Code == salesbrain.VAmount {
+			return false
+		}
+	}
+	return true
+}
+
+// groundingFacts builds the amount allow-list for grounding: catalog rows (price and qty x price),
+// KB answers, and the buyer's current cart (lines and their sum). cart may be nil.
+func groundingFacts(catalog []dbCatalogItem, kb []dbKBEntry, cart *orderState) salesbrain.Facts {
+	in := salesbrain.FactsInput{}
+	for i, c := range catalog {
+		in.Catalog = append(in.Catalog, salesbrain.CatalogFact{
+			No: i + 1, Name: c.Name, Price: int64(math.Round(c.SellPrice)), Code: c.ExternalCode,
+		})
+	}
+	for _, e := range kb {
+		cat := ""
+		if e.Category != nil {
+			cat = *e.Category
+		}
+		in.KB = append(in.KB, salesbrain.KBFact{Question: e.Question, Answer: e.Answer, Category: cat})
+	}
+	in.Cart, in.CartSubtotal = cartFactLines(cart)
+	return salesbrain.BuildFacts(in)
+}
+
+// cartFactLines turns the Redis cart into salesbrain order lines and their subtotal. A cart with
+// no Items keeps its single product in the flat fields.
+func cartFactLines(cart *orderState) ([]salesbrain.OrderLine, int64) {
+	if cart == nil {
+		return nil, 0
+	}
+	var lines []salesbrain.OrderLine
+	if len(cart.Items) > 0 {
+		for _, it := range cart.Items {
+			lines = append(lines, salesbrain.OrderLine{Name: it.ProductName, Qty: it.Qty, UnitPrice: int64(math.Round(it.UnitPrice))})
+		}
+	} else if strings.TrimSpace(cart.ProductName) != "" || cart.UnitPrice > 0 {
+		lines = append(lines, salesbrain.OrderLine{Name: cart.ProductName, Qty: cart.Qty, UnitPrice: int64(math.Round(cart.UnitPrice))})
+	}
+	var subtotal int64
+	for _, l := range lines {
+		subtotal += l.UnitPrice * int64(l.Qty)
+	}
+	return lines, subtotal
+}
+
 // groundLLMReply — validator + fallback catalog_db jika LLM halu harga/produk.
 // catalogFn may use vector hybrid matching when provided; defaults to lexical catalog_db.
+//
+// A reply that cannot be grounded is never replaced by a hard-coded Indonesian sentence: the
+// fallback is the KB payment answer (payment questions) or salesbrain.TplCheckWithTeam in the
+// buyer's language (lang; empty means Indonesian). reason is non-empty whenever grounded is true.
 func groundLLMReply(
 	reply string,
 	userText string,
+	lang salesbrain.Lang,
 	profile *dbBusinessProfile,
 	catalog []dbCatalogItem,
+	kb []dbKBEntry,
+	cart *orderState,
 	history []dbMessage,
 	catalogFn catalogReplyFunc,
 ) (final string, grounded bool, reason string) {
-	v := validateReplyAgainstCatalog(reply, catalog)
+	if lang == "" {
+		lang = salesbrain.LangID
+	}
+	v := validateReplyAgainstCatalog(reply, catalog, groundingFacts(catalog, kb, cart))
 	genericMiss := isGenericCatalogNotFound(reply)
 	if v.OK && !genericMiss {
 		return reply, false, ""
@@ -161,6 +233,9 @@ func groundLLMReply(
 	reason = v.Reason
 	if genericMiss {
 		reason = "generic_catalog_not_found"
+	}
+	if reason == "" {
+		reason = "ungrounded_reply"
 	}
 	if catalogFn == nil {
 		catalogFn = replyFromBusinessCatalog
@@ -188,7 +263,10 @@ func groundLLMReply(
 		}
 	}
 	if IsPaymentQuestion(userText) {
-		return "Maaf kak, info rekening pembayaran belum tersedia otomatis. Tim CS akan bantu ya 🙏", true, "payment_no_kb"
+		if ans, ok := tryPaymentFAQAnswer(userText, kb); ok && strings.TrimSpace(ans) != "" {
+			return ans, true, "payment_kb"
+		}
+		return salesbrain.T(salesbrain.TplCheckWithTeam, lang), true, "payment_no_kb"
 	}
-	return "Saya belum menemukan data tersebut di katalog saat ini.", true, reason
+	return salesbrain.T(salesbrain.TplCheckWithTeam, lang), true, reason
 }

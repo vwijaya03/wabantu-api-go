@@ -804,7 +804,8 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		route.Model = chatModel // record the model actually used (may be Gemini or a fallback)
 	}
 
-	groundedReply, wasGrounded, groundReason := groundLLMReply(reply, userText, profile, catalog, history,
+	groundedReply, wasGrounded, groundReason := groundLLMReply(reply, userText, buyerReplyLang(userText, contact),
+		profile, catalog, mergeKBEntries(kbEntries, kbHybrid), orderActiveNow, history,
 		func(ut string, p *dbBusinessProfile, c []dbCatalogItem, h []dbMessage) (string, bool) {
 			return s.replyFromBusinessCatalogHybrid(ctx, payload.TenantID, payload.TenantSchema, ut, ts, p, c, h)
 		})
@@ -828,6 +829,9 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		llmPath = PathLLMGrounded
 	}
 	out := metaFromRoute(reasonAIGenerated, llmPath, route)
+	if wasGrounded {
+		out.GroundReason = groundReason
+	}
 	out.LogAndRecord(ctx, convo.ID, payload.InboundMessageID, compUsage.InputTokens, compUsage.OutputTokens)
 	err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact, finalReply, "ai", payload.InboundMessageID, out)
 	if err != nil {

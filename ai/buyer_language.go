@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	bf "encore.app/wabantu/internal/buyerflow"
+	"encore.app/wabantu/internal/salesbrain"
 )
 
 func contactPreferredLanguage(c *dbContact) string {
@@ -14,6 +15,18 @@ func contactPreferredLanguage(c *dbContact) string {
 		return ""
 	}
 	return strings.TrimSpace(*c.PreferredLanguage)
+}
+
+// buyerReplyLang is the language fixed system text (templates) must use for this buyer this
+// turn. It is the legacy flow's ResolveBuyerLanguage (explicit request, clear message language,
+// saved preference) mapped to salesbrain.Lang; an unresolved language means Indonesian, the
+// tenant default. Canned text must always go through salesbrain.T with this value so an English
+// buyer never receives an Indonesian-only sentence.
+func buyerReplyLang(userText string, contact *dbContact) salesbrain.Lang {
+	if l := salesbrain.ParseLang(ResolveBuyerLanguage(userText, contactPreferredLanguage(contact))); l != "" {
+		return l
+	}
+	return salesbrain.LangID
 }
 
 func saveContactPreferredLanguage(ctx context.Context, ts tenantScopedQuerier, contactID, lang string) error {
