@@ -265,13 +265,13 @@ func ExtractSizeFromProductName(name string) string { return extractSizeFromProd
 // it are the sibling sizes of one product. Names without a size are returned trimmed.
 func ProductBaseName(name string) string {
 	trimmed := strings.TrimSpace(name)
-	if extractSizeFromProductName(trimmed) == "" {
-		return trimmed
+	if sz := extractSizeFromProductName(trimmed); sz != "" {
+		if weightSuffixRe.MatchString(trimmed) {
+			trimmed = strings.TrimSpace(weightSuffixRe.ReplaceAllString(trimmed, ""))
+		}
+		trimmed = strings.TrimSpace(productSizeSuffixRe.ReplaceAllString(trimmed, ""))
 	}
-	if weightSuffixRe.MatchString(trimmed) {
-		trimmed = strings.TrimSpace(weightSuffixRe.ReplaceAllString(trimmed, ""))
-	}
-	return strings.TrimSpace(productSizeSuffixRe.ReplaceAllString(trimmed, ""))
+	return strings.TrimSpace(stripColorSuffixFromProductName(trimmed))
 }
 
 // LineVariantComplete reports whether an order line has the size or colour its product needs.

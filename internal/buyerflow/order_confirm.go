@@ -44,7 +44,10 @@ var confirmPhrases = map[string]bool{
 const maxConfirmTokens = 8
 
 var shippingAmendIntentRe = regexp.MustCompile(`(?i)\b(ganti|ubah|salah)\s+(alamat|address)\b`)
-var shippingAmendPrefixRe = regexp.MustCompile(`(?i)^(?:ok\s+)?(?:tapi\s+)?(?:ganti|ubah|salah)\s+(?:alamat|address)\s*(?:ke|jadi|menjadi)?\s*`)
+var shippingAmendPrefixRes = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)^(?:ok\s+)?(?:tapi\s+)?(?:ganti|ubah|salah)\s+(?:alamat|address)\s*(?:ke|jadi|menjadi)?\s*`),
+	regexp.MustCompile(`(?i)^(?:ok\s+)?(?:tapi\s+)?alamatnya\s+(?:ganti|ubah|salah)\s+(?:jadi|menjadi|ke)\s*`),
+}
 
 // IsShippingAmendIntent reports that the buyer wants to change delivery details (with or without
 // the new address in the same message). Used at the confirm step before fail-closed re-prompt.
@@ -59,8 +62,10 @@ func IsShippingAmendIntent(text string) bool {
 // ShippingAmendBody strips a leading "ganti alamat ke …" prefix so the remainder can be parsed as address.
 func ShippingAmendBody(userText string) string {
 	t := strings.TrimSpace(userText)
-	if loc := shippingAmendPrefixRe.FindStringIndex(t); loc != nil {
-		return strings.TrimSpace(t[loc[1]:])
+	for _, re := range shippingAmendPrefixRes {
+		if loc := re.FindStringIndex(t); loc != nil {
+			return strings.TrimSpace(t[loc[1]:])
+		}
 	}
 	return t
 }

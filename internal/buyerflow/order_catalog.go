@@ -697,6 +697,16 @@ func normalizePhoneID(p string) string {
 	return p
 }
 
+// clearShippingAddress wipes street/city/postal fields so a buyer amend does not merge into stale data.
+func clearShippingAddress(st *OrderState) {
+	if st == nil {
+		return
+	}
+	st.Street, st.RT, st.RW = "", "", ""
+	st.Kelurahan, st.Kecamatan = "", ""
+	st.City, st.Province, st.PostalCode = "", "", ""
+}
+
 func mergeShippingText(st *OrderState, userText string) {
 	if st == nil {
 		return
@@ -805,6 +815,7 @@ var idCityHints = []struct {
 	{"jakarta barat", "Jakarta Barat", "DKI Jakarta"},
 	{"jakarta utara", "Jakarta Utara", "DKI Jakarta"},
 	{"surabaya", "Surabaya", "Jawa Timur"},
+	{"malang", "Malang", "Jawa Timur"},
 	{"bandung", "Bandung", "Jawa Barat"},
 	{"yogyakarta", "Yogyakarta", "DI Yogyakarta"},
 	{"semarang", "Semarang", "Jawa Tengah"},
