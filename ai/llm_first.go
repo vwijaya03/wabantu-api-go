@@ -182,7 +182,7 @@ func (s *AutoReplyService) runLLMFirst(ctx context.Context, t lfTurn) (bool, err
 		usage.RecordAITokens(ctx, tenantID, t.convo.ID, tokens)
 		_ = usage.RecordEvent(ctx, schema, "ai_token", tokens, nil)
 	}
-	lfRecordLLMFirstTokens(ctx, schema, t.convo.ID, lfPipeline, plan)
+	lfRecordLLMFirstTokens(ctx, t, "on", lfPipeline, plan)
 	if plan.Fallback {
 		rlog.Warn("llm_first fallback",
 			"convoId", t.convo.ID, "why", plan.FallbackWhy, "attempts", plan.Attempts,
@@ -277,9 +277,11 @@ func (s *AutoReplyService) lfHoldConfirm(ctx context.Context, t lfTurn, ld lfLoa
 
 // lfRecordLLMFirstTokens writes the ai_token_llm_first event of a turn (analytics only: it has no
 // plan quota). A failed write is logged, never returned.
-func lfRecordLLMFirstTokens(ctx context.Context, schema, convoID, pipeline string, plan turnPlan) {
-	err := llmFirstTokenSink(ctx, schema, usage.LLMFirstTokens{
-		Pipeline: pipeline, ConversationID: convoID, Provider: plan.Usage.Provider, Model: plan.Usage.Model,
+func lfRecordLLMFirstTokens(ctx context.Context, t lfTurn, mode, pipeline string, plan turnPlan) {
+	convoID := t.convo.ID
+	err := llmFirstTokenSink(ctx, t.payload.TenantSchema, usage.LLMFirstTokens{
+		Mode: mode, Pipeline: pipeline, TenantID: t.payload.TenantID, ConversationID: convoID,
+		InboundMessageID: t.payload.InboundMessageID, Provider: plan.Usage.Provider, Model: plan.Usage.Model,
 		Intent: string(plan.Decision.Intent), Fallback: plan.Fallback, Attempts: plan.Attempts,
 		InputTokens: int(plan.Usage.InputTokens), OutputTokens: int(plan.Usage.OutputTokens),
 		ThoughtsTokens: int(plan.Usage.ThoughtsTokens),
@@ -524,7 +526,7 @@ func (s *AutoReplyService) shadowLLMFirst(ctx context.Context, t lfTurn) {
 	plan := planTurn(ctx, in, llmFirstChatFor(t.payload.TenantID))
 
 	if tokens := lfTokens(plan); tokens > 0 {
-		lfRecordLLMFirstTokens(ctx, t.payload.TenantSchema, t.convo.ID, lfShadowPurpose, plan)
+		lfRecordLLMFirstTokens(ctx, t, "shadow", lfShadowPurpose, plan)
 		meta := AiReplyMeta{
 			Reason: reasonAIGenerated, Path: PathLLMFirst, Model: plan.Usage.Model, LLMUsed: true,
 			Pipeline: lfPipeline, Intent: string(plan.Decision.Intent), Lang: string(plan.Lang), Attempts: plan.Attempts,

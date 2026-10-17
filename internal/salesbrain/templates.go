@@ -31,6 +31,7 @@ const (
 	TplConfirmHold         TemplateKey = "confirm_hold"         // no args; lead-in when the confirm step is held (fail-closed)
 	TplResumeVariant       TemplateKey = "resume_variant"       // no args
 	TplAskVariant          TemplateKey = "ask_variant"          // %[1]s product name
+	TplAskVariantOptions   TemplateKey = "ask_variant_options"  // %[1]s product name, %[2]s variants in stock (sizes and/or colours)
 	TplAskVariantChoices   TemplateKey = "ask_variant_choices"  // %[1]s product name, %[2]s sizes in stock
 	TplVariantNotFound     TemplateKey = "variant_not_found"    // %[1]s product name, %[2]s sizes in stock
 	TplColorNotFound       TemplateKey = "color_not_found"      // %[1]s product name, %[2]s colours sold
@@ -123,6 +124,10 @@ var templates = map[TemplateKey]map[Lang]string{
 	TplAskVariant: {
 		LangID: "Untuk %[1]s, Kakak mau ukuran atau warna apa?",
 		LangEN: "Which size or color would you like for %[1]s?",
+	},
+	TplAskVariantOptions: {
+		LangID: "Untuk %[1]s, pilihan yang tersedia: %[2]s. Kakak mau yang mana?",
+		LangEN: "For %[1]s the available options are: %[2]s. Which one would you like?",
 	},
 	TplAskVariantChoices: {
 		LangID: "%[1]s ada dalam ukuran: %[2]s. Kakak mau yang mana?",
