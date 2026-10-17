@@ -59,6 +59,7 @@ type CatalogItem struct {
 	Name             string
 	SellPrice        float64
 	SellUnit         string
+	Description      string // business_catalog_item.description; reaches the LLM catalog context, tools and search
 	StockTracked     bool
 	StockAvailable   float64
 	StockByWarehouse []CatalogStockLine

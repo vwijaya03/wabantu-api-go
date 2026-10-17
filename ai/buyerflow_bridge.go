@@ -169,6 +169,7 @@ var (
 	IsSoftCancelRegret                     = bf.IsSoftCancelRegret
 	IsStoreLocationQuestion                = bf.IsStoreLocationQuestion
 	IsStructuredOrderList                  = bf.IsStructuredOrderList
+	MergeOrderLines                        = bf.MergeOrderLines
 	IsThirdPartyBuyerLookup                = bf.IsThirdPartyBuyerLookup
 	IsUserSalesCorrection                  = bf.IsUserSalesCorrection
 	IsWithinBusinessScope                  = bf.IsWithinBusinessScope

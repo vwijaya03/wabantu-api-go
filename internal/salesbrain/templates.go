@@ -24,6 +24,7 @@ const (
 	TplOrderCancelled   TemplateKey = "order_cancelled"    // %[1]s order ref
 	TplCancelPaidOrder  TemplateKey = "cancel_paid_order"  // %[1]s order ref, %[2]s shop name
 	TplNewOrderParked   TemplateKey = "new_order_parked"   // %[1]s order ref
+	TplCheckWithTeam    TemplateKey = "check_with_team"    // no args
 )
 
 var templates = map[TemplateKey]map[Lang]string{
@@ -82,6 +83,10 @@ var templates = map[TemplateKey]map[Lang]string{
 	TplNewOrderParked: {
 		LangID: "Siap Kak, pesanan %[1]s tetap tersimpan; bilang saja kalau mau dilanjutkan atau dibatalkan. Mau pesan apa?",
 		LangEN: "Sure, order %[1]s stays saved; just tell me if you want to continue or cancel it. What would you like to order?",
+	},
+	TplCheckWithTeam: {
+		LangID: "Sebentar ya Kak, aku cek dulu ke tim toko dan kabari di chat ini.",
+		LangEN: "Let me double-check that with the shop team and get back to you here.",
 	},
 }
 
