@@ -524,14 +524,16 @@ func TestLLMFirstTokensAreRecordedSeparatelyLiveAndShadow(t *testing.T) {
 	}
 	ev := (*got)[0]
 	if ev.Pipeline != "llm_first" || ev.Provider != "gemini" || ev.Model != "gemini-3.1-flash-lite" || ev.Intent != "question" || ev.Fallback ||
-		ev.InputTokens != 1000 || ev.OutputTokens != 100 || ev.ThoughtsTokens != 20 || ev.ConversationID != lfFlowConvo {
+		ev.InputTokens != 1000 || ev.OutputTokens != 100 || ev.ThoughtsTokens != 20 || ev.ConversationID != lfFlowConvo ||
+		ev.Mode != "on" || ev.TenantID != lfFlowTenant || ev.InboundMessageID != "in-1" {
 		t.Fatalf("live event = %+v", ev)
 	}
 
 	*got = nil
 	f = newLFFlow(t, text, &dbContact{ID: "k1", PreferredLanguage: strp("en")}, lfFlowLoaded(text), lfUsageChat(reply))
 	f.s.shadowLLMFirst(context.Background(), f.turn)
-	if len(*got) != 1 || (*got)[0].Pipeline != lfShadowPurpose || (*got)[0].InputTokens != 1000 {
+	if len(*got) != 1 || (*got)[0].Pipeline != lfShadowPurpose || (*got)[0].InputTokens != 1000 ||
+		(*got)[0].Mode != "shadow" || (*got)[0].TenantID != lfFlowTenant || (*got)[0].InboundMessageID != "in-1" {
 		t.Fatalf("shadow: want one llm_first_shadow event, got %+v", *got)
 	}
 	if len(f.sent) != 0 || len(f.events) != 0 {

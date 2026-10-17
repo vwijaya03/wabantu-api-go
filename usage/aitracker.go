@@ -102,16 +102,39 @@ const EventAITokenLLMFirst = "ai_token_llm_first"
 
 // LLMFirstTokens describes one LLM-first turn for the ai_token_llm_first event.
 type LLMFirstTokens struct {
-	Pipeline       string `json:"pipeline"` // "llm_first" (live) or "llm_first_shadow"
-	ConversationID string `json:"conversationId,omitempty"`
-	Provider       string `json:"provider,omitempty"`
-	Model          string `json:"model,omitempty"`
-	Intent         string `json:"intent,omitempty"`
-	Fallback       bool   `json:"fallback"`
-	Attempts       int    `json:"attempts,omitempty"`
-	InputTokens    int    `json:"inputTokens"`
-	OutputTokens   int    `json:"outputTokens"`
-	ThoughtsTokens int    `json:"thoughtsTokens"`
+	Mode             string `json:"mode,omitempty"`     // "on" (live) or "shadow"
+	Pipeline         string `json:"pipeline"`           // "llm_first" (live) or "llm_first_shadow"
+	TenantID         string `json:"tenantId,omitempty"` // the event lives in the tenant schema; kept for exports
+	ConversationID   string `json:"conversationId,omitempty"`
+	InboundMessageID string `json:"inboundMessageId,omitempty"`
+	Provider         string `json:"provider,omitempty"`
+	Model            string `json:"model,omitempty"`
+	Intent           string `json:"intent,omitempty"`
+	Fallback         bool   `json:"fallback"`
+	Attempts         int    `json:"attempts,omitempty"`
+	InputTokens      int    `json:"inputTokens"`
+	OutputTokens     int    `json:"outputTokens"`
+	ThoughtsTokens   int    `json:"thoughtsTokens"`
+	// Filled by RecordLLMFirstTokens from pricingTable (never set by callers): thinking is billed as output.
+	EstimatedCostUSD *float64 `json:"estimatedCostUsd,omitempty"` // absent when the price is unknown
+	CostKnown        bool     `json:"costKnown"`
+	CostNote         string   `json:"costNote,omitempty"` // "harga belum diketahui" when CostKnown is false
+}
+
+// CostUnknownNote is what the dashboards and the event metadata say for a model without a price.
+const CostUnknownNote = "harga belum diketahui"
+
+// llmFirstEventMeta is the metadata JSON of the event, with the cost estimate. A model without a
+// price gets costKnown=false and a note instead of a 0 that would read as "free".
+func llmFirstEventMeta(t LLMFirstTokens) ([]byte, error) {
+	cost, known := EstimateTokenCostKnown(t.Model, t.InputTokens, t.OutputTokens+t.ThoughtsTokens)
+	t.CostKnown = known
+	if known {
+		t.EstimatedCostUSD, t.CostNote = &cost, ""
+	} else {
+		t.EstimatedCostUSD, t.CostNote = nil, CostUnknownNote
+	}
+	return json.Marshal(t)
 }
 
 // RecordLLMFirstTokens writes one ai_token_llm_first event (quantity = input + output + thinking)
@@ -121,7 +144,7 @@ func RecordLLMFirstTokens(ctx context.Context, tenantSchema string, t LLMFirstTo
 	if total <= 0 {
 		return nil
 	}
-	meta, err := json.Marshal(t)
+	meta, err := llmFirstEventMeta(t)
 	if err != nil {
 		return err
 	}
