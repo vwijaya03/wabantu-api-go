@@ -373,11 +373,9 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		}
 	}
 
-	if IsCartLineCorrectionIntent(userText) || IsOrderAmendMessage(userText) {
-		return s.handleOrderAmend(ctx, ts, payload, convo, channel, contact, userText, profile, history)
-	}
-
-	if IsOrderCancelRequest(userText) && !IsCartLineCorrectionIntent(userText) && !IsNegatedFullOrderCancel(userText) {
+	// Whole-order cancel is decided BEFORE amend: "cancel my previous order" / "batalkan pesanan" must
+	// not fall into the amend flow (which used to re-add lines from the chat history).
+	if isWholeOrderCancelText(userText) {
 		orderSt, _ := s.getOrderState(ctx, payload.TenantID, convo.ID)
 		if orderSt != nil && strings.TrimSpace(orderSt.PersistedOrderID) != "" {
 			scope := orderAccessScope{ConversationID: convo.ID, ContactID: contact.ID}
@@ -408,6 +406,10 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		err = s.sendAiMessage(ctx, ts, payload.TenantID, convo, channel, contact,
 			orderNoneToCancelReply(userText), "system", payload.InboundMessageID, out)
 		return err == nil, err
+	}
+
+	if IsCartLineCorrectionIntent(userText) || IsOrderAmendMessage(userText) {
+		return s.handleOrderAmend(ctx, ts, payload, convo, channel, contact, userText, profile, history)
 	}
 	if IsThirdPartyBuyerLookup(userText) {
 		return s.handleThirdPartyBuyerLookupDenied(ctx, ts, payload, convo, channel, contact)
