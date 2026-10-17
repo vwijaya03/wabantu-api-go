@@ -602,7 +602,7 @@ func advanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 		}
 		mergeShippingText(&st, userText)
 		if !st.ShippingComplete() {
-			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: tmpl.ClarifyAddress}
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: addressMissingReply(st, tmpl)}
 		}
 		if st.ReconfirmAfterShipping {
 			st.ReconfirmAfterShipping = false
