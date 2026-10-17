@@ -131,6 +131,7 @@ Plan codes: `starter`, `business`, `pro` (+ alias `basic` → business, tidak di
 | Workflow | `GET/POST/PATCH/DELETE /api/v1/workflows` | `/dashboard/workflow` |
 | Usage AI activity | `GET /api/v1/usage/ai-activity`, `GET /api/v1/usage/ai-activity/summary` | super_admin saat impersonate tenant |
 | Admin AI activity | `GET /api/v1/admin/tenant/:id/ai-activity`, `.../summary` | super_admin — `/dashboard/admin/ai-activity` |
+| Admin LLM-first usage | `GET /api/v1/admin/ai/llm-first/usage?tenantId=&days=` | super_admin (token admin); baca-saja, token dan biaya per hari/model — `docs/LLM_FIRST_PIPELINE.md` §5.2 |
 | Admin | `/api/v1/admin/*` | `/dashboard/admin` — tenant search/pagination, impersonate, plan override, delete tenant |
 | Shipping | `/api/v1/shipping/*` | (API client ada; UI minimal) |
 | Analytics | `/api/v1/analytics/overview` | `/dashboard/analytics` |
