@@ -162,3 +162,68 @@ func TestIncidentConfirmOutsideConfirmStepResumesPendingField(t *testing.T) {
 		t.Fatalf("outcome = %+v", out)
 	}
 }
+
+// 00:19:19 raw output: payment instructions with no address and no confirmation.
+func TestIncidentPrematurePaymentIsRejectedAndRetried(t *testing.T) {
+	in := lfPlanBase(lfIncidentRecipientText)
+	in.State.Cart = []salesbrain.OrderLine{lfTunaLine()}
+	in.State.PendingField = "recipient"
+	bad := `{"intent":"field_answer","fields":{"name":"Anastasi","phone":"081222000111"},"reply":"Thank you, Anastasi! Your order is now ready for payment; please transfer the total of Rp350.000 to BCA 000111222 / Mandiri 333111222 / BNI 555111222 and send payment proof."}`
+	good := `{"intent":"field_answer","fields":{"name":"Anastasi","phone":"081222000111"},"reply":"Thank you, Anastasi!"}`
+	fake := lfTexts(bad, good)
+
+	plan := planTurn(context.Background(), in, fake.chat)
+
+	if plan.Fallback || plan.Attempts != 2 {
+		t.Fatalf("want a retry that succeeds, got fallback=%v attempts=%d violations=%+v", plan.Fallback, plan.Attempts, plan.Violations)
+	}
+	if !strings.Contains(fake.userOf(1), "Pesanan belum dikonfirmasi") {
+		t.Fatalf("retry must carry the premature_payment note:\n%s", fake.userOf(1))
+	}
+	if strings.Contains(plan.Reply, "transfer") {
+		t.Fatalf("payment instructions must not be sent: %q", plan.Reply)
+	}
+}
+
+func TestIncidentPrematurePaymentPhrasesTwice(t *testing.T) {
+	in := lfPlanBase(lfIncidentAddressText)
+	in.State.Cart = []salesbrain.OrderLine{lfTunaLine()}
+	in.State.PendingField = "address"
+	bad := `{"intent":"field_answer","reply":"I have successfully updated your delivery address. Please proceed with the payment."}`
+	plan := planTurn(context.Background(), in, lfTexts(bad, bad).chat)
+	if !plan.Fallback || len(plan.Violations) == 0 || plan.Violations[0].Code != salesbrain.VPrematurePayment {
+		t.Fatalf("want fallback on premature_payment, got %+v", plan)
+	}
+}
+
+// A buyer who asks how to pay is still answered with the payment details.
+func TestIncidentBuyerAskingHowToPayIsAnswered(t *testing.T) {
+	for _, msg := range []string{"how do I pay?", "ke rekening mana transfernya?", "Do you accept QRIS?"} {
+		in := lfPlanBase(msg)
+		in.State.Cart = []salesbrain.OrderLine{lfTunaLine()}
+		in.State.PendingField = "recipient"
+		fake := lfTexts(`{"intent":"question","reply":"You can pay by bank transfer to BCA 000111222 (Omah Apparel) or QRIS."}`)
+		plan := planTurn(context.Background(), in, fake.chat)
+		if plan.Fallback || plan.Attempts != 1 || !strings.Contains(plan.Reply, "000111222") {
+			t.Fatalf("%q must be answered: fallback=%v attempts=%d violations=%+v", msg, plan.Fallback, plan.Attempts, plan.Violations)
+		}
+	}
+}
+
+// The confirm reply at the confirm step may mention payment; an order awaiting payment too.
+func TestPrematurePaymentAllowedAtConfirmAndForOpenPaymentOrder(t *testing.T) {
+	in := lfPlanBase("OK")
+	in.State.Cart = []salesbrain.OrderLine{lfTunaLine()}
+	in.State.PendingField = "confirm"
+	fake := lfTexts(`{"intent":"confirm","reply":"Thanks! Please transfer Rp350.000 to BCA 000111222 and send the payment proof."}`)
+	if plan := planTurn(context.Background(), in, fake.chat); plan.Fallback || plan.Attempts != 1 {
+		t.Fatalf("confirm at the confirm step may speak of payment: %+v", plan.Violations)
+	}
+
+	in = lfPlanBase("ok thanks")
+	in.State.OpenOrders = []salesbrain.OrderSnapshot{{Ref: "WB-AAAA1111", Status: salesbrain.StatusAwaitingPayment, Stage: salesbrain.StagePayment, Subtotal: 350000}}
+	fake = lfTexts(`{"intent":"other","reply":"Your order WB-AAAA1111 is waiting for the transfer; send the payment proof when done."}`)
+	if plan := planTurn(context.Background(), in, fake.chat); plan.Fallback || plan.Attempts != 1 {
+		t.Fatalf("an order awaiting payment may be discussed: %+v", plan.Violations)
+	}
+}

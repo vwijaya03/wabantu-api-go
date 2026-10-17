@@ -103,3 +103,11 @@ func TestBuildPromptDocumentsFieldsContract(t *testing.T) {
 		}
 	}
 }
+
+func TestPersonaForbidsPaymentInstructionsBeforeConfirmedOrder(t *testing.T) {
+	system, _ := BuildPrompt(PromptInput{Profile: ProfileFact{Name: "Omah"}})
+	want := "Jangan memberi instruksi pembayaran atau bilang pesanan siap dibayar sebelum STATE menunjukkan pesanan sudah dikonfirmasi"
+	if !strings.Contains(system, want) {
+		t.Fatalf("persona lacks the payment guardrail")
+	}
+}
