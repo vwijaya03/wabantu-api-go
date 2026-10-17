@@ -197,8 +197,8 @@ func TestPlanVariantMustBeGroundedInTheBuyerText(t *testing.T) {
 		t.Fatalf("invented variant accepted: %+v", plan.Cart)
 	}
 
-	// The same ask answered in the next message: the size comes from the earlier bubble too.
-	in = lfVariantPlanBase("warna hitam", "ukuran M")
+	// Follow-up: variant is grounded only from this turn's text (not an earlier "ukuran M" alone).
+	in = lfVariantPlanBase("ukuran M warna hitam", "ukuran M")
 	in.Lang = salesbrain.LanguageDecision{Lang: salesbrain.LangID}
 	in.State.Cart = plan.Cart
 	in.State.PendingField = "variant"

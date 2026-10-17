@@ -114,10 +114,25 @@ func TestResolveGenericVariantMustBeGroundedInBuyerText(t *testing.T) {
 	}
 }
 
-func TestResolveSizeFromAnEarlierBuyerMessageCounts(t *testing.T) {
-	// The size arrived in the previous bubble, the order in this one.
-	res := resolve(nil, []ItemOp{{No: 4, Qty: 1, Size: "L", Color: "putih"}}, "kaos satu aja", "ukuran L warna putih")
-	if len(res.Issues) != 0 || len(res.Cart) != 1 || res.Cart[0].Size != "L" || res.Cart[0].Color != "putih" {
+func TestResolveVariantGroundsOnlyFromVariantTexts(t *testing.T) {
+	// A house number in an earlier address must not become a size on this turn.
+	res := ResolveCartOps(ResolveInput{
+		Cart: nil, Ops: []ItemOp{{No: 4, Qty: 1, Size: "42"}},
+		Catalog: variantFacts(),
+		BuyerTexts:   []string{"kaos satu", "Jl. Melati No 42 Surabaya"},
+		VariantTexts: []string{"kaos satu"},
+	})
+	if len(res.Cart) != 1 || res.Cart[0].Size != "" || !res.Cart[0].VariantMissing {
+		t.Fatalf("size 42 from address must not apply: %+v", res.Cart)
+	}
+	// Same turn text still grounds the variant.
+	res = ResolveCartOps(ResolveInput{
+		Cart: nil, Ops: []ItemOp{{No: 4, Qty: 1, Size: "L", Color: "putih"}},
+		Catalog: variantFacts(),
+		BuyerTexts:   []string{"ukuran L warna putih"},
+		VariantTexts: []string{"ukuran L warna putih"},
+	})
+	if len(res.Issues) != 0 || res.Cart[0].Size != "L" || res.Cart[0].Color != "putih" {
 		t.Fatalf("got %+v", res)
 	}
 }
@@ -187,7 +202,7 @@ func TestResolveStockLimit(t *testing.T) {
 	if len(res.Cart) != 0 || len(res.Issues) != 1 || res.Issues[0].Kind != IssueStockLimit || res.Issues[0].Available != 3 {
 		t.Fatalf("got %+v", res)
 	}
-	if got := RenderIssue(res.Issues[0], LangEN); !strings.Contains(got, "only 3 of Boxer Pria Mono - M left") {
+	if got := RenderIssue(res.Issues[0], LangEN); !strings.Contains(got, "only 3 of Boxer Pria Mono left") {
 		t.Fatalf("got %q", got)
 	}
 	// Raising an existing line past the stock is refused too, and the line stays as it was.
@@ -199,6 +214,30 @@ func TestResolveStockLimit(t *testing.T) {
 	// Lowering is always fine.
 	res = resolve(cart, []ItemOp{{No: 2, Qty: 1}}, "boxer M jadi 1")
 	if !res.Changed || res.Cart[0].Qty != 1 || len(res.Issues) != 0 {
+		t.Fatalf("got %+v", res)
+	}
+}
+
+func TestResolveStockPooledAcrossVariantLines(t *testing.T) {
+	catalog := []CatalogFact{
+		{No: 1, ID: "kaos", Name: "Kaos Polos Premium", BaseName: "Kaos Polos Premium", NeedsVariant: true, Price: 89000, Stock: StockIn, StockQty: 4},
+	}
+	cart := []OrderLine{{ID: "kaos", Name: "Kaos Polos Premium", Qty: 3, UnitPrice: 89000, Size: "M", Color: "hitam"}}
+	res := ResolveCartOps(ResolveInput{
+		Cart: cart, Ops: []ItemOp{{No: 1, Qty: 3, Size: "L", Color: "putih"}},
+		Catalog: catalog, BuyerTexts: []string{"3 L putih"}, VariantTexts: []string{"3 L putih"},
+	})
+	if res.Changed || len(res.Issues) != 1 || res.Issues[0].Kind != IssueStockLimit || res.Issues[0].Available != 1 {
+		t.Fatalf("3+3 must exceed pool stock 4: %+v", res)
+	}
+}
+
+func TestResolveRejectsUnknownColor(t *testing.T) {
+	res := ResolveCartOps(ResolveInput{
+		Cart: nil, Ops: []ItemOp{{No: 4, Qty: 1, Size: "M", Color: "ungu neon"}},
+		Catalog: variantFacts(), BuyerTexts: []string{"M ungu neon"}, VariantTexts: []string{"M ungu neon"},
+	})
+	if len(res.Cart) != 0 || len(res.Issues) != 1 || res.Issues[0].Kind != IssueVariantUnknown {
 		t.Fatalf("got %+v", res)
 	}
 }

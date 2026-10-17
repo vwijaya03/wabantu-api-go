@@ -509,6 +509,18 @@ func advanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 			st.Step = "ask_address_full"
 			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: tmpl.AskAddressFull}
 		}
+		if handled, reply := tryCheckoutCartEdits(&st, userText, catalog, tmpl, formal); handled {
+			st.Step = "confirm"
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
+		}
+		if handled, reply := TryAppendItemsDuringCheckout(&st, userText, catalog, tmpl, formal, in.VectorCtx); handled {
+			st.Step = "confirm"
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
+		}
+		if !namesOtherCheckoutSKU(st, userText, catalog) && tryApplyQtyRevision(&st, userText) {
+			st.Step = "confirm"
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: orderReconfirmReply(st, userText)}
+		}
 		if !IsExplicitOrderConfirm(userText) {
 			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: orderReconfirmReply(st, userText)}
 		}

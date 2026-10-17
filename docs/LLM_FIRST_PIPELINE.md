@@ -55,7 +55,8 @@ Model hanya mengusulkan `items: [{no, qty, size, color}]`. Kode (`salesbrain.Res
 | Situasi | Perilaku |
 |---------|----------|
 | Satu produk, beberapa ukuran/warna | Satu baris per varian. Mengubah jumlah satu varian tidak menyentuh varian lain; jumlah 0 tanpa ukuran menghapus semua varian produk itu; jumlah baru tanpa ukuran ketika ada dua varian atau lebih ditanyakan balik (tidak ada yang berubah). |
-| `size`/`color` dari model | Dipakai **hanya bila kata itu muncul utuh di pesan pembeli** (pesan sekarang dan tiga pesan pembeli sebelumnya), seperti `applyFieldAnswer`. Nilai yang tidak diketik pembeli diabaikan. |
+| `size`/`color` dari model | Dipakai **hanya bila kata itu muncul utuh di pesan pembeli saat ini** (bukan riwayat alamat/nomor rumah), seperti `applyFieldAnswer`. Warna harus kata warna yang dikenal atau muncul di katalog produk itu; nilai yang tidak diketik pembeli diabaikan. |
+| Stok per produk | Jumlah semua baris keranjang dengan `catalog_item_id` yang sama dibandingkan ke `StockQty` baris itu; melebihi → `TplStockLimit`, bukan gagal simpan diam-diam. |
 | Ukuran yang disebut pembeli beda dengan baris yang dipilih model | Dipindah ke baris saudara dengan ukuran itu (harga baris itu). Ukuran yang tidak ada: balasan template `TplVariantNotFound` dengan pilihan yang ada. |
 | Baris berukuran dengan saudara, tapi pembeli tidak menyebut ukuran | Tidak ditambahkan; template `TplAskVariantChoices` menyebut ukuran yang masih ada stoknya. |
 | Produk yang butuh ukuran/warna, belum disebut | Baris tetap masuk keranjang dengan jumlahnya (`VariantMissing`), langkah menjadi `ask_variant`, pembeli ditanya **sekali** (`TplAskVariant`). Draft awal dan langkah penerima/alamat/konfirmasi menunggu sampai varian terisi; jawabannya mengisi baris yang sama (bukan baris baru) dan checkout lanjut dari data yang sudah terkumpul (alamat tidak ditanya ulang). |

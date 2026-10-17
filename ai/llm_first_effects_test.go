@@ -281,6 +281,29 @@ func TestLLMFirstApplyFieldAnswerWithoutCheckoutStateWritesNothing(t *testing.T)
 
 // ── confirm ──────────────────────────────────────────────────────────────────
 
+func TestLLMFirstApplyConfirmRequiresExplicitBuyerText(t *testing.T) {
+	fx := &lfFakeFX{persistID: "draft-should-not-save"}
+	st := lfConfirmState()
+	d := salesbrain.Decision{Intent: salesbrain.IntentConfirm, Reply: "Pesanan Kakak sudah kami proses ya."}
+	plan := lfTestPlan(d, salesbrain.LangID, cartFromState(st), false, "confirm")
+	in := lfApplyBase(plan, st)
+	in.UserText = "ok tapi ganti alamat"
+
+	out, err := lfApplyIntent(context.Background(), fx, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fx.did("persist") != 0 {
+		t.Fatalf("non-explicit confirm must not persist: %v", fx.calls)
+	}
+	if out.ReplacedReason != lfReplacedNotExplicitConfirm || out.Author != "system" {
+		t.Fatalf("outcome = %+v", out)
+	}
+	if !strings.Contains(out.Reply, "OK") || !strings.Contains(out.Reply, "Yellow Tail Tuna") {
+		t.Fatalf("must re-show confirm block, got %q", out.Reply)
+	}
+}
+
 func TestLLMFirstApplyConfirmPersistsAndAppendsOrderRef(t *testing.T) {
 	fx := &lfFakeFX{persistID: "f4bfce06-1111-2222-3333-444455556666"}
 	st := lfConfirmState()

@@ -139,8 +139,10 @@ func planTurn(ctx context.Context, in planInput, chat chatFunc) turnPlan {
 
 		nextCart, nextChanged, nextUnknown, nextIssues := in.State.Cart, false, []int(nil), []salesbrain.OpIssue(nil)
 		if d.Intent == salesbrain.IntentOrder || d.Intent == salesbrain.IntentAmend {
+			msg := strings.TrimSpace(in.Message)
 			res := salesbrain.ResolveCartOps(salesbrain.ResolveInput{
 				Cart: in.State.Cart, Ops: d.Items, Catalog: in.Catalog, BuyerTexts: in.BuyerTexts,
+				VariantTexts: []string{msg},
 			})
 			nextCart, nextChanged, nextUnknown, nextIssues = res.Cart, res.Changed, res.Unknown, res.Issues
 		}

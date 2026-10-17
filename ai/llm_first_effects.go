@@ -80,7 +80,8 @@ const (
 	lfReplacedCancel         = "cancel_template"
 	lfReplacedCancelPaid     = "cancel_paid_template"
 	lfReplacedPersistFailed  = "order_persist_failed"
-	lfReplacedVariantMissing = "variant_missing"
+	lfReplacedVariantMissing  = "variant_missing"
+	lfReplacedNotExplicitConfirm = "confirm_not_explicit"
 )
 
 // lfApplyIntent applies the accepted decision of a turn. An error means a write that must be
@@ -260,6 +261,14 @@ func lfApplyConfirm(ctx context.Context, fx lfFX, in lfApplyIn, out *lfOutcome) 
 		out.Reply = salesbrain.T(salesbrain.TplAskVariant, p.Lang, lfFirstMissingVariantName(&next))
 		out.Author = "system"
 		out.ReplacedReason = lfReplacedVariantMissing
+		return
+	}
+
+	if !bf.IsExplicitOrderConfirm(in.UserText) {
+		// The model may classify "ok tapi ganti alamat" as confirm; only the buyer's words count.
+		out.Reply = lfConfirmBlock(st, p.Lang)
+		out.Author = "system"
+		out.ReplacedReason = lfReplacedNotExplicitConfirm
 		return
 	}
 
