@@ -90,3 +90,15 @@ func TestViolationNote(t *testing.T) {
 		t.Fatal("note must describe violations")
 	}
 }
+
+func TestValidateAllowsDigitOnlyOrderRefsAndDates(t *testing.T) {
+	f := BuildFacts(FactsInput{OpenOrders: []OrderSnapshot{{Ref: "WB-12345678", Status: StatusDraft, Subtotal: 75000}}})
+	d := Decision{Reply: "Your order WB-12345678 from 17-10-2026 is Rp75.000, shipping not included."}
+	if vs := Validate(d, f, LangEN); len(vs) != 0 {
+		t.Fatalf("digit-only order ref and dates must be allowed, got %+v", vs)
+	}
+	bad := Decision{Reply: "Please transfer to 1234-5678-90."}
+	if vs := Validate(bad, f, LangEN); len(vs) == 0 || vs[0].Code != VNumber {
+		t.Fatalf("an invented account number must still be rejected, got %+v", vs)
+	}
+}

@@ -94,6 +94,10 @@ func BuildFacts(in FactsInput) Facts {
 		if o.Subtotal > 0 {
 			f.Amounts[o.Subtotal] = true
 		}
+		// Order refs like "WB-12345678" can be all digits; quoting them is grounded.
+		for _, n := range extractLongNumbers(o.Ref) {
+			f.Numbers[n] = true
+		}
 	}
 	for _, k := range in.KB {
 		for _, a := range extractAmounts(k.Answer) {
@@ -209,9 +213,14 @@ func parseRupiahDigits(s string) (int64, bool) {
 	return v, err == nil
 }
 
+var dateLikeRe = regexp.MustCompile(`^(\d{1,2}-\d{1,2}-\d{2,4}|\d{4}-\d{1,2}-\d{1,2})$`)
+
 func extractLongNumbers(s string) []string {
 	var out []string
 	for _, m := range longNumberRe.FindAllString(s, -1) {
+		if dateLikeRe.MatchString(strings.TrimSpace(m)) {
+			continue // dates such as 17-10-2026 are not account or phone numbers
+		}
 		var b strings.Builder
 		for _, r := range m {
 			if r >= '0' && r <= '9' {
