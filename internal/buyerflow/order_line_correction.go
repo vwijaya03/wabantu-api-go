@@ -1,8 +1,12 @@
 package buyerflow
 
 import (
+	"regexp"
 	"strings"
 )
+
+// orderRemoveWordRe — line-removal verbs ("remove the salmon", "hapus abon sapi").
+var orderRemoveWordRe = regexp.MustCompile(`(?i)\b(remove|delete|hapus)\b`)
 
 // IsNegatedFullOrderCancel — "bukan batal semua", bukan perintah batal.
 func IsNegatedFullOrderCancel(userText string) bool {
@@ -58,6 +62,9 @@ func IsCartLineCorrectionIntent(userText string) bool {
 // lineCancelWithSKURemainder — batal/batalkan/cancel/dibatalkan + sisa teks SKU (bukan batal order kosong).
 func lineCancelWithSKURemainder(text string) bool {
 	if strings.Contains(text, "dibatalkan") || strings.Contains(text, "dibatalin") {
+		return skuCancelRemainder(text)
+	}
+	if orderRemoveWordRe.MatchString(text) {
 		return skuCancelRemainder(text)
 	}
 	return orderCancelWordRe.MatchString(text) && skuCancelRemainder(text)
