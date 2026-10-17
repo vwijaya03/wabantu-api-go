@@ -556,7 +556,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	)
 
 	// ── Order flow — prioritas sebelum katalog statis ─────────────────────
-	if inScope && !isStructuredOrderCheckoutBreak(userText) &&
+	if inScope && !structuredListBreaksCheckout(userText, orderActiveNow) &&
 		(classifier.Label == "order_intent" || IsStructuredOrderList(userText) ||
 			isHistoryBackedPurchaseIntent(userText, history, catalog)) {
 		sent, oErr := s.handleOrderFlow(ctx, ts, payload.TenantSchema, payload.TenantID, convo, channel, contact,
@@ -672,7 +672,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	}
 
 	// ── Handle: order intent state machine ───────────────────────────────
-	if !isStructuredOrderCheckoutBreak(userText) &&
+	if !structuredListBreaksCheckout(userText, orderActiveNow) &&
 		(classifier.Label == "order_intent" || (IsOrderContinuationMessage(userText) && hasOrderIntentText(userText))) {
 		sent, oErr := s.handleOrderFlow(ctx, ts, payload.TenantSchema, payload.TenantID, convo, channel, contact,
 			userText, profile, kbEntries, history, payload.InboundMessageID)
@@ -680,7 +680,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	}
 	if inScope && (IsOrderRevisionMessage(userText) ||
 		(mentionsOrderQty(userText) && IsActiveCheckoutFromHistory(history, userText) &&
-			!isStructuredOrderCheckoutBreak(userText))) {
+			!structuredListBreaksCheckout(userText, orderActiveNow))) {
 		sent, oErr := s.handleOrderFlow(ctx, ts, payload.TenantSchema, payload.TenantID, convo, channel, contact,
 			userText, profile, kbEntries, history, payload.InboundMessageID)
 		return sent, oErr
@@ -1070,8 +1070,21 @@ func (s *AutoReplyService) handleCustomerOrderStatus(
 }
 
 // isStructuredOrderCheckoutBreak — multi-line order pasted mid-checkout (bukan append lalu/tambah/nambah).
+// It looks at the text only; use structuredListBreaksCheckout wherever a cart may not exist.
 func isStructuredOrderCheckoutBreak(userText string) bool {
 	return bf.IsStructuredOrderCheckoutBreak(userText)
+}
+
+// structuredListBreaksCheckout: a pasted multi-line order is a "break" only of a checkout that
+// exists. With no cart it is a new order and has to reach the order flow; the text-only
+// isStructuredOrderCheckoutBreak used to skip the order flow gates even then.
+func structuredListBreaksCheckout(text string, st *orderState) bool {
+	return orderStateHasItems(st) && isStructuredOrderCheckoutBreak(text)
+}
+
+// orderStateHasItems: the cart holds at least one product (Items, or the single-product fields).
+func orderStateHasItems(st *orderState) bool {
+	return st != nil && (len(st.Items) > 0 || strings.TrimSpace(st.ProductName) != "")
 }
 
 // ─── Message classifier ──────────────────────────────────────────────────────
