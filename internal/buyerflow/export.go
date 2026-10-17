@@ -191,6 +191,28 @@ func TryApplyQtyRevision(st *OrderState, userText string) bool {
 
 func MergeShippingText(st *OrderState, userText string) { mergeShippingText(st, userText) }
 
+// CanonicalProvince maps a province name or alias ("DKI Jakarta", "East Java", "jatim") to its
+// canonical Indonesian form. ok is false when s is not a known province name or alias.
+func CanonicalProvince(s string) (string, bool) {
+	canon, ok := provinceAliases[strings.ToLower(strings.TrimSpace(s))]
+	return canon, ok
+}
+
+// KnownCityHint reports whether s is, or contains, a city the deterministic address parser
+// recognises (idCityHints), returning its canonical city name.
+func KnownCityHint(s string) (string, bool) {
+	low := strings.ToLower(strings.TrimSpace(s))
+	if low == "" {
+		return "", false
+	}
+	for _, h := range idCityHints {
+		if strings.Contains(low, h.needle) {
+			return h.city, true
+		}
+	}
+	return "", false
+}
+
 func ParseCatalogPriceInfo(it *CatalogItem) CatalogPriceInfo { return parseCatalogPriceInfo(it) }
 
 func FormatCatalogPrice(it *CatalogItem) string { return formatCatalogPrice(it) }

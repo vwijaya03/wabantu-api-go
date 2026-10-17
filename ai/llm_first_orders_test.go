@@ -288,7 +288,7 @@ func TestFieldAnswerInventedCityIsNotWritten(t *testing.T) {
 	}
 	st = lfTunaState()
 	applyFieldAnswer(st, &salesbrain.FieldData{Name: "ANA", City: "SURABAYA"}, "ana from surabaya", salesbrain.LangEN)
-	if st.RecipientName != "ANA" || st.City != "SURABAYA" {
+	if st.RecipientName != "ANA" || !strings.EqualFold(st.City, "surabaya") {
 		t.Fatalf("matching is case-insensitive, got %+v", *st)
 	}
 }
