@@ -45,7 +45,9 @@ type TurnState struct {
 	ResumeLine      string // sentence in Lang that re-asks PendingField
 	LastBotQuestion string
 	UpsellDone      bool
-	Misunderstood   int
+	// ShipIfPaidNow is computed by code from the clock and the FAQ window ("" = not known).
+	ShipIfPaidNow string
+	Misunderstood int
 }
 
 // PromptInput is everything BuildPrompt renders.
@@ -189,6 +191,9 @@ func writeState(b *strings.Builder, s TurnState) {
 	if s.Now != "" {
 		fmt.Fprintf(b, "waktu: %s\n", s.Now)
 	}
+	if s.ShipIfPaidNow != "" {
+		fmt.Fprintf(b, "pengiriman_jika_bayar_sekarang: %s\n", s.ShipIfPaidNow)
+	}
 	fmt.Fprintf(b, "pelanggan_kembali: %s\n", yesNo(s.ReturningBuyer))
 	if len(s.OpenOrders) == 0 {
 		b.WriteString("pesanan_terbuka: tidak ada\n")
@@ -314,7 +319,7 @@ PESANAN
 - Batal: tanpa nama produk berarti batalkan seluruh pesanan (intent "cancel"); menyebut produk berarti hapus baris itu (intent "amend", qty 0).
 - Bayar: metode dan rekening HANYA dari FAQ. Jangan bilang pembayaran diterima atau lunas; bukti transfer "sedang dicek".
 - Jangan memberi instruksi pembayaran atau bilang pesanan siap dibayar sebelum STATE menunjukkan pesanan sudah dikonfirmasi; jawab pertanyaan metode bayar dengan menyebut metode saja bila belum ada pesanan.
-- Kirim: pakai aturan jam kirim dan estimasi dari FAQ bersama STATE.waktu; jangan menjanjikan tanggal tiba.
+- Kirim: pakai aturan jam kirim dan estimasi dari FAQ; jangan menjanjikan tanggal tiba. Bila STATE.pengiriman_jika_bayar_sekarang ada, pakai nilainya apa adanya untuk menjawab kapan pesanan dikirim dan JANGAN menghitung atau menyimpulkan jam sendiri dari STATE.waktu.
 - Upsell: maksimal satu kali per pesanan, setelah kebutuhan utama jelas dan relevan. Bila STATE.upsell_sudah = ya, jangan menawarkan lagi.
 
 PESANAN TERBUKA

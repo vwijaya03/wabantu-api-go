@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"encore.app/wabantu/internal/salesbrain"
 )
@@ -225,5 +226,27 @@ func TestPrematurePaymentAllowedAtConfirmAndForOpenPaymentOrder(t *testing.T) {
 	fake = lfTexts(`{"intent":"other","reply":"Your order WB-AAAA1111 is waiting for the transfer; send the payment proof when done."}`)
 	if plan := planTurn(context.Background(), in, fake.chat); plan.Fallback || plan.Attempts != 1 {
 		t.Fatalf("an order awaiting payment may be discussed: %+v", plan.Violations)
+	}
+}
+
+// 00:18 WIB: the model decided "past 12:00" itself. Code now hands it the answer.
+func TestIncidentShipTimeLineComputedByCodeAt0018(t *testing.T) {
+	in := lfShellInputs(t)
+	in.KBAll = []dbKBEntry{{Question: "Kapan pesanan saya akan dikirim?", Answer: "Pesanan dan pembayaran yang kami terima antara pukul 08:00 hingga 12:00 WIB akan dikirim di hari yang sama. Pesanan setelah pukul 12:00 WIB akan dikirim pada hari kerja berikutnya."}}
+	in.Now = time.Date(2026, 10, 19, 0, 18, 0, 0, lfWIB) // a Monday
+
+	got := lfBuildPlanInput(in)
+	if got.State.ShipIfPaidNow != "hari ini bila dibayar antara 08:00–12:00" {
+		t.Fatalf("ShipIfPaidNow = %q", got.State.ShipIfPaidNow)
+	}
+	_, user := salesbrain.BuildPrompt(salesbrain.PromptInput{State: got.State})
+	if !strings.Contains(user, "pengiriman_jika_bayar_sekarang: hari ini bila dibayar antara 08:00–12:00") {
+		t.Fatalf("prompt lacks the line:\n%s", user)
+	}
+
+	// A FAQ without a window: no line.
+	in.KBAll = []dbKBEntry{{Question: "Metode bayar?", Answer: "BCA"}}
+	if got := lfBuildPlanInput(in); got.State.ShipIfPaidNow != "" {
+		t.Fatalf("no parseable window, got %q", got.State.ShipIfPaidNow)
 	}
 }
