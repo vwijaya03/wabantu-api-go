@@ -114,4 +114,7 @@ type OrderState struct {
 
 	// ForceNewOrder — "pesanan baru": INSERT draft baru, jangan upsert ke leftover.
 	ForceNewOrder bool `json:"forceNewOrder,omitempty"`
+
+	// UpsellShown — blok rekomendasi tambahan sudah ditampilkan untuk pesanan ini (maks 1 kali).
+	UpsellShown bool `json:"upsellShown,omitempty"`
 }

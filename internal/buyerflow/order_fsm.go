@@ -49,8 +49,17 @@ func buildOrderFlowReply(st OrderState, prompt string, catalog []CatalogItem) st
 	return prompt
 }
 
-// AdvanceOrderFlow advances checkout FSM without side effects.
+// AdvanceOrderFlow advances checkout FSM without side effects. Once a reply carries the upsell
+// block, the returned state is marked so later turns of the same order do not repeat it.
 func AdvanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResult {
+	res := advanceOrderFlow(in, persist)
+	if res.State != nil && replyHasUpsellBlock(res.Reply) {
+		res.State.UpsellShown = true
+	}
+	return res
+}
+
+func advanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResult {
 	userText := in.UserText
 	catalog := in.Catalog
 	history := in.History
