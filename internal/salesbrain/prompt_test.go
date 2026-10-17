@@ -91,3 +91,15 @@ func TestChooseContextMode(t *testing.T) {
 		t.Fatal("large catalog must switch to top-k")
 	}
 }
+
+func TestBuildPromptDocumentsFieldsContract(t *testing.T) {
+	sys, _ := BuildPrompt(omahInput())
+	for _, want := range []string{
+		`"fields": {`, `"postal_code"`, `"district"`,
+		"fields hanya untuk intent field_answer; isi persis dari pesan pembeli, kosongkan yang tidak disebut, jangan mengarang",
+	} {
+		if !strings.Contains(sys, want) {
+			t.Errorf("system prompt missing %q", want)
+		}
+	}
+}

@@ -14,7 +14,8 @@ var (
 
 // ParseDecision extracts the JSON decision from raw model output (code fences and stray text
 // tolerated), then normalises it: unknown intent → other, items kept only for order/amend and
-// only with no ≥ 1 and 0 ≤ qty ≤ 999, invalid handoff dropped, language_switch normalised.
+// only with no ≥ 1 and 0 ≤ qty ≤ 999, fields kept (trimmed) only for field_answer, invalid
+// handoff dropped, language_switch normalised.
 func ParseDecision(raw string) (Decision, error) {
 	s := strings.TrimSpace(raw)
 	start := strings.Index(s, "{")
@@ -36,6 +37,11 @@ func ParseDecision(raw string) (Decision, error) {
 	d.LanguageSwitch = ParseLang(string(d.LanguageSwitch))
 	if d.Handoff != nil && d.Handoff.Level != HandoffNote && d.Handoff.Level != HandoffTakeover {
 		d.Handoff = nil
+	}
+	if d.Intent == IntentFieldAnswer {
+		d.Fields.trim()
+	} else {
+		d.Fields = nil
 	}
 	if d.Intent != IntentOrder && d.Intent != IntentAmend {
 		d.Items = nil

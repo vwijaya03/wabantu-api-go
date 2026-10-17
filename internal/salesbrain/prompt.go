@@ -306,5 +306,5 @@ Mengarang fakta; diskon atau janji di luar FAQ; rekening selain di FAQ; meminta 
 
 KELUARAN
 Balas HANYA satu objek JSON tanpa teks lain:
-{"intent": "greeting|question|browse|recommend|order|amend|cancel|field_answer|confirm|continue_order|new_order|status|payment_proof|complaint|human_request|other", "items": [{"no": 1, "qty": 1}], "language_switch": null, "handoff": null, "reply": "pesan WhatsApp untuk pembeli"}
-items hanya untuk intent order/amend. language_switch: null, "id", atau "en". handoff: null atau {"level":"note"|"takeover","reason":"..."}. reply tidak boleh kosong.`
+{"intent": "greeting|question|browse|recommend|order|amend|cancel|field_answer|confirm|continue_order|new_order|status|payment_proof|complaint|human_request|other", "items": [{"no": 1, "qty": 1}], "fields": {"name": "", "phone": "", "street": "", "district": "", "city": "", "province": "", "postal_code": ""}, "language_switch": null, "handoff": null, "reply": "pesan WhatsApp untuk pembeli"}
+items hanya untuk intent order/amend. fields hanya untuk intent field_answer; isi persis dari pesan pembeli, kosongkan yang tidak disebut, jangan mengarang. Nilai fields selalu string. language_switch: null, "id", atau "en". handoff: null atau {"level":"note"|"takeover","reason":"..."}. reply tidak boleh kosong.`

@@ -83,11 +83,34 @@ type Handoff struct {
 	Reason string       `json:"reason"`
 }
 
+// FieldData is the checkout data the model extracted from a field_answer message. Values are
+// the buyer's own words; the caller validates each one against the buyer text before storing.
+type FieldData struct {
+	Name       string `json:"name"`
+	Phone      string `json:"phone"`
+	Street     string `json:"street"`
+	District   string `json:"district"`
+	City       string `json:"city"`
+	Province   string `json:"province"`
+	PostalCode string `json:"postal_code"`
+}
+
+// trim strips surrounding whitespace from every field. A nil receiver is left alone.
+func (f *FieldData) trim() {
+	if f == nil {
+		return
+	}
+	for _, p := range []*string{&f.Name, &f.Phone, &f.Street, &f.District, &f.City, &f.Province, &f.PostalCode} {
+		*p = strings.TrimSpace(*p)
+	}
+}
+
 // Decision is the parsed model output for one buyer turn.
 type Decision struct {
-	Reply          string   `json:"reply"`
-	Intent         Intent   `json:"intent"`
-	Items          []ItemOp `json:"items"`
-	LanguageSwitch Lang     `json:"language_switch"`
-	Handoff        *Handoff `json:"handoff"`
+	Reply          string     `json:"reply"`
+	Intent         Intent     `json:"intent"`
+	Items          []ItemOp   `json:"items"`
+	Fields         *FieldData `json:"fields"`
+	LanguageSwitch Lang       `json:"language_switch"`
+	Handoff        *Handoff   `json:"handoff"`
 }
