@@ -345,6 +345,28 @@ ORDER BY 1, 2;
 
 `cost_usd` hanya menjumlah giliran yang harganya diketahui; `turns_price_unknown` > 0 berarti totalnya kurang dari biaya sebenarnya. Event lama (sebelum kolom ini ada) tidak punya `costKnown`; kolom itu NULL di sana.
 
+### 5.2 Endpoint admin pemakaian LLM-first
+
+Padanan query §5.1 tanpa akses database: `GET /api/v1/admin/ai/llm-first/usage?tenantId=<uuid>&days=<1..90, default 7>` (`admin/ai_llm_first_usage.go`; agregasi murni `usage.AggregateLLMFirstUsage`). Hanya baca. `//encore:api auth` dengan `tag:super_admin`; `requireSuperAdmin` memeriksa role dari sesi auth (bukan dari parameter) dan hanya menerima token admin (token klien dan impersonasi: 403). Schema tenant diambil dari lookup `tenant` + `tenant_company` (tidak pernah dari input), nama schema divalidasi lagi dan di-quote, sisanya parameter SQL. `tenantId` bukan UUID atau `days` di luar 1..90 atau bukan angka: 400. Tenant tidak ada: 404.
+
+Respons (camelCase):
+
+```json
+{ "tenantId": "...", "days": 7,
+  "totals": { "messages": 0, "liveMessages": 0, "shadowMessages": 0, "fallbacks": 0,
+              "inputTokens": 0, "outputTokens": 0, "thoughtsTokens": 0,
+              "estimatedCostUsd": 0.0, "unknownCostMessages": 0 },
+  "avgPerMessage": { "inputTokens": 0.0, "outputTokens": 0.0, "thoughtsTokens": 0.0, "costUsd": 0.0, "costIdr": 0.0 },
+  "byDay": [ { "date": "2026-10-10", "mode": "on", "messages": 0, "inputTokens": 0, "outputTokens": 0,
+               "thoughtsTokens": 0, "estimatedCostUsd": 0.0, "unknownCostMessages": 0 } ],
+  "byModel": [ { "model": "gemini-3.1-flash-lite", "messages": 0, "estimatedCostUsd": 0.0, "costKnown": true } ],
+  "idrPerUsd": 16500 }
+```
+
+- `liveMessages` = mode `on`, `shadowMessages` = mode `shadow` (event lama tanpa `mode` dibaca dari `pipeline`). `fallbacks` = event dengan `fallback=true`.
+- Pesan dengan biaya tidak diketahui (`costKnown=false`, atau event lama tanpa `estimatedCostUsd`) tidak ikut jumlah `estimatedCostUsd` dan dihitung di `unknownCostMessages`. `avgPerMessage.costUsd` merata-ratakan hanya pesan berbiaya diketahui; `costIdr` = `costUsd` x `idrPerUsd`. Rata-rata token memakai semua pesan. Tanpa data, semua angka 0 dan array kosong.
+- `byDay` memakai tanggal Asia/Jakarta (WIB, UTC+7), urut tanggal lalu `on` sebelum `shadow`. `byModel` urut jumlah pesan menurun; `costKnown=false` bila ada satu saja pesan model itu tanpa biaya; model kosong dilaporkan `unknown`.
+
 Percakapan yang sedang di-pause AI (handoff takeover) dan sudah berapa lama:
 
 ```sql
@@ -410,7 +432,7 @@ Peringatan harga:
 
 **Chain default `chat` (kode).** Tanpa baris `function-config` tenant atau global, chain `chat` adalah `gemini-3.1-flash-lite` lalu `claude-haiku-4-5`. Link Anthropic tanpa model di jalur LLM-first memakai `DefaultHaikuAPIID()` lewat `lfAnthropicConfig` (`ai/llm_first.go`), bukan `defaultAnthropicModel` (Sonnet); tesnya `TestLLMFirstChatDefaultsToHaikuNotSonnet`. Tenant yang belum dikonfigurasi tidak pernah membayar harga Sonnet per pesan.
 
-- Tidak ada secret, env, migrasi skema, atau endpoint baru. Event usage `ai_token_llm_first` memakai tabel `usage_event` yang sudah ada (tanpa kolom atau constraint baru).
+- Tidak ada secret, env, atau migrasi skema. Satu endpoint admin baca-saja (§5.2). Event usage `ai_token_llm_first` memakai tabel `usage_event` yang sudah ada (tanpa kolom atau constraint baru).
 - `GeminiAPIKey` hanya ada di Cloud Run, jadi Gemini hanya jalan di sana. Di Encore Cloud chain jatuh ke Anthropic (Haiku bila link tanpa model): mode JSON digantikan instruksi di prompt dan parse yang toleran; bila parse gagal dua kali, giliran dikembalikan ke jalur lama (fail-open), atau ditahan di ringkasan konfirmasi bila state di langkah `confirm` (§1.2). Jangan hidupkan `ai_llm_first` di Encore sebelum ada kunci Gemini (§3).
 - Batas waktu: 15 detik per panggilan LLM, dihitung untuk seluruh link chain (timeout per link berlaku di dalamnya), maksimal 2 panggilan per giliran, anggaran job 40 detik. Error LLM tidak di-retry (langsung fallback), jadi sisa anggaran cukup untuk jalur lama.
 - `INLINE_INBOUND_AI` dan `RETRIEVAL_BACKGROUND_DRAIN` tetap hanya di Cloud Run.
@@ -442,6 +464,7 @@ Perilaku yang sengaja atau belum ditangani, supaya tidak mengejutkan saat canary
 | `internal/salesbrain/` | Bahasa, pesanan terbuka dan pengingat, prompt, parser keputusan, validator, template ID/EN, ringkasan dan redaksi; `variant.go`: `ResolveCartOps` (varian, stok, harga) dan kalimat penolakan |
 | `internal/buyerflow/order_confirm.go` | `IsExplicitOrderConfirm` dan ringkasan ulang; langkah `confirm` fail-closed ada di `order_fsm.go` |
 | `usage/aitracker.go` | `RecordLLMFirstTokens` (event `ai_token_llm_first`) |
+| `usage/llmfirst_admin_usage.go`, `admin/ai_llm_first_usage.go` | Agregasi pemakaian per tenant (`AggregateLLMFirstUsage`) dan endpoint admin §5.2 |
 | `usage/costmonitor.go` | Tabel harga model dan `EstimateTokenCost(Known)` |
 | `flag/llm_first.go` | Key flag dan `LLMFirstMode` |
 | `shared/llm/` | `RunChat` lewat chain fungsi, mode JSON, temperature, usage termasuk thinking |
