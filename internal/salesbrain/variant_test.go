@@ -104,8 +104,49 @@ func TestResolveColorAcrossSKUsWithoutBaseName(t *testing.T) {
 		Cart: nil, Ops: []ItemOp{{No: 1, Qty: 1, Color: "putih"}},
 		Catalog: catalog, BuyerTexts: []string{"kaos putih 1"}, VariantTexts: []string{"kaos putih 1"},
 	})
-	if len(res.Issues) != 0 || len(res.Cart) != 1 || res.Cart[0].Color != "putih" {
-		t.Fatalf("got %+v", res)
+	if len(res.Issues) != 0 || len(res.Cart) != 1 || res.Cart[0].ID != "kaos-putih" || res.Cart[0].Color != "putih" {
+		t.Fatalf("must redirect to putih SKU: %+v", res)
+	}
+}
+
+func TestResolveColorAbuMudaAndSage(t *testing.T) {
+	catalog := []CatalogFact{
+		{No: 1, ID: "tote-abu", Name: "Tote Bag - Abu Muda", NeedsVariant: true, Price: 50000, Stock: StockIn, StockQty: 3},
+		{No: 2, ID: "tote-sage", Name: "Tote Bag", Description: "Warna: sage, hitam", NeedsVariant: true, Price: 50000, Stock: StockIn, StockQty: 3},
+	}
+	res := ResolveCartOps(ResolveInput{
+		Cart: nil, Ops: []ItemOp{{No: 1, Qty: 1, Color: "abu muda"}},
+		Catalog: catalog, BuyerTexts: []string{"abu muda 1"}, VariantTexts: []string{"abu muda 1"},
+	})
+	if len(res.Issues) != 0 || len(res.Cart) != 1 || res.Cart[0].ID != "tote-abu" {
+		t.Fatalf("abu muda: %+v", res)
+	}
+	res = ResolveCartOps(ResolveInput{
+		Cart: nil, Ops: []ItemOp{{No: 2, Qty: 1, Color: "sage"}},
+		Catalog: catalog, BuyerTexts: []string{"sage 1"}, VariantTexts: []string{"sage 1"},
+	})
+	if len(res.Issues) != 0 || len(res.Cart) != 1 || res.Cart[0].Color != "sage" {
+		t.Fatalf("sage: %+v", res)
+	}
+}
+
+func TestDeclaredColorsMultipleWarnaHints(t *testing.T) {
+	row := CatalogFact{Description: "Warna: hitam. Warna tersedia: navy dan sage"}
+	got := colorsDeclaredOnRow(row)
+	keys := map[string]bool{}
+	for _, c := range got {
+		keys[normWords(c)] = true
+	}
+	for _, want := range []string{"hitam", "navy", "sage"} {
+		if !keys[want] {
+			t.Fatalf("missing %q in %v", want, got)
+		}
+	}
+}
+
+func TestColorSuffixFromNameWithSize(t *testing.T) {
+	if got := colorSuffixFromName("Kaos Polos - Hitam - L", "L"); got != "Hitam" {
+		t.Fatalf("got %q", got)
 	}
 }
 

@@ -128,6 +128,11 @@ func ResolveCartOps(in ResolveInput) CartResolution {
 		case !c.NeedsVariant:
 			size, color = "", "" // a plain product has no variant
 		}
+		if color != "" && c.NeedsVariant {
+			if sib, found := siblingWithColor(in.Catalog, c, color); found {
+				c = sib
+			}
+		}
 		if color != "" && c.NeedsVariant && !colorAllowed(in.Catalog, c, color) {
 			res.Issues = append(res.Issues, OpIssue{
 				Kind: IssueColorUnknown, No: c.No, Name: displayName(c), Options: soldColorsForProduct(in.Catalog, c),
@@ -240,7 +245,7 @@ func stockIssueForLine(catalog []CatalogFact, cart []OrderLine, c CatalogFact, q
 
 var (
 	catalogSizeSuffixRe = regexp.MustCompile(`(?i)^(XS|S|M|L|XL|XXL|XXXL|3XL|4XL|5XL|\d{2,3})$`)
-	colorHintInTextRe   = regexp.MustCompile(`(?i)(?:warna|color|colour)\s*[:\-]?\s*(.+)`)
+	colorHintInTextRe   = regexp.MustCompile(`(?i)(?:warna|color|colour)(?:\s+tersedia)?\s*[:\-]\s*([^.\n]+)`)
 )
 
 var knownRetailColors = map[string]bool{
@@ -313,21 +318,37 @@ func soldColorsForProduct(catalog []CatalogFact, c CatalogFact) []string {
 
 func colorsDeclaredOnRow(row CatalogFact) []string {
 	var out []string
-	name := strings.TrimSpace(row.Name)
-	if row.Size == "" {
-		if i := strings.LastIndex(name, " - "); i >= 0 {
-			suf := strings.TrimSpace(name[i+3:])
-			if suf != "" && !catalogSizeSuffixRe.MatchString(suf) {
-				out = append(out, suf)
+	if col := colorSuffixFromName(row.Name, row.Size); col != "" {
+		out = append(out, col)
+	}
+	if row.Description != "" {
+		for _, m := range colorHintInTextRe.FindAllStringSubmatch(row.Description, -1) {
+			if len(m) > 1 {
+				out = append(out, splitDeclaredColors(m[1])...)
 			}
 		}
 	}
-	if row.Description != "" {
-		if m := colorHintInTextRe.FindStringSubmatch(row.Description); len(m) > 1 {
-			out = append(out, splitDeclaredColors(m[1])...)
+	return out
+}
+
+func colorSuffixFromName(name, size string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	if size != "" {
+		suf := " - " + strings.TrimSpace(size)
+		if len(name) > len(suf) && strings.EqualFold(name[len(name)-len(suf):], suf) {
+			name = strings.TrimSpace(name[:len(name)-len(suf)])
 		}
 	}
-	return out
+	if i := strings.LastIndex(name, " - "); i >= 0 {
+		suf := strings.TrimSpace(name[i+3:])
+		if suf != "" && !catalogSizeSuffixRe.MatchString(suf) {
+			return suf
+		}
+	}
+	return ""
 }
 
 func splitDeclaredColors(chunk string) []string {
@@ -339,7 +360,7 @@ func splitDeclaredColors(chunk string) []string {
 	for _, part := range strings.Split(chunk, ",") {
 		part = strings.TrimSpace(part)
 		for _, piece := range strings.Split(part, " dan ") {
-			if c := firstColorToken(strings.TrimSpace(piece)); c != "" {
+			if c := parseColorPhrase(strings.TrimSpace(piece)); c != "" {
 				out = append(out, c)
 			}
 		}
@@ -347,28 +368,84 @@ func splitDeclaredColors(chunk string) []string {
 	return out
 }
 
-func firstColorToken(s string) string {
-	words := strings.Fields(s)
+var colorModifierWords = map[string]bool{
+	"muda": true, "tua": true, "gelap": true, "terang": true, "neon": true,
+}
+
+var colorPhraseStopWords = map[string]bool{
+	"bahan": true, "katun": true, "cotton": true, "material": true, "ukuran": true, "size": true,
+	"gram": true, "gr": true, "nyaman": true, "adem": true, "tidak": true, "luntur": true, "tahan": true, "anti": true,
+}
+
+// parseColorPhrase reads a merchant-listed colour phrase (from descriptions), stopping at material words.
+func parseColorPhrase(s string) string {
+	words := strings.Fields(strings.TrimSpace(s))
 	if len(words) == 0 {
 		return ""
 	}
-	w0 := normWords(words[0])
-	if !knownRetailColors[w0] {
+	var out []string
+	for _, w := range words {
+		lw := normWords(w)
+		if colorPhraseStopWords[lw] {
+			break
+		}
+		if len(out) == 0 {
+			if !knownRetailColors[lw] && !merchantColorWord(lw) {
+				return ""
+			}
+			out = append(out, w)
+			continue
+		}
+		if knownRetailColors[lw] || colorModifierWords[lw] || merchantColorWord(lw) {
+			out = append(out, w)
+			continue
+		}
+		break
+	}
+	if len(out) == 0 {
 		return ""
 	}
-	if len(words) == 1 {
-		return words[0]
+	return strings.Join(out, " ")
+}
+
+func merchantColorWord(tok string) bool {
+	if tok == "" || colorPhraseStopWords[tok] {
+		return false
 	}
-	w1 := normWords(words[1])
-	for _, h := range []string{"bahan", "katun", "cotton", "material", "ukuran", "size", "gram", "gr", "nyaman", "adem", "tidak", "luntur", "tahan", "anti"} {
-		if w1 == h {
-			return words[0]
+	for _, r := range tok {
+		if !unicode.IsLetter(r) {
+			return false
 		}
 	}
-	if len(words) == 2 && (knownRetailColors[w1] || w1 == "neon") {
-		return words[0] + " " + words[1]
+	return len(tok) >= 2 && len(tok) <= 24
+}
+
+func colorsEquivalent(want, sold string) bool {
+	return normWords(want) == normWords(sold)
+}
+
+func rowDeclaresColor(row CatalogFact, want string) bool {
+	for _, col := range colorsDeclaredOnRow(row) {
+		if colorsEquivalent(want, col) {
+			return true
+		}
 	}
-	return words[0]
+	return false
+}
+
+func siblingWithColor(catalog []CatalogFact, c CatalogFact, color string) (CatalogFact, bool) {
+	if rowDeclaresColor(c, color) {
+		return c, true
+	}
+	for _, row := range catalog {
+		if row.No == c.No || !sameStockProduct(row, c) {
+			continue
+		}
+		if rowDeclaresColor(row, color) {
+			return row, true
+		}
+	}
+	return CatalogFact{}, false
 }
 
 // colorAllowed accepts a grounded colour only when it matches a colour the catalog sells for this product.
@@ -382,7 +459,7 @@ func colorAllowed(catalog []CatalogFact, c CatalogFact, color string) bool {
 		return true
 	}
 	for _, s := range sold {
-		if normWords(s) == col {
+		if colorsEquivalent(color, s) {
 			return true
 		}
 	}
