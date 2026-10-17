@@ -172,11 +172,16 @@ func TestResolveMissingVariantKeepsTheLineAndAsksOnce(t *testing.T) {
 	if len(res.Issues) != 1 || res.Issues[0].Kind != IssueVariantMissing || res.Issues[0].Name != "Kaos Polos Premium" {
 		t.Fatalf("issues = %+v", res.Issues)
 	}
-	if got := RenderIssue(res.Issues[0], LangID); got != "Untuk Kaos Polos Premium, Kakak mau ukuran atau warna apa?" {
+	// The one question lists what the catalog really has (colour rows, in stock).
+	if got := RenderIssue(res.Issues[0], LangID); got != "Untuk Kaos Polos Premium, pilihan yang tersedia: Hitam, Putih. Kakak mau yang mana?" {
 		t.Fatalf("ask = %q", got)
 	}
-	if got := RenderIssue(res.Issues[0], LangEN); got != "Which size or color would you like for Kaos Polos Premium?" {
+	if got := RenderIssue(res.Issues[0], LangEN); got != "For Kaos Polos Premium the available options are: Hitam, Putih. Which one would you like?" {
 		t.Fatalf("ask = %q", got)
+	}
+	// No known options: the open question stays.
+	if got := RenderIssue(OpIssue{Kind: IssueVariantMissing, Name: "Kaos"}, LangID); got != "Untuk Kaos, Kakak mau ukuran atau warna apa?" {
+		t.Fatalf("ask without options = %q", got)
 	}
 
 	// The answer fills the open line instead of adding a second one.
@@ -403,9 +408,9 @@ func TestPromptShowsVariantRowsAndCartVariants(t *testing.T) {
 		Message: "M hitam",
 	})
 	for _, want := range []string{
-		"1. Boxer Pria Mono - L | Rp56.900 | stok: tersedia | ukuran: L | ukuran lain: no 2 (M, tersedia); no 3 (XL, habis)",
-		"4. Kaos Polos Premium - Hitam | Rp89.000 | stok: tersedia | wajib pilih ukuran/warna",
-		"7. Kaos Polos Premium - Putih | Rp89.000 | stok: tersedia | wajib pilih ukuran/warna",
+		"1. Boxer Pria Mono - L | Rp56.900 | stok: tersedia | ukuran: L | varian lain: no 2 (M, Rp54.900, tersedia); no 3 (XL, Rp58.900, habis)",
+		"4. Kaos Polos Premium - Hitam | Rp89.000 | stok: tersedia | warna: Hitam | varian lain: no 7 (Putih, Rp89.000, tersedia) | wajib pilih ukuran/warna",
+		"7. Kaos Polos Premium - Putih | Rp89.000 | stok: tersedia | warna: Putih | varian lain: no 4 (Hitam, Rp89.000, tersedia) | wajib pilih ukuran/warna",
 		`"size": ""`, "Ukuran/warna:",
 	} {
 		if !strings.Contains(system, want) {
@@ -438,7 +443,7 @@ func TestParseDecisionKeepsGroundableVariantFields(t *testing.T) {
 }
 
 func TestVariantTemplatesExistInBothLanguages(t *testing.T) {
-	for _, k := range []TemplateKey{TplConfirmHold, TplResumeVariant, TplAskVariant, TplAskVariantChoices, TplVariantNotFound, TplVariantSoldOut, TplVariantAlternatives, TplStockLimit} {
+	for _, k := range []TemplateKey{TplConfirmHold, TplResumeVariant, TplAskVariant, TplAskVariantOptions, TplAskVariantChoices, TplVariantNotFound, TplVariantSoldOut, TplVariantAlternatives, TplStockLimit} {
 		for _, l := range []Lang{LangID, LangEN} {
 			if strings.TrimSpace(templates[k][l]) == "" {
 				t.Errorf("template %s has no %s text", k, l)
@@ -447,5 +452,40 @@ func TestVariantTemplatesExistInBothLanguages(t *testing.T) {
 	}
 	if got := T(TplConfirmHold, LangEN); !strings.Contains(got, "has not been saved or changed") {
 		t.Errorf("confirm hold EN = %q", got)
+	}
+}
+
+func TestResolveSoldOutColourOffersTheOtherColours(t *testing.T) {
+	cat := variantFacts()
+	cat[3].Stock, cat[3].StockQty = StockOut, 0 // kaos hitam habis
+	res := ResolveCartOps(ResolveInput{Catalog: cat, Ops: []ItemOp{{No: 4, Qty: 1, Color: "hitam"}}, BuyerTexts: []string{"kaos hitam 1"}})
+	if len(res.Cart) != 0 || len(res.Issues) != 1 || res.Issues[0].Kind != IssueSoldOut {
+		t.Fatalf("got %+v", res)
+	}
+	got := RenderIssue(res.Issues[0], LangID)
+	if !strings.Contains(got, "sedang habis") || !strings.Contains(got, "Yang masih tersedia: Putih") || strings.Contains(got, "Hitam,") {
+		t.Fatalf("sold-out copy must be honest and offer the colour in stock: %q", got)
+	}
+}
+
+// 2 L hitam + 1 M putih in one message, colours as separate SKU rows and the size on the line:
+// each line takes the price and the stock pool of its own colour row.
+func TestResolveTwoColourRowsWithSizesInOneMessage(t *testing.T) {
+	res := resolve(nil, []ItemOp{
+		{No: 4, Qty: 2, Size: "L", Color: "hitam"},
+		{No: 4, Qty: 1, Size: "M", Color: "putih"},
+	}, "kaos polos 2 L hitam dan 1 M putih")
+	if len(res.Issues) != 0 || len(res.Cart) != 2 {
+		t.Fatalf("got %+v", res)
+	}
+	a, b := res.Cart[0], res.Cart[1]
+	if a.ID != "kaos-hitam" || a.Size != "L" || a.Color != "hitam" || a.Qty != 2 || a.UnitPrice != 89000 || a.VariantMissing {
+		t.Errorf("line 1 = %+v", a)
+	}
+	if b.ID != "kaos-putih" || b.Size != "M" || b.Color != "putih" || b.Qty != 1 || b.UnitPrice != 89000 || b.VariantMissing {
+		t.Errorf("line 2 = %+v", b)
+	}
+	if CartSubtotal(res.Cart) != 3*89000 {
+		t.Errorf("subtotal = %d", CartSubtotal(res.Cart))
 	}
 }

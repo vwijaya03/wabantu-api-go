@@ -17,10 +17,10 @@ func TestResolverFallbackOrder(t *testing.T) {
 	st := NewMemoryStore()
 	r := NewResolver(st, time.Minute)
 
-	// empty tables → code default (anthropic)
+	// empty tables → code default (gemini flash-lite, then Haiku)
 	c, err := r.Resolve(ctx, FnChat, "t1")
-	if err != nil || c.Chain[0].Provider != "anthropic" {
-		t.Fatalf("want anthropic default, got %+v %v", c, err)
+	if err != nil || c.Chain[0].Provider != "gemini" {
+		t.Fatalf("want gemini default, got %+v %v", c, err)
 	}
 
 	st.Set(FunctionConfig{Function: FnChat, Chain: []ChainLink{{Provider: "gemini", Model: "gemini-2.5-flash"}}})
@@ -70,7 +70,7 @@ func TestResolverDisabledProviderFiltered(t *testing.T) {
 	}
 	st.Providers = map[string]bool{"gemini": false, "anthropic": false}
 	c, _ = NewResolver(st, 0).Resolve(context.Background(), FnChat, "")
-	if c.Chain[0].Provider != "anthropic" || c.Chain[0].Model != "" {
+	if c.Chain[0].Provider != "gemini" || c.Chain[len(c.Chain)-1].Model != "claude-haiku-4-5" {
 		t.Fatalf("all disabled → code default, got %+v", c)
 	}
 }
@@ -84,7 +84,7 @@ func (errStore) EnabledProviders(context.Context) (map[string]bool, error) { ret
 
 func TestResolverDBErrorFallsBackToDefault(t *testing.T) {
 	c, err := NewResolver(errStore{}, 0).Resolve(context.Background(), FnChat, "t")
-	if err == nil || c.Chain[0].Provider != "anthropic" {
+	if err == nil || c.Chain[len(c.Chain)-1].Provider != "anthropic" {
 		t.Fatalf("got %+v %v", c, err)
 	}
 }
@@ -199,5 +199,38 @@ func TestGeminiErrors(t *testing.T) {
 	}
 	if _, _, err := NewGeminiProvider("").Complete(context.Background(), "", "", "x", 0); err == nil {
 		t.Fatal("empty key must error")
+	}
+}
+
+func TestChatCodeDefaultChain(t *testing.T) {
+	c := CodeDefaults(FnChat)
+	want := []ChainLink{{Provider: "gemini", Model: "gemini-3.1-flash-lite"}, {Provider: "anthropic", Model: "claude-haiku-4-5"}}
+	if len(c.Chain) != len(want) {
+		t.Fatalf("got %+v", c.Chain)
+	}
+	for i, l := range want {
+		if c.Chain[i] != l {
+			t.Fatalf("link %d: got %+v want %+v", i, c.Chain[i], l)
+		}
+		found := false
+		for _, m := range ModelAllowlist[l.Provider] {
+			found = found || m == l.Model
+		}
+		if !found {
+			t.Errorf("%s/%s not in ModelAllowlist", l.Provider, l.Model)
+		}
+	}
+	if err := ValidateFunctionConfig(FnChat, c.Chain, c.MaxRetries); err != nil {
+		t.Fatalf("default chain fails validation: %v", err)
+	}
+}
+
+// Encore Cloud has no GeminiAPIKey: only anthropic is registered and must get Haiku, not "".
+func TestChatDefaultWithoutGeminiUsesHaiku(t *testing.T) {
+	reg := NewRegistry(NewResolver(NewMemoryStore(), 0))
+	reg.Register(&MockProvider{Name: "anthropic"})
+	p, m, err := reg.For(context.Background(), "t", FnChat)
+	if err != nil || p.ID() != "anthropic" || m != "claude-haiku-4-5" {
+		t.Fatalf("got %v %q %v", p, m, err)
 	}
 }
