@@ -245,8 +245,11 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	}
 	popBuyerLang := PushSavedBuyerLang(contactPreferredLanguage(contact))
 	defer popBuyerLang()
+	// Taken before this turn sends anything (afterwards the last outbound message is our own reply):
+	// was the language question the last thing we said? Only then is a bare "1" a language choice.
+	languageAsked := languageQuestionAsked(ctx, ts, convo.ID, userText)
 	defer func() {
-		s.applyBuyerLanguageFromMessage(ctx, ts, contact, userText)
+		s.applyBuyerLanguageFromMessage(ctx, ts, contact, userText, languageAsked)
 	}()
 	if contact.PreferredLanguage == nil {
 		if pref, perr := loadContactPreferredLanguage(ctx, ts, contact.ID); perr == nil && pref != nil {
@@ -307,7 +310,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return s.handleCustomerOrderStatus(ctx, ts, payload.TenantSchema, payload, convo, channel, contact, userText, nil)
 	}
 
-	if handled, err := s.handleBuyerLanguageRouting(ctx, ts, payload, convo, channel, contact, userText); handled || err != nil {
+	if handled, err := s.handleBuyerLanguageRouting(ctx, ts, payload, convo, channel, contact, userText, languageAsked); handled || err != nil {
 		return handled, err
 	}
 
