@@ -48,6 +48,8 @@ Status pengingat pesanan terbuka (TTL 72 jam) dan penghitung salah paham beruntu
 
 ### 1.1 Varian, stok, dan harga
 
+**Model data varian (tidak ada tabel varian).** Tidak ada tabel `variant` atau kolom varian di katalog; `inv_sku` hanya konfigurasi stok per baris katalog (kunci `catalog_item_id`). Varian dimodelkan dari baris `business_catalog_item` itu sendiri: (1) baris per ukuran dengan akhiran nama ("Boxer Pria Mono - L", sibling = `BaseName` sama), (2) baris per warna dengan akhiran nama ("Kaos Polos Premium - Hitam"), (3) produk satu baris yang butuh ukuran/warna (kaos, celana) dengan nilai dicatat di baris keranjang (`Size`, `Color`) dan ke pesanan. Harga dan stok per varian = harga dan stok baris katalog varian itu. Yang dilihat model per baris katalog (`writeVariantInfo`): `ukuran`, `warna`, dan `varian lain: no N (label, harga, stok)`.
+
 Katalog menyimpan varian sebagai baris terpisah per ukuran ("Boxer Pria Mono - L", "... - M"), plus produk yang butuh ukuran/warna tanpa ukuran di namanya (kaos, celana). Aturan yang sama dengan jalur lama (`buyerflow.CatalogItemNeedsVariant`, `ExtractSizeFromProductName`) menurunkan data varian per baris katalog (`lfCatalogFacts`): `Size`, `BaseName` (baris dengan `BaseName` sama adalah ukuran lain dari produk yang sama), `NeedsVariant`, dan stok dari `enrichCatalogStock`; harga dari `applyContactTierPrices`. Model tidak pernah mengisi data ini.
 
 Model hanya mengusulkan `items: [{no, qty, size, color}]`. Kode (`salesbrain.ResolveCartOps`) yang memutuskan:
@@ -59,8 +61,8 @@ Model hanya mengusulkan `items: [{no, qty, size, color}]`. Kode (`salesbrain.Res
 | Stok per produk | Jumlah semua baris keranjang dengan `catalog_item_id` yang sama dibandingkan ke `StockQty` baris itu; melebihi → `TplStockLimit`, bukan gagal simpan diam-diam. |
 | Ukuran yang disebut pembeli beda dengan baris yang dipilih model | Dipindah ke baris saudara dengan ukuran itu (harga baris itu). Ukuran yang tidak ada: balasan template `TplVariantNotFound` dengan pilihan yang ada. |
 | Baris berukuran dengan saudara, tapi pembeli tidak menyebut ukuran | Tidak ditambahkan; template `TplAskVariantChoices` menyebut ukuran yang masih ada stoknya. |
-| Produk yang butuh ukuran/warna, belum disebut | Baris tetap masuk keranjang dengan jumlahnya (`VariantMissing`), langkah menjadi `ask_variant`, pembeli ditanya **sekali** (`TplAskVariant`). Draft awal dan langkah penerima/alamat/konfirmasi menunggu sampai varian terisi; jawabannya mengisi baris yang sama (bukan baris baru) dan checkout lanjut dari data yang sudah terkumpul (alamat tidak ditanya ulang). |
-| Stok habis | Tidak ditambahkan. `TplVariantSoldOut` jujur + ukuran saudara yang masih ada (`TplVariantAlternatives`). Berlaku juga untuk produk tanpa varian. |
+| Produk yang butuh ukuran/warna, belum disebut | Baris tetap masuk keranjang dengan jumlahnya (`VariantMissing`), langkah menjadi `ask_variant`, pembeli ditanya **sekali**. Bila katalog tahu pilihannya (baris ukuran/warna yang masih ada stok, atau warna di deskripsi), pertanyaan menyebutnya (`TplAskVariantOptions`); bila tidak, pertanyaan terbuka (`TplAskVariant`). Draft awal dan langkah penerima/alamat/konfirmasi menunggu sampai varian terisi; jawabannya mengisi baris yang sama (bukan baris baru) dan checkout lanjut dari data yang sudah terkumpul (alamat tidak ditanya ulang). |
+| Stok habis | Tidak ditambahkan. `TplVariantSoldOut` jujur + varian saudara (ukuran **atau warna**) yang masih ada stoknya (`TplVariantAlternatives`). Berlaku juga untuk produk tanpa varian. |
 | Jumlah melebihi stok | Tidak ditambahkan/dinaikkan. `TplStockLimit` menyebut sisa. Baris tanpa data stok (stok tidak dilacak) tidak ditolak di sini; penjaga stok saat simpan tetap berlaku. |
 
 Bila ada penolakan atau pertanyaan varian, teks model **diganti** kalimat template (model bisa saja menulis "sudah masuk keranjang") ditambah ringkasan keranjang bila berubah dan kalimat lanjut (`replacedReason = cart_issue`). Ringkasan menulis varian per baris ("2x Kaos Polos (ukuran M, warna hitam)"). Ukuran yang sudah ada di nama produk tidak diulang. Semua kalimat ini template ID/EN.
@@ -72,6 +74,7 @@ Bila ada penolakan atau pertanyaan varian, teks model **diganti** kalimat templa
 **Fail-closed di langkah `confirm`.** Langkah `confirm` berarti pembeli sedang melihat ringkasan akhir dan menunggu OK. Jalur lama tidak boleh menebak apakah balasan berikutnya persetujuan, jadi:
 
 - Bila `planTurn` fallback (error LLM atau output rusak dua kali) **dan** state Redis di langkah `confirm` dengan alamat lengkap dan minimal satu baris: pipeline **tidak** mengembalikan `(false, nil)`. Draft dan state dibiarkan apa adanya, tidak ada yang disimpan, tidak ada pause. Pembeli menerima `TplConfirmHold` + ringkasan penuh (item, alamat, `TplResumeConfirm`) sebagai pesan `system` (`replacedReason = confirm_fail_closed`), dan owner mendapat notifikasi `ai.system_error` (dedupe satu per percakapan per jam).
+- Penjaga ketat itu adalah `buyerflow.IsExplicitOrderConfirm` (`internal/buyerflow/order_confirm.go`). Hasil yang diuji: error LLM di `confirm`, output tidak valid dua kali di `confirm`, jalur lama di `confirm` dengan teks bukan konfirmasi (tidak menyimpan), dan jalur lama dengan konfirmasi eksplisit (satu-satunya yang menyimpan). Tes: `TestLLMFirstFlowFailureAtConfirmKeepsTheDraftAndAsksForTheOKAgain` dan `internal/buyerflow/order_confirm_failclosed_test.go`.
 - Jalur lama (`internal/buyerflow/order_fsm.go`) kini mengenal langkah `confirm` dan **tidak pernah menyelesaikan pesanan tanpa persetujuan eksplisit**: `normalizeOrderState` tidak lagi memetakan `confirm` ke `ask_address_full`. Di langkah itu pesanan hanya disimpan bila teks pembeli lolos `IsExplicitOrderConfirm` (hanya kata persetujuan: "ok", "ya benar kak", "lanjut proses", "looks good", 👍; kalimat dengan kata lain, pertanyaan, dan penolakan tidak lolos). Teks lain menjaga draft di `confirm` dan menampilkan ringkasan lagi dengan ajakan OK; data penerima/alamat yang kurang mengembalikan langkah ke `ask_recipient`/`ask_address_full`. Ini juga melindungi jalur fail-open lain (gagal muat data, gagal tulis bahasa, teks injeksi) yang jatuh ke jalur lama saat state di `confirm`.
 
 ---
@@ -130,8 +133,8 @@ curl -sS "$API/api/v1/flags" "${AUTH[@]}"
 **Prasyarat**
 
 - Chain fungsi `chat` di AI Provider disetel superadmin: `gemini-3.1-flash-lite`, lalu `gemini-3.6-flash`, Anthropic hanya fallback. `PUT /api/v1/admin/ai/function-config/chat` ([API_AI_CONFIG.md](./API_AI_CONFIG.md)). Chain `chat` dipakai **juga** oleh jalur lama, jadi perubahan ini berlaku untuk keduanya. Pipeline selalu memakai chain `chat` tenant (baris tenant, lalu baris global, lalu default kode lewat `LLMRegistry`), tidak pernah model yang dipasang di kode.
-- **Jangan hidupkan `ai_llm_first` di Encore Cloud sebelum ada kunci Gemini.** Tanpa Gemini, chain jatuh ke Anthropic dan link tanpa model memakai **Haiku** (`DefaultHaikuAPIID`, ±US$1 masuk / US$5 keluar per 1 juta token), bukan Sonnet. Haiku tetap ±4 kali lebih mahal dari `gemini-3.1-flash-lite` dan JSON hanya lewat instruksi prompt (§7), jadi Encore tanpa Gemini cukup untuk shadow/uji, bukan untuk rollout.
-- **Cloud Run (CR):** model chat tidak diatur lewat env atau file deploy. `deploy/cloudrun/` dan `scripts/cloudrun/deploy.sh` di branch `feat/pelayan-toko-llm-first-cr` hanya meneruskan `GeminiAPIKey`; tidak ada konfigurasi Neon/deploy yang menyebut model chat. Yang menentukan adalah baris `function-config` chat di database (migrasi 29 menyemai `gemini-3.1-flash-lite`). Sebelum canary di CR, setel baris itu **secara eksplisit** ke `gemini-3.1-flash-lite` lewat endpoint di atas dan cek hasilnya di `GET /api/v1/admin/ai/function-config`, jangan mengandalkan seed.
+- **Jangan nyalakan ai_llm_first di Encore Cloud sebelum GeminiAPIKey tersedia.** Tanpa Gemini, chain jatuh ke Anthropic dan link tanpa model memakai **Haiku** (`DefaultHaikuAPIID`, ±US$1 masuk / US$5 keluar per 1 juta token), bukan Sonnet. Haiku tetap ±4 kali lebih mahal dari `gemini-3.1-flash-lite` dan JSON hanya lewat instruksi prompt (§7), jadi Encore tanpa Gemini cukup untuk shadow/uji, bukan untuk rollout.
+- **Cloud Run: set chain chat eksplisit ke gemini-3.1-flash-lite via AI Provider.** Model chat tidak diatur lewat env atau file deploy. `deploy/cloudrun/` dan `scripts/cloudrun/deploy.sh` di branch `feat/pelayan-toko-llm-first-cr` hanya meneruskan `GeminiAPIKey`; tidak ada konfigurasi Neon/deploy yang menyebut model chat. Yang menentukan adalah baris `function-config` chat di database (migrasi 29 menyemai `gemini-3.1-flash-lite`). Sebelum canary di CR, setel baris itu **secara eksplisit** ke `gemini-3.1-flash-lite` lewat endpoint di atas dan cek hasilnya di `GET /api/v1/admin/ai/function-config`, jangan mengandalkan seed.
 - Data tenant pilot sudah dirapikan (spec §9): deskripsi profil, `base_pricing`, KB tanpa entri ganda atau tanpa nomor rekening. Model hanya sebaik data yang dibacanya.
 - Flag sudah dibuat (mati) dan kill switch diuji sekali di staging.
 
@@ -283,7 +286,7 @@ ORDER BY 1 DESC;
 
 ### 5.1 Event `ai_token_llm_first`
 
-Event usage terpisah untuk mengukur pipeline ini per pesan. Nilainya input + output + thinking token satu giliran; metadata: `pipeline` (`llm_first` atau `llm_first_shadow`), `conversationId`, `provider`, `model`, `intent`, `fallback`, `attempts`, `inputTokens`, `outputTokens`, `thoughtsTokens`. Tidak ada entri di `planQuotas` untuk event ini, jadi tidak membatasi apa pun dan kuota `ai_token` plan tidak berubah (mode `on` tetap mencatat `ai_token` seperti sebelumnya untuk kuota/billing; `shadow` hanya mencatat `ai_token_llm_first`). Event tidak muncul di ringkasan kuota karena ringkasan hanya menampilkan event yang punya kuota.
+Event usage terpisah untuk mengukur pipeline ini per pesan. Nilainya input + output + thinking token satu giliran; metadata: `mode` (`on` atau `shadow`), `pipeline` (`llm_first` atau `llm_first_shadow`), `tenantId`, `conversationId`, `inboundMessageId`, `provider`, `model`, `intent`, `fallback`, `attempts`, `inputTokens`, `outputTokens`, `thoughtsTokens`, `costKnown`, dan `estimatedCostUsd` (input x harga masuk + (output + thinking) x harga keluar dari `pricingTable`). Model tanpa harga: `costKnown=false`, `costNote="harga belum diketahui"`, dan `estimatedCostUsd` **tidak ditulis** (bukan 0, supaya tidak terbaca gratis). Tidak ada entri di `planQuotas` untuk event ini, jadi tidak membatasi apa pun dan kuota `ai_token` plan tidak berubah (mode `on` tetap mencatat `ai_token` seperti sebelumnya untuk kuota/billing; `shadow` hanya mencatat `ai_token_llm_first`). Event tidak muncul di ringkasan kuota karena ringkasan hanya menampilkan event yang punya kuota.
 
 Biaya dan fallback per pipeline dan model (7 hari). Harga per 1 juta token dari `usage/costmonitor.go`; kolom `unpriced` menandai model yang belum punya harga (biaya tidak dihitung, tidak diganti harga model lain):
 
@@ -301,6 +304,46 @@ ORDER BY 1, 2;
 ```
 
 Hitung rupiah dengan rumus §6 dari `in_tokens` dan `out_tokens`.
+
+Per pesan (satu baris per giliran; kolom biaya kosong = harga belum diketahui):
+
+```sql
+SELECT created_at,
+       metadata->>'mode'                        AS mode,
+       metadata->>'conversationId'              AS conversation_id,
+       metadata->>'inboundMessageId'            AS inbound_id,
+       metadata->>'model'                       AS model,
+       (metadata->>'inputTokens')::int          AS in_tok,
+       (metadata->>'outputTokens')::int         AS out_tok,
+       (metadata->>'thoughtsTokens')::int       AS thought_tok,
+       metadata->>'attempts'                    AS attempts,
+       metadata->>'fallback'                    AS fallback,
+       (metadata->>'estimatedCostUsd')::numeric AS cost_usd,
+       round((metadata->>'estimatedCostUsd')::numeric * 16500, 1) AS cost_idr
+FROM "<tenant_schema>".usage_event
+WHERE event_type = 'ai_token_llm_first'
+ORDER BY created_at DESC
+LIMIT 100;
+```
+
+Per tenant (jalankan di schema tiap tenant; satu schema = satu tenant), 30 hari, dipisah mode:
+
+```sql
+SELECT metadata->>'tenantId'                                   AS tenant_id,
+       metadata->>'mode'                                       AS mode,
+       count(*)                                                AS turns,
+       count(*) FILTER (WHERE (metadata->>'fallback')::boolean) AS fallbacks,
+       sum(quantity)                                           AS tokens,
+       sum((metadata->>'estimatedCostUsd')::numeric)           AS cost_usd,
+       round(sum((metadata->>'estimatedCostUsd')::numeric) * 16500) AS cost_idr,
+       count(*) FILTER (WHERE NOT (metadata->>'costKnown')::boolean) AS turns_price_unknown
+FROM "<tenant_schema>".usage_event
+WHERE event_type = 'ai_token_llm_first' AND created_at >= now() - interval '30 days'
+GROUP BY 1, 2
+ORDER BY 1, 2;
+```
+
+`cost_usd` hanya menjumlah giliran yang harganya diketahui; `turns_price_unknown` > 0 berarti totalnya kurang dari biaya sebenarnya. Event lama (sebelum kolom ini ada) tidak punya `costKnown`; kolom itu NULL di sana.
 
 Percakapan yang sedang di-pause AI (handoff takeover) dan sudah berapa lama:
 
@@ -324,7 +367,14 @@ biaya_USD = input_token / 1.000.000 x harga_input + (output + thinking) / 1.000.
 biaya_IDR = biaya_USD x 16.500        (kurs asumsi repo, sesuaikan bulanan)
 ```
 
-Ukuran prompt, diukur dari fixture tenant Omah (5 produk dan 10 baris FAQ, taksiran 3,5 karakter per token): prompt sistem (persona, profil, katalog, FAQ) ± 2.270 token, ditambah blok state, riwayat (maksimal 6 giliran), dan pesan ± 100 sampai 600 token. Mode `full` dipakai selama katalog + FAQ ≤ 5.000 token; lebih besar dari itu katalog dipangkas ke 12 produk terbaik (ditambah isi keranjang) dan FAQ memakai hasil retrieval.
+Ukuran prompt, **diukur** dengan `salesbrain.BuildPrompt` + `salesbrain.EstimateTokens` (3,5 karakter per token) pada fixture tenant Omah di `ai/llm_first_plan_test.go` (`lfOmahProfile`, `lfOmahCatalog` 5 produk, `lfOmahKB` 10 FAQ), 2026-10-17:
+
+| Giliran | Token masuk (taksiran) |
+|---------|------------------------|
+| Pesan pertama ("mau beli salmon 100 gram 2 ya"), tanpa riwayat dan state | 2.545 (prompt sistem 2.468 + blok user 77) |
+| Giliran tengah checkout (state keranjang + 6 pesan riwayat) | 2.738 (blok user 271) |
+
+Keluaran + thinking diasumsikan 250 token per panggilan (belum terukur; ukur lewat §5.1 setelah shadow). Mode `full` dipakai selama katalog + FAQ <= 5.000 token; lebih besar dari itu katalog dipangkas ke 12 produk terbaik (ditambah isi keranjang) dan FAQ memakai hasil retrieval.
 
 Harga Standard paid tier teks (`usage/costmonitor.go`, sumber [ai.google.dev/gemini-api/docs/pricing](https://ai.google.dev/gemini-api/docs/pricing), dibaca 2026-10-17; thinking dihitung sebagai output):
 
@@ -335,25 +385,30 @@ Harga Standard paid tier teks (`usage/costmonitor.go`, sumber [ai.google.dev/gem
 | `gemini-3.6-flash`, `gemini-3.8-flash` | US$0,75 / US$3,75 sampai 31 Des 2026; US$1,50 / US$7,50 mulai 1 Jan 2027 (**ubah dua baris tabel itu pada 1 Jan 2027**) |
 | `gemini-3.1-pro-preview` | US$2,00 / US$12,00 (prompt ≤ 200 ribu token; tier di atasnya tidak dimodelkan) |
 
-Contoh di bawah memakai `gemini-3.1-flash-lite`:
+Aritmetika per pesan (USD = masuk x harga masuk / 1.000.000 + 250 x harga keluar / 1.000.000; IDR = USD x 16.500):
 
-| Skenario | Masuk | Keluar (+thinking) | Biaya per pesan |
-|----------|-------|--------------------|-----------------|
-| Tenant kecil seperti Omah | 2.700 | 250 | US$0,00105 = **± Rp17** |
-| Sama, dengan satu retry | 5.400 | 500 | ± Rp35 |
-| Batas atas mode `full` (± 7.000 masuk) | 7.000 | 400 | US$0,00235 = ± Rp39 |
+| Skenario | Model | Hitungan USD | USD | IDR (Rp16.500) |
+|----------|-------|--------------|-----|----------------|
+| Pesan pertama (2.545 masuk) | `gemini-3.1-flash-lite` (0,25 / 1,50) | 2.545 x 0,25e-6 = 0,00063625 + 250 x 1,50e-6 = 0,000375 | 0,00101125 | **± Rp16,7** |
+| Pesan pertama (2.545 masuk) | `claude-haiku-4-5` (1,00 / 5,00) | 2.545 x 1e-6 = 0,002545 + 250 x 5e-6 = 0,00125 | 0,003795 | **± Rp62,6** |
+| Giliran tengah (2.738 masuk) | `gemini-3.1-flash-lite` | 2.738 x 0,25e-6 = 0,0006845 + 0,000375 | 0,0010595 | ± Rp17,5 |
+| Giliran tengah (2.738 masuk) | `claude-haiku-4-5` | 2.738 x 1e-6 = 0,002738 + 0,00125 | 0,003988 | ± Rp65,8 |
+| Pesan pertama + satu retry (2 panggilan) | `gemini-3.1-flash-lite` | 2 x 0,00101125 | 0,0020225 | ± Rp33,4 |
+| Pesan pertama + satu retry (2 panggilan) | `claude-haiku-4-5` | 2 x 0,003795 | 0,00759 | ± Rp125,2 |
 
-Target spec (≤ Rp20 per pesan, ≤ Rp250 per percakapan untuk tenant kecil) tercapai untuk tenant kecil; tenant dengan katalog dan FAQ mendekati batas `full` berada di atasnya. Angka keluar/thinking di atas adalah asumsi, ukur dengan §5.1 setelah shadow. Caching implisit Gemini tidak diperhitungkan.
+Haiku jadi sekitar 3,75 kali `gemini-3.1-flash-lite` pada ukuran prompt ini. Target spec (<= Rp20 per pesan) tercapai di `gemini-3.1-flash-lite` untuk tenant kecil, dan tidak tercapai di Haiku; tenant dengan katalog dan FAQ mendekati batas `full` (± 7.000 masuk) berada di atasnya di kedua model. Caching implisit Gemini tidak diperhitungkan.
 
 Peringatan harga:
 
 - Model yang tidak ada di `pricingTable` **tidak lagi dihitung dengan harga Sonnet**: `EstimateTokenCost` mengembalikan 0 dan mencatat warning (`EstimateTokenCostKnown` memberi flag `known=false`; `GetTenantAICostEstimate` mendaftarkannya di `unpricedModels`). Biaya 0 di dashboard berarti "harga belum diketahui", bukan gratis. Tes `TestModelAllowlistHasPricing` menggagalkan build bila model allowlist belum punya harga.
 - `GetTenantAICostEstimate` kini menghitung per model dari aktivitas AI (`ai_activity`), bukan harga Sonnet tetap atas total `ai_token`.
-- Bila chain jatuh ke Anthropic tanpa model eksplisit, link itu memakai **Haiku** (US$1 masuk, US$5 keluar), bukan Sonnet. Skenario pertama menjadi sekitar Rp65 per pesan (± 4 kali `gemini-3.1-flash-lite`). Setel chain `chat` ke model yang disengaja.
+- Bila chain jatuh ke Anthropic tanpa model eksplisit, link itu memakai **Haiku** (US$1 masuk, US$5 keluar), bukan Sonnet. Pesan pertama menjadi sekitar Rp63 per pesan (± 3,75 kali `gemini-3.1-flash-lite`, lihat tabel di atas). Setel chain `chat` ke model yang disengaja.
 
 ---
 
 ## 7. Catatan environment
+
+**Chain default `chat` (kode).** Tanpa baris `function-config` tenant atau global, chain `chat` adalah `gemini-3.1-flash-lite` lalu `claude-haiku-4-5`. Link Anthropic tanpa model di jalur LLM-first memakai `DefaultHaikuAPIID()` lewat `lfAnthropicConfig` (`ai/llm_first.go`), bukan `defaultAnthropicModel` (Sonnet); tesnya `TestLLMFirstChatDefaultsToHaikuNotSonnet`. Tenant yang belum dikonfigurasi tidak pernah membayar harga Sonnet per pesan.
 
 - Tidak ada secret, env, migrasi skema, atau endpoint baru. Event usage `ai_token_llm_first` memakai tabel `usage_event` yang sudah ada (tanpa kolom atau constraint baru).
 - `GeminiAPIKey` hanya ada di Cloud Run, jadi Gemini hanya jalan di sana. Di Encore Cloud chain jatuh ke Anthropic (Haiku bila link tanpa model): mode JSON digantikan instruksi di prompt dan parse yang toleran; bila parse gagal dua kali, giliran dikembalikan ke jalur lama (fail-open), atau ditahan di ringkasan konfirmasi bila state di langkah `confirm` (§1.2). Jangan hidupkan `ai_llm_first` di Encore sebelum ada kunci Gemini (§3).
@@ -366,7 +421,7 @@ Peringatan harga:
 
 Perilaku yang sengaja atau belum ditangani, supaya tidak mengejutkan saat canary:
 
-- **Varian** didukung (§1.1) tetapi hanya sejauh data katalog: ukuran dikenali dari akhiran nama ("- L", "- XL", angka 2-3 digit) dan produk yang butuh varian dari kata kunci nama (kaos, celana, ...), sama dengan jalur lama. Pilihan ukuran/warna untuk produk tanpa ukuran di nama tidak diketahui (katalog tidak menyimpannya), jadi pembeli ditanya bebas dan nilai apa pun yang ia ketik diterima. Pembeli yang memilih baris berukuran lewat ucapan tanpa menyebut ukuran ("yang pertama") ditanya ukurannya.
+- **Varian** didukung (§1.1) tetapi hanya sejauh data katalog: ukuran dikenali dari akhiran nama ("- L", "- XL", angka 2-3 digit), warna dari akhiran nama atau baris "Warna: ..." di deskripsi, dan produk yang butuh varian dari kata kunci nama (kaos, celana, ...), sama dengan jalur lama. Stok produk satu baris dengan banyak warna/ukuran adalah satu kolam (tidak ada stok per ukuran). Bila katalog tidak menyebut pilihan sama sekali, pembeli ditanya bebas dan nilai apa pun yang ia ketik diterima. Pembeli yang memilih baris berukuran lewat ucapan tanpa menyebut ukuran ("yang pertama") ditanya ukurannya.
 - **Stok:** penolakan di tahap keranjang memakai total stok semua gudang; pembagian per gudang tetap diputuskan penjaga stok saat simpan.
 - **Konfirmasi tertahan:** selama LLM gagal di langkah `confirm`, pembeli hanya melihat ringkasan yang sama berulang (owner diberi tahu sekali per jam). Perubahan isi pesanan baru bisa dilakukan lagi setelah LLM pulih.
 - **Kuota habis** dijawab template tanpa notifikasi owner (sama dengan jalur lama); spec §4.4 menyebut notifikasi untuk kasus ini.
