@@ -294,6 +294,12 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		return s.handleThirdPartyBuyerLookupDenied(ctx, ts, payload, convo, channel, contact)
 	}
 
+	// LLM-first pipeline (flag ai_llm_first, per tenant): answers before the legacy interceptors below;
+	// (false, nil) falls through to them, so a tenant without the flag is untouched.
+	if handled, err := s.tryLLMFirst(ctx, ts, payload, convo, channel, contact, profile, userText); handled || err != nil {
+		return handled, err
+	}
+
 	// Status inquiry sebelum greeting — "halo min punya pesanan aktif?" bukan sapaan murni.
 	// Recap keranjang chat dulu (trace Redis), baru status DB jika checkout kosong.
 	if earlySt, _ := s.getOrderState(ctx, payload.TenantID, convo.ID); PreferCheckoutRecapOverDBStatus(userText, CheckoutStateHasRecap(earlySt)) {

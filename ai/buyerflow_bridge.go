@@ -78,6 +78,9 @@ const (
 	PathProductImageMatch = bf.PathProductImageMatch
 	PathImageFallback     = bf.PathImageFallback
 	PathChannelMeta       = bf.PathChannelMeta
+	// PathLLMFirst marks a reply of the LLM-first pipeline (ai/llm_first.go); buyerflow has no
+	// constant for it because the pipeline lives in this package.
+	PathLLMFirst = "llm_first"
 )
 
 // Exported routing functions — delegate ke buyerflow.

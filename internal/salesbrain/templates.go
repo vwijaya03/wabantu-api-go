@@ -25,6 +25,9 @@ const (
 	TplCancelPaidOrder  TemplateKey = "cancel_paid_order"  // %[1]s order ref, %[2]s shop name
 	TplNewOrderParked   TemplateKey = "new_order_parked"   // %[1]s order ref
 	TplCheckWithTeam    TemplateKey = "check_with_team"    // no args
+	TplOrderRef         TemplateKey = "order_ref"          // %[1]s order ref, appended after the order was saved
+	TplFieldProblems    TemplateKey = "field_problems"     // %[1]s invalid-data fragments joined by the caller
+	TplShippingSummary  TemplateKey = "shipping_summary"   // %[1]s name, %[2]s phone, %[3]s address line
 )
 
 var templates = map[TemplateKey]map[Lang]string{
@@ -87,6 +90,18 @@ var templates = map[TemplateKey]map[Lang]string{
 	TplCheckWithTeam: {
 		LangID: "Sebentar ya Kak, aku cek dulu ke tim toko dan kabari di chat ini.",
 		LangEN: "Let me double-check that with the shop team and get back to you here.",
+	},
+	TplOrderRef: {
+		LangID: "Nomor pesanan: %[1]s",
+		LangEN: "Order number: %[1]s",
+	},
+	TplFieldProblems: {
+		LangID: "Maaf Kak, %[1]s.",
+		LangEN: "Sorry, %[1]s.",
+	},
+	TplShippingSummary: {
+		LangID: "Dikirim ke:\n%[1]s (%[2]s)\n%[3]s",
+		LangEN: "Shipping to:\n%[1]s (%[2]s)\n%[3]s",
 	},
 }
 

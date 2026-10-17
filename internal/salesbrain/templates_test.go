@@ -67,3 +67,27 @@ func TestCheckWithTeamTemplate(t *testing.T) {
 		t.Fatalf("ID = %q", got)
 	}
 }
+
+// The LLM-first shell never writes buyer-facing wording itself: the order number line, the
+// sentence that names invalid checkout data and the "ship to" block of the final summary all come
+// from templates so an English buyer never receives Indonesian labels.
+func TestOrderRefProblemsAndShippingTemplates(t *testing.T) {
+	cases := []struct {
+		key  TemplateKey
+		lang Lang
+		args []any
+		want string
+	}{
+		{TplOrderRef, LangEN, []any{"WB-F4BFCE06"}, "Order number: WB-F4BFCE06"},
+		{TplOrderRef, LangID, []any{"WB-F4BFCE06"}, "Nomor pesanan: WB-F4BFCE06"},
+		{TplFieldProblems, LangEN, []any{"the postal code 123 has 3 digits but should have 5"}, "Sorry, the postal code 123 has 3 digits but should have 5."},
+		{TplFieldProblems, LangID, []any{"kode pos 123 belum valid (3 digit; seharusnya 5 digit)"}, "Maaf Kak, kode pos 123 belum valid (3 digit; seharusnya 5 digit)."},
+		{TplShippingSummary, LangEN, []any{"Ana", "+62872839472828", "Villa Kalijudan Indah A9, Surabaya"}, "Shipping to:\nAna (+62872839472828)\nVilla Kalijudan Indah A9, Surabaya"},
+		{TplShippingSummary, LangID, []any{"Ana", "+62872839472828", "Villa Kalijudan Indah A9, Surabaya"}, "Dikirim ke:\nAna (+62872839472828)\nVilla Kalijudan Indah A9, Surabaya"},
+	}
+	for _, c := range cases {
+		if got := T(c.key, c.lang, c.args...); got != c.want {
+			t.Errorf("T(%s, %s) = %q, want %q", c.key, c.lang, got, c.want)
+		}
+	}
+}

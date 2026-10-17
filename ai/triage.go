@@ -95,6 +95,7 @@ var nonDeterministicTriagePaths = map[string]bool{
 	PathLLM:         true,
 	PathLLMTools:    true,
 	PathLLMGrounded: true,
+	PathLLMFirst:    true,
 }
 
 // IsNonDeterministicTriagePath reports paths where simulator cannot assert exact routing.
