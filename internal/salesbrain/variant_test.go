@@ -89,6 +89,24 @@ func TestDeclaredColorsFromDescription(t *testing.T) {
 	if len(got2) != 1 || got2[0] != "putih" {
 		t.Fatalf("colors = %v", got2)
 	}
+	row3 := CatalogFact{Description: "Warna: nyaman tidak luntur"}
+	if c := colorsDeclaredOnRow(row3); len(c) != 0 {
+		t.Fatalf("non-color words must not become colors: %v", c)
+	}
+}
+
+func TestResolveColorAcrossSKUsWithoutBaseName(t *testing.T) {
+	catalog := []CatalogFact{
+		{No: 1, ID: "kaos-hitam", Name: "Kaos Polos Premium - Hitam", NeedsVariant: true, Price: 89000, Stock: StockIn, StockQty: 5},
+		{No: 2, ID: "kaos-putih", Name: "Kaos Polos Premium - Putih", NeedsVariant: true, Price: 89000, Stock: StockIn, StockQty: 5},
+	}
+	res := ResolveCartOps(ResolveInput{
+		Cart: nil, Ops: []ItemOp{{No: 1, Qty: 1, Color: "putih"}},
+		Catalog: catalog, BuyerTexts: []string{"kaos putih 1"}, VariantTexts: []string{"kaos putih 1"},
+	})
+	if len(res.Issues) != 0 || len(res.Cart) != 1 || res.Cart[0].Color != "putih" {
+		t.Fatalf("got %+v", res)
+	}
 }
 
 func TestResolveUnknownColorListsOnlySoldColours(t *testing.T) {

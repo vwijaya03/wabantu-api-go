@@ -532,6 +532,7 @@ func advanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 		addrBody := ShippingAmendBody(userText)
 		if IsShippingAmendIntent(userText) || isCheckoutFormFieldMessage(addrBody) {
 			if isCheckoutFormFieldMessage(addrBody) || isCheckoutFormFieldMessage(userText) {
+				clearShippingAddress(&st)
 				mergeShippingText(&st, addrBody)
 				if st.ShippingComplete() {
 					st.Step = "confirm"
@@ -595,6 +596,9 @@ func advanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 				State: &st, Path: PathOrderFlow,
 				Reply: buildOrderFlowReply(st, tmpl.AskRecipient, catalog),
 			}
+		}
+		if st.ReconfirmAfterShipping {
+			clearShippingAddress(&st)
 		}
 		mergeShippingText(&st, userText)
 		if !st.ShippingComplete() {

@@ -259,6 +259,35 @@ func formatFeaturedProductsBody(items []CatalogItem) string {
 	return strings.Join(lines, "\n\n")
 }
 
+// productColorSuffixWords — suffix after " - " on catalog names (not sizes).
+var productColorSuffixWords = map[string]bool{
+	"hitam": true, "putih": true, "merah": true, "biru": true, "pink": true, "cream": true, "navy": true,
+	"abu": true, "coklat": true, "hijau": true, "kuning": true, "ungu": true, "orange": true, "gold": true,
+	"silver": true, "maroon": true, "tosca": true, "beige": true, "brown": true, "black": true, "white": true,
+	"blue": true, "red": true, "green": true, "yellow": true, "grey": true, "gray": true, "purple": true,
+	"nude": true, "mocha": true, "olive": true,
+}
+
+func stripColorSuffixFromProductName(name string) string {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" || extractSizeFromProductName(trimmed) != "" {
+		return trimmed
+	}
+	i := strings.LastIndex(trimmed, " - ")
+	if i < 0 {
+		return trimmed
+	}
+	suf := strings.TrimSpace(trimmed[i+3:])
+	if suf == "" {
+		return trimmed
+	}
+	words := strings.Fields(strings.ToLower(suf))
+	if len(words) == 0 || !productColorSuffixWords[words[0]] {
+		return trimmed
+	}
+	return strings.TrimSpace(trimmed[:i])
+}
+
 func extractSizeFromProductName(name string) string {
 	trimmed := strings.TrimSpace(name)
 	if trimmed == "" {

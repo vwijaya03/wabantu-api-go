@@ -243,8 +243,43 @@ var (
 	colorHintInTextRe   = regexp.MustCompile(`(?i)(?:warna|color|colour)\s*[:\-]?\s*(.+)`)
 )
 
+var knownRetailColors = map[string]bool{
+	"hitam": true, "putih": true, "merah": true, "biru": true, "pink": true, "cream": true, "navy": true,
+	"abu": true, "coklat": true, "hijau": true, "kuning": true, "ungu": true, "orange": true, "gold": true,
+	"silver": true, "maroon": true, "tosca": true, "beige": true, "brown": true, "black": true, "white": true,
+	"blue": true, "red": true, "green": true, "yellow": true, "grey": true, "gray": true, "purple": true,
+	"nude": true, "mocha": true, "olive": true, "neon": true,
+}
+
+func productNameBase(name string) string {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return ""
+	}
+	if i := strings.LastIndex(trimmed, " - "); i >= 0 {
+		suf := strings.TrimSpace(trimmed[i+3:])
+		if suf != "" && !catalogSizeSuffixRe.MatchString(suf) {
+			if w := normWords(strings.Fields(suf)[0]); knownRetailColors[w] {
+				return strings.TrimSpace(trimmed[:i])
+			}
+		}
+	}
+	return trimmed
+}
+
+func catalogProductKey(c CatalogFact) string {
+	if b := strings.TrimSpace(c.BaseName); b != "" {
+		return normWords(b)
+	}
+	return normWords(productNameBase(c.Name))
+}
+
 func sameStockProduct(a, b CatalogFact) bool {
-	if a.BaseName != "" && b.BaseName != "" && strings.EqualFold(a.BaseName, b.BaseName) {
+	if a.BaseName != "" && b.BaseName != "" && strings.EqualFold(strings.TrimSpace(a.BaseName), strings.TrimSpace(b.BaseName)) {
+		return true
+	}
+	ka, kb := catalogProductKey(a), catalogProductKey(b)
+	if ka != "" && ka == kb {
 		return true
 	}
 	if a.ID != "" && b.ID != "" && a.ID == b.ID {
@@ -317,16 +352,20 @@ func firstColorToken(s string) string {
 	if len(words) == 0 {
 		return ""
 	}
+	w0 := normWords(words[0])
+	if !knownRetailColors[w0] {
+		return ""
+	}
 	if len(words) == 1 {
 		return words[0]
 	}
-	w2 := strings.ToLower(words[1])
-	for _, h := range []string{"bahan", "katun", "cotton", "material", "ukuran", "size", "gram", "gr"} {
-		if w2 == h {
+	w1 := normWords(words[1])
+	for _, h := range []string{"bahan", "katun", "cotton", "material", "ukuran", "size", "gram", "gr", "nyaman", "adem", "tidak", "luntur", "tahan", "anti"} {
+		if w1 == h {
 			return words[0]
 		}
 	}
-	if len(words) == 2 {
+	if len(words) == 2 && (knownRetailColors[w1] || w1 == "neon") {
 		return words[0] + " " + words[1]
 	}
 	return words[0]

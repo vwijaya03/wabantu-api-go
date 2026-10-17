@@ -136,7 +136,7 @@ func TestLegacyFlowShippingAmendOneLineAtConfirm(t *testing.T) {
 	st := confirmStepState(true)
 	persisted := 0
 	res := AdvanceOrderFlow(OrderFlowInput{
-		UserText: "ganti alamat ke Jl Kenanga No 9, Malang, Jawa Timur 65145",
+		UserText: "ganti alamat ke Jl. Kenanga No 9, Malang, Jawa Timur 65111",
 		State:    &st, Catalog: omahCadburyLiveCatalog(), Profile: foodProfile(),
 	}, func(OrderState) (string, error) {
 		persisted++
@@ -145,13 +145,32 @@ func TestLegacyFlowShippingAmendOneLineAtConfirm(t *testing.T) {
 	if res.Completed || persisted != 0 || res.State == nil || res.State.Step != "confirm" {
 		t.Fatalf("one-line amend must reconfirm: %+v persisted=%d", res.State, persisted)
 	}
+	if strings.EqualFold(res.State.City, "Surabaya") || res.State.PostalCode == "60177" {
+		t.Fatalf("old city/postal must be cleared: %+v", res.State)
+	}
+	if !strings.Contains(strings.ToLower(res.State.City), "malang") || res.State.PostalCode != "65111" {
+		t.Fatalf("new address fields: %+v", res.State)
+	}
+	if strings.Contains(strings.ToLower(res.State.Street), "ganti") {
+		t.Fatalf("amend prefix must not be in street: %q", res.State.Street)
+	}
+}
+
+func TestShippingAmendBodyStripsAlamatnyaPrefix(t *testing.T) {
+	body := ShippingAmendBody("alamatnya ganti jadi Jl Mawar 5")
+	if strings.Contains(strings.ToLower(body), "alamatnya") || strings.Contains(strings.ToLower(body), "ganti jadi") {
+		t.Fatalf("got %q", body)
+	}
+	if !strings.Contains(strings.ToLower(body), "mawar") {
+		t.Fatalf("got %q", body)
+	}
 }
 
 func TestLegacyFlowAddOneMoreAtConfirm(t *testing.T) {
 	st := confirmStepState(true)
 	persisted := 0
 	res := AdvanceOrderFlow(OrderFlowInput{
-		UserText: "tambah 1 lagi", State: &st, Catalog: omahCadburyLiveCatalog(), Profile: foodProfile(),
+		UserText: "tambah 1 lagi ya kak", State: &st, Catalog: omahCadburyLiveCatalog(), Profile: foodProfile(),
 	}, func(OrderState) (string, error) {
 		persisted++
 		return "9f1c2d3e-0000-0000-0000-000000000000", nil

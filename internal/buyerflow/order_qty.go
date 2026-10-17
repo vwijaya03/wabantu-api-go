@@ -107,7 +107,7 @@ func tryApplyQtyRevision(st *OrderState, userText string) bool {
 	return true
 }
 
-var addOneMoreRe = regexp.MustCompile(`(?i)^(?:tambah|nambah)\s*1\s+lagi[.!?]*$|^1\s+lagi[.!?]*$`)
+var addOneMoreRe = regexp.MustCompile(`(?i)^(?:tambah|nambah)\s*1\s+lagi(?:\s+ya)?(?:\s+kak)?[.!?]*$|^1\s+lagi(?:\s+ya)?(?:\s+kak)?[.!?]*$`)
 
 // tryApplyAddOneMore increments qty by one when the buyer says "tambah 1 lagi" with a single-line cart.
 func tryApplyAddOneMore(st *OrderState, userText string) bool {
