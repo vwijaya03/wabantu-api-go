@@ -107,6 +107,26 @@ func tryApplyQtyRevision(st *OrderState, userText string) bool {
 	return true
 }
 
+var addOneMoreRe = regexp.MustCompile(`(?i)^(?:tambah|nambah)\s*1\s+lagi[.!?]*$|^1\s+lagi[.!?]*$`)
+
+// tryApplyAddOneMore increments qty by one when the buyer says "tambah 1 lagi" with a single-line cart.
+func tryApplyAddOneMore(st *OrderState, userText string) bool {
+	if st == nil || !addOneMoreRe.MatchString(strings.TrimSpace(userText)) {
+		return false
+	}
+	ensureMultiItemsFromSingle(st)
+	if len(st.Items) == 1 {
+		st.Items[0].Qty++
+		st.Qty = st.Items[0].Qty
+		return true
+	}
+	if len(st.Items) == 0 && st.Qty > 0 {
+		st.Qty++
+		return true
+	}
+	return false
+}
+
 // IsCasualPraiseLike — pujian singkat ke bot, tetap in-scope.
 func IsCasualPraiseLike(userText string) bool {
 	text := strings.ToLower(strings.TrimSpace(userText))

@@ -78,6 +78,19 @@ func TestResolveUnknownSizeListsWhatExists(t *testing.T) {
 	}
 }
 
+func TestDeclaredColorsFromDescription(t *testing.T) {
+	row := CatalogFact{Description: "Warna: hitam, putih, navy"}
+	got := colorsDeclaredOnRow(row)
+	if len(got) != 3 || got[0] != "hitam" || got[1] != "putih" || got[2] != "navy" {
+		t.Fatalf("colors = %v", got)
+	}
+	row2 := CatalogFact{Description: "Warna: putih bahan katun adem"}
+	got2 := colorsDeclaredOnRow(row2)
+	if len(got2) != 1 || got2[0] != "putih" {
+		t.Fatalf("colors = %v", got2)
+	}
+}
+
 func TestResolveUnknownColorListsOnlySoldColours(t *testing.T) {
 	res := resolve(nil, []ItemOp{{No: 4, Qty: 1, Color: "hijau"}}, "kaos polos hijau 1")
 	if len(res.Cart) != 0 || len(res.Issues) != 1 || res.Issues[0].Kind != IssueColorUnknown {
@@ -133,7 +146,7 @@ func TestResolveVariantGroundsOnlyFromVariantTexts(t *testing.T) {
 	// A house number in an earlier address must not become a size on this turn.
 	res := ResolveCartOps(ResolveInput{
 		Cart: nil, Ops: []ItemOp{{No: 4, Qty: 1, Size: "42"}},
-		Catalog: variantFacts(),
+		Catalog:      variantFacts(),
 		BuyerTexts:   []string{"kaos satu", "Jl. Melati No 42 Surabaya"},
 		VariantTexts: []string{"kaos satu"},
 	})
@@ -143,7 +156,7 @@ func TestResolveVariantGroundsOnlyFromVariantTexts(t *testing.T) {
 	// Same turn text still grounds the variant.
 	res = ResolveCartOps(ResolveInput{
 		Cart: nil, Ops: []ItemOp{{No: 4, Qty: 1, Size: "L", Color: "putih"}},
-		Catalog: variantFacts(),
+		Catalog:      variantFacts(),
 		BuyerTexts:   []string{"ukuran L warna putih"},
 		VariantTexts: []string{"ukuran L warna putih"},
 	})

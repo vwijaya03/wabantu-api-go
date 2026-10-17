@@ -118,4 +118,7 @@ type OrderState struct {
 
 	// UpsellShown — blok rekomendasi tambahan sudah ditampilkan untuk pesanan ini (maks 1 kali).
 	UpsellShown bool `json:"upsellShown,omitempty"`
+
+	// ReconfirmAfterShipping — pembeli mengubah alamat dari langkah confirm; setelah alamat lengkap kembali ke confirm, bukan langsung simpan.
+	ReconfirmAfterShipping bool `json:"reconfirmAfterShipping,omitempty"`
 }

@@ -100,8 +100,67 @@ func TestLegacyFlowGantiAlamatWithoutDetailsGoesToAskAddress(t *testing.T) {
 		t.Fatal("must not persist")
 		return "", nil
 	})
-	if res.State == nil || res.State.Step != "ask_address_full" {
-		t.Fatalf("must open address step: %+v", res.State)
+	if res.State == nil || res.State.Step != "ask_address_full" || !res.State.ReconfirmAfterShipping {
+		t.Fatalf("must open address step and require reconfirm: %+v", res.State)
+	}
+}
+
+func TestLegacyFlowShippingAmendTwoStepReturnsToConfirm(t *testing.T) {
+	st := confirmStepState(true)
+	res := AdvanceOrderFlow(OrderFlowInput{
+		UserText: "ganti alamat", State: &st, Catalog: omahCadburyLiveCatalog(), Profile: foodProfile(),
+	}, func(OrderState) (string, error) {
+		t.Fatal("must not persist")
+		return "", nil
+	})
+	if res.State == nil || res.State.Step != "ask_address_full" || !res.State.ReconfirmAfterShipping {
+		t.Fatalf("step1: %+v", res.State)
+	}
+	persisted := 0
+	res = AdvanceOrderFlow(OrderFlowInput{
+		UserText: "Alamat: Jl Kenanga 9\nKota: Malang\nProvinsi: Jawa Timur\n65145",
+		State:    res.State, Catalog: omahCadburyLiveCatalog(), Profile: foodProfile(),
+	}, func(OrderState) (string, error) {
+		persisted++
+		return "9f1c2d3e-0000-0000-0000-000000000000", nil
+	})
+	if res.Completed || persisted != 0 || res.State == nil || res.State.Step != "confirm" {
+		t.Fatalf("step2 must reconfirm, not save: completed=%v persisted=%d state=%+v", res.Completed, persisted, res.State)
+	}
+	if !strings.Contains(strings.ToLower(res.State.Street), "kenanga") {
+		t.Fatalf("street: %+v", res.State)
+	}
+}
+
+func TestLegacyFlowShippingAmendOneLineAtConfirm(t *testing.T) {
+	st := confirmStepState(true)
+	persisted := 0
+	res := AdvanceOrderFlow(OrderFlowInput{
+		UserText: "ganti alamat ke Jl Kenanga No 9, Malang, Jawa Timur 65145",
+		State:    &st, Catalog: omahCadburyLiveCatalog(), Profile: foodProfile(),
+	}, func(OrderState) (string, error) {
+		persisted++
+		return "9f1c2d3e-0000-0000-0000-000000000000", nil
+	})
+	if res.Completed || persisted != 0 || res.State == nil || res.State.Step != "confirm" {
+		t.Fatalf("one-line amend must reconfirm: %+v persisted=%d", res.State, persisted)
+	}
+}
+
+func TestLegacyFlowAddOneMoreAtConfirm(t *testing.T) {
+	st := confirmStepState(true)
+	persisted := 0
+	res := AdvanceOrderFlow(OrderFlowInput{
+		UserText: "tambah 1 lagi", State: &st, Catalog: omahCadburyLiveCatalog(), Profile: foodProfile(),
+	}, func(OrderState) (string, error) {
+		persisted++
+		return "9f1c2d3e-0000-0000-0000-000000000000", nil
+	})
+	if res.Completed || persisted != 0 || res.State == nil || res.State.Step != "confirm" {
+		t.Fatalf("add-one must reconfirm: %+v", res.State)
+	}
+	if res.State.Qty != 2 || res.State.Items[0].Qty != 2 {
+		t.Fatalf("qty should be 2: %+v", res.State)
 	}
 }
 

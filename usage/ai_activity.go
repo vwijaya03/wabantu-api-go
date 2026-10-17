@@ -88,6 +88,8 @@ type AIActivityByModel struct {
 	InputTokens  int     `json:"inputTokens"`
 	OutputTokens int     `json:"outputTokens"`
 	EstimatedUSD float64 `json:"estimatedCostUsd"`
+	// CostKnown is false when the model id has no entry in pricingTable (do not show $0 as a real price).
+	CostKnown bool `json:"costKnown"`
 }
 
 // AIActivitySummary is a tenant-level rollup for a calendar month.
@@ -333,7 +335,11 @@ func buildAIActivitySummary(ctx context.Context, tenantSchema, period string) (*
 		summary.ByPath = append(summary.ByPath, *v)
 	}
 	for _, v := range modelMap {
-		v.EstimatedUSD = EstimateTokenCost(v.Model, v.InputTokens, v.OutputTokens)
+		cost, known := EstimateTokenCostKnown(v.Model, v.InputTokens, v.OutputTokens)
+		v.CostKnown = known
+		if known {
+			v.EstimatedUSD = cost
+		}
 		summary.ByModel = append(summary.ByModel, *v)
 	}
 	return summary, nil

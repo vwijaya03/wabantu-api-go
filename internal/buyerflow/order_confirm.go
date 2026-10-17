@@ -44,6 +44,7 @@ var confirmPhrases = map[string]bool{
 const maxConfirmTokens = 8
 
 var shippingAmendIntentRe = regexp.MustCompile(`(?i)\b(ganti|ubah|salah)\s+(alamat|address)\b`)
+var shippingAmendPrefixRe = regexp.MustCompile(`(?i)^(?:ok\s+)?(?:tapi\s+)?(?:ganti|ubah|salah)\s+(?:alamat|address)\s*(?:ke|jadi|menjadi)?\s*`)
 
 // IsShippingAmendIntent reports that the buyer wants to change delivery details (with or without
 // the new address in the same message). Used at the confirm step before fail-closed re-prompt.
@@ -53,6 +54,15 @@ func IsShippingAmendIntent(text string) bool {
 		return false
 	}
 	return shippingAmendIntentRe.MatchString(lower) || strings.Contains(lower, "ganti alamat") || strings.Contains(lower, "ubah alamat")
+}
+
+// ShippingAmendBody strips a leading "ganti alamat ke …" prefix so the remainder can be parsed as address.
+func ShippingAmendBody(userText string) string {
+	t := strings.TrimSpace(userText)
+	if loc := shippingAmendPrefixRe.FindStringIndex(t); loc != nil {
+		return strings.TrimSpace(t[loc[1]:])
+	}
+	return t
 }
 
 // IsExplicitOrderConfirm reports whether text is the buyer's plain approval of the order summary
