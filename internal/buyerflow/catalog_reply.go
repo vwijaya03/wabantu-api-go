@@ -868,7 +868,19 @@ func BuildCatalogContext(catalog []CatalogItem) string {
 		}
 		name := sanitizeCatalogContextField(it.Name)
 		code := sanitizeCatalogContextField(it.ExternalCode)
-		lines = append(lines, fmt.Sprintf("- %s | %s | kode internal: %s", name, price, code))
+		line := fmt.Sprintf("- %s | %s | kode internal: %s", name, price, code)
+		// The owner's product description carries attributes the name does not (frozen, vacuum-sealed,
+		// weight, ingredients); without it the model can only guess. Keep it short: one line per product.
+		const maxDescRunes = 160
+		if desc := strings.TrimSpace(it.Description); desc != "" {
+			if r := []rune(desc); len(r) > maxDescRunes {
+				desc = strings.TrimSpace(string(r[:maxDescRunes])) + "…"
+			}
+			if desc = sanitizeCatalogContextField(desc); desc != "" {
+				line += " | " + desc
+			}
+		}
+		lines = append(lines, line)
 	}
 	lines = append(lines, "Aturan: jawab produk/harga hanya dari daftar di atas. Jangan tampilkan kode internal/SKU ke pelanggan. Jangan dump daftar panjang — gunakan kategori + produk unggulan. Jangan mengarang produk di luar daftar.")
 	return strings.Join(lines, "\n")

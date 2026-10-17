@@ -12,6 +12,9 @@ const (
 	catalogToolGetProduct = "get_product"
 )
 
+// catalogToolDescriptionMaxRunes bounds the description handed to the model per tool result.
+const catalogToolDescriptionMaxRunes = 300
+
 // catalogToolItem — hasil tool untuk LLM (tanpa ID internal sensitif).
 type catalogToolItem struct {
 	Name        string  `json:"name"`
@@ -20,6 +23,7 @@ type catalogToolItem struct {
 	PerPiece    string  `json:"per_piece,omitempty"`
 	SellUnit    string  `json:"sell_unit,omitempty"`
 	ExternalRef string  `json:"external_ref,omitempty"`
+	Description string  `json:"description,omitempty"`
 	Score       float64 `json:"match_score,omitempty"`
 }
 
@@ -47,7 +51,9 @@ func (e *CatalogToolExecutor) Run(toolName string, input json.RawMessage) (strin
 		}
 		items := searchCatalogItems(args.Query, e.catalog, args.Limit)
 		if len(items) == 0 {
-			return `{"found":false,"items":[],"message":"Saya belum menemukan data tersebut di katalog saat ini."}`, nil
+			// Neutral JSON on purpose: a prose message here (it used to be Indonesian) gets echoed
+			// to the buyer in the wrong language; the model words the miss in the buyer's language.
+			return `{"found":false,"items":[]}`, nil
 		}
 		out, err := json.Marshal(map[string]any{"found": true, "items": items})
 		return string(out), err
@@ -60,7 +66,7 @@ func (e *CatalogToolExecutor) Run(toolName string, input json.RawMessage) (strin
 		}
 		it := getCatalogProductByRef(args.Ref, e.catalog)
 		if it == nil {
-			return `{"found":false,"message":"Saya belum menemukan data tersebut di katalog saat ini."}`, nil
+			return `{"found":false}`, nil
 		}
 		out, err := json.Marshal(map[string]any{"found": true, "product": it})
 		return string(out), err
@@ -87,6 +93,13 @@ func searchCatalogItems(query string, catalog []dbCatalogItem, limit int) []cata
 		it := &catalog[i]
 		nameLower := strings.ToLower(it.Name)
 		score := overlapScore(tokens, tokenize(nameLower))
+		// The buyer's words ("tuna steak") often appear only in the description (the product is named
+		// "Tuna Portion"). Score the share of query words the description covers rather than Dice
+		// overlap, which a long description would dilute to nothing; a name hit still outranks it
+		// because the name bonuses below are added on top.
+		if descScore := queryCoverage(tokens, tokenize(strings.ToLower(it.Description))); descScore > 0 {
+			score = max(score, 0.6*descScore)
+		}
 		if strings.Contains(nameLower, strings.ToLower(query)) {
 			score += 0.4
 		}
@@ -148,10 +161,47 @@ func formatCatalogToolItem(it *dbCatalogItem) catalogToolItem {
 		Price:       formatCatalogPrice(it),
 		SellUnit:    info.UnitLabel,
 		ExternalRef: it.ExternalCode,
+		Description: clipRunes(strings.TrimSpace(it.Description), catalogToolDescriptionMaxRunes),
 	}
 	if info.IsPackListing {
 		item.PackCount = info.PackCount
 		item.PerPiece = formatMoney(info.PerPiecePrice)
 	}
 	return item
+}
+
+// clipRunes shortens s to at most limit runes (never splitting a multi-byte character) and
+// marks the cut with an ellipsis.
+func clipRunes(s string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	r := []rune(s)
+	if len(r) <= limit {
+		return s
+	}
+	return strings.TrimSpace(string(r[:limit])) + "…"
+}
+
+// queryCoverage is the share of distinct query tokens that also occur in doc (0..1).
+func queryCoverage(query, doc []string) float64 {
+	if len(query) == 0 || len(doc) == 0 {
+		return 0
+	}
+	inDoc := make(map[string]struct{}, len(doc))
+	for _, t := range doc {
+		inDoc[t] = struct{}{}
+	}
+	seen := make(map[string]struct{}, len(query))
+	hit := 0
+	for _, t := range query {
+		if _, dup := seen[t]; dup {
+			continue
+		}
+		seen[t] = struct{}{}
+		if _, ok := inDoc[t]; ok {
+			hit++
+		}
+	}
+	return float64(hit) / float64(len(seen))
 }

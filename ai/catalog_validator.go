@@ -176,7 +176,7 @@ func groundLLMReply(
 		}
 		bfCatalog := make([]bf.CatalogItem, len(catalog))
 		for i, c := range catalog {
-			bfCatalog[i] = bf.CatalogItem{ID: c.ID, Name: c.Name, SellPrice: c.SellPrice, SellUnit: c.SellUnit, ExternalCode: c.ExternalCode}
+			bfCatalog[i] = bf.CatalogItem{ID: c.ID, Name: c.Name, SellPrice: c.SellPrice, SellUnit: c.SellUnit, ExternalCode: c.ExternalCode, Description: c.Description}
 		}
 		var bfProfile *bf.BusinessProfile
 		if profile != nil {
