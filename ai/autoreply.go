@@ -33,6 +33,10 @@ import (
 // ErrAIHandoffPaused means staff has taken over the conversation; inbound AI must not reply or retry.
 var ErrAIHandoffPaused = errors.New("AI_HANDOFF_PAUSED")
 
+// errEmptyReply: sendAiMessage never sends a blank WhatsApp body (Meta rejects it and the buyer
+// sees nothing); the job fails visibly instead and its retry/fallback handling takes over.
+var errEmptyReply = errors.New("ai: refusing to send an empty reply")
+
 const (
 	reasonAIGenerated       = "ai_generated"
 	reasonProfileIncomplete = "profile_incomplete"
@@ -1508,6 +1512,11 @@ func (s *AutoReplyService) sendAiMessage(
 	meta AiReplyMeta,
 ) error {
 	meta = metaForSend(meta, inboundMessageID)
+
+	if strings.TrimSpace(text) == "" {
+		rlog.Error("AI job: refusing to send empty reply", "path", meta.Path, "inboundId", inboundMessageID)
+		return errEmptyReply
+	}
 
 	if shouldDropCoalescedSend(ctx) {
 		rlog.Info("AI job: drop outbound, newer inbound in burst", "inboundId", inboundMessageID)
