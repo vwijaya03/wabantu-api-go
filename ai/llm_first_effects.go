@@ -77,10 +77,10 @@ const lfHandoffReasonRunes = 120
 
 // Reasons recorded in message metadata when the model's reply was replaced.
 const (
-	lfReplacedCancel         = "cancel_template"
-	lfReplacedCancelPaid     = "cancel_paid_template"
-	lfReplacedPersistFailed  = "order_persist_failed"
-	lfReplacedVariantMissing  = "variant_missing"
+	lfReplacedCancel             = "cancel_template"
+	lfReplacedCancelPaid         = "cancel_paid_template"
+	lfReplacedPersistFailed      = "order_persist_failed"
+	lfReplacedVariantMissing     = "variant_missing"
 	lfReplacedNotExplicitConfirm = "confirm_not_explicit"
 )
 

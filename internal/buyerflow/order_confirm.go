@@ -43,6 +43,18 @@ var confirmPhrases = map[string]bool{
 // maxConfirmTokens: an approval is short. A long message that happens to contain "ok" is not one.
 const maxConfirmTokens = 8
 
+var shippingAmendIntentRe = regexp.MustCompile(`(?i)\b(ganti|ubah|salah)\s+(alamat|address)\b`)
+
+// IsShippingAmendIntent reports that the buyer wants to change delivery details (with or without
+// the new address in the same message). Used at the confirm step before fail-closed re-prompt.
+func IsShippingAmendIntent(text string) bool {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	if lower == "" {
+		return false
+	}
+	return shippingAmendIntentRe.MatchString(lower) || strings.Contains(lower, "ganti alamat") || strings.Contains(lower, "ubah alamat")
+}
+
 // IsExplicitOrderConfirm reports whether text is the buyer's plain approval of the order summary
 // ("ok", "ya benar kak", "lanjut proses", "looks good", "👍"). It is deliberately strict: every word
 // must be an approval or a filler, so "ok tapi ganti alamat", "tidak" or "ok berapa ongkirnya?"

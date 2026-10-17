@@ -20,7 +20,7 @@ func lfVariantCatalog() []dbCatalogItem {
 		{ID: "boxer-l", ExternalCode: "BOXER-MONO-L", Name: "Boxer Pria Mono - L", SellPrice: 56900, SellUnit: "pcs", StockTracked: true, StockAvailable: 5},
 		{ID: "boxer-m", ExternalCode: "BOXER-MONO-M", Name: "Boxer Pria Mono - M", SellPrice: 54900, SellUnit: "pcs", StockTracked: true, StockAvailable: 3},
 		{ID: "boxer-xl", ExternalCode: "BOXER-MONO-XL", Name: "Boxer Pria Mono - XL", SellPrice: 58900, SellUnit: "pcs", StockTracked: true, StockAvailable: 0},
-		{ID: "kaos", ExternalCode: "KAOS-POLOS", Name: "Kaos Polos Premium", SellPrice: 89000, SellUnit: "pcs"},
+		{ID: "kaos", ExternalCode: "KAOS-POLOS", Name: "Kaos Polos Premium", Description: "Warna: hitam, putih", SellPrice: 89000, SellUnit: "pcs"},
 		{ID: "salmon-100", ExternalCode: "SALMON_STEAK_100_GRAM", Name: "Salmon Steak 100 Gram", SellPrice: 75000, SellUnit: "pcs"},
 	}
 }

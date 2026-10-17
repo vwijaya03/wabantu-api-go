@@ -12,7 +12,8 @@ func variantFacts() []CatalogFact {
 		{No: 1, ID: "boxer-l", Name: "Boxer Pria Mono - L", BaseName: "Boxer Pria Mono", Size: "L", NeedsVariant: true, Price: 56900, Stock: StockIn, StockQty: 5},
 		{No: 2, ID: "boxer-m", Name: "Boxer Pria Mono - M", BaseName: "Boxer Pria Mono", Size: "M", NeedsVariant: true, Price: 54900, Stock: StockIn, StockQty: 3},
 		{No: 3, ID: "boxer-xl", Name: "Boxer Pria Mono - XL", BaseName: "Boxer Pria Mono", Size: "XL", NeedsVariant: true, Price: 58900, Stock: StockOut},
-		{No: 4, ID: "kaos", Name: "Kaos Polos Premium", BaseName: "Kaos Polos Premium", NeedsVariant: true, Price: 89000},
+		{No: 4, ID: "kaos-hitam", Name: "Kaos Polos Premium - Hitam", BaseName: "Kaos Polos Premium", NeedsVariant: true, Price: 89000, Stock: StockIn, StockQty: 10},
+		{No: 7, ID: "kaos-putih", Name: "Kaos Polos Premium - Putih", BaseName: "Kaos Polos Premium", NeedsVariant: true, Price: 89000, Stock: StockIn, StockQty: 10},
 		{No: 5, ID: "salmon", Name: "Salmon Steak 100 Gram", BaseName: "Salmon Steak 100 Gram", Price: 75000},
 		{No: 6, ID: "tuna", Name: "Tuna Portion", BaseName: "Tuna Portion", Price: 350000, Stock: StockOut},
 	}
@@ -74,6 +75,20 @@ func TestResolveUnknownSizeListsWhatExists(t *testing.T) {
 	if len(res.Cart) != 0 || len(res.Issues) != 1 || res.Issues[0].Kind != IssueVariantUnknown ||
 		!reflect.DeepEqual(res.Issues[0].Options, []string{"L", "M"}) {
 		t.Fatalf("got %+v", res)
+	}
+}
+
+func TestResolveUnknownColorListsOnlySoldColours(t *testing.T) {
+	res := resolve(nil, []ItemOp{{No: 4, Qty: 1, Color: "hijau"}}, "kaos polos hijau 1")
+	if len(res.Cart) != 0 || len(res.Issues) != 1 || res.Issues[0].Kind != IssueColorUnknown {
+		t.Fatalf("got %+v", res)
+	}
+	opts := res.Issues[0].Options
+	if len(opts) != 2 || !reflect.DeepEqual([]string{normWords(opts[0]), normWords(opts[1])}, []string{"hitam", "putih"}) {
+		t.Fatalf("options must be product colours only, got %v", opts)
+	}
+	if got := RenderIssue(res.Issues[0], LangID); !strings.Contains(got, "warna") || strings.Contains(got, "ukuran") {
+		t.Fatalf("color rejection copy: %q", got)
 	}
 }
 
@@ -139,7 +154,7 @@ func TestResolveVariantGroundsOnlyFromVariantTexts(t *testing.T) {
 
 func TestResolveSameGenericProductInTwoVariants(t *testing.T) {
 	texts := []string{"kaos M hitam 1 dan kaos L putih 2"}
-	res := resolve(nil, []ItemOp{{No: 4, Qty: 1, Size: "M", Color: "hitam"}, {No: 4, Qty: 2, Size: "L", Color: "putih"}}, texts...)
+	res := resolve(nil, []ItemOp{{No: 4, Qty: 1, Size: "M", Color: "hitam"}, {No: 7, Qty: 2, Size: "L", Color: "putih"}}, texts...)
 	if len(res.Issues) != 0 || len(res.Cart) != 2 {
 		t.Fatalf("got %+v", res)
 	}
@@ -153,12 +168,12 @@ func TestResolveSameGenericProductInTwoVariants(t *testing.T) {
 		t.Fatalf("got %+v", next.Cart)
 	}
 	// Removing one variant keeps the other.
-	next = resolve(res.Cart, []ItemOp{{No: 4, Qty: 0, Size: "L", Color: "putih"}}, "kaos L putih batal")
+	next = resolve(res.Cart, []ItemOp{{No: 7, Qty: 0, Size: "L", Color: "putih"}}, "kaos L putih batal")
 	if len(next.Cart) != 1 || next.Cart[0].Size != "M" {
 		t.Fatalf("got %+v", next.Cart)
 	}
 	// "Remove the kaos" without a variant removes every line of it.
-	next = resolve(res.Cart, []ItemOp{{No: 4, Qty: 0}}, "kaos batal semua")
+	next = resolve(res.Cart, []ItemOp{{No: 4, Qty: 0}, {No: 7, Qty: 0}}, "kaos batal semua")
 	if len(next.Cart) != 0 || !next.Changed {
 		t.Fatalf("got %+v", next.Cart)
 	}
@@ -222,10 +237,10 @@ func TestResolveStockPooledAcrossVariantLines(t *testing.T) {
 	catalog := []CatalogFact{
 		{No: 1, ID: "kaos", Name: "Kaos Polos Premium", BaseName: "Kaos Polos Premium", NeedsVariant: true, Price: 89000, Stock: StockIn, StockQty: 4},
 	}
-	cart := []OrderLine{{ID: "kaos", Name: "Kaos Polos Premium", Qty: 3, UnitPrice: 89000, Size: "M", Color: "hitam"}}
+	cart := []OrderLine{{ID: "kaos", Name: "Kaos Polos Premium", Qty: 3, UnitPrice: 89000, Size: "M"}}
 	res := ResolveCartOps(ResolveInput{
-		Cart: cart, Ops: []ItemOp{{No: 1, Qty: 3, Size: "L", Color: "putih"}},
-		Catalog: catalog, BuyerTexts: []string{"3 L putih"}, VariantTexts: []string{"3 L putih"},
+		Cart: cart, Ops: []ItemOp{{No: 1, Qty: 3, Size: "L"}},
+		Catalog: catalog, BuyerTexts: []string{"3 L"}, VariantTexts: []string{"3 L"},
 	})
 	if res.Changed || len(res.Issues) != 1 || res.Issues[0].Kind != IssueStockLimit || res.Issues[0].Available != 1 {
 		t.Fatalf("3+3 must exceed pool stock 4: %+v", res)
@@ -237,7 +252,7 @@ func TestResolveRejectsUnknownColor(t *testing.T) {
 		Cart: nil, Ops: []ItemOp{{No: 4, Qty: 1, Size: "M", Color: "ungu neon"}},
 		Catalog: variantFacts(), BuyerTexts: []string{"M ungu neon"}, VariantTexts: []string{"M ungu neon"},
 	})
-	if len(res.Cart) != 0 || len(res.Issues) != 1 || res.Issues[0].Kind != IssueVariantUnknown {
+	if len(res.Cart) != 0 || len(res.Issues) != 1 || res.Issues[0].Kind != IssueColorUnknown {
 		t.Fatalf("got %+v", res)
 	}
 }
@@ -317,7 +332,8 @@ func TestPromptShowsVariantRowsAndCartVariants(t *testing.T) {
 	})
 	for _, want := range []string{
 		"1. Boxer Pria Mono - L | Rp56.900 | stok: tersedia | ukuran: L | ukuran lain: no 2 (M, tersedia); no 3 (XL, habis)",
-		"4. Kaos Polos Premium | Rp89.000 | wajib pilih ukuran/warna",
+		"4. Kaos Polos Premium - Hitam | Rp89.000 | stok: tersedia | wajib pilih ukuran/warna",
+		"7. Kaos Polos Premium - Putih | Rp89.000 | stok: tersedia | wajib pilih ukuran/warna",
 		`"size": ""`, "Ukuran/warna:",
 	} {
 		if !strings.Contains(system, want) {

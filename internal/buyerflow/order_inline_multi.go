@@ -481,6 +481,10 @@ func TryAppendItemsDuringCheckout(st *OrderState, userText string, catalog []Cat
 	if !isCheckoutAppendStep(step) {
 		return false, ""
 	}
+	// At final confirm, only explicit add-more phrasing or a named SKU/qty may extend the cart.
+	if step == "confirm" && !IsAddItemToOrderMessage(userText) && !isNamedProductWithQtyMessage(userText, catalog) && !IsCheckoutMergeIntent(userText) {
+		return false, ""
+	}
 
 	if shouldReviseToSiblingSKU(*st, userText, catalog) {
 		match := resolveOrderProductMatch(userText, nil, catalog, vctx)
