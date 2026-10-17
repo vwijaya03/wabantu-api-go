@@ -65,11 +65,14 @@ type gReq struct {
 }
 type gResp struct {
 	Candidates []struct {
-		Content gContent `json:"content"`
+		Content      gContent `json:"content"`
+		FinishReason string   `json:"finishReason"`
 	} `json:"candidates"`
 	UsageMetadata struct {
-		PromptTokenCount     int64 `json:"promptTokenCount"`
-		CandidatesTokenCount int64 `json:"candidatesTokenCount"`
+		PromptTokenCount        int64 `json:"promptTokenCount"`
+		CandidatesTokenCount    int64 `json:"candidatesTokenCount"`
+		ThoughtsTokenCount      int64 `json:"thoughtsTokenCount"`
+		CachedContentTokenCount int64 `json:"cachedContentTokenCount"`
 	} `json:"usageMetadata"`
 }
 
@@ -150,6 +153,11 @@ func (g *GeminiProvider) generate(ctx context.Context, model string, body gReq) 
 	}
 	u.InputTokens = gr.UsageMetadata.PromptTokenCount
 	u.OutputTokens = gr.UsageMetadata.CandidatesTokenCount
+	u.ThoughtsTokens = gr.UsageMetadata.ThoughtsTokenCount
+	u.CachedTokens = gr.UsageMetadata.CachedContentTokenCount
+	if len(gr.Candidates) > 0 {
+		u.FinishReason = gr.Candidates[0].FinishReason
+	}
 	if body.rawOut != nil {
 		*body.rawOut = gr
 		return "", u, nil
@@ -184,8 +192,26 @@ func genCfg(maxTok int64) map[string]any {
 	return map[string]any{"maxOutputTokens": maxTok}
 }
 
+// chatGenCfg extends genCfg with JSON mode and temperature for Chat only.
+func chatGenCfg(r ChatRequest) map[string]any {
+	cfg := genCfg(r.MaxTokens)
+	if !r.JSON && r.Temperature == nil {
+		return cfg
+	}
+	if cfg == nil {
+		cfg = map[string]any{}
+	}
+	if r.Temperature != nil {
+		cfg["temperature"] = *r.Temperature
+	}
+	if r.JSON {
+		cfg["responseMimeType"] = "application/json"
+	}
+	return cfg
+}
+
 func (g *GeminiProvider) Chat(ctx context.Context, r ChatRequest) (ChatResponse, error) {
-	body := gReq{SystemInstruction: sysContent(r.System), GenerationConfig: genCfg(r.MaxTokens)}
+	body := gReq{SystemInstruction: sysContent(r.System), GenerationConfig: chatGenCfg(r)}
 	for _, m := range r.Messages {
 		role := "user"
 		if m.Role == "assistant" {
