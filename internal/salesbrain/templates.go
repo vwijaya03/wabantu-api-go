@@ -33,6 +33,7 @@ const (
 	TplAskVariant          TemplateKey = "ask_variant"          // %[1]s product name
 	TplAskVariantChoices   TemplateKey = "ask_variant_choices"  // %[1]s product name, %[2]s sizes in stock
 	TplVariantNotFound     TemplateKey = "variant_not_found"    // %[1]s product name, %[2]s sizes in stock
+	TplColorNotFound       TemplateKey = "color_not_found"      // %[1]s product name, %[2]s colours sold
 	TplVariantSoldOut      TemplateKey = "variant_sold_out"     // %[1]s product name, %[2]s alternatives sentence (may be "")
 	TplVariantAlternatives TemplateKey = "variant_alternatives" // %[1]s sizes in stock
 	TplStockLimit          TemplateKey = "stock_limit"          // %[1]s product name, %[2]d units left
@@ -130,6 +131,10 @@ var templates = map[TemplateKey]map[Lang]string{
 	TplVariantNotFound: {
 		LangID: "Maaf Kak, ukuran itu tidak ada untuk %[1]s. Yang tersedia: %[2]s. Kakak mau yang mana?",
 		LangEN: "Sorry, that size isn't available for %[1]s. Available: %[2]s. Which one would you like?",
+	},
+	TplColorNotFound: {
+		LangID: "Maaf Kak, warna itu tidak kami jual untuk %[1]s. Warna yang tersedia: %[2]s. Kakak mau yang mana?",
+		LangEN: "Sorry, we don't sell that colour for %[1]s. Available colours: %[2]s. Which would you like?",
 	},
 	TplVariantSoldOut: {
 		LangID: "Maaf Kak, %[1]s sedang habis. %[2]s",

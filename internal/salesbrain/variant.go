@@ -3,6 +3,7 @@ package salesbrain
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"unicode"
 )
@@ -34,6 +35,8 @@ const (
 	IssueChooseVariant IssueKind = "choose_variant"
 	// IssueVariantUnknown: the buyer asked for a size the product does not come in.
 	IssueVariantUnknown IssueKind = "variant_unknown"
+	// IssueColorUnknown: the buyer named a colour this product does not sell.
+	IssueColorUnknown IssueKind = "color_unknown"
 	// IssueSoldOut: the row (or variant) has no stock. Options lists the sibling sizes in stock.
 	IssueSoldOut IssueKind = "sold_out"
 	// IssueStockLimit: more units wanted than the stock holds. Available is what is left.
@@ -127,7 +130,7 @@ func ResolveCartOps(in ResolveInput) CartResolution {
 		}
 		if color != "" && c.NeedsVariant && !colorAllowed(in.Catalog, c, color) {
 			res.Issues = append(res.Issues, OpIssue{
-				Kind: IssueVariantUnknown, No: c.No, Name: displayName(c), Options: colorsOffered(in.Catalog, c),
+				Kind: IssueColorUnknown, No: c.No, Name: displayName(c), Options: soldColorsForProduct(in.Catalog, c),
 			})
 			continue
 		}
@@ -220,7 +223,9 @@ func stockIssueForLine(catalog []CatalogFact, cart []OrderLine, c CatalogFact, q
 	switch {
 	case c.Stock == StockOut:
 		return &OpIssue{Kind: IssueSoldOut, No: c.No, Name: c.Name, Options: sizesInStock(catalog, c)}
-	case c.Stock != "" && int(c.StockQty) > 0:
+	case c.Stock != "" && c.StockQty > 0 && c.StockQty < 1:
+		return &OpIssue{Kind: IssueSoldOut, No: c.No, Name: displayName(c), Options: sizesInStock(catalog, c)}
+	case c.Stock != "" && int(c.StockQty) >= 1:
 		other := poolQtyInCart(cart, c, lineIdx)
 		if other+qty > int(c.StockQty) {
 			left := int(c.StockQty) - other
@@ -233,64 +238,87 @@ func stockIssueForLine(catalog []CatalogFact, cart []OrderLine, c CatalogFact, q
 	return nil
 }
 
-var catalogColorTokens = []string{
-	"hitam", "putih", "biru", "merah", "pink", "cream", "navy", "abu", "coklat", "hijau", "kuning", "ungu",
-	"orange", "gold", "silver", "maroon", "tosca", "beige", "brown", "black", "white", "blue", "red", "green",
-	"yellow", "grey", "gray", "purple", "nude", "mocha", "olive",
+var (
+	catalogSizeSuffixRe = regexp.MustCompile(`(?i)^(XS|S|M|L|XL|XXL|XXXL|3XL|4XL|5XL|\d{2,3})$`)
+	colorHintInTextRe   = regexp.MustCompile(`(?i)(?:warna|color|colour)\s*[:\-]?\s*([a-z][a-z\s]*)`)
+)
+
+func sameStockProduct(a, b CatalogFact) bool {
+	if a.BaseName != "" && b.BaseName != "" && strings.EqualFold(a.BaseName, b.BaseName) {
+		return true
+	}
+	if a.ID != "" && b.ID != "" && a.ID == b.ID {
+		return true
+	}
+	return strings.EqualFold(strings.TrimSpace(a.Name), strings.TrimSpace(b.Name))
 }
 
-// colorAllowed accepts grounded colours that are standard retail words or appear on a catalog row of the product.
+// soldColorsForProduct lists colours this product actually sells, from sibling SKU names and descriptions.
+func soldColorsForProduct(catalog []CatalogFact, c CatalogFact) []string {
+	seen := map[string]string{}
+	for _, row := range catalog {
+		if !sameStockProduct(row, c) {
+			continue
+		}
+		for _, col := range colorsDeclaredOnRow(row) {
+			key := normWords(col)
+			if key == "" || seen[key] != "" {
+				continue
+			}
+			seen[key] = strings.TrimSpace(col)
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for _, v := range seen {
+		out = append(out, v)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func colorsDeclaredOnRow(row CatalogFact) []string {
+	var out []string
+	name := strings.TrimSpace(row.Name)
+	if row.Size == "" {
+		if i := strings.LastIndex(name, " - "); i >= 0 {
+			suf := strings.TrimSpace(name[i+3:])
+			if suf != "" && !catalogSizeSuffixRe.MatchString(suf) {
+				out = append(out, suf)
+			}
+		}
+	}
+	if row.Description != "" {
+		if m := colorHintInTextRe.FindStringSubmatch(row.Description); len(m) > 1 {
+			chunk := strings.TrimSpace(m[1])
+			for _, part := range strings.Split(chunk, ",") {
+				part = strings.TrimSpace(part)
+				for _, piece := range strings.Split(part, " dan ") {
+					if c := strings.TrimSpace(piece); c != "" {
+						out = append(out, c)
+					}
+				}
+			}
+		}
+	}
+	return out
+}
+
+// colorAllowed accepts a grounded colour only when it matches a colour the catalog sells for this product.
 func colorAllowed(catalog []CatalogFact, c CatalogFact, color string) bool {
 	col := normWords(color)
 	if col == "" {
 		return false
 	}
-	for _, tok := range strings.Fields(col) {
-		if !catalogColorTokenKnown(catalog, c, tok) {
-			return false
-		}
+	sold := soldColorsForProduct(catalog, c)
+	if len(sold) == 0 {
+		return false
 	}
-	return true
-}
-
-func catalogColorTokenKnown(catalog []CatalogFact, c CatalogFact, tok string) bool {
-	for _, known := range catalogColorTokens {
-		if tok == known {
-			return true
-		}
-	}
-	needle := " " + tok + " "
-	for _, row := range catalog {
-		if !sameStockProduct(row, c) {
-			continue
-		}
-		if strings.Contains(" "+normWords(row.Name+" "+row.Description)+" ", needle) {
+	for _, s := range sold {
+		if normWords(s) == col {
 			return true
 		}
 	}
 	return false
-}
-
-func sameStockProduct(a, b CatalogFact) bool {
-	if a.ID != "" && b.ID != "" {
-		return a.ID == b.ID
-	}
-	if a.BaseName != "" && b.BaseName != "" {
-		return strings.EqualFold(a.BaseName, b.BaseName)
-	}
-	return strings.EqualFold(a.Name, b.Name)
-}
-
-func colorsOffered(catalog []CatalogFact, c CatalogFact) []string {
-	var out []string
-	seen := map[string]bool{}
-	for _, tok := range catalogColorTokens {
-		if catalogColorTokenKnown(catalog, c, tok) && !seen[tok] {
-			seen[tok] = true
-			out = append(out, tok)
-		}
-	}
-	return out
 }
 
 // sizesInStock lists the sizes of c and its siblings that still have stock (c itself included
@@ -457,6 +485,11 @@ func RenderIssue(is OpIssue, lang Lang) string {
 			return T(TplAskVariant, lang, is.Name)
 		}
 		return T(TplVariantNotFound, lang, is.Name, choices)
+	case IssueColorUnknown:
+		if choices == "" {
+			return T(TplAskVariant, lang, is.Name)
+		}
+		return T(TplColorNotFound, lang, is.Name, choices)
 	case IssueSoldOut:
 		alt := ""
 		if choices != "" {
