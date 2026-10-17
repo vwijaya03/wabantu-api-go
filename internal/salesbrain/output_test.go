@@ -59,3 +59,32 @@ func TestParseDecisionErrors(t *testing.T) {
 		t.Error("broken JSON must fail")
 	}
 }
+
+func TestParseDecisionFields(t *testing.T) {
+	d, err := ParseDecision(`{"intent":"field_answer","fields":{"name":"Ana","phone":"0872839472828","street":"Villa Kalijudan Indah A9","city":"Surabaya","province":"Jawa Timur","postal_code":"60177"},"reply":"Thanks Ana."}`)
+	if err != nil || d.Fields == nil || d.Fields.City != "Surabaya" || d.Fields.PostalCode != "60177" {
+		t.Fatalf("got %+v err=%v", d, err)
+	}
+	d, _ = ParseDecision(`{"intent":"question","fields":{"name":"X"},"reply":"ok"}`)
+	if d.Fields != nil {
+		t.Fatal("fields only kept for field_answer")
+	}
+}
+
+func TestParseDecisionFieldsAreTrimmed(t *testing.T) {
+	d, err := ParseDecision(`{"intent":"field_answer","fields":{"name":"  Ana ","phone":" 0872839472828\n","street":" Villa Kalijudan Indah A9 ","district":" Sukolilo","city":"Surabaya ","province":" Jawa Timur ","postal_code":" 60177 "},"reply":"Thanks Ana."}`)
+	if err != nil || d.Fields == nil {
+		t.Fatalf("got %+v err=%v", d, err)
+	}
+	want := FieldData{Name: "Ana", Phone: "0872839472828", Street: "Villa Kalijudan Indah A9", District: "Sukolilo", City: "Surabaya", Province: "Jawa Timur", PostalCode: "60177"}
+	if *d.Fields != want {
+		t.Fatalf("got %+v, want %+v", *d.Fields, want)
+	}
+}
+
+func TestParseDecisionFieldsNullStaysNil(t *testing.T) {
+	d, err := ParseDecision(`{"intent":"field_answer","fields":null,"reply":"Which address?"}`)
+	if err != nil || d.Fields != nil {
+		t.Fatalf("null fields must stay nil without panicking, got %+v err=%v", d.Fields, err)
+	}
+}

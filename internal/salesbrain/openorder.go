@@ -27,6 +27,7 @@ const (
 
 // OrderLine is one product line of a cart or order.
 type OrderLine struct {
+	ID        string // catalog item id ("" for legacy rows without id)
 	Name      string
 	Qty       int
 	UnitPrice int64

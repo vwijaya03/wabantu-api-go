@@ -11,6 +11,7 @@ import (
 // CatalogFact is one catalog row as shown to the model (No is the 1-based row number).
 type CatalogFact struct {
 	No          int
+	ID          string // catalog item id; keys cart lines, never shown to the model or the buyer
 	Name        string
 	Price       int64 // price for this buyer's tier
 	Unit        string
