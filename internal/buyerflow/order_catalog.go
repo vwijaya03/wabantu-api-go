@@ -761,6 +761,18 @@ func mergeShippingText(st *OrderState, userText string) {
 			if p := extractRecipientPhone(val); p != "" {
 				st.RecipientPhone = p
 			}
+		case val != "" && strings.HasPrefix(low, "street"):
+			st.Street = val
+		case val != "" && strings.HasPrefix(low, "city"):
+			st.City = val
+		case val != "" && (strings.HasPrefix(low, "province") || strings.HasPrefix(low, "state")):
+			st.Province = val
+		case val != "" && (strings.HasPrefix(low, "postal") || strings.HasPrefix(low, "postcode") || strings.HasPrefix(low, "zip")):
+			if m := postalCodeIDRe.FindString(val); m != "" {
+				st.PostalCode = m
+			}
+		case val != "" && (strings.HasPrefix(low, "district") || strings.HasPrefix(low, "subdistrict")):
+			st.Kecamatan = val
 		case strings.HasPrefix(low, "jalan"), strings.HasPrefix(low, "alamat"), strings.HasPrefix(low, "address"), strings.HasPrefix(low, "jl"):
 			if val != "" {
 				st.Street = val
@@ -798,6 +810,7 @@ func mergeShippingText(st *OrderState, userText string) {
 		st.Street = strings.TrimSpace(text)
 	}
 	parseUnstructuredAddress(st, lower, text)
+	parseCommaAddress(st, text)
 	if st.Country == "" {
 		st.Country = "Indonesia"
 	}
@@ -809,6 +822,11 @@ var idCityHints = []struct {
 	province string
 }{
 	{"jakarta selatan", "Jakarta Selatan", "DKI Jakarta"},
+	{"south jakarta", "Jakarta Selatan", "DKI Jakarta"},
+	{"central jakarta", "Jakarta Pusat", "DKI Jakarta"},
+	{"east jakarta", "Jakarta Timur", "DKI Jakarta"},
+	{"west jakarta", "Jakarta Barat", "DKI Jakarta"},
+	{"north jakarta", "Jakarta Utara", "DKI Jakarta"},
 	{"jaksel", "Jakarta Selatan", "DKI Jakarta"},
 	{"jakarta pusat", "Jakarta Pusat", "DKI Jakarta"},
 	{"jakarta timur", "Jakarta Timur", "DKI Jakarta"},
@@ -993,7 +1011,109 @@ func missingOrderDataPrompt(st OrderState, tmpl orderFlowTemplates) string {
 		return tmpl.AskRecipient
 	}
 	if !st.ShippingComplete() {
-		return tmpl.ClarifyAddress
+		return addressMissingReply(st, tmpl)
 	}
 	return ""
+}
+
+// provinceAliases maps English and short province names to the Indonesian form.
+var provinceAliases = map[string]string{
+	"dki jakarta": "DKI Jakarta", "jakarta": "DKI Jakarta",
+	"east java": "Jawa Timur", "jawa timur": "Jawa Timur", "jatim": "Jawa Timur",
+	"west java": "Jawa Barat", "jawa barat": "Jawa Barat", "jabar": "Jawa Barat",
+	"central java": "Jawa Tengah", "jawa tengah": "Jawa Tengah", "jateng": "Jawa Tengah",
+	"banten": "Banten", "bali": "Bali", "yogyakarta": "DI Yogyakarta", "di yogyakarta": "DI Yogyakarta",
+	"north sumatra": "Sumatera Utara", "sumatera utara": "Sumatera Utara",
+	"west sumatra": "Sumatera Barat", "sumatera barat": "Sumatera Barat",
+	"south sumatra": "Sumatera Selatan", "sumatera selatan": "Sumatera Selatan",
+	"riau": "Riau", "lampung": "Lampung", "aceh": "Aceh",
+	"east kalimantan": "Kalimantan Timur", "kalimantan timur": "Kalimantan Timur",
+	"west kalimantan": "Kalimantan Barat", "kalimantan barat": "Kalimantan Barat",
+	"south kalimantan": "Kalimantan Selatan", "kalimantan selatan": "Kalimantan Selatan",
+	"south sulawesi": "Sulawesi Selatan", "sulawesi selatan": "Sulawesi Selatan",
+	"north sulawesi": "Sulawesi Utara", "sulawesi utara": "Sulawesi Utara",
+	"west nusa tenggara": "Nusa Tenggara Barat", "ntb": "Nusa Tenggara Barat",
+	"east nusa tenggara": "Nusa Tenggara Timur", "ntt": "Nusa Tenggara Timur",
+	"papua": "Papua", "maluku": "Maluku",
+}
+
+var postalSuffixRe = regexp.MustCompile(`\s*\b\d{5}\b\s*$`)
+
+// parseCommaAddress handles one-line addresses written as "street, city, province, postal"
+// (English or Indonesian) for any city, not only the idCityHints table. Only empty fields
+// are filled, except a Street that still holds the whole comma-separated line.
+func parseCommaAddress(st *OrderState, raw string) {
+	if st == nil {
+		return
+	}
+	var line string
+	for _, l := range strings.Split(raw, "\n") {
+		if strings.Count(l, ",") >= 2 {
+			line = l
+			break
+		}
+	}
+	if line == "" {
+		return
+	}
+	var parts []string
+	for _, p := range strings.Split(line, ",") {
+		p = strings.TrimSpace(postalSuffixRe.ReplaceAllString(strings.TrimSpace(p), ""))
+		lp := strings.ToLower(p)
+		if p == "" || lp == "indonesia" {
+			continue
+		}
+		parts = append(parts, p)
+	}
+	if len(parts) < 3 {
+		return
+	}
+	street, city, prov := parts[0], parts[len(parts)-2], parts[len(parts)-1]
+	if st.Street == "" || strings.Count(st.Street, ",") >= 2 {
+		st.Street = street
+	}
+	if st.City == "" {
+		st.City = city
+	}
+	if st.Province == "" {
+		if canon, ok := provinceAliases[strings.ToLower(prov)]; ok {
+			st.Province = canon
+		} else {
+			st.Province = prov
+		}
+	}
+}
+
+// addressMissingReply names only the address parts that are still missing, in the language of
+// the active templates, instead of repeating the full "need street, city, province…" list.
+func addressMissingReply(st OrderState, tmpl orderFlowTemplates) string {
+	en := strings.HasPrefix(tmpl.ClarifyAddress, "Address") || strings.HasPrefix(tmpl.ClarifyAddress, "The address")
+	var missing []string
+	add := func(id, eng string) {
+		if en {
+			missing = append(missing, eng)
+		} else {
+			missing = append(missing, id)
+		}
+	}
+	if strings.TrimSpace(st.Street) == "" {
+		add("nama jalan dan nomor", "street name and number")
+	}
+	if strings.TrimSpace(st.City) == "" {
+		add("kota", "city")
+	}
+	if strings.TrimSpace(st.Province) == "" {
+		add("provinsi", "province")
+	}
+	if len(st.PostalCode) != 5 {
+		add("kode pos 5 digit", "5-digit postal code")
+	}
+	if len(missing) == 0 {
+		return tmpl.ClarifyAddress
+	}
+	list := strings.Join(missing, ", ")
+	if en {
+		return "Thanks! To complete the address I still need the " + list + "."
+	}
+	return "Makasih kak, alamatnya tinggal kurang " + list + " ya."
 }
