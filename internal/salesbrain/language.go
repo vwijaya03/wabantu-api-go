@@ -207,11 +207,17 @@ func parseChoiceAnswer(msg string) (Lang, bool) {
 		return "", false
 	}
 	if len(toks) <= 4 {
-		for _, t := range toks {
+		for i, t := range toks {
 			switch t {
 			case "english", "inggris", "eng", "en":
 				return LangEN, true
-			case "indonesia", "indonesian", "indo", "bahasa", "id", "ind":
+			case "bahasa":
+				// "bahasa inggris" names English; a bare "bahasa" or "bahasa indonesia" is Indonesian.
+				if i+1 < len(toks) && (toks[i+1] == "inggris" || toks[i+1] == "english" || toks[i+1] == "eng") {
+					return LangEN, true
+				}
+				return LangID, true
+			case "indonesia", "indonesian", "indo", "id", "ind":
 				return LangID, true
 			}
 		}
@@ -349,4 +355,14 @@ func greetingKind(msg string) greetKind {
 		return greetAmbiguous
 	}
 	return greetNone
+}
+
+// ParseChoiceAnswer parses a reply to the bilingual language question ("english", "indo aja",
+// or a clear sentence). Numbers are not accepted here; callers that showed numbered options map
+// them themselves.
+func ParseChoiceAnswer(msg string) (Lang, bool) {
+	if IsStructuredData(msg) {
+		return "", false
+	}
+	return parseChoiceAnswer(msg)
 }

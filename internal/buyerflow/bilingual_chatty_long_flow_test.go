@@ -24,7 +24,8 @@ func TestChattyBilingualLongFlowMultiTurn(t *testing.T) {
 
 	steps := []step{
 		{msg: "hi", wantPath: PathBuyerLanguage, wantSub: []string{"English", "Indonesia"}},
-		{msg: "1", wantPath: PathBuyerLanguage, wantSub: []string{"English"}},
+		// The menu prints "Indonesia / English (or 1 / 2)": the buyer picks English with 2.
+		{msg: "2", wantPath: PathBuyerLanguage, wantSub: []string{"English"}},
 		{
 			msg:      "how many maggi variants do you have?",
 			wantPath: PathCatalogDB,

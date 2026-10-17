@@ -69,6 +69,7 @@ func TestLanguageMenuAnswerDoesNotFallThrough(t *testing.T) {
 	if out.Path != PathBuyerLanguage {
 		t.Fatalf("setup: expected language ask, got path=%s", out.Path)
 	}
+	// LanguagePreferenceAskReply prints "Indonesia / English (or 1 / 2)", so 1 = Indonesia.
 	out = sim.Turn("1")
 	if out.Path != PathBuyerLanguage {
 		t.Fatalf("path=%s want %s (not handoff/catalog)", out.Path, PathBuyerLanguage)
@@ -76,11 +77,11 @@ func TestLanguageMenuAnswerDoesNotFallThrough(t *testing.T) {
 	if out.Path == PathHumanHandoff || out.Path == PathAiNoAnswer {
 		t.Fatalf("language menu must not hand off: path=%s reply=%q", out.Path, out.Reply)
 	}
-	if sim.SavedBuyerLang != LangEN {
-		t.Fatalf("saved=%q want en", sim.SavedBuyerLang)
+	if sim.SavedBuyerLang != LangID {
+		t.Fatalf("saved=%q want id", sim.SavedBuyerLang)
 	}
-	if !strings.Contains(out.Reply, "English") {
-		t.Fatalf("expected English confirm: %q", out.Reply)
+	if !strings.Contains(out.Reply, "Bahasa Indonesia") {
+		t.Fatalf("expected Indonesian confirm: %q", out.Reply)
 	}
 }
 

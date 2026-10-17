@@ -132,6 +132,8 @@ func TestDecideLanguageUnlocked(t *testing.T) {
 		{"english", true, LanguageDecision{Lang: LangEN, Persist: LangEN, Switched: true}},
 		{"Indonesia", true, LanguageDecision{Lang: LangID, Persist: LangID, Switched: true}},
 		{"indo aja", true, LanguageDecision{Lang: LangID, Persist: LangID, Switched: true}},
+		{"bahasa inggris", true, LanguageDecision{Lang: LangEN, Persist: LangEN, Switched: true}},
+		{"bahasa indonesia", true, LanguageDecision{Lang: LangID, Persist: LangID, Switched: true}},
 		{"tuna?", false, LanguageDecision{Lang: LangID}},
 		{"can i talk in english", false, LanguageDecision{Lang: LangEN, Persist: LangEN, Switched: true}},
 	}
@@ -147,5 +149,18 @@ func TestDecideLanguageEnglishTenantDefault(t *testing.T) {
 	got := DecideLanguage("", LangEN, "tuna?", false)
 	if got.Lang != LangEN || got.Persist != "" {
 		t.Fatalf("got %+v, want soft en", got)
+	}
+}
+
+func TestParseChoiceAnswer(t *testing.T) {
+	for msg, want := range map[string]Lang{"english": LangEN, "Indonesia": LangID, "indo aja": LangID, "bahasa inggris": LangEN} {
+		if got, ok := ParseChoiceAnswer(msg); !ok || got != want {
+			t.Errorf("ParseChoiceAnswer(%q) = (%q,%v), want %q", msg, got, ok, want)
+		}
+	}
+	for _, msg := range []string{"Name: Ana\nPhone: 0872839472828", "Villa kalijudan indah A9, jawa timur, surabaya, indonesia, 60177"} {
+		if got, ok := ParseChoiceAnswer(msg); ok {
+			t.Errorf("ParseChoiceAnswer(%q) = %q, want none", msg, got)
+		}
 	}
 }
