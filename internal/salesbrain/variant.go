@@ -135,7 +135,7 @@ func ResolveCartOps(in ResolveInput) CartResolution {
 			continue
 		}
 
-		matches := lineMatches(res.Cart, c)
+		matches := lineMatches(res.Cart, in.Catalog, c)
 		idx := -1
 		switch {
 		case size != "" || color != "":
@@ -240,7 +240,7 @@ func stockIssueForLine(catalog []CatalogFact, cart []OrderLine, c CatalogFact, q
 
 var (
 	catalogSizeSuffixRe = regexp.MustCompile(`(?i)^(XS|S|M|L|XL|XXL|XXXL|3XL|4XL|5XL|\d{2,3})$`)
-	colorHintInTextRe   = regexp.MustCompile(`(?i)(?:warna|color|colour)\s*[:\-]?\s*([a-z][a-z\s]*)`)
+	colorHintInTextRe   = regexp.MustCompile(`(?i)(?:warna|color|colour)\s*[:\-]?\s*(.+)`)
 )
 
 func sameStockProduct(a, b CatalogFact) bool {
@@ -289,18 +289,47 @@ func colorsDeclaredOnRow(row CatalogFact) []string {
 	}
 	if row.Description != "" {
 		if m := colorHintInTextRe.FindStringSubmatch(row.Description); len(m) > 1 {
-			chunk := strings.TrimSpace(m[1])
-			for _, part := range strings.Split(chunk, ",") {
-				part = strings.TrimSpace(part)
-				for _, piece := range strings.Split(part, " dan ") {
-					if c := strings.TrimSpace(piece); c != "" {
-						out = append(out, c)
-					}
-				}
+			out = append(out, splitDeclaredColors(m[1])...)
+		}
+	}
+	return out
+}
+
+func splitDeclaredColors(chunk string) []string {
+	chunk = strings.TrimSpace(chunk)
+	if i := strings.IndexAny(chunk, ".;!?\n"); i >= 0 {
+		chunk = chunk[:i]
+	}
+	var out []string
+	for _, part := range strings.Split(chunk, ",") {
+		part = strings.TrimSpace(part)
+		for _, piece := range strings.Split(part, " dan ") {
+			if c := firstColorToken(strings.TrimSpace(piece)); c != "" {
+				out = append(out, c)
 			}
 		}
 	}
 	return out
+}
+
+func firstColorToken(s string) string {
+	words := strings.Fields(s)
+	if len(words) == 0 {
+		return ""
+	}
+	if len(words) == 1 {
+		return words[0]
+	}
+	w2 := strings.ToLower(words[1])
+	for _, h := range []string{"bahan", "katun", "cotton", "material", "ukuran", "size", "gram", "gr"} {
+		if w2 == h {
+			return words[0]
+		}
+	}
+	if len(words) == 2 {
+		return words[0] + " " + words[1]
+	}
+	return words[0]
 }
 
 // colorAllowed accepts a grounded colour only when it matches a colour the catalog sells for this product.
@@ -311,7 +340,7 @@ func colorAllowed(catalog []CatalogFact, c CatalogFact, color string) bool {
 	}
 	sold := soldColorsForProduct(catalog, c)
 	if len(sold) == 0 {
-		return false
+		return true
 	}
 	for _, s := range sold {
 		if normWords(s) == col {
@@ -358,9 +387,30 @@ func sameProduct(l OrderLine, c CatalogFact) bool {
 	return (l.ID != "" && l.ID == c.ID) || (l.ID == "" && strings.EqualFold(l.Name, c.Name))
 }
 
-func lineMatches(cart []OrderLine, c CatalogFact) []int {
+func catalogRowForLine(catalog []CatalogFact, l OrderLine) (CatalogFact, bool) {
+	if id := strings.TrimSpace(l.ID); id != "" {
+		for _, row := range catalog {
+			if row.ID == id {
+				return row, true
+			}
+		}
+	}
+	name := strings.TrimSpace(l.Name)
+	for _, row := range catalog {
+		if strings.EqualFold(strings.TrimSpace(row.Name), name) {
+			return row, true
+		}
+	}
+	return CatalogFact{}, false
+}
+
+func lineMatches(cart []OrderLine, catalog []CatalogFact, c CatalogFact) []int {
 	var idx []int
 	for i, l := range cart {
+		if row, ok := catalogRowForLine(catalog, l); ok && sameStockProduct(row, c) {
+			idx = append(idx, i)
+			continue
+		}
 		if sameProduct(l, c) {
 			idx = append(idx, i)
 		}

@@ -521,13 +521,29 @@ func advanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 			st.Step = "confirm"
 			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: reply}
 		}
+		if tryApplyAddOneMore(&st, userText) {
+			st.Step = "confirm"
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: orderReconfirmReply(st, userText)}
+		}
 		if !namesOtherCheckoutSKU(st, userText, catalog) && tryApplyQtyRevision(&st, userText) {
 			st.Step = "confirm"
 			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: orderReconfirmReply(st, userText)}
 		}
-		if IsShippingAmendIntent(userText) && !isCheckoutFormFieldMessage(userText) {
-			st.Step = "ask_address_full"
-			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: tmpl.AskAddressFull}
+		addrBody := ShippingAmendBody(userText)
+		if IsShippingAmendIntent(userText) || isCheckoutFormFieldMessage(addrBody) {
+			if isCheckoutFormFieldMessage(addrBody) || isCheckoutFormFieldMessage(userText) {
+				mergeShippingText(&st, addrBody)
+				if st.ShippingComplete() {
+					st.Step = "confirm"
+					st.ReconfirmAfterShipping = false
+					return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: orderReconfirmReply(st, userText)}
+				}
+			}
+			if IsShippingAmendIntent(userText) {
+				st.ReconfirmAfterShipping = true
+				st.Step = "ask_address_full"
+				return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: tmpl.AskAddressFull}
+			}
 		}
 		if isCheckoutFormFieldMessage(userText) {
 			mergeShippingText(&st, userText)
@@ -583,6 +599,11 @@ func advanceOrderFlow(in OrderFlowInput, persist persistOrderFunc) OrderFlowResu
 		mergeShippingText(&st, userText)
 		if !st.ShippingComplete() {
 			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: tmpl.ClarifyAddress}
+		}
+		if st.ReconfirmAfterShipping {
+			st.ReconfirmAfterShipping = false
+			st.Step = "confirm"
+			return OrderFlowResult{State: &st, Path: PathOrderFlow, Reply: orderReconfirmReply(st, userText)}
 		}
 		if missing := missingOrderDataPrompt(st, tmpl); missing != "" {
 			return OrderFlowResult{
