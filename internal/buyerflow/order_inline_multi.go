@@ -397,7 +397,13 @@ func appendLinesFromIdentifiedCatalog(userText string, catalog []CatalogItem, ex
 	return out
 }
 
-// isProductQuestionNotCartAdd — "I want to ask about tuna" must not append a line to the draft.
+// explicitAddWithQtyRe — an add/order verb followed by a number ("tambah 1 tuna", "can i order 2").
+var explicitAddWithQtyRe = regexp.MustCompile(`(?i)\b(?:tambah|nambah|add|order|pesan|beli|mau|want)\b[^?\d]*\b\d+\b`)
+
+// productQuestionHintRe — product facts a buyer asks about ("how much", "is it frozen", "ready kak").
+var productQuestionHintRe = regexp.MustCompile(`(?i)\b(?:how much|berapa|harga|price|frozen|fresh|beku|segar|weight|berat|ready|stock|stok|available|is it|is the)\b`)
+
+// isProductQuestionNotCartAdd — "I want to ask about tuna" / "is the tuna frozen?" must not append a line to the draft.
 func isProductQuestionNotCartAdd(userText string) bool {
 	text := strings.ToLower(strings.TrimSpace(userText))
 	if text == "" || mentionsOrderQty(text) {
@@ -413,7 +419,11 @@ func isProductQuestionNotCartAdd(userText string) bool {
 			return true
 		}
 	}
-	return false
+	// A question or product-fact hint only counts when the buyer is not explicitly adding a qty.
+	if explicitAddWithQtyRe.MatchString(text) {
+		return false
+	}
+	return looksLikeBuyerQuestion(text) || productQuestionHintRe.MatchString(text)
 }
 
 // TryAppendItemsDuringCheckout appends parsed items to active checkout state.
