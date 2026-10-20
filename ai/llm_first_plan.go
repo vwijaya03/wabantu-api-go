@@ -24,9 +24,12 @@ type planInput struct {
 	// PendingAfterVariant is the pending field once the cart's variants are settled (what follows
 	// the "which size?" question). Equal to State.PendingField when that is not "variant".
 	PendingAfterVariant string
-	History             []salesbrain.HistoryTurn
-	Message             string
-	BuyerTexts          []string // current + up to 3 previous buyer messages
+	// Summary is the session-aware conversation summary (background only, never a fact source:
+	// BuildFacts does not read it). The zero value omits the block.
+	Summary    salesbrain.SummaryContext
+	History    []salesbrain.HistoryTurn
+	Message    string
+	BuyerTexts []string // current + up to 3 previous buyer messages
 }
 
 // turnPlan is the outcome of one planTurn call. Nothing in it has been applied or sent.
@@ -95,6 +98,7 @@ func planTurn(ctx context.Context, in planInput, chat chatFunc) turnPlan {
 		Catalog: in.Catalog,
 		KB:      in.KB,
 		State:   state,
+		Summary: in.Summary,
 		History: in.History,
 		Message: in.Message,
 	})

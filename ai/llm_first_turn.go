@@ -314,7 +314,9 @@ type lfInputs struct {
 	KBRetrieved []dbKBEntry // only read when TopK
 	TopK        bool        // the catalog + FAQ do not fit the full-context budget
 	History     []dbMessage
-	LastBody    string // body of our newest outbound message
+	Summary     string    // latest stored conversation summary ("" = none or not loaded)
+	SummaryAt   time.Time // when that summary was last updated (zero = none)
+	LastBody    string    // body of our newest outbound message
 	State       *orderState
 	Orders      []persistedOrder
 	Remind      salesbrain.ReminderState
@@ -378,6 +380,7 @@ func lfBuildPlanInput(in lfInputs) planInput {
 			UpsellDone:      in.State != nil && in.State.UpsellShown,
 			Misunderstood:   in.Confused,
 		},
+		Summary:    salesbrain.DecideSummary(in.Summary, in.SummaryAt, in.Now),
 		History:    turns,
 		Message:    in.UserText,
 		BuyerTexts: lfBuyerTexts(in.History, in.UserText),
