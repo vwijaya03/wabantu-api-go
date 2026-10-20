@@ -62,6 +62,9 @@ func handleInboundAI(ctx context.Context, job *InboundAIJob) error {
 	jobCtx, cancel := reqctx.WithTimeout(ctx, aiJobParentBudget)
 	defer cancel()
 
+	// Read receipt + typing indicator right away (async, best-effort), before the quiet window.
+	ackInboundAsync(ctx, job)
+
 	flush, coalErr := coalesceInboundTurn(jobCtx, job)
 	if coalErr != nil {
 		return coalErr
