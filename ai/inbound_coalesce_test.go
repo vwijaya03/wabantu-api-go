@@ -45,11 +45,11 @@ func TestRemainingWait_trailingQuiet(t *testing.T) {
 
 func TestRemainingWait_maxWaitCapsStarvation(t *testing.T) {
 	burst := time.Date(2026, 9, 19, 16, 18, 15, 0, time.UTC)
-	last := burst.Add(14 * time.Second)
-	now := burst.Add(14 * time.Second)
+	last := burst.Add(inboundMaxWait - time.Second)
+	now := last
 	got := remainingWait(now, burst, last, inboundQuiet, inboundMaxWait)
 	if got != time.Second {
-		t.Fatalf("trailing 3s capped by maxWait 15s: remaining=%s want 1s", got)
+		t.Fatalf("trailing 3s capped by maxWait %s: remaining=%s want 1s", inboundMaxWait, got)
 	}
 	now = burst.Add(inboundMaxWait)
 	got = remainingWait(now, burst, last, inboundQuiet, inboundMaxWait)
@@ -140,5 +140,61 @@ func TestShouldCoalesceInboundType(t *testing.T) {
 	}
 	if shouldCoalesceInboundType("image") {
 		t.Fatal("image stays immediate (payment proof)")
+	}
+}
+
+func TestAdaptiveQuiet(t *testing.T) {
+	cases := []struct {
+		name    string
+		text    string
+		pending int
+		gap     time.Duration
+		want    time.Duration
+	}{
+		{"finished question", "Berapa harga kaos polos ukuran L?", 1, 0, inboundQuietBase},
+		{"finished statement", "Saya mau pesan 2 pcs warna hitam", 1, 0, inboundQuietBase},
+		{"empty", "  ", 1, 0, inboundQuietBase},
+		{"trailing comma", "Saya mau pesan kaos hitam,", 1, 0, inboundQuiet},
+		{"trailing colon", "Alamat saya:", 1, 0, inboundQuiet},
+		{"trailing dash", "Ukuran M -", 1, 0, inboundQuiet},
+		{"trailing dan", "kaos hitam ukuran L dan", 1, 0, inboundQuiet},
+		{"trailing and", "Black shirt size L and", 1, 0, inboundQuiet},
+		{"trailing DAN uppercase", "Kaos L DAN", 1, 0, inboundQuiet},
+		{"word ending in dan is not dan", "Kirim ke Pandan", 1, 0, inboundQuietBase},
+		{"bare halo", "Halo", 1, 0, inboundQuiet},
+		{"halo with punctuation", "Halo!", 1, 0, inboundQuiet},
+		{"hi kak", "hi kak", 1, 0, inboundQuiet},
+		{"kak", "Kak", 1, 0, inboundQuiet},
+		{"selamat pagi", "Selamat pagi.", 1, 0, inboundQuiet},
+		{"greeting with question is finished", "Halo kak, ada ready stok kaos polos?", 1, 0, inboundQuietBase},
+		{"very short 1 char", "p", 1, 0, inboundQuiet},
+		{"very short 3 chars", "ok.", 1, 0, inboundQuiet},
+		{"4 chars not short", "siap", 1, 0, inboundQuietBase},
+		{"burst: 2nd message within 2s", "Ukuran L", 2, 1500 * time.Millisecond, inboundQuiet},
+		{"burst: 2nd message after 2s gap", "Ukuran L ya kak", 2, 2500 * time.Millisecond, inboundQuietBase},
+		{"burst: single pending ignores gap", "Ukuran L ya kak", 1, 500 * time.Millisecond, inboundQuietBase},
+		{"burst: unknown gap", "Ukuran L ya kak", 2, 0, inboundQuietBase},
+	}
+	for _, c := range cases {
+		if got := adaptiveQuiet(c.text, c.pending, c.gap); got != c.want {
+			t.Errorf("%s: adaptiveQuiet(%q, %d, %s) = %s, want %s", c.name, c.text, c.pending, c.gap, got, c.want)
+		}
+	}
+}
+
+func TestInboundTimingConstants(t *testing.T) {
+	if inboundQuietBase != 1200*time.Millisecond || inboundQuiet != 3*time.Second || inboundMaxWait != 8*time.Second {
+		t.Fatalf("unexpected timing: base=%s quiet=%s max=%s", inboundQuietBase, inboundQuiet, inboundMaxWait)
+	}
+}
+
+func TestRemainingWait_baseQuietFlushesSooner(t *testing.T) {
+	last := time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC)
+	burst := last.Add(-time.Second)
+	if got := remainingWait(last, burst, last, inboundQuietBase, inboundMaxWait); got != inboundQuietBase {
+		t.Fatalf("remaining=%s want %s", got, inboundQuietBase)
+	}
+	if got := remainingWait(last.Add(inboundQuietBase), burst, last, inboundQuietBase, inboundMaxWait); got != 0 {
+		t.Fatalf("remaining=%s want 0", got)
 	}
 }

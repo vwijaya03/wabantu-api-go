@@ -68,8 +68,8 @@ var templates = map[TemplateKey]map[Lang]string{
 		LangEN: "Sorry, automatic replies are unavailable right now. The %[1]s team will reply to you directly.",
 	},
 	TplResumeRecipient: {
-		LangID: "Lanjut ya Kak: nama dan nomor HP penerimanya siapa?",
-		LangEN: "Back to your order: what's the recipient's name and phone number?",
+		LangID: "Lanjut ya Kak. Kirim nama penerima, nomor HP, dan alamat lengkap (jalan, kota, provinsi, kode pos) sekaligus ya. Contoh:\nNama: Budi\nHP: 081234567890\nAlamat: Jl. Melati 12, Surabaya, Jawa Timur, 60111",
+		LangEN: "Please send the recipient's name, phone number, and full delivery address (street, city, province, postal code). Example:\nName: Budi\nPhone: 081234567890\nAddress: Jl. Melati 12, Surabaya, Jawa Timur, 60111",
 	},
 	TplResumeAddress: {
 		LangID: "Lanjut ya Kak: alamat pengirimannya di mana (jalan, kecamatan, kota, kode pos)?",

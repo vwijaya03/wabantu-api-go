@@ -69,6 +69,7 @@ type AiReplyJobPayload struct {
 	InboundMessageID string `json:"inboundMessageId"`
 	UserTextOverride string `json:"-"`
 	CoalesceFlush    bool   `json:"-"`
+	CoalesceWaitMs   int64  `json:"-"`
 }
 
 type dbConversation struct {
@@ -174,6 +175,7 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 		ConversationID:   convo.ID,
 		InboundMessageID: payload.InboundMessageID,
 		CoalesceFlush:    payload.CoalesceFlush,
+		CoalesceWaitMs:   payload.CoalesceWaitMs,
 	})
 
 	inbound, err := loadMessage(ctx, ts, payload.InboundMessageID)
@@ -183,6 +185,10 @@ func (s *AutoReplyService) ProcessAutoReply(ctx context.Context, payload AiReply
 	if inbound == nil {
 		rlog.Warn("AI job: missing inbound message")
 		return false, nil
+	}
+	if ac, ok := ActivityContextFrom(ctx); ok {
+		ac.InboundAt = inbound.CreatedAt
+		ctx = WithActivityContext(ctx, ac)
 	}
 
 	// A paused conversation stays paused unless the pause was the AI's own and went AutoResumeAfter
@@ -1566,6 +1572,9 @@ func (s *AutoReplyService) sendAiMessage(
 	meta AiReplyMeta,
 ) error {
 	meta = metaForSend(meta, inboundMessageID)
+	if ac, ok := ActivityContextFrom(ctx); ok {
+		meta = metaWithLatency(meta, ac.InboundAt, ac.CoalesceWaitMs, time.Now())
+	}
 
 	if strings.TrimSpace(text) == "" {
 		rlog.Error("AI job: refusing to send empty reply", "path", meta.Path, "inboundId", inboundMessageID)
@@ -1586,6 +1595,8 @@ func (s *AutoReplyService) sendAiMessage(
 		"model", meta.Model,
 		"tier", meta.Tier,
 		"inboundId", inboundMessageID,
+		"latencyMs", meta.LatencyMs,
+		"coalesceWaitMs", meta.CoalesceWaitMs,
 	)
 
 	if channel == nil || contact == nil {

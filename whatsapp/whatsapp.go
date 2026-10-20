@@ -104,6 +104,53 @@ func SendText(ctx context.Context, accessToken, phoneNumberID, to, body string) 
 	return result.Messages[0].ID, nil
 }
 
+// graphBaseURL is the Graph API host; a variable only so tests can point it at httptest.
+var graphBaseURL = "https://graph.facebook.com"
+
+// typingIndicatorTimeout is short on purpose: the call is best-effort and must never hold up a reply.
+const typingIndicatorTimeout = 4 * time.Second
+
+// MarkReadWithTyping marks an inbound message as read and shows the typing indicator to the buyer.
+// The indicator disappears when we reply or after 25 seconds, whichever comes first.
+// Request shape (POST /<phone-number-id>/messages with status "read" plus typing_indicator), as in
+// Meta's official documentation:
+// https://developers.facebook.com/docs/whatsapp/cloud-api/typing-indicators
+// messageID is the wamid of the inbound message (message.external_id). Uses the channel access
+// token, like SendText. Callers treat errors as non-fatal (log only).
+func MarkReadWithTyping(ctx context.Context, accessToken, phoneNumberID, messageID string) error {
+	accessToken = strings.TrimSpace(accessToken)
+	phoneNumberID = strings.TrimSpace(phoneNumberID)
+	messageID = strings.TrimSpace(messageID)
+	if accessToken == "" || phoneNumberID == "" || messageID == "" {
+		return fmt.Errorf("missing channel credentials or message id")
+	}
+	apiURL := fmt.Sprintf("%s/%s/%s/messages", graphBaseURL, GraphAPIVersion, phoneNumberID)
+	payload, _ := json.Marshal(map[string]interface{}{
+		"messaging_product": "whatsapp",
+		"status":            "read",
+		"message_id":        messageID,
+		"typing_indicator":  map[string]interface{}{"type": "text"},
+	})
+	ctx, cancel := context.WithTimeout(ctx, typingIndicatorTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, strings.NewReader(string(payload)))
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := (&http.Client{Timeout: typingIndicatorTimeout}).Do(req)
+	if err != nil {
+		return fmt.Errorf("mark read: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("meta API status=%d body=%s", resp.StatusCode, truncate(string(body), 300))
+	}
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Signature verification
 // ---------------------------------------------------------------------------

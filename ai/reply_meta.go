@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"strings"
+	"time"
 
 	"encore.app/wabantu/shared/retrieval"
 	"encore.app/wabantu/shared/strutil"
@@ -55,6 +56,22 @@ type AiReplyMeta struct {
 	// RawOutput is the model's last raw output, redacted (phones, emails) and capped at 1000 runes.
 	RawOutput string `json:"rawOutput,omitempty"`
 	Attempts  int    `json:"attempts,omitempty"` // LLM calls the turn needed (1, or 2 after a corrective retry)
+
+	// LatencyMs is inbound created_at to the start of the send; CoalesceWaitMs is the part spent
+	// in the coalesce quiet window (0 when the turn was not coalesced).
+	LatencyMs      int64 `json:"latencyMs,omitempty"`
+	CoalesceWaitMs int64 `json:"coalesceWaitMs,omitempty"`
+}
+
+// metaWithLatency stamps the reply latency on meta. A zero inboundAt leaves it unset.
+func metaWithLatency(meta AiReplyMeta, inboundAt time.Time, coalesceWaitMs int64, now time.Time) AiReplyMeta {
+	if !inboundAt.IsZero() && now.After(inboundAt) {
+		meta.LatencyMs = now.Sub(inboundAt).Milliseconds()
+	}
+	if coalesceWaitMs > 0 {
+		meta.CoalesceWaitMs = coalesceWaitMs
+	}
+	return meta
 }
 
 func metaFromRoute(reason, path string, route RoutingDecision) AiReplyMeta {

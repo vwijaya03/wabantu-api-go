@@ -7,14 +7,20 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"encore.dev/rlog"
 	"github.com/redis/go-redis/v9"
 )
 
 const (
+	// inboundQuietBase is the quiet window after a message that looks finished; inboundQuiet
+	// (3s, the former fixed window) applies only when the latest message looks unfinished
+	// (see adaptiveQuiet). inboundMaxWait caps the whole burst.
+	inboundQuietBase     = 1200 * time.Millisecond
 	inboundQuiet         = 3 * time.Second
-	inboundMaxWait       = 15 * time.Second
+	inboundMaxWait       = 8 * time.Second
+	inboundBurstGap      = 2 * time.Second
 	inboundMaxBurst      = 20
 	coalesceKeyTTL       = 2 * time.Minute
 	coalesceLockTTL      = 30 * time.Second
@@ -126,6 +132,51 @@ type coalesceFlush struct {
 	Skip     bool
 	Stitched string
 	LastID   string
+	WaitMs   int64 // time this job spent in the quiet window (coalesceWaitMs in the metadata)
+}
+
+// bareGreetings are openers that are usually followed by the real question in a second message.
+var bareGreetings = map[string]struct{}{
+	"halo": {}, "hallo": {}, "hello": {}, "hai": {}, "hi": {}, "hey": {}, "hei": {}, "kak": {}, "kakak": {},
+	"min": {}, "admin": {}, "permisi": {}, "pagi": {}, "siang": {}, "sore": {}, "malam": {},
+	"selamat pagi": {}, "selamat siang": {}, "selamat sore": {}, "selamat malam": {},
+	"assalamualaikum": {}, "assalamu'alaikum": {}, "halo kak": {}, "hai kak": {}, "hi kak": {}, "hello kak": {},
+	"p": {}, "ping": {},
+}
+
+// adaptiveQuiet picks the quiet window from the latest message of the burst: inboundQuietBase
+// when it looks finished, inboundQuiet (the long window) when the buyer is likely still typing:
+//   - it ends with "," ":" "-" or the word "dan" / "and";
+//   - it is a bare greeting ("halo", "hi kak") that usually precedes the question;
+//   - it is very short (3 runes or fewer);
+//   - a burst is in progress: this is at least the 2nd pending message and it came within
+//     inboundBurstGap of the previous one.
+//
+// Pure function: no clock, no I/O.
+func adaptiveQuiet(latest string, pendingCount int, gapSincePrev time.Duration) time.Duration {
+	text := strings.TrimSpace(latest)
+	if text == "" {
+		return inboundQuietBase
+	}
+	if pendingCount >= 2 && gapSincePrev > 0 && gapSincePrev <= inboundBurstGap {
+		return inboundQuiet
+	}
+	if utf8.RuneCountInString(text) <= 3 {
+		return inboundQuiet
+	}
+	if strings.HasSuffix(text, ",") || strings.HasSuffix(text, ":") || strings.HasSuffix(text, "-") {
+		return inboundQuiet
+	}
+	low := strings.ToLower(text)
+	words := strings.Fields(low)
+	if n := len(words); n > 0 && (words[n-1] == "dan" || words[n-1] == "and") {
+		return inboundQuiet
+	}
+	greeting := strings.Trim(low, " .!?~,")
+	if _, ok := bareGreetings[greeting]; ok {
+		return inboundQuiet
+	}
+	return inboundQuietBase
 }
 
 func coalesceKey(schema, convo, suffix string) string {
@@ -136,6 +187,7 @@ func coalesceInboundTurn(ctx context.Context, job *InboundAIJob) (*coalesceFlush
 	if job == nil || !shouldCoalesceInboundType(job.InboundType) {
 		return nil, nil
 	}
+	started := time.Now()
 	if svc == nil || svc.rdb == nil {
 		return nil, nil
 	}
@@ -160,7 +212,7 @@ func coalesceInboundTurn(ctx context.Context, job *InboundAIJob) (*coalesceFlush
 		return nil, nil
 	}
 
-	if err := waitCoalesceQuiet(ctx, job, jobAt); err != nil {
+	if err := waitCoalesceQuiet(ctx, ts, job, jobAt); err != nil {
 		return nil, err
 	}
 
@@ -212,7 +264,7 @@ func coalesceInboundTurn(ctx context.Context, job *InboundAIJob) (*coalesceFlush
 		return &coalesceFlush{Skip: true}, nil
 	}
 	lastID := pending[len(pending)-1]
-	return &coalesceFlush{Stitched: stitched, LastID: lastID}, nil
+	return &coalesceFlush{Stitched: stitched, LastID: lastID, WaitMs: time.Since(started).Milliseconds()}, nil
 }
 
 type coalesceState struct {
@@ -221,6 +273,7 @@ type coalesceState struct {
 	lastAt    time.Time
 	burstAt   time.Time
 	watermark string
+	gap       time.Duration // time between the latest message and the one before it
 }
 
 func recordCoalesceInbound(ctx context.Context, job *InboundAIJob, messageID string, at time.Time) error {
@@ -228,8 +281,22 @@ func recordCoalesceInbound(ctx context.Context, job *InboundAIJob, messageID str
 	lastKey := coalesceKey(job.TenantSchema, job.ConversationID, "last")
 	lastAtKey := coalesceKey(job.TenantSchema, job.ConversationID, "lastAt")
 	burstKey := coalesceKey(job.TenantSchema, job.ConversationID, "burst")
+	gapKey := coalesceKey(job.TenantSchema, job.ConversationID, "gap")
 	nano := strconv.FormatInt(at.UnixNano(), 10)
+	// A message arriving after the long quiet window starts a new burst: without this reset the
+	// burst start (and so the max-wait cap) would stay stale for a whole active chat.
+	prevAt, _ := svc.rdb.Get(ctx, lastAtKey).Result()
+	prev := parseUnixNano(prevAt)
+	gap := time.Duration(0)
+	newBurst := prev.IsZero() || at.Sub(prev) > inboundQuiet
+	if !prev.IsZero() && at.After(prev) {
+		gap = at.Sub(prev)
+	}
 	pipe := svc.rdb.Pipeline()
+	pipe.Set(ctx, gapKey, strconv.FormatInt(gap.Milliseconds(), 10), coalesceKeyTTL)
+	if newBurst {
+		pipe.Del(ctx, burstKey)
+	}
 	pipe.RPush(ctx, idsKey, messageID)
 	pipe.LTrim(ctx, idsKey, -int64(inboundMaxBurst), -1)
 	pipe.Expire(ctx, idsKey, coalesceKeyTTL)
@@ -248,7 +315,9 @@ func loadCoalesceState(ctx context.Context, schema, convo string) (coalesceState
 	lastAtKey := coalesceKey(schema, convo, "lastAt")
 	burstKey := coalesceKey(schema, convo, "burst")
 	wmKey := coalesceKey(schema, convo, "wm")
+	gapKey := coalesceKey(schema, convo, "gap")
 	pipe := svc.rdb.Pipeline()
+	gapCmd := pipe.Get(ctx, gapKey)
 	idsCmd := pipe.LRange(ctx, idsKey, 0, -1)
 	lastCmd := pipe.Get(ctx, lastKey)
 	lastAtCmd := pipe.Get(ctx, lastAtKey)
@@ -266,6 +335,9 @@ func loadCoalesceState(ctx context.Context, schema, convo string) (coalesceState
 	st.watermark, _ = wmCmd.Result()
 	st.lastAt = parseUnixNano(lastAtCmd.Val())
 	st.burstAt = parseUnixNano(burstCmd.Val())
+	if ms, err := strconv.ParseInt(gapCmd.Val(), 10, 64); err == nil && ms > 0 {
+		st.gap = time.Duration(ms) * time.Millisecond
+	}
 	if st.lastAt.IsZero() {
 		st.lastAt = time.Now()
 	}
@@ -283,7 +355,8 @@ func parseUnixNano(s string) time.Time {
 	return time.Unix(0, n)
 }
 
-func waitCoalesceQuiet(ctx context.Context, job *InboundAIJob, jobAt time.Time) error {
+func waitCoalesceQuiet(ctx context.Context, ts tenantScope, job *InboundAIJob, jobAt time.Time) error {
+	var bodyID, body string
 	for {
 		st, err := loadCoalesceState(ctx, job.TenantSchema, job.ConversationID)
 		if err != nil {
@@ -292,7 +365,16 @@ func waitCoalesceQuiet(ctx context.Context, job *InboundAIJob, jobAt time.Time) 
 		if jobSuperseded(jobAt, st.lastAt) {
 			return nil
 		}
-		wait := remainingWait(time.Now(), st.burstAt, st.lastAt, inboundQuiet, inboundMaxWait)
+		if st.lastID != "" && st.lastID != bodyID {
+			bodyID = st.lastID
+			body = ""
+			if m, err := loadMessage(ctx, ts, st.lastID); err == nil && m != nil {
+				body = m.Body
+			}
+		}
+		pending := len(idsAfterWatermark(st.ids, st.watermark))
+		quiet := adaptiveQuiet(body, pending, st.gap)
+		wait := remainingWait(time.Now(), st.burstAt, st.lastAt, quiet, inboundMaxWait)
 		if wait <= 0 {
 			return nil
 		}
