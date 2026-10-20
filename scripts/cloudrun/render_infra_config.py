@@ -83,7 +83,7 @@ def main() -> None:
                 "push_config": {
                     "id": sub,
                     "service_account": sa_email,
-                    "jwt_audience": base_url,
+                    "jwt_audience": "-",  # must match the subscription audience; see deploy.sh comment
                 },
             }
         topics[topic] = entry
