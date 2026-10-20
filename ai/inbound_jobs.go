@@ -77,10 +77,12 @@ func handleInboundAI(ctx context.Context, job *InboundAIJob) error {
 	inboundID := job.InboundMessageID
 	override := ""
 	coalesceFlush := false
+	var coalesceWaitMs int64
 	if flush != nil && flush.Stitched != "" {
 		inboundID = flush.LastID
 		override = flush.Stitched
 		coalesceFlush = true
+		coalesceWaitMs = flush.WaitMs
 	}
 
 	attempt := incrementAIAttempt(jobCtx, inboundID)
@@ -99,6 +101,7 @@ func handleInboundAI(ctx context.Context, job *InboundAIJob) error {
 		InboundMessageID: inboundID,
 		UserTextOverride: override,
 		CoalesceFlush:    coalesceFlush,
+		CoalesceWaitMs:   coalesceWaitMs,
 	})
 	if errors.Is(procErr, errDropSuperseded) {
 		latest := coalesceLastID(ctx, job)
