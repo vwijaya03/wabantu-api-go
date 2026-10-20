@@ -214,7 +214,7 @@ func TestLLMFirstApplyFieldAnswerWithProblemsNamesThemAndAsksAgain(t *testing.T)
 			t.Errorf("reply missing %q:\n%s", want, out.Reply)
 		}
 	}
-	if strings.Index(out.Reply, "Noted:") > strings.Index(out.Reply, "Sorry,") || strings.Index(out.Reply, "Sorry,") > strings.Index(out.Reply, "Back to your order") {
+	if strings.Index(out.Reply, "Noted:") > strings.Index(out.Reply, "Sorry,") || strings.Index(out.Reply, "Sorry,") > strings.Index(out.Reply, salesbrain.ResumeLineFor("recipient", salesbrain.LangEN)) {
 		t.Errorf("order must be what was saved, problems, resume line:\n%s", out.Reply)
 	}
 }

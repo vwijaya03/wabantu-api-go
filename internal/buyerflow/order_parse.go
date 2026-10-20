@@ -46,8 +46,8 @@ func defaultOrderTemplates(formal bool) orderFlowTemplates {
 			AskProduct: "Siap kak. Sebutkan nama produk dari katalog kami (contoh: Jiniso Highwaist).",
 			AskVariant: "Baik kak. Tulis ukuran (S/M/L/XL) dan warna yang diinginkan ya.",
 			AskQty:     "Siap kak. Mau pesan berapa pcs?",
-			AskRecipient: "Terima kasih kak. Tulis nama penerima dan nomor HP/WA aktif ya.\n" +
-				"Contoh:\nNama: Budi Santoso\nHP: 081234567890",
+			AskRecipient: "Terima kasih kak. Tulis nama penerima, nomor HP/WA aktif, dan alamat lengkap (jalan, kota, provinsi, kode pos) sekaligus ya.\n" +
+				"Contoh:\nNama: Budi Santoso\nHP: 081234567890\nAlamat: Jl. Melati 12, Surabaya, Jawa Timur, 60111",
 			AskAddressFull: "Mohon kirim alamat pengiriman lengkap (format resmi Indonesia):\n" +
 				"Jalan: ...\nRT/RW: ... (jika ada)\nKelurahan: ...\nKecamatan: ...\nKota/Kab: ...\nProvinsi: ...\nKode pos: 12345",
 			ClarifyAddress: "Alamat belum lengkap kak. Pastikan ada jalan, kota, provinsi, dan kode pos 5 digit ya.",
@@ -60,8 +60,8 @@ func defaultOrderTemplates(formal bool) orderFlowTemplates {
 		AskProduct: "Siap kak. Mau order produk apa? Sebut nama produk dari katalog ya.",
 		AskVariant: "Oke kak. Ukuran (S/M/L/XL) dan warnanya apa?",
 		AskQty:     "Siap kak, mau pesan berapa pcs?",
-		AskRecipient: "Makasih kak. Kirim nama penerima + no HP/WA ya.\n" +
-			"Contoh:\nNama: Budi\nHP: 081234567890",
+		AskRecipient: "Makasih kak. Kirim nama penerima + no HP/WA + alamat lengkap (jalan, kota, provinsi, kode pos) sekaligus ya.\n" +
+			"Contoh:\nNama: Budi\nHP: 081234567890\nAlamat: Jl. Melati 12, Surabaya, Jawa Timur, 60111",
 		AskAddressFull: "Kirim alamat lengkap ya (format Indonesia):\n" +
 			"Jalan: ...\nRT/RW: ...\nKelurahan: ...\nKecamatan: ...\nKota/Kab: ...\nProvinsi: ...\nKode pos: 12345",
 		ClarifyAddress: "Alamatnya belum lengkap kak — butuh jalan, kota, provinsi, dan kode pos 5 digit.",
@@ -77,7 +77,7 @@ func englishDefaultOrderTemplates(formal bool) orderFlowTemplates {
 			AskProduct:     "Which product from our catalog would you like? Please name the item.",
 			AskVariant:     "Please send the size (S/M/L/XL) and color you want.",
 			AskQty:         "How many would you like to order?",
-			AskRecipient:   "Please send the recipient's name and active mobile number.\nExample:\nName: Budi\nPhone: 081234567890",
+			AskRecipient:   "Please send the recipient's name, active mobile number, and full delivery address (street, city, province, postal code).\nExample:\nName: Budi\nPhone: 081234567890\nAddress: Jl. Melati 12, Surabaya, Jawa Timur, 60111",
 			AskAddressFull: "Please send your full shipping address (street, district, city, province, 5-digit postal code).",
 			ClarifyAddress: "The address isn't complete yet — we need street, city, province, and a 5-digit postal code.",
 			Complete:       "Thanks — we have everything. Our team will confirm your order shortly 🙏",
@@ -89,7 +89,7 @@ func englishDefaultOrderTemplates(formal bool) orderFlowTemplates {
 		AskProduct:     "Which product would you like? Name something from our catalog.",
 		AskVariant:     "What size (S/M/L/XL) and color?",
 		AskQty:         "How many pcs would you like?",
-		AskRecipient:   "Please send the recipient's name and phone number.\nExample:\nName: Budi\nPhone: 081234567890",
+		AskRecipient:   "Please send the recipient's name, phone number, and full delivery address (street, city, province, postal code).\nExample:\nName: Budi\nPhone: 081234567890\nAddress: Jl. Melati 12, Surabaya, Jawa Timur, 60111",
 		AskAddressFull: "Please send your full shipping address (street, district, city, province, postal code).",
 		ClarifyAddress: "Address isn't complete yet — need street, city, province, and postal code.",
 		Complete:       "All set — our team will confirm your order shortly 🙏",
