@@ -192,3 +192,20 @@ git push encore master               # men-deploy ke Encore Cloud
 ### Kill switch fitur (kedua target)
 
 Untuk fitur `ai_llm_first`, matikan lewat flag tanpa deploy: lihat [LLM_FIRST_PIPELINE.md bagian 4](./LLM_FIRST_PIPELINE.md#4-kill-switch-dan-rollback). Efek berlaku maksimal 60 detik (TTL cache flag).
+
+---
+
+## 7. Latensi dan biaya Cloud Run (keputusan owner)
+
+`deploy.sh` kini memakai `--cpu-boost` (CPU tambahan hanya saat instance start). Ini membantu cold start dan tidak menambah biaya yang berarti. Dua setelan berikut **sengaja tidak diubah** karena mengubah tagihan; keputusannya ada di owner:
+
+| Setelan | Sekarang | Efek pada balasan lambat |
+|---|---|---|
+| `--min-instances` | `0` | Pesan pertama setelah idle membayar cold start (contoh terukur: "Halo" pukul 09.49 butuh 15,8 detik). `--min-instances=1` menjaga satu instance tetap hangat. |
+| CPU throttling | default (CPU hanya dialokasikan saat ada request) | Lihat di bawah. `--no-cpu-throttling` memakai tagihan berbasis instance. |
+
+Mengapa throttling penting di sini: dengan `INLINE_INBOUND_AI=1` (`webhook/inbound_ai_enqueue.go`), webhook langsung membalas 200 lalu AI berjalan di goroutine **setelah respons**. Pada tagihan berbasis request, CPU instance dibatasi di luar request, sehingga goroutine itu berjalan lambat (atau terhenti sampai ada request berikutnya). Perbaikan yang sebenarnya untuk balasan lambat dan cold adalah tagihan berbasis instance (`--no-cpu-throttling`) dan/atau `--min-instances=1`. `--cpu-boost` saja tidak cukup.
+
+Perkiraan biaya: harga per vCPU-detik dan GiB-detik untuk `asia-southeast2` serta tarif idle min-instance **tidak bisa saya ambil dari halaman harga saat dokumen ini ditulis, jadi cek halaman harga**: https://cloud.google.com/run/pricing. Rumus kasar untuk konfigurasi sekarang (1 vCPU, 1 GiB): satu instance menyala penuh sebulan = sekitar 2,59 juta detik, dikali (harga vCPU-detik + 1 x harga GiB-detik) di region itu, dikurangi free tier bila berlaku. Hitung ulang dengan kalkulator harga Google untuk skenario (a) `min-instances=1` saja dan (b) `min-instances=1` + `--no-cpu-throttling`, lalu putuskan.
+
+Ukur dampaknya dengan SQL p50/p90 di `docs/LLM_FIRST_PIPELINE.md` bagian 12.

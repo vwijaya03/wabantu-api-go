@@ -497,3 +497,55 @@ Tenant omah_apparel, mode `on`, model gemini-3.1-flash-lite, 18 Okt 00:17-00:21 
 | 5 | Hampir setiap balasan ditutup "Mau ditambahkan ke pesanan?". | Persona: tawaran menambah pesanan paling banyak sekali per topik, jangan menutup tiap jawaban dengan tawaran; satu ajakan di akhir hanya bila perlu. Hanya dijaga tes teks prompt, bukan validator. |
 
 Catatan perilaku: ketika parser mengenali kota (mis. "Surabaya", "South Jakarta"), nama kota dan provinsi memakai bentuk kanonik parser ("Jakarta Selatan", "DKI Jakarta"), bukan huruf model. Label "Address:" di awal baris alamat satu baris dibuang oleh `parseCommaAddress`.
+
+---
+
+## 12. Latensi balasan
+
+### Baseline terukur (tenant omah_apparel, 3 hari, pesan masuk sampai balasan keluar)
+
+| Jalur | p50 | p90 | Maks |
+|---|---|---|---|
+| `llm_first` | 3,4 detik | 5,7 detik | 15,8 detik |
+| legacy `llm` | 7,1 detik | - | - |
+
+Outlier: "Halo" 15,8 detik (pesan pertama pagi, cold start) dan "do you sell airpods ?" 14,9 detik. Sumber: pengukuran produksi dari owner, bukan dari repo.
+
+### Perubahan
+
+1. **Debounce adaptif** (`ai/inbound_coalesce.go`, `adaptiveQuiet`, fungsi murni dengan tes tabel). Jendela diam dasar turun dari 3 detik ke **1,2 detik**. Jendela naik ke 3 detik hanya bila pesan terakhir tampak belum selesai:
+   - berakhir `,` `:` `-` atau kata `dan` / `and`;
+   - sapaan tunggal (`halo`, `hi kak`, `kak`, `selamat pagi`, ...) yang biasanya disusul pertanyaan;
+   - sangat pendek (3 karakter atau kurang);
+   - burst berjalan: pesan ke-2 atau lebih dalam 2 detik dari pesan sebelumnya.
+
+   Batas tunggu total turun dari 15 ke **8 detik**. Awal burst di-reset bila jeda antar pesan lebih dari 3 detik (sebelumnya kunci burst bisa basi selama chat aktif). Watermark dan pembuangan balasan yang disusul tidak berubah.
+2. **Tanda dibaca dan indikator mengetik** (`ai/inbound_ack.go`, `whatsapp.MarkReadWithTyping`). Begitu job AI menerima pesan, panggilan async best-effort ke Cloud API (timeout 4 detik, hanya log) menandai pesan dibaca dan menampilkan "sedang mengetik" (hilang saat kita membalas atau setelah 25 detik). Dilewati untuk simulator dan percakapan yang tidak dijawab AI. Sumber format: https://developers.facebook.com/docs/whatsapp/cloud-api/typing-indicators
+3. **Pencatatan latensi**: `message.metadata` balasan AI kini memuat `latencyMs` (created_at pesan masuk sampai awal pengiriman) dan `coalesceWaitMs` (bagian yang dihabiskan di jendela diam).
+4. **Cloud Run**: `--cpu-boost` di `deploy.sh`. `--min-instances` dan CPU throttling tidak diubah; lihat `docs/DEPLOY_DUAL_ENV.md` bagian 7.
+
+### SQL: p50/p90 per jalur
+
+Ganti `<tenant_schema>`. Hanya membaca; baris lama sebelum rilis ini tidak punya `latencyMs`.
+
+```sql
+SELECT COALESCE(metadata->>'pipeline', 'legacy') || '/' || COALESCE(metadata->>'path', '?') AS jalur,
+       count(*)                                                             AS balasan,
+       percentile_cont(0.5) WITHIN GROUP (ORDER BY (metadata->>'latencyMs')::numeric) / 1000 AS p50_detik,
+       percentile_cont(0.9) WITHIN GROUP (ORDER BY (metadata->>'latencyMs')::numeric) / 1000 AS p90_detik,
+       max((metadata->>'latencyMs')::numeric) / 1000                        AS maks_detik,
+       avg((metadata->>'coalesceWaitMs')::numeric) / 1000                   AS rata_tunggu_diam_detik
+FROM "<tenant_schema>".message
+WHERE direction = 'out' AND author IN ('ai', 'system')
+  AND metadata ? 'latencyMs'
+  AND created_at > now() - interval '3 days'
+GROUP BY 1
+ORDER BY balasan DESC;
+```
+
+### Praktik terbaik
+
+- Ukur dulu (SQL di atas), ubah satu hal per rilis, bandingkan p50 dan p90, bukan rata-rata.
+- Jendela diam adalah harga koalesensi: makin pendek makin cepat tetapi makin sering memecah satu pikiran buyer menjadi dua balasan. Naikkan lagi bila `coalesceWaitMs` rendah tetapi keluhan balasan terpotong naik.
+- Beri umpan balik instan (tanda dibaca + mengetik) agar waktu tunggu terasa lebih pendek.
+- Outlier 15 detik hampir selalu cold start atau CPU di-throttle setelah respons, bukan LLM; perbaikannya di setelan Cloud Run (owner), bukan di kode.
