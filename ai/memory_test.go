@@ -127,3 +127,22 @@ func TestPlanTurnSummaryIsBackgroundNotAFactSource(t *testing.T) {
 		t.Fatalf("the stale summary price must be rejected and corrected: attempts=%d reply=%q fallback=%v", plan.Attempts, plan.Reply, plan.Fallback)
 	}
 }
+
+func TestOrderSummaryMessagesIsChronologicalAndStampsTheNewest(t *testing.T) {
+	base := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
+	mk := func(body string, at time.Time) summaryMessage {
+		return summaryMessage{HistoryMessage: HistoryMessage{Author: "contact", Body: body}, CreatedAt: at}
+	}
+	msgs, newest := orderSummaryMessages([]summaryMessage{
+		mk("c", base), mk("b", base.Add(-time.Minute)), mk("a", base.Add(-2*time.Minute)),
+	})
+	if len(msgs) != 3 || msgs[0].Body != "a" || msgs[1].Body != "b" || msgs[2].Body != "c" {
+		t.Fatalf("want chronological a,b,c got %+v", msgs)
+	}
+	if !newest.Equal(base) {
+		t.Fatalf("updated_at must be the newest loaded message's time %v, got %v", base, newest)
+	}
+	if m, n := orderSummaryMessages(nil); m != nil || !n.IsZero() {
+		t.Fatalf("empty input: got %v %v", m, n)
+	}
+}

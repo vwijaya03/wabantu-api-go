@@ -178,7 +178,7 @@ func SummarizeConversation(ctx context.Context, tenantSchema, convoID string) er
 		return fmt.Errorf("get previous summary: %w", err)
 	}
 
-	messages, err := loadMessagesSince(ctx, db, tenantSchema, convoID, prev.UpdatedAt)
+	messages, newest, err := loadMessagesSince(ctx, db, tenantSchema, convoID, prev.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("load messages: %w", err)
 	}
@@ -237,7 +237,7 @@ func SummarizeConversation(ctx context.Context, tenantSchema, convoID string) er
 	}
 
 	total := prev.MessageCount + len(messages)
-	err = storeSummary(ctx, db, tenantSchema, convoID, summary, total)
+	err = storeSummary(ctx, db, tenantSchema, convoID, summary, total, newest)
 	if err != nil {
 		return fmt.Errorf("store summary: %w", err)
 	}
@@ -353,45 +353,65 @@ func getLastSummaryTime(ctx context.Context, db *sql.DB, schema, convoID string)
 	return t, err
 }
 
-// loadMessagesSince returns the newest summaryLoadLimit messages after since, oldest first.
-func loadMessagesSince(ctx context.Context, db *sql.DB, schema, convoID string, since time.Time) ([]HistoryMessage, error) {
-	q := fmt.Sprintf(`SELECT author, body, type FROM %q.message
+// summaryMessage is one loaded message with its creation time.
+type summaryMessage struct {
+	HistoryMessage
+	CreatedAt time.Time
+}
+
+// orderSummaryMessages turns the newest-first rows of loadMessagesSince into the chronological
+// messages the summarizer reads, plus the creation time of the newest one (zero when empty).
+func orderSummaryMessages(newestFirst []summaryMessage) ([]HistoryMessage, time.Time) {
+	if len(newestFirst) == 0 {
+		return nil, time.Time{}
+	}
+	msgs := make([]HistoryMessage, 0, len(newestFirst))
+	for i := len(newestFirst) - 1; i >= 0; i-- {
+		msgs = append(msgs, newestFirst[i].HistoryMessage)
+	}
+	return msgs, newestFirst[0].CreatedAt
+}
+
+// loadMessagesSince returns the newest summaryLoadLimit messages after since, oldest first, and
+// the creation time of the newest one. That time becomes the summary's updated_at, so messages
+// that arrive while the model runs are still counted by the next trigger.
+func loadMessagesSince(ctx context.Context, db *sql.DB, schema, convoID string, since time.Time) ([]HistoryMessage, time.Time, error) {
+	q := fmt.Sprintf(`SELECT author, body, type, created_at FROM %q.message
 		WHERE conversation_id = $1 AND created_at > $2
 		ORDER BY created_at DESC LIMIT %d`, schema, summaryLoadLimit)
 
 	rows, err := appdb.QueryContextPool(ctx, db, q, convoID, since)
 	if err != nil {
-		return nil, err
+		return nil, time.Time{}, err
 	}
 	defer rows.Close()
 
-	var msgs []HistoryMessage
+	var newestFirst []summaryMessage
 	for rows.Next() {
-		var m HistoryMessage
-		if err := rows.Scan(&m.Author, &m.Body, &m.Type); err != nil {
-			return nil, err
+		var m summaryMessage
+		if err := rows.Scan(&m.Author, &m.Body, &m.Type, &m.CreatedAt); err != nil {
+			return nil, time.Time{}, err
 		}
-		msgs = append(msgs, m)
+		newestFirst = append(newestFirst, m)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, time.Time{}, err
 	}
-	// Newest first from SQL; the summarizer reads them in chronological order.
-	for i, j := 0, len(msgs)-1; i < j; i, j = i+1, j-1 {
-		msgs[i], msgs[j] = msgs[j], msgs[i]
-	}
-	return msgs, nil
+	msgs, newest := orderSummaryMessages(newestFirst)
+	return msgs, newest, nil
 }
 
-func storeSummary(ctx context.Context, db *sql.DB, schema, convoID, summary string, msgCount int) error {
+// storeSummary upserts the summary. updatedAt is the creation time of the newest message that went
+// into it (not NOW()), so a message that arrived during the model call is newer than updated_at.
+func storeSummary(ctx context.Context, db *sql.DB, schema, convoID, summary string, msgCount int, updatedAt time.Time) error {
 	q := fmt.Sprintf(`INSERT INTO %q.conversation_summary
 		(conversation_id, summary, message_count, updated_at)
-		VALUES ($1, $2, $3, NOW())
+		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (conversation_id) DO UPDATE SET
 			summary = EXCLUDED.summary,
 			message_count = EXCLUDED.message_count,
-			updated_at = NOW()`, schema)
-	_, err := appdb.ExecPool(ctx, db, q, convoID, summary, msgCount)
+			updated_at = EXCLUDED.updated_at`, schema)
+	_, err := appdb.ExecPool(ctx, db, q, convoID, summary, msgCount, updatedAt)
 	return err
 }
 
