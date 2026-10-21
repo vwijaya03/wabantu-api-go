@@ -225,8 +225,8 @@ Setiap balasan pipeline menyimpan ringkasan keputusan di `message.metadata` (JSO
 | `attempts` | 1, atau 2 setelah retry dengan catatan pelanggaran |
 | `model` | Model yang benar-benar dipakai chain (bisa fallback) |
 | `rawOutput` | Output mentah model terakhir: diredaksi (nomor panjang menjadi `[NUM]`, email `[EMAIL]`), maksimal 1000 karakter |
-| `replacedReason` | Template menggantikan teks model: `cancel_template`, `cancel_paid_template`, `order_persist_failed`, `cart_issue` (varian kurang, stok habis atau kurang), `variant_missing` (konfirmasi saat varian belum lengkap), `confirm_fail_closed` (giliran gagal di langkah konfirmasi, ringkasan dikirim ulang) |
-| `orderId`, `orderAction` | `create`, `cancel`, atau `cancel_request` (pesanan sudah bayar diteruskan ke owner) |
+| `replacedReason` | Template menggantikan teks model: `cancel_template`, `cancel_paid_template`, `order_persist_failed`, `cart_issue` (varian kurang, stok habis atau kurang), `variant_missing` (konfirmasi saat varian belum lengkap), `confirm_fail_closed` (giliran gagal di langkah konfirmasi, ringkasan dikirim ulang), `cancel_pick` (daftar pilihan batal), `cancel_all_confirm` (pertanyaan batalkan semua), `cancel_all_template` (hasil batalkan semua) |
+| `orderId`, `orderAction` | `create`, `cancel`, `cancel_request` (pesanan sudah bayar diteruskan ke owner), atau `cancel_all` (hasil batalkan semua; `orderId` kosong) |
 
 Intent `status` dibalas jalur lama (`path = order_status`), jadi tidak membawa metadata pipeline. Giliran yang fail-open dibalas jalur lama dan hanya tampak di log `llm_first fallback` (`why`: `llm_error` atau `invalid_output`).
 
