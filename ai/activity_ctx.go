@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"time"
 
 	"encore.app/wabantu/usage"
 )
@@ -15,6 +16,8 @@ type ActivityContext struct {
 	ConversationID   string
 	InboundMessageID string
 	CoalesceFlush    bool
+	InboundAt        time.Time // created_at of the inbound message this reply answers
+	CoalesceWaitMs   int64
 	Classifier       string
 	RouteReason      string
 }
