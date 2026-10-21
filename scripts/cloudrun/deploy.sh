@@ -58,7 +58,7 @@ gcloud run deploy "$SERVICE" \
   --concurrency=40 \
   --timeout=300 \
   --allow-unauthenticated \
-  --set-env-vars="INLINE_INBOUND_AI=1,RETRIEVAL_BACKGROUND_DRAIN=1" \
+  --set-env-vars="INLINE_INBOUND_AI=0,RETRIEVAL_BACKGROUND_DRAIN=0" \
   --set-secrets="$SET_SECRETS"
 
 URL="$(gcloud run services describe "$SERVICE" --project="$PROJECT" --region="$REGION" --format='value(status.url)')"
@@ -85,7 +85,11 @@ for row in rows:
         f"--topic={topic}",
         f"--push-endpoint={endpoint}",
         f"--push-auth-service-account={sa}",
-        f"--push-auth-token-audience={base}",
+        # Encore runtime (pubsub/internal/gcp/push_handler.go) validates the push JWT audience
+        # as AppID + "-" + EnvID. For a self-hosted infra.config.json both are empty, so the
+        # expected audience is the literal "-". Using the service URL here makes every push fail
+        # with "unable to validate JWT: unable to validate authorization".
+        "--push-auth-token-audience=-",
         f"--project={project}",
     ]
     describe = subprocess.run(
@@ -93,9 +97,10 @@ for row in rows:
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    extra = []
+    # Ack deadline above the AI job budget so a slow turn is not redelivered and processed twice.
+    extra = ["--ack-deadline=60", "--min-retry-delay=10s", "--max-retry-delay=600s"]
     if sub == "retrieval-index-worker":
-        extra = ["--ack-deadline=600"]
+        extra = ["--ack-deadline=600", "--min-retry-delay=10s", "--max-retry-delay=600s"]
     if describe.returncode != 0:
         subprocess.check_call(["gcloud", "pubsub", "subscriptions", "create", name, *common, *extra])
         print(f"created subscription {name}")

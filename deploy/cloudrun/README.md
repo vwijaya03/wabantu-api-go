@@ -53,16 +53,16 @@ CORS credential untuk `*.hosted.app` ada di `encore.app` pada branch ini.
 
 Webhook WhatsApp bisa **200** sementara worker Pub/Sub gagal. Cek log Cloud Run untuk `subscription":"ai-auto-reply"` dan `unable to validate JWT` pada `POST .../__encore/pubsub/push/ai-auto-reply`.
 
-Deploy lomba menyetel **`INLINE_INBOUND_AI=1`**: setelah pesan masuk, `webhook` memanggil handler AI di proses yang sama (tanpa menunggu push Pub/Sub). Encore Cloud **tidak** memakai env ini — tetap lewat topik `ai-jobs`.
+Akar masalah JWT sudah diperbaiki (lihat `docs/DEPLOY_DUAL_ENV.md` §3.1): runtime Encore self-host mengharapkan audience literal `-`, dan `deploy.sh` kini memasangnya di semua subscription push. Karena itu deploy lomba menyetel **`INLINE_INBOUND_AI=0`**, sehingga AI berjalan lewat push `ai-auto-reply` dengan CPU penuh selama request. Encore Cloud **tidak** memakai env ini.
 
-Perbaikan JWT push (audience / rebuild image dengan `CLOUD_RUN_URL` benar) bisa dilakukan terpisah; inline AI menjaga balasan tetap jalan.
+Rollback darurat: deploy dengan `INLINE_INBOUND_AI=1`. `webhook` lalu memanggil handler AI di proses yang sama, tanpa Pub/Sub, tetapi CPU ter-throttle setelah respons sehingga balasan lebih lambat.
 
 ## Indexing RAG di Cloud Run (`RETRIEVAL_BACKGROUND_DRAIN`)
 
 Push Pub/Sub ke `retrieval-index-worker` bisa gagal JWT seperti `ai-auto-reply`. `POST /api/v1/flags/retrieval-rebuild` **tidak lagi** menunggu embedding di dalam request HTTP: handler hanya wipe namespace, reset baris, enqueue, lalu return (`queued`, `embeddingModel`, `backgroundDrain`).
 
-`deploy.sh` menyetel **`RETRIEVAL_BACKGROUND_DRAIN=1`**: setelah respons terkirim, outbox tenant dikuras di goroutine terpisah (satu per tenant, maks 2 tenant paralel per proses, batas 10 menit, 100 baris per ronde). Encore Cloud **tidak** menyetel env ini dan memakai subscription `retrieval-index-worker`. Pantau lewat `GET /api/v1/flags/retrieval-indexing/:tenantId` (halaman Admin → AI Retrieval mem-poll otomatis).
+`deploy.sh` kini menyetel **`RETRIEVAL_BACKGROUND_DRAIN=0`** karena push `retrieval-index-worker` sudah jalan (audience `-`, ack deadline 600 detik). Mode `1` (cadangan/rollback): setelah respons terkirim, outbox tenant dikuras di goroutine terpisah (satu per tenant, maks 2 tenant paralel per proses, batas 10 menit, 100 baris per ronde). Encore Cloud **tidak** menyetel env ini dan memakai subscription `retrieval-index-worker`. Pantau lewat `GET /api/v1/flags/retrieval-indexing/:tenantId` (halaman Admin → AI Retrieval mem-poll otomatis).
 
-Catatan Cloud Run: dengan billing berbasis request, CPU bisa ter-throttle setelah respons; polling progres dari UI menjaga instance tetap aktif. Bila drain sering terhenti, pertimbangkan `--no-cpu-throttling` (biaya naik) atau perbaiki JWT push (track terpisah).
+Catatan Cloud Run: dengan billing berbasis request, CPU bisa ter-throttle setelah respons; polling progres dari UI menjaga instance tetap aktif. Bila drain sering terhenti, pertimbangkan `--no-cpu-throttling` (biaya naik) (sudah tidak relevan bila push worker jalan).
 
 Embedding Gemini (opsional): isi env proses `GeminiAPIKey` (sama dengan chat Gemini). Default tetap OpenAI (`OpenAIApiKey`, `PineconeApiKey`, `PineconeIndexHost` wajib untuk RAG). Superadmin mengganti model di Admin → AI Providers → Embedding (dialog konfirmasi reindex).
