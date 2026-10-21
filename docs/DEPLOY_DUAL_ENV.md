@@ -67,7 +67,7 @@ Daftar unik: 23 nama, sama persis dengan `ENCORE_SECRETS` di `scripts/cloudrun/r
 |---|---|---|
 | 23 secret Encore di atas | `encore secret set --env=<ENV> <Nama>` (`DEPLOY_ENCORE_CLOUD.md`) | Secret Manager dengan nama sama, di-map ke env oleh `deploy.sh` (`--set-secrets=Nama=Nama:latest`); `render_infra_config.py` menulis `"secrets": {nama: {"$env": nama}}` ke `infra.config.json` yang ter-bake ke image |
 | Env proses saja (bukan secret Encore) | tidak disetel | ada di array `SECRETS` `deploy.sh`: `ENCORE_SERVICE_AUTH_KEY`, `SQL_PASSWORD`, `REDIS_AUTH`, `GeminiAPIKey`, `SimulatorTenantAllowlist`, `FIRESTORE_PROJECT_ID`, `FIREBASE_SERVICE_ACCOUNT_JSON` |
-| Env polos di `deploy.sh` (`--set-env-vars`) | tidak disetel | `INLINE_INBOUND_AI=1`, `RETRIEVAL_BACKGROUND_DRAIN=1` |
+| Env polos di `deploy.sh` (`--set-env-vars`) | tidak disetel | `INLINE_INBOUND_AI=0`, `RETRIEVAL_BACKGROUND_DRAIN=0` (sejak fix audience JWT §3.1; set `1` hanya untuk rollback) |
 | Host/DB yang ter-bake ke image (bukan secret) | n/a | dari `deploy/cloudrun/.env` (gitignored; contoh di `deploy/cloudrun/env.example`): `GCP_PROJECT`, `GCP_REGION`, `AR_REPO`, `SERVICE_NAME`, `RUNTIME_SA`, `SQL_HOST`, `SQL_USER`, `SQL_SYSTEM_DB`, `SQL_TENANT_DB`, `REDIS_HOST`, `CLOUD_RUN_URL` |
 
 `Dockerfile` sengaja gagal (`exit 1`); image Cloud Run hanya dari `encore build docker` lewat `scripts/cloudrun/build-image.sh`. Dockerfile tidak menyuntik env apa pun.
@@ -100,11 +100,42 @@ Env lain di kode non-test: `ENCORE_DEPLOY_ID`, `ENCORE_GIT_COMMIT` (`shared/buil
 
 | Gejala | Penyebab | Perbaikan (hanya Cloud Run) | Dibaca di |
 |---|---|---|---|
-| Webhook WhatsApp 200 tetapi AI tidak membalas | Push Pub/Sub ke `ai-auto-reply` gagal validasi JWT | `INLINE_INBOUND_AI=1`: handler AI dipanggil di proses yang sama, tanpa Pub/Sub | `webhook/inbound_ai_enqueue.go:15`; disetel di `deploy.sh` |
-| Indexing RAG tidak jalan | Push Pub/Sub ke `retrieval-index-worker` gagal JWT yang sama | `RETRIEVAL_BACKGROUND_DRAIN=1`: outbox dikuras di goroutine terpisah setelah respons (per tenant, batas 10 menit) | `kb/retrieval_drain_background.go:35`; disetel di `deploy.sh` |
+| Webhook WhatsApp 200 tetapi AI tidak membalas | Push Pub/Sub ke `ai-auto-reply` gagal validasi JWT | Dulu `INLINE_INBOUND_AI=1` (tambalan); akar masalah diperbaiki di §3.1, inline kini `0` | `webhook/inbound_ai_enqueue.go:15`; disetel di `deploy.sh` |
+| Indexing RAG tidak jalan | Push Pub/Sub ke `retrieval-index-worker` gagal JWT yang sama | Dulu `RETRIEVAL_BACKGROUND_DRAIN=1` (tambalan); kini `0`, worker push jalan normal (§3.1) | `kb/retrieval_drain_background.go:35`; disetel di `deploy.sh` |
 | Ganti model embedding ke Gemini gagal | `GeminiAPIKey` tidak ada di proses | isi `GeminiAPIKey` (Secret Manager di Cloud Run) | `admin/ai_embedding_reindex.go:78` |
 
-Untuk mencari di log (Cloud Run), gunakan string `unable to validate JWT` pada permintaan `POST .../__encore/pubsub/push/<subscription>` (dari `deploy/cloudrun/README.md`). Itu hanya kata kunci pencarian, bukan perintah. Perbaikan akar JWT (audience / `CLOUD_RUN_URL` benar saat build) dicatat di README sebagai track terpisah dan belum dikerjakan di repo ini.
+Untuk mencari di log (Cloud Run), gunakan string `unable to validate JWT` pada permintaan `POST .../__encore/pubsub/push/<subscription>` (dari `deploy/cloudrun/README.md`). Itu hanya kata kunci pencarian, bukan perintah.
+
+### 3.1 Akar masalah JWT push (diperbaiki 20 Okt 2026)
+
+**Penyebab.** Runtime Encore (`runtimes/go/pubsub/internal/gcp/push_handler.go`, CLI 1.57.4) memvalidasi audience token push sebagai `AppID + "-" + EnvID`. Untuk `infra.config.json` self-host, `parse.go` hanya mengisi `AppSlug` dan `EnvName`. `AppID` dan `EnvID` tetap kosong, sehingga audience yang diharapkan adalah string `-`. `deploy.sh` dulu memasang audience = URL Cloud Run, jadi **semua** subscription push gagal: `ai-auto-reply`, `retrieval-index-worker`, `summarizer` (tabel `conversation_summary` selalu kosong), `payment-proof-handler`, `broadcast-sender`, `import-processor`, `webhook-retryer`, dan lainnya.
+
+**Perbaikan.**
+- `deploy.sh` kini memasang `--push-auth-token-audience=-`.
+- `render_infra_config.py` memakai `jwt_audience: "-"`.
+- Ack deadline 60 detik (600 detik untuk `retrieval-index-worker`) dengan retry backoff 10–600 detik, supaya giliran AI yang lambat tidak dikirim ulang lalu diproses dua kali.
+- `INLINE_INBOUND_AI` dan `RETRIEVAL_BACKGROUND_DRAIN` dimatikan (`0`). AI kini berjalan di request push dengan CPU penuh, bukan goroutine setelah respons.
+
+**Yang sudah diterapkan langsung di produksi (20 Okt 03:07–03:12 UTC), sebelum PR ini:**
+1. Audience `-` diterapkan untuk `summarizer` dan `retrieval-index-worker`. Setelah itu push 200.
+2. Backlog `ai-auto-reply` (8 pesan lama) dibuang dengan `gcloud pubsub subscriptions seek lomba-ai-auto-reply --time=<now>`, supaya bot tidak membalas chat basi.
+3. Audience `-` diterapkan ke semua subscription `lomba-*`.
+4. Ack deadline dan retry diterapkan.
+5. Image yang berjalan saat itu masih memakai inline. Inline baru mati setelah deploy dari branch yang memuat perubahan ini.
+
+**PERINGATAN backlog.** Subscription yang lama gagal menyimpan pesan sampai 7 hari. Sebelum memperbaiki audience subscription lain di masa depan, cek backlog (`num_undelivered_messages` di Cloud Monitoring). Kalau isinya bisa berdampak ke pelanggan (broadcast, balasan AI), buang dulu dengan `seek` ke waktu sekarang.
+
+**Verifikasi setelah deploy:**
+```bash
+gcloud logging read 'resource.type=cloud_run_revision AND httpRequest.requestUrl:"pubsub/push"' \
+  --project=<PROJECT> --freshness=30m --format='value(httpRequest.status,httpRequest.requestUrl)' | sort | uniq -c
+gcloud logging read 'resource.type=cloud_run_revision AND jsonPayload.error:"unable to validate JWT"' \
+  --project=<PROJECT> --freshness=30m --format='value(timestamp)' | wc -l   # harus 0
+```
+
+**Rollback** bila AI berhenti membalas setelah deploy: deploy ulang dengan `INLINE_INBOUND_AI=1`, karena AI inline tidak bergantung pada Pub/Sub. Audience `-` tidak perlu dikembalikan.
+
+**Bila Encore memperbaiki perilaku ini** (misalnya `AppID`/`EnvID` mulai diisi dari metadata), audience yang diharapkan menjadi `<app_id>-<env>`. Gejalanya: JWT error muncul lagi setelah upgrade CLI Encore. Cek ulang `push_handler.go` di versi baru.
 
 Encore Cloud tidak memakai kedua env itu dan tetap lewat topik `ai-jobs` dan subscription `retrieval-index-worker` (`deploy/cloudrun/README.md`).
 
