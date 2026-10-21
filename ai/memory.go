@@ -39,19 +39,34 @@ var _ = pubsub.NewSubscription(SummarizeTopic, "summarizer", pubsub.Subscription
 	RetryPolicy: &pubsub.RetryPolicy{MaxRetries: 3},
 })
 
+// Seams of handleSummarize (swapped in tests only).
+var (
+	summarizeRunFn     = SummarizeConversation
+	summarizeReleaseFn = releaseSummarizeInflight
+)
+
+// handleSummarize runs one summarize job. The inflight key (ai:summarize:inflight:<convo>) is
+// OWNED BY THE PUBLISHER: TryPublishSummarize SetNXs it before publishing, so the handler must not
+// acquire it again (doing so made every job skip with "already inflight": incident 21 Oct 2026).
+// The handler only releases the key when it is done, so the next trigger can publish at once; if the
+// handler never runs or crashes, the 2-minute TTL frees it. A duplicate delivery (at-least-once)
+// is harmless without a second lock: SummarizeConversation reads the messages after the last stored
+// summary and upserts one row per conversation, so a repeated run only rewrites the same summary.
+// The TTL (2m) is longer than the handler timeout (45s), so the key outlives a normal run.
 func handleSummarize(ctx context.Context, req SummarizeRequest) error {
-	if !acquireSummarizeInflight(ctx, req.ConversationID) {
-		rlog.Info("summarize skipped: already inflight", "conversationId", req.ConversationID)
-		return nil
-	}
-	defer releaseSummarizeInflight(ctx, req.ConversationID)
+	defer func() {
+		// The job's own context may be cancelled by now; the key must still be released.
+		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		summarizeReleaseFn(rctx, req.ConversationID)
+	}()
 
 	rlog.Info("summarize triggered", "schema", req.TenantSchema, "conversationId", req.ConversationID)
 
 	runCtx, cancel := context.WithTimeout(ctx, summarizeHandlerTimeout)
 	defer cancel()
 
-	err := SummarizeConversation(runCtx, req.TenantSchema, req.ConversationID)
+	err := summarizeRunFn(runCtx, req.TenantSchema, req.ConversationID)
 	if err == nil {
 		return nil
 	}
@@ -69,7 +84,8 @@ func handleSummarize(ctx context.Context, req SummarizeRequest) error {
 	return nil
 }
 
-// TryPublishSummarize enqueues background summarization with inflight dedupe.
+// TryPublishSummarize enqueues background summarization with inflight dedupe. It acquires the
+// inflight key and hands its ownership to the handler (handleSummarize releases it).
 func TryPublishSummarize(ctx context.Context, tenantSchema, convoID string) {
 	if tenantSchema == "" || convoID == "" {
 		return

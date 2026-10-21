@@ -23,7 +23,7 @@ Hook `tryLLMFirst` ada di `ProcessAutoReply` (`ai/autoreply.go`) tepat setelah g
 Mode `on`, berurutan (`ai/llm_first.go`):
 
 1. **Cost gate** `usage.CheckAICostLimit`. Habis: balasan `TplQuotaExhausted` (path `cost_limit`).
-2. **Muat data (hanya baca):** riwayat 12 pesan, pesan keluar terakhir, katalog (loader + stok + harga tier yang sama dengan jalur lama), FAQ (50 baris), state keranjang Redis, pesanan terbuka dari DB, status pengingat dan penghitung salah paham di Redis.
+2. **Muat data (hanya baca):** riwayat 12 pesan, pesan keluar terakhir, katalog (loader + stok + harga tier yang sama dengan jalur lama), FAQ (50 baris), state keranjang Redis, pesanan dari DB (daftar belum selesai dan seleksi pengingat, §1.3a), konfirmasi "batalkan semua" yang menunggu (Redis), status pengingat dan penghitung salah paham di Redis.
 3. **Bahasa:** `salesbrain.DecideLanguage` satu-satunya otoritas (`language_switch` dari model tidak pernah dipakai). Bahasa yang dikunci ditulis ke `contact.preferred_language` dan dicerminkan ke `contact.PreferredLanguage` di memori serta `SetSavedBuyerLang`, supaya `applyBuyerLanguageFromMessage` (defer di `ProcessAutoReply`) dan template lama tidak menimpanya bila giliran ini fail-open. Sapaan ambigu ("hi") dijawab satu bubble dua bahasa tanpa memanggil model.
 4. **`planTurn`** (`ai/llm_first_plan.go`): prompt dari `salesbrain.BuildPrompt`, maksimal dua panggilan JSON (yang kedua membawa catatan pelanggaran), validasi balasan, operasi keranjang, dan ringkasan/total dirender kode.
 5. **Efek samping** (`ai/llm_first_effects.go`) lalu **kirim** (`sendAiMessage`, path `llm_first`).
@@ -37,14 +37,14 @@ Pemakaian token tiap giliran dicatat dua kali di mode `on`: `ai_token` (kuota pl
 | `order`, `amend` | `setOrderState(stateWithCart(...))` bila keranjang berubah; `clearOrderState` bila kosong. Tawaran produk lain menandai `UpsellShown`. Balasan = teks model + ringkasan + kalimat lanjut. **Sesudah kirim**, keranjang yang berubah dan tidak kosong disimpan sebagai draft awal lewat `persistDraftOrderEarly` (fungsi yang sama dengan jalur lama); id draft dipasang di `PersistedOrderID` supaya amend dan `confirm` berikutnya memperbarui baris yang sama. Keranjang tanpa draft sendiri selalu draft baru (`ForceNewOrder`), jadi tidak pernah menyatu ke draft yang diparkir. Gagal simpan: dicatat di log dan owner diberi tahu, balasan tidak terhalang. Varian, stok, dan harga: lihat §1.1. |
 | `field_answer` | `applyFieldAnswer` (nilai harus muncul di pesan pembeli) lalu `setOrderState`. Data tidak valid disebut persis (template `TplFieldProblems`) dan kolomnya ditanya lagi. Setelah lengkap: ringkasan penuh (item, alamat, minta OK). |
 | `confirm` | Hanya di langkah `confirm` dengan alamat lengkap **dan** teks pembeli lolos `IsExplicitOrderConfirm`: `persistDraftOrder`. Intent `confirm` dari model saja tidak cukup. Tanpa draft yang terikat = draft baru. Balasan + `TplOrderRef`. Gagal simpan: `TplSystemBusy` + notifikasi owner, keranjang dan draft yang terikat tetap. Bila masih ada baris yang belum punya ukuran/warna, tidak ada yang disimpan: langkah kembali ke `ask_variant` (`replacedReason = variant_missing`). |
-| `cancel` | Draft belum bayar: `cancelPersistedOrder` + `clearOrderState`, balasan template `TplOrderCancelled`. Pesanan yang sudah dibayar **tidak pernah** dibatalkan bot: notifikasi owner dulu, lalu `TplCancelPaidOrder`. Nomor `WB-…` di pesan menentukan pesanan; nomor tidak dikenal tidak membatalkan apa pun. Dengan dua pesanan terbuka atau lebih dan tanpa nomor, tidak ada yang dibatalkan (pembeli yang memilih; balasan model tetap dikirim). Keranjang yang belum tersimpan cukup dikosongkan. |
+| `cancel` | Model mengisi `cancel_scope`: `one` (default) atau `all`. **Satu pesanan:** draft belum bayar: `cancelPersistedOrder` + `clearOrderState`, balasan template `TplOrderCancelled`. Pesanan yang sudah dibayar **tidak pernah** dibatalkan bot: notifikasi owner dulu, lalu `TplCancelPaidOrder`. Nomor `WB-…` di pesan menentukan pesanan; nomor tidak dikenal tidak membatalkan apa pun. Dengan dua pesanan belum selesai atau lebih (umur berapa pun), tanpa nomor, dan tanpa keranjang hidup, tidak ada yang dibatalkan: pembeli menerima daftar pilihan `TplCancelPick` (`replacedReason = cancel_pick`), bukan balasan model. Keranjang yang belum tersimpan cukup dikosongkan. **Semua (`all`):** lihat §1.4. |
 | `continue_order` | Draft terbuka terbaru (atau yang disebut nomornya) dipulihkan ke Redis dari DB; hanya kolom yang kurang yang ditanya. Pesanan yang menunggu bayar tidak dipulihkan (tidak ada yang tersisa untuk dikumpulkan). |
 | `new_order` | `clearOrderState`; draft lama **tetap** di DB (diparkir, tetap muncul di pengingat) dan keranjang berikutnya menjadi draft baru. `TplNewOrderParked` bila model belum menyebut nomornya. |
 | `status` | `handleCustomerOrderStatus` (jalur lama; membalas sendiri). Semua teks status dua bahasa; bahasa dipilih `ResolveBuyerLanguage(pesan, bahasa terkunci kontak)`, jadi pembeli Inggris menerima status Inggris. |
-| `human_request`, atau `handoff.level = takeover` | Setelah balasan terkirim: `pauseAI(HandoffReasonHumanRequest)` lalu `notifyOwner("ai.handoff")`. Balasan memuat jam buka tenant. AI lanjut otomatis setelah 2 jam tanpa balasan staf. |
+| `human_request`, atau `handoff.level = takeover` | Setelah balasan terkirim: `pauseAI(HandoffReasonHumanRequest)` lalu `notifyOwner("ai.handoff")`. Balasan memuat jam buka tenant. AI lanjut otomatis setelah 2 jam tanpa balasan staf. **Pengecualian:** bila aksi transaksional giliran itu sudah berhasil dan intent bukan `human_request`, takeover diturunkan menjadi `note` (§1.5). |
 | `handoff.level = note` | `notifyOwner` saja; AI tetap melayani. |
 
-Status pengingat pesanan terbuka (TTL 72 jam) dan penghitung salah paham beruntun (TTL 24 jam) ditulis ke Redis **sesudah** balasan terkirim.
+Status pengingat pesanan (TTL 72 jam) dan penghitung salah paham beruntun (TTL 24 jam) ditulis ke Redis **sesudah** balasan terkirim.
 
 ### 1.1 Varian, stok, dan harga
 
@@ -92,11 +92,36 @@ Ringkasan disimpan di tabel `conversation_summary` (satu baris per percakapan) o
 - **Biaya.** Satu panggilan model memori per 20 pesan atau per kunjungan kembali. Token tetap dicatat sebagai `ai_token` dan `ai_activity` (purpose `conversation_summary`) seperti sebelumnya; tidak ada perubahan kuota. Tambahan di prompt LLM-first paling banyak sekitar 600 karakter per giliran, hanya bila ada ringkasan yang masih berlaku.
 - **Bug yang diperbaiki.** (1) Penghitung membaca `created_at`, yang tidak pernah berubah setelah upsert pertama, sehingga setelah ringkasan pertama pemicu hampir selalu menyala dan pesan lama dibaca ulang; kini `updated_at`. (2) Ringkasan menimpa tanpa menggabung sehingga konteks awal hilang; kini bergulir. (3) `LIMIT 100` mengambil 100 pesan terlama; kini 100 terbaru (urutan kronologis). (4) Pembeli yang kembali setelah jeda panjang dengan sedikit pesan tidak pernah memicu ringkasan.
 - **Environment.** Tanpa env, secret, atau migrasi. Di Cloud Run, peringkas hanya berjalan setelah perbaikan audience JWT Pub/Sub (PR #265/#266) ter-deploy; di Encore Cloud langsung jalan. Sebelum itu tidak ada baris ringkasan baru dan LLM-first berjalan tanpa blok ini.
-- Tes: `internal/salesbrain/summary_test.go`, `ai/memory_test.go`.
+- **Kunci inflight (perbaikan 21 Okt 2026).** `TryPublishSummarize` mengambil kunci Redis `ai:summarize:inflight:<convo>` (SetNX, TTL 2 menit) lalu mem-publish. Handler sebelumnya mengambil kunci YANG SAMA lagi, selalu gagal, dan mencatat "summarize skipped: already inflight", sehingga ringkasan tidak pernah ditulis. Kini **publisher memiliki kunci**; `handleSummarize` tidak mengambilnya lagi, langsung menjalankan `SummarizeConversation`, dan melepas kunci di akhir (`defer`, konteks tanpa cancel, 5 detik). Kunci yang tidak sempat dilepas (handler tidak jalan atau crash) bebas sendiri oleh TTL 2 menit, lebih panjang dari batas handler 45 detik. Pengiriman ganda (at-least-once) tidak diberi kunci kedua: `SummarizeConversation` membaca pesan setelah ringkasan terakhir dan meng-upsert satu baris per percakapan, jadi proses ulang hanya menulis ulang ringkasan yang sama.
+- Tes: `internal/salesbrain/summary_test.go`, `ai/memory_test.go`, `ai/memory_inflight_test.go`.
 
 ---
 
 ---
+
+### 1.3a Pesanan belum selesai (menjawab) vs pesanan untuk pengingat
+
+Dua daftar dengan tujuan berbeda; keduanya dibangun dari `loadActiveOrdersForContact` (semua pesanan percakapan ini yang belum `cancelled`).
+
+| Daftar | Isi | Dipakai untuk |
+|--------|-----|---------------|
+| `TurnState.OpenOrders` (+ `OpenOrdersMore`) | **Semua pesanan belum selesai, umur berapa pun**: draft belum bayar (termasuk tanpa item), menunggu bayar, bukti transfer sedang dicek, `processing`/`confirmed`/`paid`. Bukan `cancelled`, `shipped`, `completed`. Terbaru dulu, maksimal 10 (`salesbrain.MaxUnfinishedListed`); sisanya hanya dihitung ("dan N pesanan lainnya"). Dibangun `mapUnfinishedOrders` / `lfUnfinishedSnapshot`. | STATE untuk menjawab "apakah saya punya pesanan?" (blok `pesanan_belum_selesai`, yang menyatakan tegas "TIDAK ADA" atau "ADA N pesanan" beserta daftar); pilihan target `cancel` dan `continue_order`; `BuildFacts` (nomor, harga, total semua pesanan yang tampil boleh dikutip model); `lfApplyNewOrder` (menyebut draft yang diparkir, hanya yang belum dibayar). |
+| `TurnState.RemindOrders` | Aturan lama: draft / menunggu bayar yang diperbarui dalam 72 jam, terbaru dulu, maksimal 3 (`salesbrain.SelectRemindOrders`, `mapRemindOrders`). | **Hanya** pengingat proaktif: `ReminderAllowed` (`RemindAllowed`), baris `pesanan_untuk_diingatkan` di prompt, dan `lfRecordBookkeeping` (menyimpan hitungan pengingat per nomor). Tidak boleh dipakai untuk menjawab pembeli. |
+
+Aturan prompt: model tidak boleh menyatakan pembeli tidak punya pesanan kecuali blok `pesanan_belum_selesai` berkata TIDAK ADA; pesanan yang tidak ada di daftar (dibatalkan, dikirim, selesai) dicek lewat nomornya (intent `status`).
+
+### 1.4 "Batalkan semua pesanan"
+
+Keputusan datang dari model, bukan regex: JSON keputusan punya field `cancel_scope` (`"one"` | `"all"`, hanya dibaca untuk intent `cancel`; nilai lain dibuang oleh `ParseDecision`). Alur `scope = all` (`ai/llm_first_effects.go`):
+
+1. **Tanya konfirmasi** (`lfAskCancelAll`), hanya bila ada dua pesanan belum selesai atau lebih dan pesan tidak menyebut nomor. Tidak ada yang dibatalkan. Kode menyimpan id pesanan di Redis `ai:cancelall:<tenant>:<convo>` (JSON array, TTL 15 menit) dan membalas `TplCancelAllConfirm` berisi daftar bernomor (pesanan yang sudah dibayar diberi tanda "diteruskan ke tim"). Gagal menyimpan: `TplSystemBusy`, tidak ada pertanyaan yang diajukan (fail-closed). Kunci sendiri, bukan `ai:order:*`, supaya alur lama tidak melihat state tanpa keranjang dan keranjang hidup tidak tertimpa.
+2. **Giliran berikutnya.** STATE memuat `konfirmasi_batal_semua: MENUNGGU ...`. Pembatalan berjalan hanya bila intent model `confirm` (atau `cancel` + `all`) **dan** teks pembeli lolos `bf.IsExplicitOrderConfirm` (validator OK yang sama dengan checkout). Selain itu (menolak, bertanya hal lain, "ok tapi ...") kunci dihapus dan tidak ada yang dibatalkan.
+3. **Eksekusi** (`lfApplyCancelAllConfirmed`) atas id yang tersimpan: draft belum bayar dibatalkan satu per satu (`cancelPersistedOrder`); pesanan berbayar tidak disentuh, satu notifikasi owner `notifyTitleCancelPaid` memuat semua nomornya lalu `TplCancelPaidOrder`/`TplCancelPaidMany`; id yang sudah tidak ada di daftar aktif dianggap sudah dibatalkan (retry job); pesanan yang sudah `shipped`/`completed` tidak disentuh. Balasan `TplOrderCancelled`/`TplCancelledMany` (`replacedReason = cancel_all_template`, `orderAction = cancel_all`). Error DB dikembalikan sehingga job mengulang; kunci Redis baru dihapus sesudah balasan terkirim (`After`), jadi ulangan lengkap.
+4. Hanya satu pesanan belum selesai: diperlakukan sebagai `cancel` tunggal (tanpa konfirmasi).
+
+### 1.5 Takeover setelah aksi berhasil diturunkan menjadi note
+
+`lfApplyHandoff`: bila `handoff.level = takeover` tetapi giliran itu sudah menjalankan aksi transaksional yang berhasil (`lfOutcome.ActionRan`: cancel, permintaan batal pesanan berbayar, pertanyaan atau eksekusi batal-semua, pesanan tersimpan, keranjang berubah) **dan** intent bukan `human_request`, maka level menjadi `note`: owner mendapat `notifyTitleNoAnswer` dengan alasan "AI meminta takeover, tetapi aksi pembeli sudah berhasil diproses sistem sehingga AI tetap aktif" ditambah catatan model; AI **tidak** di-pause; kalimat jam buka **tidak** ditambahkan. Takeover tetap berlaku bila pembeli minta orang (`human_request`) atau tidak ada aksi yang berjalan (komplain, dll.). Persona juga diberi tahu agar tidak meminta takeover hanya karena pembeli mengulang permintaan batal/status. (Intent `status` dijawab handler status lama dan tidak melewati `lfApplyHandoff`.)
 
 ## 2. Flag dan cara mengaturnya
 
@@ -181,7 +206,7 @@ curl -sS -X POST "$API/api/v1/flags" "${AUTH[@]}" \
 - Kunci bahasa di `contact.preferred_language` tetap (memang tujuannya).
 - Pesanan yang dikonfirmasi lewat pipeline adalah draft biasa yang sama dengan checkout lama.
 - Keranjang Redis (`ai:order:<tenantId>:<conversationId>`) yang sedang di langkah `confirm`: jalur lama menampilkan ringkasan lagi dan hanya menyimpan pesanan bila pembeli membalas persetujuan eksplisit (OK, ya benar, lanjut proses). State kedaluwarsa setelah 2 jam. Hapus kunci itu bila perlu.
-- Kunci `ai:openorder:remind:*` (72 jam) dan `ai:llmfirst:confused:*` (24 jam) tidak dibaca jalur lama.
+- Kunci `ai:openorder:remind:*` (72 jam), `ai:llmfirst:confused:*` (24 jam), dan `ai:cancelall:*` (15 menit, konfirmasi batalkan-semua) tidak dibaca jalur lama.
 
 **Rollback kode:** revert merge-nya. Flag di DB tidak berbahaya karena tidak ada yang membacanya. Tanpa migrasi skema, tanpa secret atau env baru, tanpa endpoint baru.
 
@@ -477,7 +502,7 @@ Perilaku yang sengaja atau belum ditangani, supaya tidak mengejutkan saat canary
 | `ai/llm_first_effects.go` | `lfApplyIntent`: efek per intent lewat antarmuka `lfFX` |
 | `ai/llm_first_orders.go` | Adaptor keranjang dan data penerima (`cartFromState`, `stateWithCart`, `applyFieldAnswer`) |
 | `ai/memory.go` | Peringkas percakapan bergulir (`SummarizeConversation`), pemicu `ShouldTriggerSummary`, `getSummaryWithTime` (§1.3) |
-| `ai/llm_first_turn.go` | Helper murni: waktu, riwayat, pesanan terbuka, katalog top-k, input prompt |
+| `ai/llm_first_turn.go` | Helper murni: waktu, riwayat, daftar pesanan belum selesai (`mapUnfinishedOrders`) dan seleksi pengingat (`mapRemindOrders`), katalog top-k, input prompt |
 | `ai/reply_meta.go` | `AiReplyMeta` dengan field pipeline |
 | `internal/salesbrain/` | Bahasa, pesanan terbuka dan pengingat, prompt, parser keputusan, validator, template ID/EN, ringkasan dan redaksi; `variant.go`: `ResolveCartOps` (varian, stok, harga) dan kalimat penolakan |
 | `internal/buyerflow/order_confirm.go` | `IsExplicitOrderConfirm` dan ringkasan ulang; langkah `confirm` fail-closed ada di `order_fsm.go` |
@@ -515,6 +540,28 @@ Tenant omah_apparel, mode `on`, model gemini-3.1-flash-lite, 18 Okt 00:17-00:21 
 | 5 | Hampir setiap balasan ditutup "Mau ditambahkan ke pesanan?". | Persona: tawaran menambah pesanan paling banyak sekali per topik, jangan menutup tiap jawaban dengan tawaran; satu ajakan di akhir hanya bila perlu. Hanya dijaga tes teks prompt, bukan validator. |
 
 Catatan perilaku: ketika parser mengenali kota (mis. "Surabaya", "South Jakarta"), nama kota dan provinsi memakai bentuk kanonik parser ("Jakarta Selatan", "DKI Jakarta"), bukan huruf model. Label "Address:" di awal baris alamat satu baris dibuang oleh `parseCommaAddress`.
+
+## 11.1 Insiden 21 Okt 2026
+
+Tenant omah_apparel, mode `on`, 21 Okt 2026 sekitar 19:40-19:43 WIB (revisi Cloud Run dengan semua PR terbaru). Pembeli berbahasa Inggris punya tiga pesanan: WB-BBDB5FD4 (`draft`, belum dibayar, terakhir diubah 18 Okt), WB-7D23AE49 (belum dibayar, dari 18 Okt, belum dibatalkan), dan WB-79D3E7E5 (baru, dibuat 19:20).
+
+| Waktu | Pesan pembeli | Yang terjadi | Penyebab |
+|-------|---------------|--------------|----------|
+| 19:40:53 | "i want cancel all my pending orders" | Hanya WB-79D3E7E5 dibatalkan ("Done, order WB-79D3E7E5 is cancelled…", `replacedReason = cancel_template`). | `SelectOpenOrders` hanya meloloskan draft berumur kurang dari 72 jam, jadi `OpenOrders` berisi satu pesanan dan `lfPickCancelTarget` memilihnya; tidak ada konsep "semua". |
+| 19:41:15 | "do i have pending orders ?" | Model: "You currently have no pending orders with us." SALAH. | STATE `pesanan_terbuka` = "tidak ada" karena daftar yang sama dipakai untuk menjawab dan untuk pengingat. |
+| 19:41:47 | "how about this one WB-BBDB5FD4 ?" | Balasan status deterministik: "awaiting shop confirmation". | Jalur `status` membaca DB langsung, bertentangan dengan jawaban model sebelumnya. |
+| 19:42:06 | "you say i dont have any pending orders" | Model takeover (bingung). | Akibat dua baris di atas. |
+| 19:43:40 | "i want cancel all my pending orders" (sesaat setelah mengetik WB-7D23AE49) | WB-7D23AE49 dibatalkan, tetapi model juga mengirim `handoff {level: takeover, reason: "Customer repeatedly requested to cancel orders that are not present in the current system state."}`; balasan = template batal + "They usually reply during opening hours (08:00 - 19:00 GMT +7)." dan percakapan menjadi `ai_handled=false` (AI berhenti) padahal aksi berhasil. | `lfApplyHandoff` memberlakukan takeover tanpa melihat bahwa aksi giliran itu sudah berhasil. |
+| semua pemicu | (log peringkas) | "summarize publish skipped: inflight" / "summarize skipped: already inflight"; tidak ada ringkasan baru sejak perbaikan push. | Kunci inflight diambil dua kali (publisher lalu handler). |
+
+Empat perbaikan (PR `fix/llm-first-open-orders-cancel`, tes di `ai/llm_first_openorders_test.go`, `internal/salesbrain/*_test.go`, `ai/memory_inflight_test.go`):
+
+1. Daftar pesanan belum selesai tanpa batas umur untuk menjawab; aturan 72 jam / 3 pesanan hanya untuk pengingat (§1.3a).
+2. `cancel_scope = all`: daftar + konfirmasi + pembatalan seluruhnya; tanpa nomor dan dengan beberapa pesanan, pembeli diberi daftar pilihan, tidak pernah ditebak (§1.4).
+3. Takeover setelah aksi berhasil menjadi note; AI tetap aktif (§1.5).
+4. Peringkas berjalan: publisher memiliki kunci inflight, handler melepasnya (§1.3).
+
+Tidak ada perubahan env, secret, atau infrastruktur. Bukti di atas hanya memuat nomor pesanan; tidak ada nomor telepon atau data pribadi.
 
 ---
 

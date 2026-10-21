@@ -124,3 +124,31 @@ func TestPersonaLimitsSalesPushToOncePerTopic(t *testing.T) {
 		}
 	}
 }
+
+func TestWriteStateOpenOrdersListStatesEmptyAndNonEmpty(t *testing.T) {
+	in := omahInput()
+	in.State.OpenOrders, in.State.RemindAllowed = nil, false
+	_, user := BuildPrompt(in)
+	if !strings.Contains(user, "pesanan_belum_selesai: TIDAK ADA") {
+		t.Errorf("an empty list must say so explicitly:\n%s", user)
+	}
+
+	in = omahInput()
+	in.State.OpenOrders = append(in.State.OpenOrders, OrderSnapshot{Ref: "WB-BBDB5FD4", Status: StatusAwaitingReview, Stage: StageReview, Paid: true, Subtotal: 150000,
+		Lines: []OrderLine{{Name: "Salmon Steak 100 Gram", Qty: 2, UnitPrice: 75000}}})
+	in.State.OpenOrdersMore = 2
+	in.State.RemindOrders = in.State.OpenOrders[:1]
+	in.State.PendingCancelAll = []string{"WB-F4BFCE06", "WB-BBDB5FD4"}
+	sys, user := BuildPrompt(in)
+	for _, want := range []string{"pesanan_belum_selesai: ADA 4 pesanan", "WB-F4BFCE06", "WB-BBDB5FD4", "Rp150.000", "2x Salmon Steak", "dan 2 pesanan lainnya",
+		"pesanan_untuk_diingatkan: WB-F4BFCE06", "konfirmasi_batal_semua: MENUNGGU"} {
+		if !strings.Contains(user, want) {
+			t.Errorf("state missing %q:\n%s", want, user)
+		}
+	}
+	for _, want := range []string{"JANGAN pernah bilang pembeli tidak punya pesanan", `"cancel_scope"`, "STATE.pesanan_belum_selesai"} {
+		if !strings.Contains(sys, want) {
+			t.Errorf("system prompt missing %q", want)
+		}
+	}
+}
