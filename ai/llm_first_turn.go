@@ -160,16 +160,60 @@ func lfOpenSnapshot(o *persistedOrder) (salesbrain.OrderSnapshot, bool) {
 	}, true
 }
 
-// mapOpenOrders returns the buyer's open orders for the prompt: newest first, at most three,
-// none older than 72 hours (salesbrain.SelectOpenOrders applies the age and count rules).
-func mapOpenOrders(orders []persistedOrder, now time.Time) []salesbrain.OrderSnapshot {
+// mapRemindOrders is the PROACTIVE-reminder selection: unpaid drafts of the last 72 hours, newest
+// first, at most three (salesbrain.SelectRemindOrders). It decides RemindAllowed, the reminder
+// bookkeeping and nothing that answers the buyer.
+func mapRemindOrders(orders []persistedOrder, now time.Time) []salesbrain.OrderSnapshot {
 	var snaps []salesbrain.OrderSnapshot
 	for i := range orders {
 		if snap, ok := lfOpenSnapshot(&orders[i]); ok {
 			snaps = append(snaps, snap)
 		}
 	}
-	return salesbrain.SelectOpenOrders(snaps, now)
+	return salesbrain.SelectRemindOrders(snaps, now)
+}
+
+// lfUnfinishedSnapshot maps one saved order to the list that ANSWERS the buyer, or reports that it
+// is finished: cancelled, shipped and completed orders are not pending. Everything else is, whatever
+// its age: an unpaid draft, an order waiting for payment, a transfer proof under review, and a
+// paid/confirmed/processing order. Paid is set past the unpaid stage (a cancel goes to the team).
+func lfUnfinishedSnapshot(o *persistedOrder) (salesbrain.OrderSnapshot, bool) {
+	switch strings.ToLower(strings.TrimSpace(o.Status)) {
+	case "cancelled", "shipped", "completed":
+		return salesbrain.OrderSnapshot{}, false
+	}
+	if snap, ok := lfOpenSnapshot(o); ok {
+		return snap, true
+	}
+	st := orderStateFromPersistedDraft(o)
+	cart := cartFromState(&st)
+	subtotal := lfRoundPrice(o.Subtotal)
+	if subtotal <= 0 {
+		subtotal = salesbrain.CartSubtotal(cart)
+	}
+	snap := salesbrain.OrderSnapshot{Ref: FormatOrderNumber(o.ID), Lines: cart, Subtotal: subtotal, UpdatedAt: o.CreatedAt}
+	switch {
+	case o.Status == "draft" && lfOrderIsPaid(o): // a transfer proof is in: awaiting shop confirmation
+		snap.Status, snap.Stage, snap.Paid = salesbrain.StatusAwaitingReview, salesbrain.StageReview, true
+	case o.Status == "draft": // unpaid draft without items
+		snap.Status, snap.Stage = salesbrain.StatusDraft, salesbrain.StageItems
+	default: // processing, confirmed, paid or any other status of the shop's workflow
+		snap.Status, snap.Stage, snap.Paid = salesbrain.StatusProcessing, salesbrain.StageProcessing, true
+	}
+	return snap, true
+}
+
+// mapUnfinishedOrders is the STATE that answers "do I have pending orders?": every unfinished order
+// of the buyer (lfUnfinishedSnapshot), newest first, capped at salesbrain.MaxUnfinishedListed;
+// more counts the ones left out. No age limit.
+func mapUnfinishedOrders(orders []persistedOrder) (list []salesbrain.OrderSnapshot, more int) {
+	var snaps []salesbrain.OrderSnapshot
+	for i := range orders {
+		if snap, ok := lfUnfinishedSnapshot(&orders[i]); ok {
+			snaps = append(snaps, snap)
+		}
+	}
+	return salesbrain.ListUnfinishedOrders(snaps)
 }
 
 // lfStateFromOpenOrder rebuilds the checkout of a saved draft for "continue": the items, the
@@ -308,23 +352,24 @@ func topKCatalog(catalog []salesbrain.CatalogFact, query string, cart []salesbra
 
 // lfInputs is everything the shell loaded for one turn, ready for lfBuildPlanInput.
 type lfInputs struct {
-	Profile     *dbBusinessProfile
-	Catalog     []dbCatalogItem
-	KBAll       []dbKBEntry
-	KBRetrieved []dbKBEntry // only read when TopK
-	TopK        bool        // the catalog + FAQ do not fit the full-context budget
-	History     []dbMessage
-	Summary     string    // latest stored conversation summary ("" = none or not loaded)
-	SummaryAt   time.Time // when that summary was last updated (zero = none)
-	LastBody    string    // body of our newest outbound message
-	State       *orderState
-	Orders      []persistedOrder
-	Remind      salesbrain.ReminderState
-	Confused    int
-	UserText    string
-	Now         time.Time
-	Lang        salesbrain.LanguageDecision
-	LangLocked  bool
+	Profile       *dbBusinessProfile
+	Catalog       []dbCatalogItem
+	KBAll         []dbKBEntry
+	KBRetrieved   []dbKBEntry // only read when TopK
+	TopK          bool        // the catalog + FAQ do not fit the full-context budget
+	History       []dbMessage
+	Summary       string    // latest stored conversation summary ("" = none or not loaded)
+	SummaryAt     time.Time // when that summary was last updated (zero = none)
+	LastBody      string    // body of our newest outbound message
+	State         *orderState
+	Orders        []persistedOrder
+	Remind        salesbrain.ReminderState
+	Confused      int
+	PendingCancel []string // order ids a "cancel all" question waits on
+	UserText      string
+	Now           time.Time
+	Lang          salesbrain.LanguageDecision
+	LangLocked    bool
 }
 
 // lfTopKQueryTurns is how many earlier turns join the message when a big catalog is narrowed: a
@@ -349,9 +394,10 @@ func lfBuildPlanInput(in lfInputs) planInput {
 		kb = lfKBFacts(kbForLLMPrompt(in.KBAll, in.KBRetrieved))
 	}
 
-	open := mapOpenOrders(in.Orders, in.Now)
+	open, openMore := mapUnfinishedOrders(in.Orders)
+	remind := mapRemindOrders(in.Orders, in.Now)
 	prev := lfPrevBuyerMessageAt(in.History, in.UserText)
-	remindAllowed := salesbrain.ReminderAllowed(open, in.Remind, salesbrain.ReminderContext{
+	remindAllowed := salesbrain.ReminderAllowed(remind, in.Remind, salesbrain.ReminderContext{
 		Now: in.Now, PrevBuyerMessageAt: prev, FillingField: pending != "", Complaint: IsComplaintLike(in.UserText),
 	})
 	lastQuestion := ""
@@ -367,18 +413,21 @@ func lfBuildPlanInput(in lfInputs) planInput {
 		Catalog:             facts,
 		KB:                  kb,
 		State: salesbrain.TurnState{
-			Greeting:        greetingFor(in.Now),
-			Now:             formatNowID(in.Now),
-			ShipIfPaidNow:   salesbrain.ShipIfPaidNow(in.Now.In(lfWIB), lfKBFacts(in.KBAll)),
-			ReturningBuyer:  !prev.IsZero(),
-			OpenOrders:      open,
-			RemindAllowed:   remindAllowed,
-			Cart:            cart,
-			PendingField:    pending,
-			ResumeLine:      salesbrain.ResumeLineFor(pending, in.Lang.Lang),
-			LastBotQuestion: lastQuestion,
-			UpsellDone:      in.State != nil && in.State.UpsellShown,
-			Misunderstood:   in.Confused,
+			Greeting:         greetingFor(in.Now),
+			Now:              formatNowID(in.Now),
+			ShipIfPaidNow:    salesbrain.ShipIfPaidNow(in.Now.In(lfWIB), lfKBFacts(in.KBAll)),
+			ReturningBuyer:   !prev.IsZero(),
+			OpenOrders:       open,
+			OpenOrdersMore:   openMore,
+			RemindOrders:     remind,
+			PendingCancelAll: lfPendingRefs(in.Orders, in.PendingCancel),
+			RemindAllowed:    remindAllowed,
+			Cart:             cart,
+			PendingField:     pending,
+			ResumeLine:       salesbrain.ResumeLineFor(pending, in.Lang.Lang),
+			LastBotQuestion:  lastQuestion,
+			UpsellDone:       in.State != nil && in.State.UpsellShown,
+			Misunderstood:    in.Confused,
 		},
 		Summary:    salesbrain.DecideSummary(in.Summary, in.SummaryAt, in.Now),
 		History:    turns,

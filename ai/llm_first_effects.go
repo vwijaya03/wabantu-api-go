@@ -33,6 +33,11 @@ type lfFX interface {
 	// drafts compete and none is pinned: nothing was written.
 	persistEarlyDraft(ctx context.Context, st orderState) (id string, needPick bool, err error)
 	cancelOrder(ctx context.Context, orderID string) error
+	// setPendingCancel stores the order ids a "cancel all" waits for the buyer's OK on; an error
+	// means the question can not be answered later, so it must not be asked. clearPendingCancel
+	// drops it (best effort).
+	setPendingCancel(ctx context.Context, orderIDs []string) error
+	clearPendingCancel(ctx context.Context)
 	pause(ctx context.Context, reason string) error
 	notify(ctx context.Context, kind, title, body string)
 }
@@ -47,7 +52,11 @@ type lfApplyIn struct {
 	Catalog      []dbCatalogItem          // the loaded catalog, for ExternalCode / SellUnit of cart lines
 	Facts        []salesbrain.CatalogFact // the rows the model saw (upsell detection)
 	Orders       []persistedOrder         // the buyer's non-cancelled orders in this conversation
-	Open         []salesbrain.OrderSnapshot
+	// Open is the buyer's UNFINISHED orders (any age, capped for the prompt): what a cancel or
+	// continue picks from. It is not the reminder selection (the 72-hour rule lives in RemindOrders).
+	Open []salesbrain.OrderSnapshot
+	// PendingCancel holds the order ids a "cancel all" question is waiting on (Redis, 15 minutes).
+	PendingCancel []string
 }
 
 // lfOutcome is the result of applying a plan: the text to send and what to record or do after.
@@ -57,6 +66,10 @@ type lfOutcome struct {
 	ReplacedReason string // why the model's reply was replaced (message metadata)
 	OrderID        string
 	OrderAction    string
+	// ActionRan: a deterministic transactional step succeeded this turn (cancel, cancel request,
+	// cancel-all question or execution, order saved, cart changed). A model "takeover" after it is
+	// downgraded to a note (lfApplyHandoff).
+	ActionRan bool
 	// After runs once the reply has been sent: the pause of a takeover, owner notifications that
 	// follow the reply, and the checkout clean-up that must survive a failed send.
 	After func(ctx context.Context) error
@@ -64,12 +77,13 @@ type lfOutcome struct {
 
 // Owner-facing copy (Indonesian like the other notification kinds).
 const (
-	notifyTitleCancelPaid       = "Pembeli minta batalkan pesanan yang sudah dibayar"
-	notifyReasonCancelPaid      = "pesanan %s sudah dibayar; pembatalan perlu ditangani tim."
-	notifyReasonDraftSaveFailed = "draft pesanan awal gagal disimpan ke database; keranjang masih ada di sesi, pembeli tetap dibalas. Pengingat pesanan terbuka belum bisa muncul untuk keranjang ini."
-	notifyReasonOrderSaveFailed = "pesanan gagal disimpan setelah pembeli konfirmasi (stok tidak cukup atau data belum lengkap); pembeli sudah diberi tahu."
-	notifyReasonConfirmHeld     = "pembeli sedang di langkah konfirmasi akhir, tetapi AI gagal membaca balasannya; pesanan TIDAK disimpan otomatis. Ringkasan dikirim ulang dan menunggu OK dari pembeli."
-	notifyAIReasonLabel         = " Catatan AI: "
+	notifyTitleCancelPaid          = "Pembeli minta batalkan pesanan yang sudah dibayar"
+	notifyReasonCancelPaid         = "pesanan %s sudah dibayar; pembatalan perlu ditangani tim."
+	notifyReasonDraftSaveFailed    = "draft pesanan awal gagal disimpan ke database; keranjang masih ada di sesi, pembeli tetap dibalas. Pengingat pesanan terbuka belum bisa muncul untuk keranjang ini."
+	notifyReasonOrderSaveFailed    = "pesanan gagal disimpan setelah pembeli konfirmasi (stok tidak cukup atau data belum lengkap); pembeli sudah diberi tahu."
+	notifyReasonConfirmHeld        = "pembeli sedang di langkah konfirmasi akhir, tetapi AI gagal membaca balasannya; pesanan TIDAK disimpan otomatis. Ringkasan dikirim ulang dan menunggu OK dari pembeli."
+	notifyAIReasonLabel            = " Catatan AI: "
+	notifyReasonTakeoverDowngraded = "AI meminta takeover, tetapi aksi pembeli sudah berhasil diproses sistem sehingga AI tetap aktif; cek chat bila perlu."
 )
 
 // lfHandoffReasonRunes caps the model's own reason in an owner notification.
@@ -79,6 +93,9 @@ const lfHandoffReasonRunes = 120
 const (
 	lfReplacedCancel             = "cancel_template"
 	lfReplacedCancelPaid         = "cancel_paid_template"
+	lfReplacedCancelPick         = "cancel_pick"
+	lfReplacedCancelAllAsk       = "cancel_all_confirm"
+	lfReplacedCancelAllDone      = "cancel_all_template"
 	lfReplacedPersistFailed      = "order_persist_failed"
 	lfReplacedVariantMissing     = "variant_missing"
 	lfReplacedNotExplicitConfirm = "confirm_not_explicit"
@@ -92,6 +109,25 @@ const (
 func lfApplyIntent(ctx context.Context, fx lfFX, in lfApplyIn) (lfOutcome, error) {
 	out := lfOutcome{Reply: in.Plan.Reply, Author: "ai", ReplacedReason: in.Plan.ReplacedReason}
 	var err error
+	d := in.Plan.Decision
+	if len(in.PendingCancel) > 0 {
+		confirmed := (d.Intent == salesbrain.IntentConfirm || (d.Intent == salesbrain.IntentCancel && d.CancelScope == salesbrain.CancelAll)) &&
+			bf.IsExplicitOrderConfirm(in.UserText)
+		switch {
+		case confirmed:
+			// The buyer answered the "cancel all?" question with an explicit OK (the model's intent
+			// is only the hint; the words are checked by the same validator as the checkout OK).
+			if err = lfApplyCancelAllConfirmed(ctx, fx, in, &out); err != nil {
+				return out, err
+			}
+			lfApplyHandoff(fx, in, &out)
+			return out, nil
+		case d.Intent == salesbrain.IntentCancel && d.CancelScope == salesbrain.CancelAll:
+			// asked again: the question below is re-sent and the pending set refreshed.
+		default:
+			fx.clearPendingCancel(ctx) // declined, or the buyer moved on: fail-closed, nothing is cancelled
+		}
+	}
 	switch in.Plan.Decision.Intent {
 	case salesbrain.IntentOrder, salesbrain.IntentAmend:
 		lfApplyCart(ctx, fx, in, &out)
@@ -108,6 +144,9 @@ func lfApplyIntent(ctx context.Context, fx lfFX, in lfApplyIn) (lfOutcome, error
 	}
 	if err != nil {
 		return out, err
+	}
+	if in.Plan.CartChanged {
+		out.ActionRan = true
 	}
 	lfApplyHandoff(fx, in, &out)
 	return out, nil
@@ -389,6 +428,7 @@ func lfApplyConfirm(ctx context.Context, fx lfFX, in lfApplyIn, out *lfOutcome) 
 	fx.setState(ctx, next)
 	out.Reply = p.Decision.Reply + "\n\n" + salesbrain.T(salesbrain.TplOrderRef, p.Lang, FormatOrderNumber(id))
 	out.OrderID, out.OrderAction = id, "create"
+	out.ActionRan = true
 	out.After = func(ctx context.Context) error {
 		fx.clearState(ctx)
 		return nil
@@ -471,11 +511,15 @@ func lfFindOrderByRef(orders []persistedOrder, ref string) *persistedOrder {
 	return nil
 }
 
-// lfPickCancelTarget decides which saved order a "cancel" is about, or nil when there is none:
+// lfPickCancelTarget decides which saved order a single "cancel" is about, or nil when there is none:
 //  1. an order number in the message (unknown number: nil, never another order),
 //  2. the draft pinned to the buyer's live checkout,
-//  3. with no live cart, the one open order. With two or more open orders and nothing that names
-//     one, the choice is the buyer's (the model is asking which one): a cancellation is not guessed.
+//  3. with no live cart, the one unfinished order. With two or more unfinished orders and nothing
+//     that names one, the choice is the buyer's: a cancellation is never guessed (lfApplyCancel then
+//     sends the pick list).
+//
+// open is the buyer's unfinished orders of any age (TurnState.OpenOrders), not the reminder
+// selection: an old unpaid draft counts as one of the orders to choose from.
 func lfPickCancelTarget(orders []persistedOrder, open []salesbrain.OrderSnapshot, st *orderState, userText string) *persistedOrder {
 	if ref := parseOrderRefFromMessage(userText); ref != "" {
 		return lfFindOrderByRef(orders, ref)
@@ -493,17 +537,180 @@ func lfPickCancelTarget(orders []persistedOrder, open []salesbrain.OrderSnapshot
 	return nil
 }
 
-// lfApplyCancel cancels what the buyer asked to cancel. An unpaid draft is cancelled in the
-// database through cancelPersistedOrder (the legacy cancel) and the reply is a template: the model
-// must not claim a cancellation that code did not do. A paid order is never cancelled by the bot:
-// it goes to the owner first, then the buyer is told so. With nothing saved, only the live cart is
-// cleared and the model's answer stands.
+// lfUnfinishedOrders are the saved orders a "cancel all" covers: every order that is not cancelled,
+// shipped or completed, newest first and not capped (the prompt list is; the confirmation shows all).
+func lfUnfinishedOrders(orders []persistedOrder) []persistedOrder {
+	var out []persistedOrder
+	for i := range orders {
+		if _, ok := lfUnfinishedSnapshot(&orders[i]); ok {
+			out = append(out, orders[i])
+		}
+	}
+	return out
+}
+
+// lfPendingRefs are the order numbers of the ids a "cancel all" waits on that still exist (what the
+// prompt shows as STATE.konfirmasi_batal_semua).
+func lfPendingRefs(orders []persistedOrder, ids []string) []string {
+	var refs []string
+	for _, id := range ids {
+		for i := range orders {
+			if orders[i].ID == id {
+				refs = append(refs, FormatOrderNumber(id))
+				break
+			}
+		}
+	}
+	return refs
+}
+
+// lfNumberedOrders renders "1. WB-…: items, total, stage" lines; a paid order says that its
+// cancellation goes to the team.
+func lfNumberedOrders(snaps []salesbrain.OrderSnapshot, lang salesbrain.Lang) string {
+	en := lang == salesbrain.LangEN
+	lines := make([]string, 0, len(snaps))
+	for i, o := range snaps {
+		line := fmt.Sprintf("%d. %s", i+1, salesbrain.DescribeOrder(o, lang))
+		if o.Paid {
+			if en {
+				line += " (already paid: goes to the team)"
+			} else {
+				line += " (sudah dibayar: diteruskan ke tim)"
+			}
+		}
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// lfAskCancelAll answers a model decision "cancel, scope all": it lists the unfinished orders and
+// asks the buyer to confirm, storing the ids in Redis (15 minutes). Nothing is cancelled here.
+// It reports false when fewer than two orders are unfinished: the single-order rules apply.
+func lfAskCancelAll(ctx context.Context, fx lfFX, in lfApplyIn, out *lfOutcome) bool {
+	unfinished := lfUnfinishedOrders(in.Orders)
+	if len(unfinished) < 2 {
+		return false
+	}
+	p := in.Plan
+	ids := make([]string, 0, len(unfinished))
+	snaps := make([]salesbrain.OrderSnapshot, 0, len(unfinished))
+	for i := range unfinished {
+		snap, _ := lfUnfinishedSnapshot(&unfinished[i])
+		ids = append(ids, unfinished[i].ID)
+		snaps = append(snaps, snap)
+	}
+	out.Author = "system"
+	out.ActionRan = true // the question is the deterministic answer; the AI must stay on for the OK
+	if err := fx.setPendingCancel(ctx, ids); err != nil {
+		rlog.Warn("llm_first: cancel-all confirmation not stored", "err", err)
+		out.Reply = salesbrain.T(salesbrain.TplSystemBusy, p.Lang, in.Shop)
+		out.ReplacedReason = lfReplacedPersistFailed
+		return true
+	}
+	out.Reply = salesbrain.T(salesbrain.TplCancelAllConfirm, p.Lang, lfNumberedOrders(snaps, p.Lang))
+	out.ReplacedReason = lfReplacedCancelAllAsk
+	return true
+}
+
+// lfApplyCancelAllConfirmed runs the cancel-all the buyer just confirmed, over the ids stored when
+// it was asked: an unpaid order is cancelled in the database (cancelPersistedOrder), a paid one goes
+// to the team (one owner notification), an id that is no longer among the buyer's active orders is
+// reported as cancelled (an earlier attempt of this turn did it). A failed cancel is returned so
+// the job retries; the stored ids stay until the reply has been sent, so the retry is complete.
+func lfApplyCancelAllConfirmed(ctx context.Context, fx lfFX, in lfApplyIn, out *lfOutcome) error {
+	p := in.Plan
+	var cancelled, paid []string
+	clearCart := false
+	for _, id := range in.PendingCancel {
+		ref := FormatOrderNumber(id)
+		var o *persistedOrder
+		for i := range in.Orders {
+			if in.Orders[i].ID == id {
+				o = &in.Orders[i]
+				break
+			}
+		}
+		if o == nil {
+			cancelled = append(cancelled, ref)
+			continue
+		}
+		if _, ok := lfUnfinishedSnapshot(o); !ok {
+			continue // shipped or completed since the question: never touched
+		}
+		if lfOrderIsPaid(o) {
+			paid = append(paid, ref)
+			continue
+		}
+		if err := fx.cancelOrder(ctx, id); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		cancelled = append(cancelled, ref)
+		if in.State != nil && in.State.PersistedOrderID == id {
+			clearCart = true
+		}
+	}
+	if len(paid) > 0 {
+		fx.notify(ctx, notifyKindHandoff, notifyTitleCancelPaid,
+			ownerNotificationSummary(in.UserText, fmt.Sprintf(notifyReasonCancelPaid, strings.Join(paid, ", "))))
+	}
+	if clearCart {
+		fx.clearState(ctx)
+	}
+	var parts []string
+	switch len(paid) {
+	case 0:
+	case 1:
+		parts = append(parts, salesbrain.T(salesbrain.TplCancelPaidOrder, p.Lang, paid[0], in.Shop))
+	default:
+		parts = append(parts, salesbrain.T(salesbrain.TplCancelPaidMany, p.Lang, strings.Join(paid, ", "), in.Shop))
+	}
+	switch len(cancelled) {
+	case 0:
+	case 1:
+		parts = append(parts, salesbrain.T(salesbrain.TplOrderCancelled, p.Lang, cancelled[0]))
+	default:
+		parts = append(parts, salesbrain.T(salesbrain.TplCancelledMany, p.Lang, strings.Join(cancelled, ", ")))
+	}
+	if len(parts) > 0 {
+		out.Reply = strings.Join(parts, "\n\n")
+		out.ReplacedReason = lfReplacedCancelAllDone
+		out.OrderAction = "cancel_all"
+		out.ActionRan = true
+	} else {
+		out.Reply = p.Decision.Reply
+	}
+	out.After = func(ctx context.Context) error {
+		fx.clearPendingCancel(ctx)
+		return nil
+	}
+	return nil
+}
+
+// lfApplyCancel cancels what the buyer asked to cancel. The model decides the scope
+// (Decision.CancelScope): "all" with two or more unfinished orders only asks for confirmation
+// (lfAskCancelAll); the cancellation itself happens when the buyer confirms. A single cancel acts
+// on the order named in the message, the live checkout's draft, or the only unfinished order; with
+// several unfinished orders and no name, the buyer gets the pick list. An unpaid draft is cancelled
+// in the database through cancelPersistedOrder (the legacy cancel) and the reply is a template: the
+// model must not claim a cancellation that code did not do. A paid order is never cancelled by the
+// bot: it goes to the owner first, then the buyer is told so. With nothing saved, only the live cart
+// is cleared and the model's answer stands.
 func lfApplyCancel(ctx context.Context, fx lfFX, in lfApplyIn, out *lfOutcome) error {
 	p := in.Plan
+	namedRef := parseOrderRefFromMessage(in.UserText) != ""
+	if p.Decision.CancelScope == salesbrain.CancelAll && !namedRef && lfAskCancelAll(ctx, fx, in, out) {
+		return nil
+	}
 	target := lfPickCancelTarget(in.Orders, in.Open, in.State, in.UserText)
 	if target == nil {
+		if !namedRef && len(cartFromState(in.State)) == 0 && len(in.Open) >= 2 {
+			out.Reply = salesbrain.T(salesbrain.TplCancelPick, p.Lang, lfNumberedOrders(in.Open, p.Lang))
+			out.Author = "system"
+			out.ReplacedReason = lfReplacedCancelPick
+			return nil
+		}
 		out.Reply = p.Decision.Reply // not the composed one: its resume line belongs to the cart being dropped
-		if in.State != nil && parseOrderRefFromMessage(in.UserText) == "" {
+		if in.State != nil && !namedRef {
 			fx.clearState(ctx)
 		}
 		return nil
@@ -515,6 +722,7 @@ func lfApplyCancel(ctx context.Context, fx lfFX, in lfApplyIn, out *lfOutcome) e
 		out.Reply = salesbrain.T(salesbrain.TplCancelPaidOrder, p.Lang, ref, in.Shop)
 		out.ReplacedReason = lfReplacedCancelPaid
 		out.OrderID, out.OrderAction = target.ID, "cancel_request"
+		out.ActionRan = true
 		return nil
 	}
 	if err := fx.cancelOrder(ctx, target.ID); err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -527,11 +735,22 @@ func lfApplyCancel(ctx context.Context, fx lfFX, in lfApplyIn, out *lfOutcome) e
 	out.Reply = salesbrain.T(salesbrain.TplOrderCancelled, p.Lang, ref)
 	out.ReplacedReason = lfReplacedCancel
 	out.OrderID, out.OrderAction = target.ID, "cancel"
+	out.ActionRan = true
 	return nil
 }
 
-// lfPickOpenOrder picks the open order a "continue" is about: the one named in the message
-// (unknown number: nil), else the newest.
+// lfFirstUnpaid is the newest unfinished order that is still unpaid (nil when none).
+func lfFirstUnpaid(open []salesbrain.OrderSnapshot) *salesbrain.OrderSnapshot {
+	for i := range open {
+		if !open[i].Paid {
+			return &open[i]
+		}
+	}
+	return nil
+}
+
+// lfPickOpenOrder picks the unfinished order a "continue" is about: the one named in the message
+// (unknown number: nil), else the newest unpaid one (a paid order has nothing left to continue).
 func lfPickOpenOrder(open []salesbrain.OrderSnapshot, userText string) *salesbrain.OrderSnapshot {
 	if len(open) == 0 {
 		return nil
@@ -544,7 +763,7 @@ func lfPickOpenOrder(open []salesbrain.OrderSnapshot, userText string) *salesbra
 		}
 		return nil
 	}
-	return &open[0]
+	return lfFirstUnpaid(open)
 }
 
 // lfApplyContinue brings a saved draft back as the live checkout and asks only for what it still
@@ -575,8 +794,8 @@ func lfApplyContinue(ctx context.Context, fx lfFX, in lfApplyIn, out *lfOutcome)
 func lfApplyNewOrder(ctx context.Context, fx lfFX, in lfApplyIn, out *lfOutcome) {
 	fx.clearState(ctx)
 	out.Reply = in.Plan.Decision.Reply // not the composed one: the old cart's resume line no longer applies
-	if len(in.Open) > 0 && !lfReplyMentionsRef(out.Reply, in.Open[0].Ref) {
-		out.Reply += "\n\n" + salesbrain.T(salesbrain.TplNewOrderParked, in.Plan.Lang, in.Open[0].Ref)
+	if parked := lfFirstUnpaid(in.Open); parked != nil && !lfReplyMentionsRef(out.Reply, parked.Ref) {
+		out.Reply += "\n\n" + salesbrain.T(salesbrain.TplNewOrderParked, in.Plan.Lang, parked.Ref)
 	}
 }
 
@@ -592,7 +811,9 @@ func lfHandoffLevel(d salesbrain.Decision) salesbrain.HandoffLevel {
 	return ""
 }
 
-// lfApplyHandoff involves the shop team after the reply has gone out. A takeover pauses the AI
+// lfApplyHandoff involves the shop team after the reply has gone out. A takeover that follows a
+// successful transactional step (out.ActionRan) of a buyer who did not ask for a person is
+// downgraded to a note. Otherwise a takeover pauses the AI
 // (it resumes by itself after AutoResumeAfter when no staff replied) and tells the owner, also when
 // the pause failed; the reply carries the opening hours so the buyer knows when to expect staff. A
 // note only tells the owner and the AI keeps serving.
@@ -609,6 +830,21 @@ func lfApplyHandoff(fx lfFX, in lfApplyIn, out *lfOutcome) {
 		}
 	}
 	previous := out.After
+	if level == salesbrain.HandoffTakeover && d.Intent != salesbrain.IntentHumanRequest && out.ActionRan {
+		// The turn's transactional step already succeeded (cancel, order saved, cart changed, the
+		// cancel-all question): pausing the AI now would strand a buyer whose request was served.
+		// The owner still hears about it, as a note; no opening-hours sentence, no pause.
+		out.After = func(ctx context.Context) error {
+			var first error
+			if previous != nil {
+				first = previous(ctx)
+			}
+			fx.notify(ctx, notifyKindHandoff, notifyTitleNoAnswer,
+				ownerNotificationSummary(in.UserText, notifyReasonTakeoverDowngraded+why))
+			return first
+		}
+		return
+	}
 	switch level {
 	case salesbrain.HandoffTakeover:
 		out.Reply = lfWithOpeningHours(out.Reply, in.OpeningHours, in.Plan.Lang)

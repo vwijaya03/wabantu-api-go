@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -81,6 +82,8 @@ type lfLoaded struct {
 	orders    []persistedOrder
 	remind    salesbrain.ReminderState
 	confused  int
+	// pendingCancel: order ids a "cancel all" question waits on (Redis ai:cancelall:*, 15 minutes).
+	pendingCancel []string
 }
 
 // tryLLMFirst is the hook ProcessAutoReply calls before its legacy interceptors. It returns
@@ -216,7 +219,7 @@ func (s *AutoReplyService) runLLMFirst(ctx context.Context, t lfTurn) (bool, err
 	out, err := lfApplyIntent(ctx, lfLiveFX{s: s, t: t}, lfApplyIn{
 		Plan: plan, UserText: t.userText, Shop: shopLabel(t.profile, plan.Lang),
 		OpeningHours: strOrEmpty(t.profile.OpeningHours),
-		State:        ld.state, Catalog: ld.catalog, Facts: in.Catalog, Orders: ld.orders, Open: in.State.OpenOrders,
+		State:        ld.state, Catalog: ld.catalog, Facts: in.Catalog, Orders: ld.orders, Open: in.State.OpenOrders, PendingCancel: ld.pendingCancel,
 	})
 	if err != nil {
 		return false, err
@@ -303,8 +306,9 @@ func lfTokens(plan turnPlan) int {
 // "misunderstood in a row" counter. Redis errors are logged, never returned: the buyer has the reply.
 func (s *AutoReplyService) lfRecordBookkeeping(ctx context.Context, t lfTurn, ld lfLoaded, in planInput, plan turnPlan, sent string) {
 	tenantID, convoID := t.payload.TenantID, t.convo.ID
-	if open := in.State.OpenOrders; in.State.RemindAllowed && len(open) > 0 && lfReplyMentionsRef(sent, open[0].Ref) {
-		s.saveRemindState(ctx, tenantID, convoID, lfNextRemindState(ld.remind, open[0].Ref, llmFirstNow()))
+	// The reminder policy (72 hours, three orders) reads RemindOrders, never the answer list OpenOrders.
+	if remind := in.State.RemindOrders; in.State.RemindAllowed && len(remind) > 0 && lfReplyMentionsRef(sent, remind[0].Ref) {
+		s.saveRemindState(ctx, tenantID, convoID, lfNextRemindState(ld.remind, remind[0].Ref, llmFirstNow()))
 	}
 	next, reset := lfNextConfused(ld.confused, plan.Decision.Intent)
 	s.saveConfused(ctx, tenantID, convoID, ld.confused, next, reset)
@@ -321,7 +325,7 @@ func (s *AutoReplyService) lfPlanInputFor(ctx context.Context, t lfTurn, ld lfLo
 	return lfBuildPlanInput(lfInputs{
 		Profile: t.profile, Catalog: ld.catalog, KBAll: ld.kbAll, KBRetrieved: retrieved, TopK: topK,
 		History: ld.history, Summary: ld.summary, SummaryAt: ld.summaryAt, LastBody: ld.lastBody, State: ld.state, Orders: ld.orders,
-		Remind: ld.remind, Confused: ld.confused, UserText: t.userText, Now: llmFirstNow(),
+		Remind: ld.remind, Confused: ld.confused, PendingCancel: ld.pendingCancel, UserText: t.userText, Now: llmFirstNow(),
 		Lang: dec, LangLocked: locked,
 	})
 }
@@ -360,6 +364,7 @@ func (s *AutoReplyService) loadLLMFirst(ctx context.Context, t lfTurn) (lfLoaded
 	if ld.orders, err = loadActiveOrdersForContact(ctx, t.ts, t.payload.TenantSchema, t.scope()); err != nil {
 		return ld, fmt.Errorf("orders: %w", err)
 	}
+	ld.pendingCancel = s.loadPendingCancel(ctx, tenantID, convoID)
 	if ld.remind, err = s.loadRemindState(ctx, tenantID, convoID); err != nil {
 		return ld, fmt.Errorf("reminder state: %w", err)
 	}
@@ -430,6 +435,14 @@ func (f lfLiveFX) cancelOrder(ctx context.Context, orderID string) error {
 	return cancelPersistedOrder(ctx, f.t.ts, f.t.payload.TenantSchema, orderID, f.t.scope())
 }
 
+func (f lfLiveFX) setPendingCancel(ctx context.Context, orderIDs []string) error {
+	return f.s.savePendingCancel(ctx, f.t.payload.TenantID, f.t.convo.ID, orderIDs)
+}
+
+func (f lfLiveFX) clearPendingCancel(ctx context.Context) {
+	f.s.clearPendingCancel(ctx, f.t.payload.TenantID, f.t.convo.ID)
+}
+
 func (f lfLiveFX) pause(ctx context.Context, reason string) error {
 	return pauseAI(ctx, f.t.ts, f.t.convo.ID, reason)
 }
@@ -446,6 +459,43 @@ func lfRemindKey(tenantID, convoID string) string {
 
 func lfConfusedKey(tenantID, convoID string) string {
 	return fmt.Sprintf("ai:llmfirst:confused:%s:%s", tenantID, convoID)
+}
+
+// lfCancelAllKey holds the order ids of a pending "cancel all" question, a JSON array, for
+// lfCancelAllTTL. It is a key of its own (not the checkout order state ai:order:*) so that the
+// legacy checkout flow never sees a cart-less state and a live cart is never touched by it.
+func lfCancelAllKey(tenantID, convoID string) string {
+	return fmt.Sprintf("ai:cancelall:%s:%s", tenantID, convoID)
+}
+
+const lfCancelAllTTL = 15 * time.Minute
+
+// loadPendingCancel never fails the turn: an unreadable value means "no pending question", so a
+// stale confirmation can only cancel less, never more (fail-closed).
+func (s *AutoReplyService) loadPendingCancel(ctx context.Context, tenantID, convoID string) []string {
+	raw, err := s.rdb.Get(ctx, lfCancelAllKey(tenantID, convoID)).Bytes()
+	if err != nil {
+		if !errors.Is(err, redis.Nil) {
+			rlog.Warn("llm_first: pending cancel not loaded", "convoId", convoID, "err", err)
+		}
+		return nil
+	}
+	var ids []string
+	if json.Unmarshal(raw, &ids) != nil {
+		return nil
+	}
+	return ids
+}
+
+func (s *AutoReplyService) savePendingCancel(ctx context.Context, tenantID, convoID string, ids []string) error {
+	raw, _ := json.Marshal(ids)
+	return s.rdb.Set(ctx, lfCancelAllKey(tenantID, convoID), raw, lfCancelAllTTL).Err()
+}
+
+func (s *AutoReplyService) clearPendingCancel(ctx context.Context, tenantID, convoID string) {
+	if err := s.rdb.Del(ctx, lfCancelAllKey(tenantID, convoID)).Err(); err != nil {
+		rlog.Warn("llm_first: pending cancel not cleared", "convoId", convoID, "err", err)
+	}
 }
 
 func (s *AutoReplyService) loadRemindState(ctx context.Context, tenantID, convoID string) (salesbrain.ReminderState, error) {
