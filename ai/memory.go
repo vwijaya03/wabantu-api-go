@@ -11,6 +11,7 @@ import (
 	"encore.dev/pubsub"
 	"encore.dev/rlog"
 
+	"encore.app/wabantu/internal/salesbrain"
 	appdb "encore.app/wabantu/shared/db"
 	"encore.app/wabantu/usage"
 )
@@ -22,7 +23,7 @@ const (
 	summarizeHandlerTimeout    = 45 * time.Second
 )
 
-// SummarizeRequest is published after every 20 messages in a conversation.
+// SummarizeRequest is published after every 20 messages in a conversation, or when a buyer returns after 72h.
 type SummarizeRequest struct {
 	TenantSchema   string `json:"tenantSchema"`
 	ConversationID string `json:"conversationId"`
@@ -115,20 +116,69 @@ func recordSummarizeFailure(ctx context.Context, tenantSchema, convoID string, e
 	)
 }
 
-// SummarizeConversation loads messages since the last summary, calls Anthropic
-// to produce a 3-5 sentence summary in Bahasa Indonesia, and stores the result.
+// Summary trigger thresholds.
+const (
+	// summaryMessageThreshold: this many unsummarized messages trigger a summary.
+	summaryMessageThreshold = 20
+	// summaryReturnMinMessages and salesbrain.SummarySessionWindow: a returning buyer (the newest
+	// message follows the one before it by at least the window) with at least this many
+	// unsummarized messages gets the previous visit summarized, even below the threshold.
+	summaryReturnMinMessages = 4
+	// summaryLoadLimit is how many of the newest unsummarized messages one run reads.
+	summaryLoadLimit = 100
+	summaryMaxTokens = 300
+)
+
+// summaryRow is one stored conversation_summary.
+type summaryRow struct {
+	Summary      string
+	MessageCount int
+	UpdatedAt    time.Time
+}
+
+const summarizerSystemPrompt = "Kamu merangkum percakapan customer service WhatsApp sebagai ingatan internal untuk model AI lain. " +
+	"Jangan tulis bahwa pelanggan berhasil memesan barang yang tidak ada di katalog bisnis tenant."
+
+// buildSummarizerPrompt builds the user prompt of the rolling summary: the previous summary (when
+// there is one) plus the new messages, to be merged into one updated summary.
+func buildSummarizerPrompt(businessCtx, prevSummary, conversationText string) string {
+	var sb strings.Builder
+	sb.WriteString(businessCtx)
+	if prev := strings.TrimSpace(prevSummary); prev != "" {
+		sb.WriteString("Ringkasan sebelumnya:\n")
+		sb.WriteString(prev)
+		sb.WriteString("\n\nPesan baru:\n")
+		sb.WriteString(conversationText)
+		sb.WriteString("\n\nGabungkan ringkasan sebelumnya dengan pesan baru menjadi SATU ringkasan terbaru.")
+	} else {
+		sb.WriteString("Percakapan:\n")
+		sb.WriteString(conversationText)
+		sb.WriteString("\n\nRangkum percakapan ini.")
+	}
+	sb.WriteString(" Maksimal 5 kalimat bahasa Indonesia, tanpa daftar atau markdown. " +
+		"Pertahankan preferensi pembeli, pertanyaan yang diajukan, dan produk yang diminati. " +
+		"Jangan anggap status pesanan, harga, alamat, atau pembayaran sebagai fakta final (itu dicatat sistem terpisah); " +
+		"jangan tulis nomor telepon, alamat, atau jumlah uang. " +
+		"Buang hal yang sudah selesai atau tidak relevan lagi. " +
+		"Jika pelanggan minta produk di luar katalog, sebutkan itu di luar scope.")
+	return sb.String()
+}
+
+// SummarizeConversation rolls the conversation summary forward: the previous summary plus the
+// messages since it was last updated go to the memory model, which returns one merged summary
+// (at most about 5 sentences in Bahasa Indonesia). message_count stays cumulative.
 func SummarizeConversation(ctx context.Context, tenantSchema, convoID string) error {
 	db, err := getTenantDB(ctx, tenantSchema)
 	if err != nil {
 		return fmt.Errorf("get tenant DB: %w", err)
 	}
 
-	lastSummaryTime, err := getLastSummaryTime(ctx, db, tenantSchema, convoID)
+	prev, err := loadSummaryRow(ctx, db, tenantSchema, convoID)
 	if err != nil {
-		return fmt.Errorf("get last summary time: %w", err)
+		return fmt.Errorf("get previous summary: %w", err)
 	}
 
-	messages, err := loadMessagesSince(ctx, db, tenantSchema, convoID, lastSummaryTime)
+	messages, newest, err := loadMessagesSince(ctx, db, tenantSchema, convoID, prev.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("load messages: %w", err)
 	}
@@ -161,16 +211,11 @@ func SummarizeConversation(ctx context.Context, tenantSchema, convoID string) er
 		)
 	}
 
-	memCfg := AnthropicConfig{Model: DefaultHaikuAPIID(), MaxTokens: 300}
-	systemPrompt := "Kamu merangkum percakapan customer service WhatsApp. Jangan tulis bahwa pelanggan berhasil memesan barang yang tidak ada di katalog bisnis tenant."
-	userPrompt := fmt.Sprintf(
-		"%sRangkum percakapan ini dalam 3-5 kalimat bahasa Indonesia. Fokus topik yang relevan dengan bisnis tenant. Jika pelanggan minta produk di luar katalog, sebutkan itu di luar scope.\n\nPercakapan:\n%s",
-		businessCtx,
-		conversationText,
-	)
+	memCfg := AnthropicConfig{Model: DefaultHaikuAPIID(), MaxTokens: summaryMaxTokens}
+	userPrompt := buildSummarizerPrompt(businessCtx, prev.Summary, conversationText)
 
 	summary, compUsage, model, err := CompleteViaRegistry(ctx, secrets.AnthropicAPIKey, memCfg, "", llm.FnMemory,
-		DefaultHaikuAPIID(), systemPrompt, userPrompt, 300)
+		DefaultHaikuAPIID(), summarizerSystemPrompt, userPrompt, summaryMaxTokens)
 	if err != nil {
 		return err
 	}
@@ -191,12 +236,13 @@ func SummarizeConversation(ctx context.Context, tenantSchema, convoID string) er
 		_ = usage.RecordEvent(ctx, tenantSchema, "ai_token", compUsage.InputTokens+compUsage.OutputTokens, nil)
 	}
 
-	err = storeSummary(ctx, db, tenantSchema, convoID, summary, len(messages))
+	total := prev.MessageCount + len(messages)
+	err = storeSummary(ctx, db, tenantSchema, convoID, summary, total, newest)
 	if err != nil {
 		return fmt.Errorf("store summary: %w", err)
 	}
 
-	rlog.Info("conversation summarized", "conversationId", convoID, "messageCount", len(messages), "summaryLen", len(summary))
+	rlog.Info("conversation summarized", "conversationId", convoID, "newMessages", len(messages), "messageCount", total, "summaryLen", len(summary), "rolling", prev.Summary != "")
 	return nil
 }
 
@@ -220,7 +266,33 @@ func GetLatestSummary(ctx context.Context, tenantSchema, convoID string) (string
 	return summary, nil
 }
 
-// ShouldTriggerSummary returns true when the message count since last summary >= 20.
+// getSummaryWithTime returns the stored summary with its updated_at. A conversation without a
+// summary returns the zero summaryRow and no error.
+func getSummaryWithTime(ctx context.Context, tenantSchema, convoID string) (summaryRow, error) {
+	db, err := getTenantDB(ctx, tenantSchema)
+	if err != nil {
+		return summaryRow{}, fmt.Errorf("get tenant DB: %w", err)
+	}
+	return loadSummaryRow(ctx, db, tenantSchema, convoID)
+}
+
+func loadSummaryRow(ctx context.Context, db *sql.DB, schema, convoID string) (summaryRow, error) {
+	q := fmt.Sprintf(`SELECT summary, message_count, updated_at FROM %q.conversation_summary
+		WHERE conversation_id = $1 LIMIT 1`, schema)
+	var r summaryRow
+	err := appdb.PoolQueryRow(ctx, db, q, convoID).Scan(&r.Summary, &r.MessageCount, &r.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return summaryRow{}, nil
+	}
+	if err != nil {
+		return summaryRow{}, fmt.Errorf("query summary: %w", err)
+	}
+	return r, nil
+}
+
+// ShouldTriggerSummary returns true when there are at least 20 messages since the summary was
+// last updated, or at least 4 of them and the newest message follows the one before it by 72h or
+// more (a returning buyer: the previous visit is summarized).
 func ShouldTriggerSummary(ctx context.Context, tenantSchema, convoID string) (bool, error) {
 	db, err := getTenantDB(ctx, tenantSchema)
 	if err != nil {
@@ -232,19 +304,47 @@ func ShouldTriggerSummary(ctx context.Context, tenantSchema, convoID string) (bo
 		return false, err
 	}
 
-	q := fmt.Sprintf(`SELECT COUNT(*) FROM %q.message
-		WHERE conversation_id = $1 AND created_at > $2`, tenantSchema)
-	var count int
-	err = appdb.PoolQueryRow(ctx, db, q, convoID, lastTime).Scan(&count)
+	// One cheap query: the newest messages since the summary, newest first. Twenty rows are all
+	// the decision needs (the threshold, the newest two timestamps).
+	q := fmt.Sprintf(`SELECT created_at FROM %q.message
+		WHERE conversation_id = $1 AND created_at > $2
+		ORDER BY created_at DESC LIMIT %d`, tenantSchema, summaryMessageThreshold)
+	rows, err := appdb.QueryContextPool(ctx, db, q, convoID, lastTime)
 	if err != nil {
 		return false, err
 	}
-	return count >= 20, nil
+	defer rows.Close()
+
+	var times []time.Time
+	for rows.Next() {
+		var t time.Time
+		if err := rows.Scan(&t); err != nil {
+			return false, err
+		}
+		times = append(times, t)
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	return summaryTriggerFromTimes(times), nil
 }
 
+// summaryTriggerFromTimes decides from the creation times of the unsummarized messages, newest
+// first and capped at summaryMessageThreshold rows.
+func summaryTriggerFromTimes(newestFirst []time.Time) bool {
+	n := len(newestFirst)
+	if n >= summaryMessageThreshold {
+		return true
+	}
+	return n >= summaryReturnMinMessages && newestFirst[0].Sub(newestFirst[1]) >= salesbrain.SummarySessionWindow
+}
+
+// getLastSummaryTime is when the summary was last updated (zero when there is none). It reads
+// updated_at: created_at never changes after the first upsert, which made every later count start
+// at the first summary.
 func getLastSummaryTime(ctx context.Context, db *sql.DB, schema, convoID string) (time.Time, error) {
-	q := fmt.Sprintf(`SELECT created_at FROM %q.conversation_summary
-		WHERE conversation_id = $1 ORDER BY created_at DESC LIMIT 1`, schema)
+	q := fmt.Sprintf(`SELECT updated_at FROM %q.conversation_summary
+		WHERE conversation_id = $1 ORDER BY updated_at DESC LIMIT 1`, schema)
 	var t time.Time
 	err := appdb.PoolQueryRow(ctx, db, q, convoID).Scan(&t)
 	if err == sql.ErrNoRows {
@@ -253,37 +353,65 @@ func getLastSummaryTime(ctx context.Context, db *sql.DB, schema, convoID string)
 	return t, err
 }
 
-func loadMessagesSince(ctx context.Context, db *sql.DB, schema, convoID string, since time.Time) ([]HistoryMessage, error) {
-	q := fmt.Sprintf(`SELECT author, body, type FROM %q.message
+// summaryMessage is one loaded message with its creation time.
+type summaryMessage struct {
+	HistoryMessage
+	CreatedAt time.Time
+}
+
+// orderSummaryMessages turns the newest-first rows of loadMessagesSince into the chronological
+// messages the summarizer reads, plus the creation time of the newest one (zero when empty).
+func orderSummaryMessages(newestFirst []summaryMessage) ([]HistoryMessage, time.Time) {
+	if len(newestFirst) == 0 {
+		return nil, time.Time{}
+	}
+	msgs := make([]HistoryMessage, 0, len(newestFirst))
+	for i := len(newestFirst) - 1; i >= 0; i-- {
+		msgs = append(msgs, newestFirst[i].HistoryMessage)
+	}
+	return msgs, newestFirst[0].CreatedAt
+}
+
+// loadMessagesSince returns the newest summaryLoadLimit messages after since, oldest first, and
+// the creation time of the newest one. That time becomes the summary's updated_at, so messages
+// that arrive while the model runs are still counted by the next trigger.
+func loadMessagesSince(ctx context.Context, db *sql.DB, schema, convoID string, since time.Time) ([]HistoryMessage, time.Time, error) {
+	q := fmt.Sprintf(`SELECT author, body, type, created_at FROM %q.message
 		WHERE conversation_id = $1 AND created_at > $2
-		ORDER BY created_at ASC LIMIT 100`, schema)
+		ORDER BY created_at DESC LIMIT %d`, schema, summaryLoadLimit)
 
 	rows, err := appdb.QueryContextPool(ctx, db, q, convoID, since)
 	if err != nil {
-		return nil, err
+		return nil, time.Time{}, err
 	}
 	defer rows.Close()
 
-	var msgs []HistoryMessage
+	var newestFirst []summaryMessage
 	for rows.Next() {
-		var m HistoryMessage
-		if err := rows.Scan(&m.Author, &m.Body, &m.Type); err != nil {
-			return nil, err
+		var m summaryMessage
+		if err := rows.Scan(&m.Author, &m.Body, &m.Type, &m.CreatedAt); err != nil {
+			return nil, time.Time{}, err
 		}
-		msgs = append(msgs, m)
+		newestFirst = append(newestFirst, m)
 	}
-	return msgs, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, time.Time{}, err
+	}
+	msgs, newest := orderSummaryMessages(newestFirst)
+	return msgs, newest, nil
 }
 
-func storeSummary(ctx context.Context, db *sql.DB, schema, convoID, summary string, msgCount int) error {
+// storeSummary upserts the summary. updatedAt is the creation time of the newest message that went
+// into it (not NOW()), so a message that arrived during the model call is newer than updated_at.
+func storeSummary(ctx context.Context, db *sql.DB, schema, convoID, summary string, msgCount int, updatedAt time.Time) error {
 	q := fmt.Sprintf(`INSERT INTO %q.conversation_summary
 		(conversation_id, summary, message_count, updated_at)
-		VALUES ($1, $2, $3, NOW())
+		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (conversation_id) DO UPDATE SET
 			summary = EXCLUDED.summary,
 			message_count = EXCLUDED.message_count,
-			updated_at = NOW()`, schema)
-	_, err := appdb.ExecPool(ctx, db, q, convoID, summary, msgCount)
+			updated_at = EXCLUDED.updated_at`, schema)
+	_, err := appdb.ExecPool(ctx, db, q, convoID, summary, msgCount, updatedAt)
 	return err
 }
 

@@ -71,14 +71,16 @@ func (t lfTurn) scope() orderAccessScope {
 
 // lfLoaded is everything read for one turn. All of it is read-only.
 type lfLoaded struct {
-	history  []dbMessage
-	lastBody string // body of our newest outbound message
-	catalog  []dbCatalogItem
-	kbAll    []dbKBEntry
-	state    *orderState
-	orders   []persistedOrder
-	remind   salesbrain.ReminderState
-	confused int
+	history   []dbMessage
+	summary   string    // latest conversation summary ("" when none or unreadable)
+	summaryAt time.Time // its updated_at
+	lastBody  string    // body of our newest outbound message
+	catalog   []dbCatalogItem
+	kbAll     []dbKBEntry
+	state     *orderState
+	orders    []persistedOrder
+	remind    salesbrain.ReminderState
+	confused  int
 }
 
 // tryLLMFirst is the hook ProcessAutoReply calls before its legacy interceptors. It returns
@@ -318,7 +320,7 @@ func (s *AutoReplyService) lfPlanInputFor(ctx context.Context, t lfTurn, ld lfLo
 	}
 	return lfBuildPlanInput(lfInputs{
 		Profile: t.profile, Catalog: ld.catalog, KBAll: ld.kbAll, KBRetrieved: retrieved, TopK: topK,
-		History: ld.history, LastBody: ld.lastBody, State: ld.state, Orders: ld.orders,
+		History: ld.history, Summary: ld.summary, SummaryAt: ld.summaryAt, LastBody: ld.lastBody, State: ld.state, Orders: ld.orders,
 		Remind: ld.remind, Confused: ld.confused, UserText: t.userText, Now: llmFirstNow(),
 		Lang: dec, LangLocked: locked,
 	})
@@ -333,6 +335,12 @@ func (s *AutoReplyService) loadLLMFirst(ctx context.Context, t lfTurn) (lfLoaded
 	tenantID, convoID := t.payload.TenantID, t.convo.ID
 	if ld.history, err = loadHistory(ctx, t.ts, convoID, lfHistoryLoad); err != nil {
 		return ld, fmt.Errorf("history: %w", err)
+	}
+	// The summary is background only: an unreadable one is logged and the reply goes on without it.
+	if sum, sErr := getSummaryWithTime(ctx, t.payload.TenantSchema, convoID); sErr != nil {
+		rlog.Warn("llm_first: summary not loaded", "convoId", convoID, "err", sErr)
+	} else {
+		ld.summary, ld.summaryAt = sum.Summary, sum.UpdatedAt
 	}
 	if ld.lastBody, err = lastAIOutboundBody(ctx, t.ts, convoID); err != nil {
 		return ld, fmt.Errorf("last outbound: %w", err)
