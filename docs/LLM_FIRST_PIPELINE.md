@@ -77,6 +77,23 @@ Bila ada penolakan atau pertanyaan varian, teks model **diganti** kalimat templa
 - Penjaga ketat itu adalah `buyerflow.IsExplicitOrderConfirm` (`internal/buyerflow/order_confirm.go`). Hasil yang diuji: error LLM di `confirm`, output tidak valid dua kali di `confirm`, jalur lama di `confirm` dengan teks bukan konfirmasi (tidak menyimpan), dan jalur lama dengan konfirmasi eksplisit (satu-satunya yang menyimpan). Tes: `TestLLMFirstFlowFailureAtConfirmKeepsTheDraftAndAsksForTheOKAgain` dan `internal/buyerflow/order_confirm_failclosed_test.go`.
 - Jalur lama (`internal/buyerflow/order_fsm.go`) kini mengenal langkah `confirm` dan **tidak pernah menyelesaikan pesanan tanpa persetujuan eksplisit**: `normalizeOrderState` tidak lagi memetakan `confirm` ke `ask_address_full`. Di langkah itu pesanan hanya disimpan bila teks pembeli lolos `IsExplicitOrderConfirm` (hanya kata persetujuan: "ok", "ya benar kak", "lanjut proses", "looks good", 👍; kalimat dengan kata lain, pertanyaan, dan penolakan tidak lolos). Teks lain menjaga draft di `confirm` dan menampilkan ringkasan lagi dengan ajakan OK; data penerima/alamat yang kurang mengembalikan langkah ke `ask_recipient`/`ask_address_full`. Ini juga melindungi jalur fail-open lain (gagal muat data, gagal tulis bahasa, teks injeksi) yang jatuh ke jalur lama saat state di `confirm`.
 
+### 1.3 Ringkasan percakapan (bergulir dan sadar sesi)
+
+Ringkasan disimpan di tabel `conversation_summary` (satu baris per percakapan) oleh subscription Pub/Sub `summarizer` (`ai/memory.go`). Pemicunya `ai.ShouldTriggerSummary`, dipanggil webhook (`webhook/webhook.go`) pada tiap pesan masuk.
+
+- **Bergulir.** Tiap kali jalan, prompt berisi ringkasan sebelumnya (bila ada) ditambah pesan baru sejak `updated_at`, dan model mengembalikan satu ringkasan gabungan (maksimal sekitar 5 kalimat). Peringkas diminta menyimpan preferensi, pertanyaan, dan produk yang diminati, tidak menganggap status pesanan, harga, alamat, atau pembayaran sebagai fakta final (itu ada di STATE), dan membuang hal yang sudah selesai. `message_count` kumulatif. Maksimal 100 pesan terbaru dibaca per jalan. `updated_at` diisi waktu pesan terbaru yang ikut diringkas (bukan `NOW()`), sehingga pesan yang masuk selama panggilan model tetap dihitung pemicu berikutnya.
+- **Pemicu.** Sedikitnya 20 pesan sejak ringkasan terakhir diperbarui, **atau** sedikitnya 4 pesan dan jarak pesan terbaru ke pesan sebelumnya 72 jam atau lebih (pembeli kembali: kunjungan sebelumnya diringkas). Satu query ringan atas `message` ditambah satu atas `conversation_summary`.
+- **Model** lewat registry dinamis `llm.FnMemory` (diatur dari pengaturan admin); tidak ada model yang ditanam di kode.
+- **Dipakai LLM-first, sadar sesi** (`salesbrain.DecideSummary`, `internal/salesbrain/summary.go`): umur ringkasan dihitung dari `updated_at`.
+  - sampai 72 jam: blok `RINGKASAN PERCAKAPAN` (latar percakapan ini);
+  - lewat 72 jam sampai 30 hari: blok `KUNJUNGAN SEBELUMNYA (N hari lalu) — hanya latar, jangan anggap masih berlaku`;
+  - lewat 30 hari, kosong, atau tidak ada baris: tidak ditampilkan.
+- **Keamanan prompt.** Blok berada di prompt dinamis (antara STATE dan RIWAYAT), dipotong 600 karakter, dan email serta angka panjang (8 digit atau lebih) disamarkan dengan `RedactForLog`. Aturan di system prompt: STATE selalu menang untuk keranjang, pesanan, alamat, bahasa, dan pembayaran; ringkasan tidak boleh dikutip untuk harga atau jumlah uang. `BuildFacts` tidak membaca ringkasan, jadi harga basi dari ringkasan ditolak validator. Gagal membaca ringkasan hanya dicatat di log; balasan tetap jalan tanpa ringkasan.
+- **Biaya.** Satu panggilan model memori per 20 pesan atau per kunjungan kembali. Token tetap dicatat sebagai `ai_token` dan `ai_activity` (purpose `conversation_summary`) seperti sebelumnya; tidak ada perubahan kuota. Tambahan di prompt LLM-first paling banyak sekitar 600 karakter per giliran, hanya bila ada ringkasan yang masih berlaku.
+- **Bug yang diperbaiki.** (1) Penghitung membaca `created_at`, yang tidak pernah berubah setelah upsert pertama, sehingga setelah ringkasan pertama pemicu hampir selalu menyala dan pesan lama dibaca ulang; kini `updated_at`. (2) Ringkasan menimpa tanpa menggabung sehingga konteks awal hilang; kini bergulir. (3) `LIMIT 100` mengambil 100 pesan terlama; kini 100 terbaru (urutan kronologis). (4) Pembeli yang kembali setelah jeda panjang dengan sedikit pesan tidak pernah memicu ringkasan.
+- **Environment.** Tanpa env, secret, atau migrasi. Di Cloud Run, peringkas hanya berjalan setelah perbaikan audience JWT Pub/Sub (PR #265/#266) ter-deploy; di Encore Cloud langsung jalan. Sebelum itu tidak ada baris ringkasan baru dan LLM-first berjalan tanpa blok ini.
+- Tes: `internal/salesbrain/summary_test.go`, `ai/memory_test.go`.
+
 ---
 
 ---
@@ -459,6 +476,7 @@ Perilaku yang sengaja atau belum ditangani, supaya tidak mengejutkan saat canary
 | `ai/llm_first_plan.go` | `planTurn`: keputusan murni (prompt, retry, validasi, ringkasan, kalimat lanjut) |
 | `ai/llm_first_effects.go` | `lfApplyIntent`: efek per intent lewat antarmuka `lfFX` |
 | `ai/llm_first_orders.go` | Adaptor keranjang dan data penerima (`cartFromState`, `stateWithCart`, `applyFieldAnswer`) |
+| `ai/memory.go` | Peringkas percakapan bergulir (`SummarizeConversation`), pemicu `ShouldTriggerSummary`, `getSummaryWithTime` (§1.3) |
 | `ai/llm_first_turn.go` | Helper murni: waktu, riwayat, pesanan terbuka, katalog top-k, input prompt |
 | `ai/reply_meta.go` | `AiReplyMeta` dengan field pipeline |
 | `internal/salesbrain/` | Bahasa, pesanan terbuka dan pengingat, prompt, parser keputusan, validator, template ID/EN, ringkasan dan redaksi; `variant.go`: `ResolveCartOps` (varian, stok, harga) dan kalimat penolakan |
