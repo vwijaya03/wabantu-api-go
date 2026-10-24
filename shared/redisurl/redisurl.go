@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/redis/go-redis/v9"
+
+	"encore.app/wabantu/shared/tlsguard"
 )
 
 // ParseClientOptions returns go-redis options from a Redis TCP URL.
@@ -24,6 +26,9 @@ func ParseClientOptions(raw string) (*redis.Options, error) {
 	opt, err := redis.ParseURL(raw)
 	if err != nil {
 		return nil, fmt.Errorf("invalid Redis URL: %w", err)
+	}
+	if opt.TLSConfig != nil { // rediss:// only; redis:// stays plaintext as before
+		tlsguard.HardenTLSConfig(opt.TLSConfig)
 	}
 	return opt, nil
 }

@@ -14,6 +14,7 @@ Peta navigasi untuk menjawab pertanyaan tentang backend WABantu. Mulai dari sini
 
 | Pertanyaan umum | Buka |
 |-----------------|------|
+| TLS: tolak intermediate eMudhra bobol (GO-2026-6809), mode `TLSGUARD_MODE`, self-check startup? | [TLS_GUARD.md](./TLS_GUARD.md) |
 | Alur pesan WA dari webhook sampai AI balas? | [WHATSAPP_AI_ROUTING.md](./WHATSAPP_AI_ROUTING.md) |
 | Pesan WA terpatah / banyak balloon satu niat? | [WHATSAPP_AI_ROUTING.md](./WHATSAPP_AI_ROUTING.md) → debounce burst · shipped: [2026-09-19_233800_inbound-coalesce-burst.md](../docs-development-shipped/2026-09-19_233800_inbound-coalesce-burst.md) |
 | Loop engineering otomatis (AI Triage)? | **Retired.** Self-heal: skill `wabantu-ai-triage` · shipped [2026-09-20_121000_drop-routing-loop-triage.md](../docs-development-shipped/2026-09-20_121000_drop-routing-loop-triage.md). Arsip spec: [AI_TRIAGE_LOOP_NEXT_DEV.md](./AI_TRIAGE_LOOP_NEXT_DEV.md) |
