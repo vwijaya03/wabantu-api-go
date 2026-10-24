@@ -103,6 +103,7 @@ func TestRunSchemaPatches_RepairsAffectedTenantIdempotent(t *testing.T) {
 		t.Fatalf("RunTenantDDL: %v", err)
 	}
 	// Simulate the pre-fix state: evt_* created without PII columns.
+	requireEncoreTestDB(t) // destructive DDL below: Encore test DB only
 	if _, err := DataDB.Stdlib().ExecContext(ctx, fmt.Sprintf(`
 		DROP INDEX IF EXISTS %[1]s.idx_evt_staff_roster_active;
 		ALTER TABLE %[1]s.evt_event_person DROP COLUMN IF EXISTS full_name_enc, DROP COLUMN IF EXISTS normalized_name;
@@ -149,6 +150,7 @@ func TestRunSchemaPatches_RepairsStaffRosterOnly(t *testing.T) {
 	if err := RunTenantDDL(ctx, schema); err != nil {
 		t.Fatalf("RunTenantDDL: %v", err)
 	}
+	requireEncoreTestDB(t) // destructive DDL below: Encore test DB only
 	if _, err := DataDB.Stdlib().ExecContext(ctx, fmt.Sprintf(`
 		DROP INDEX IF EXISTS %[1]s.idx_evt_staff_roster_active;
 		ALTER TABLE %[1]s.evt_staff_roster DROP COLUMN IF EXISTS full_name_enc, DROP COLUMN IF EXISTS normalized_name_idx;

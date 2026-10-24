@@ -73,6 +73,7 @@ Inferensi (belum diverifikasi):
 - Kalau ekstensi tidak ada, hanya dicoba `CREATE EXTENSION IF NOT EXISTS pg_trgm SCHEMA public` (:24), tidak pernah ke schema tenant, karena `DROP SCHEMA ... CASCADE` tenant itu akan ikut menghapus ekstensi dan index trigram tenant lain.
 - Kalau ekstensi tidak ada dan tidak bisa dibuat, atau DDL index gagal: `rlog.Warn` dan lanjut (:77). Hanya pembatalan context yang dikembalikan. Patch PII tetap jalan, tetap fail-closed. Idempoten (`IF NOT EXISTS`).
 - `resetTestTrgm` **dihapus** (fix membuatnya tidak perlu). Test trigram baru yang memang harus mengatur ekstensi memakai `setTestTrgmState` dengan guard keras `requireEncoreTestDB`: `current_database()` harus cocok `^tenant-[a-z0-9]{4,}-test$`, selain itu `t.Fatal` (`wabantu_e2e`, `*-a25f8-run`, dll. ditolak).
+- DDL destruktif (DROP INDEX/ALTER TABLE DROP COLUMN) di `tenant/pii_order_test.go` kini juga dijaga `requireEncoreTestDB(t)` sebelum eksekusi (:106, :153), selain skip `testing.Short()`.
 
 
 ## Verifikasi
