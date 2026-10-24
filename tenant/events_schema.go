@@ -106,11 +106,13 @@ CREATE TABLE IF NOT EXISTS evt_event_person (
     departure_time    TIME,
     notes                 TEXT,
     counts_toward_meals   BOOLEAN      NOT NULL DEFAULT true,
+    meal_notes            TEXT,
     created_at            TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
     deleted_at        TIMESTAMPTZ,
     CONSTRAINT evt_person_type_chk CHECK (person_type IN ('THERAPIST','SHIJIE','VOLUNTEER','DAOSHI','FASHI')),
-    CONSTRAINT evt_attendance_chk CHECK (attendance_status IN ('PRESENT','NOT_PRESENT','PARTIAL'))
+    CONSTRAINT evt_attendance_chk CHECK (attendance_status IN ('PRESENT','NOT_PRESENT','PARTIAL')),
+    CONSTRAINT evt_event_person_meal_notes_len_chk CHECK (char_length(meal_notes) <= 200)
 );
 CREATE INDEX IF NOT EXISTS idx_evt_person_event ON evt_event_person(event_id) WHERE deleted_at IS NULL;
 
@@ -198,6 +200,24 @@ CREATE INDEX IF NOT EXISTS idx_evt_audit_created ON evt_audit_log(created_at DES
 
 ALTER TABLE evt_event_volunteer ADD COLUMN IF NOT EXISTS is_pencatat BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE evt_event_person ADD COLUMN IF NOT EXISTS counts_toward_meals BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE evt_event_person ADD COLUMN IF NOT EXISTS meal_notes TEXT;
+-- meal_notes max 200 characters (= maxMealNotesLen in events/meal_notes.go).
+-- NOT VALID: enforced for new writes only, old rows are not scanned. Idempotent per tenant schema
+-- (conrelid resolves via search_path, so other tenant schemas don't count).
+DO $evt_meal_notes_len$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = to_regclass('evt_event_person')
+          AND conname = 'evt_event_person_meal_notes_len_chk'
+    ) THEN
+        ALTER TABLE evt_event_person
+            ADD CONSTRAINT evt_event_person_meal_notes_len_chk
+            CHECK (char_length(meal_notes) <= 200) NOT VALID;
+    END IF;
+EXCEPTION WHEN duplicate_object THEN
+    NULL;
+END $evt_meal_notes_len$;
 
 CREATE TABLE IF NOT EXISTS evt_person_therapy (
     person_id      UUID NOT NULL REFERENCES evt_event_person(id) ON DELETE CASCADE,
