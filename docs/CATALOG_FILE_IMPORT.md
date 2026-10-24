@@ -12,7 +12,7 @@ Tidak memakai AI; tidak mengurangi kuota `ai_token`.
 | `POST` | `/api/v1/import/execute` | typed JSON | `{ jobId, targetTable, columnMapping }` → publish ke `file-import`. `targetTable` wajib sama dengan target staging (kosong = target staging) dan hanya `business_catalog_item` → selain itu 400 |
 | `GET` | `/api/v1/import/status/:jobId` | typed | Hasil worker (`import:result:<jobId>`) |
 
-Semua endpoint `auth` + `tag:owner`, dan **ketiganya** mengecek `CanPerformOwnerActions()` (owner, atau super_admin yang sedang impersonate) → staff 403. Preview memakai `AuthenticateHTTP`; execute/status memakai `requireImportOwner` (`importcsv/import.go`). Staging memakai `TenantSchema` sesi; `execute` menolak `jobId` milik tenant lain (`loadStaging`). Isolasi tenant pada `status/:jobId` ditangani ticket terpisah `fix(import): status job tidak bocor antar tenant`.
+Semua endpoint `auth` + `tag:owner`, dan **ketiganya** mengecek `CanPerformOwnerActions()` (owner, atau super_admin yang sedang impersonate) → staff 403. Preview memakai `AuthenticateHTTP`; execute/status memakai `requireImportOwner` (`importcsv/import.go`). Isolasi tenant (`importcsv/tenant_scope.go`): staging (`import:staging:<jobId>`) menyimpan `tenantId` + `tenantSchema` sesi (diisi `servePreview`), hasil worker (`import:result:<jobId>`) menyimpan `tenantId`. `execute` (`loadStaging` → `checkStagingTenant`) dan `status/:jobId` (`decodeImportResultForTenant`) hanya melayani tenant yang sama; beda atau kosong → **404** dengan pesan yang sama seperti tidak ditemukan. Respons status tetap `ImportResult` (tanpa `tenantId`).
 
 `jobId` = `imp_` + 32 hex dari `crypto/rand` (`newImportJobID`, `importcsv/jobid.go`): tidak bisa ditebak dan aman langsung dipakai di path `/import/status/${jobId}`.
 
@@ -68,4 +68,4 @@ Validasi tipe file: ekstensi (`.csv`/`.xlsx`, case-insensitive) **dan** sniff 51
 
 ## Test
 
-`encore test ./importcsv/...` — `preview_http_test.go` (CSV/XLSX OK, 401, 403, 413 Content-Length & streamed, tipe salah, zip bomb, field hilang, > 50.000 baris CSV & XLSX, error generik, gagal jobId), `execute_status_test.go` (target sama OK, target beda/KB 400, staff 403 di execute & status), `jobid_test.go` (format & unik) dan `preview_rootcause_test.go`.
+`encore test ./importcsv/...` — `preview_http_test.go` (CSV/XLSX OK, 401, 403, 413 Content-Length & streamed, tipe salah, zip bomb, field hilang, > 50.000 baris CSV & XLSX, error generik, gagal jobId), `execute_status_test.go` (target sama OK, target beda/KB 400, staff 403 di execute & status), `jobid_test.go` (format & unik), `tenant_scope_test.go` (status lintas tenant 404, tenant sama 200, staging lintas tenant 404), `preview_tenant_test.go` (preview HTTP → staging berisi `TenantID` → execute tenant sama OK, tenant lain 404) dan `preview_rootcause_test.go`.
