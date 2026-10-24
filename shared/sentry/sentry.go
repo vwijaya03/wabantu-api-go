@@ -1,6 +1,9 @@
 package sentry
 
 import (
+	"net/http"
+
+	"encore.app/wabantu/shared/tlsguard"
 	"encore.dev/rlog"
 	"github.com/getsentry/sentry-go"
 )
@@ -19,6 +22,9 @@ func Init() {
 		Dsn:              dsn,
 		TracesSampleRate: 0.1,
 		Environment:      "production",
+		// Same as sentry-go's default transport (ProxyFromEnvironment, system
+		// roots), plus the eMudhra TLS guard.
+		HTTPTransport: tlsguard.HardenTransport(&http.Transport{Proxy: http.ProxyFromEnvironment}),
 	})
 	if err != nil {
 		rlog.Error("sentry init failed", "err", err)

@@ -19,6 +19,7 @@ import (
 	"encore.dev/rlog"
 
 	apperr "encore.app/wabantu/shared/errs"
+	"encore.app/wabantu/shared/tlsguard"
 )
 
 const (
@@ -191,9 +192,9 @@ func fetchHTMLChain(ctx context.Context, start *url.URL) (html, finalURL, conten
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
-		Transport: &http.Transport{
+		Transport: tlsguard.HardenTransport(&http.Transport{
 			TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
-		},
+		}),
 	}
 
 	current := start
