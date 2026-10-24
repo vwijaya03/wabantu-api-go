@@ -6,7 +6,7 @@ import (
 )
 
 func TestParseClientOptionsHardensRediss(t *testing.T) {
-	opt, err := ParseClientOptions("rediss://default:dummy@example.upstash.io:6379")
+	opt, err := ParseClientOptions("rediss://example.upstash.io:6379")
 	if err != nil {
 		t.Fatal(err)
 	}
