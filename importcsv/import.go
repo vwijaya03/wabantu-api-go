@@ -29,7 +29,7 @@ type ImportRequest struct {
 	JobID         string            `json:"jobId"`
 	TenantSchema  string            `json:"tenantSchema"`
 	TenantID      string            `json:"tenantId"`
-	TargetTable   string            `json:"targetTable"` // "business_catalog_item" | "knowledge_base_entry"
+	TargetTable   string            `json:"targetTable"` // "business_catalog_item" (legacy queued: "knowledge_base_entry")
 	Headers       []string          `json:"headers"`
 	ColumnMapping map[string]string `json:"columnMapping"`
 	Rows          [][]string        `json:"rows"`
@@ -48,7 +48,7 @@ var _ = pubsub.NewSubscription(ImportTopic, "import-processor", pubsub.Subscript
 // ---------- Types ----------
 
 type PreviewRequest struct {
-	TargetTable string `json:"targetTable"` // "business_catalog_item" | "knowledge_base_entry"
+	TargetTable string `json:"targetTable"` // "business_catalog_item" only
 }
 
 type PreviewResponse struct {
@@ -100,16 +100,14 @@ var catalogColumns = map[string]bool{
 	"sell_price": true, "sell_unit": true, "is_active": true, "barcode": true,
 }
 
-var kbColumns = map[string]bool{
-	"question": true, "answer": true, "category": true,
-}
-
+// validColumns is the allowlist of import targets (preview suggestions and
+// execute). Only business_catalog_item is importable from a file (CTO decision
+// 2026-10-24); knowledge_base_entry was removed. processRow keeps its KB case
+// only so already-queued file-import messages can still drain.
 func validColumns(target string) map[string]bool {
 	switch target {
 	case "business_catalog_item":
 		return catalogColumns
-	case "knowledge_base_entry":
-		return kbColumns
 	default:
 		return nil
 	}
@@ -138,13 +136,22 @@ func PreviewHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 // ImportJobStatus returns import results stored after the worker finishes.
+// Owner only (staff -> 403), same as preview/execute.
 //
 //encore:api auth method=GET path=/api/v1/import/status/:jobId tag:owner
 func ImportJobStatus(ctx context.Context, jobId string) (*ImportResult, error) {
-	if jobId == "" {
+	user, _ := auth.Data().(*types.AuthUser)
+	return importJobStatus(ctx, user, jobId, redisGetBytes)
+}
+
+func importJobStatus(ctx context.Context, user *types.AuthUser, jobID string, get func(ctx context.Context, key string) ([]byte, error)) (*ImportResult, error) {
+	if err := requireImportOwner(user); err != nil {
+		return nil, err
+	}
+	if jobID == "" {
 		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "jobId required"}
 	}
-	raw, err := appauth.RedisClient().Get(ctx, importResultKey(jobId)).Bytes()
+	raw, err := get(ctx, importResultKey(jobID))
 	if err != nil {
 		return nil, &errs.Error{Code: errs.NotFound, Message: "import job not found or still processing"}
 	}
@@ -155,24 +162,68 @@ func ImportJobStatus(ctx context.Context, jobId string) (*ImportResult, error) {
 	return &result, nil
 }
 
+// requireImportOwner mirrors the preview / catalog_image_http check: only
+// owners (or an impersonating super_admin) may use the import endpoints.
+func requireImportOwner(user *types.AuthUser) error {
+	if !user.CanPerformOwnerActions() {
+		return &errs.Error{Code: errs.PermissionDenied, Message: "forbidden"}
+	}
+	return nil
+}
+
+func redisGetBytes(ctx context.Context, key string) ([]byte, error) {
+	return appauth.RedisClient().Get(ctx, key).Bytes()
+}
+
+const msgTargetMismatch = "targetTable does not match preview"
+
+type executeDeps struct {
+	get     func(ctx context.Context, key string) ([]byte, error)
+	publish func(ctx context.Context, msg ImportRequest) error
+	del     func(ctx context.Context, key string) error
+}
+
+func defaultExecuteDeps() executeDeps {
+	return executeDeps{
+		get: redisGetBytes,
+		publish: func(ctx context.Context, msg ImportRequest) error {
+			_, err := ImportTopic.Publish(ctx, msg)
+			return err
+		},
+		del: func(ctx context.Context, key string) error {
+			return appauth.RedisClient().Del(ctx, key).Err()
+		},
+	}
+}
+
 // Execute validates mapping and publishes import job to the queue.
+// Owner only (staff -> 403). targetTable must equal the staged (preview)
+// target and must be an allowed import target (business_catalog_item only).
 //
 //encore:api auth method=POST path=/api/v1/import/execute tag:owner
 func Execute(ctx context.Context, req *ExecuteRequest) (*ExecuteResponse, error) {
-	uid, _ := auth.UserID()
-	userData := auth.Data().(*types.AuthUser)
+	user, _ := auth.Data().(*types.AuthUser)
+	return executeImport(ctx, user, req, defaultExecuteDeps())
+}
 
-	if req.JobID == "" {
+func executeImport(ctx context.Context, user *types.AuthUser, req *ExecuteRequest, deps executeDeps) (*ExecuteResponse, error) {
+	if err := requireImportOwner(user); err != nil {
+		return nil, err
+	}
+	if req == nil || req.JobID == "" {
 		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "jobId required (from preview)"}
 	}
 
-	staged, err := loadStaging(ctx, req.JobID, userData.TenantSchema)
+	staged, err := loadStaging(ctx, deps.get, req.JobID, user.TenantSchema)
 	if err != nil {
 		return nil, err
 	}
-	target := req.TargetTable
+	target := strings.TrimSpace(req.TargetTable)
 	if target == "" {
 		target = staged.TargetTable
+	}
+	if target != staged.TargetTable {
+		return nil, &errs.Error{Code: errs.InvalidArgument, Message: msgTargetMismatch}
 	}
 	valid := validColumns(target)
 	if valid == nil {
@@ -188,31 +239,31 @@ func Execute(ctx context.Context, req *ExecuteRequest) (*ExecuteResponse, error)
 	}
 
 	jobID := req.JobID
-	_, err = ImportTopic.Publish(ctx, ImportRequest{
+	err = deps.publish(ctx, ImportRequest{
 		JobID:         jobID,
-		TenantSchema:  userData.TenantSchema,
-		TenantID:      userData.TenantID,
+		TenantSchema:  user.TenantSchema,
+		TenantID:      user.TenantID,
 		TargetTable:   target,
 		Headers:       staged.Headers,
 		ColumnMapping: req.ColumnMapping,
 		Rows:          staged.Rows,
-		UploadedBy:    string(uid),
+		UploadedBy:    user.AccountID,
 	})
 	if err != nil {
 		return nil, &errs.Error{Code: errs.Internal, Message: "failed to queue import"}
 	}
 
-	_ = appauth.RedisClient().Del(ctx, importStagingKey(jobID)).Err()
+	_ = deps.del(ctx, importStagingKey(jobID))
 
-	rlog.Info("import queued", "user", uid, "target", target, "jobId", jobID)
+	rlog.Info("import queued", "user", user.AccountID, "target", target, "jobId", jobID)
 	return &ExecuteResponse{
 		Message: "Import job queued",
 		JobID:   jobID,
 	}, nil
 }
 
-func loadStaging(ctx context.Context, jobID, tenantSchema string) (*importStagingPayload, error) {
-	raw, err := appauth.RedisClient().Get(ctx, importStagingKey(jobID)).Bytes()
+func loadStaging(ctx context.Context, get func(ctx context.Context, key string) ([]byte, error), jobID, tenantSchema string) (*importStagingPayload, error) {
+	raw, err := get(ctx, importStagingKey(jobID))
 	if err != nil {
 		return nil, &errs.Error{Code: errs.NotFound, Message: "import preview expired or not found — upload again"}
 	}

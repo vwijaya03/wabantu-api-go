@@ -23,9 +23,16 @@ Catatan: `targetTable` dari form juga diabaikan (target di-hardcode `business_ca
 
 1. Preview jadi `//encore:api auth raw method=POST path=/api/v1/import/preview tag:owner` (`PreviewHTTP`), path/method sama, field `file` + `targetTable` sama, response JSON sama (`PreviewResponse` tanpa envelope), error tetap bentuk Encore `{code,message,details}`.
 2. Auth: `appauth.AuthenticateHTTP` + `CanPerformOwnerActions()` (pola upload raw lain); staging pakai `TenantSchema` sesi.
-3. `targetTable` dibaca dan dibatasi: kosong → `business_catalog_item`; hanya `business_catalog_item` yang diterima, `knowledge_base_entry` dan nilai lain → 400 (keputusan CTO 2026-10-24). `execute` tidak diubah.
+3. `targetTable` dibaca dan dibatasi: kosong → `business_catalog_item`; hanya `business_catalog_item` yang diterima, `knowledge_base_entry` dan nilai lain → 400 (keputusan CTO 2026-10-24).
 4. Keamanan: `http.MaxBytesReader` 10 MiB (+ fast path `Content-Length`) → 413; `ParseMultipartForm(8 MiB)` + `RemoveAll`; validasi ekstensi + sniff isi; `excelize.Options{UnzipSizeLimit: 64 MiB, UnzipXMLSizeLimit: 16 MiB}`; batas 50.000 baris dihitung saat streaming (CSV `Read` loop, XLSX `Rows` iterator); pesan error generik, detail di `rlog`.
-5. Endpoint lain di `importcsv` (`execute`, `status/:jobId`) tidak memakai `FileHeader` — tidak terdampak.
+5. Endpoint lain di `importcsv` (`execute`, `status/:jobId`) tidak memakai `FileHeader` — tidak terdampak bug upload.
+7. Setelah review Security (commit kedua `fix(import): execute & status owner-only, target katalog end-to-end`):
+   - Execute: `targetTable` wajib sama dengan target staging (kosong = staging) → selain itu 400; allowlist `validColumns` hanya `business_catalog_item` (KB dihapus). Temuan QA :4001 "execute dengan `knowledge_base_entry` → 200" tertutup.
+   - Execute & status: `CanPerformOwnerActions()` (`requireImportOwner`) → staff 403.
+   - `jobId` = `imp_` + 32 hex `crypto/rand` (`importcsv/jobid.go` `newImportJobID`), menggantikan `imp_<UnixNano>` yang bisa ditebak.
+   - `rlog` tidak lagi memuat `fh.Filename` (hanya ukuran + ekstensi ternormalisasi).
+   - Test baru: XLSX > 50.000 baris → 400 (fixture `StreamWriter`), execute/status 403, target beda 400, format/keunikan jobId.
+   - Isolasi tenant pada `status/:jobId` (temuan QA 1) **tidak** di branch ini — ticket `fix(import): status job tidak bocor antar tenant` (`fix/import-job-tenant`).
 6. Snapshot katalog endpoint (`internal/apiregistry`, `internal/apitest`) diperbarui (annotation `auth raw`, nomor baris).
 
 ## Dampak ke prod (dari kode & git log saja — prod tidak dicek)
@@ -37,5 +44,5 @@ Catatan: `targetTable` dari form juga diabaikan (target di-hardcode `business_ca
 ## Verifikasi
 
 - `encore test ./importcsv/... ./internal/apiregistry/... ./internal/apitest/...` hijau (salinan unlinked `/tmp/wabantu-import-test`).
-- Mutation: hapus `MaxBytesReader` → `TestPreview_Oversize_Streamed_413` gagal.
+- Mutation: hapus `MaxBytesReader` → `TestPreview_Oversize_Streamed_413` gagal; hapus cek target≠staging / cek owner status / cek owner execute / tambah KB ke allowlist / jobId pendek → masing-masing ada test yang gagal (`audit/logs-import-preview/13-mutations-partA.log`).
 - Setelah merge: QA menguji import XLSX #273 end-to-end.

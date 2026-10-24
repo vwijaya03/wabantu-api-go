@@ -15,7 +15,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/xuri/excelize/v2"
 
@@ -51,8 +50,8 @@ func testDeps(user *types.AuthUser, rec *stageRecorder) previewDeps {
 			}
 			return user, nil
 		},
-		stage: rec.stage,
-		now:   func() time.Time { return time.Unix(0, 42) },
+		stage:    rec.stage,
+		newJobID: func() (string, error) { return "imp_42", nil },
 	}
 }
 
@@ -407,6 +406,74 @@ func TestPreview_TooManyRows_400(t *testing.T) {
 	rr := do(t, uploadReq(t, "x.csv", []byte(b.String())), testDeps(ownerUser(), rec))
 	if rr.Code != http.StatusBadRequest || rec.calls != 0 {
 		t.Fatalf("status=%d calls=%d", rr.Code, rec.calls)
+	}
+}
+
+// XLSX path of the 50,000-row cap. The fixture is built with excelize's
+// StreamWriter (no per-cell map), which keeps it fast and small.
+func TestPreview_XLSXTooManyRows_400(t *testing.T) {
+	f := excelize.NewFile()
+	defer func() { _ = f.Close() }()
+	sw, err := f.NewStreamWriter("Sheet1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sw.SetRow("A1", []any{"name", "external_code"}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i <= maxImportRows; i++ { // maxImportRows+1 data rows
+		cell, _ := excelize.CoordinatesToCellName(1, i+2)
+		if err := sw.SetRow(cell, []any{"x", i}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := sw.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if _, err := f.WriteTo(&buf); err != nil {
+		t.Fatal(err)
+	}
+	if int64(buf.Len()) >= PreviewMaxBodyBytes {
+		t.Fatalf("fixture %d bytes must stay under the 10 MB body cap", buf.Len())
+	}
+	rec := &stageRecorder{}
+	rr := do(t, uploadReq(t, "big.xlsx", buf.Bytes()), testDeps(ownerUser(), rec))
+	if rr.Code != http.StatusBadRequest || rec.calls != 0 {
+		t.Fatalf("status=%d calls=%d body=%s", rr.Code, rec.calls, rr.Body.String())
+	}
+	if m := errBody(t, rr); m["message"] != errTooManyRows.Error() {
+		t.Fatalf("message=%v", m["message"])
+	}
+}
+
+func TestPreview_JobIDFailure_500(t *testing.T) {
+	rec := &stageRecorder{}
+	deps := testDeps(ownerUser(), rec)
+	deps.newJobID = func() (string, error) { return "", errors.New("entropy source unavailable") }
+	rr := do(t, uploadReq(t, "x.csv", []byte("a,b\n1,2\n")), deps)
+	if rr.Code != http.StatusInternalServerError || rec.calls != 0 {
+		t.Fatalf("status=%d calls=%d", rr.Code, rec.calls)
+	}
+	if strings.Contains(rr.Body.String(), "entropy") {
+		t.Fatalf("internal error leaked: %s", rr.Body.String())
+	}
+}
+
+func TestPreview_DefaultDeps_UseCryptoJobID(t *testing.T) {
+	id, err := defaultPreviewDeps().newJobID()
+	if err != nil || !importJobIDPattern.MatchString(id) {
+		t.Fatalf("default jobId %q err=%v", id, err)
+	}
+}
+
+func TestLogExt_NoFilename(t *testing.T) {
+	for in, want := range map[string]string{
+		"Katalog Toko.CSV": ".csv", "a.xlsx": ".xlsx", "secret-customer-list.txt": "other", "noext": "other",
+	} {
+		if got := logExt(in); got != want {
+			t.Fatalf("logExt(%q)=%q want %q", in, got, want)
+		}
 	}
 }
 

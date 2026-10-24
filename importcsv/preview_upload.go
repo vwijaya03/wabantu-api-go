@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"encore.dev/rlog"
@@ -70,7 +69,7 @@ var (
 type previewDeps struct {
 	authenticate func(ctx context.Context, r *http.Request) (*types.AuthUser, error)
 	stage        func(ctx context.Context, jobID string, payload []byte) error
-	now          func() time.Time
+	newJobID     func() (string, error)
 }
 
 func defaultPreviewDeps() previewDeps {
@@ -79,7 +78,7 @@ func defaultPreviewDeps() previewDeps {
 		stage: func(ctx context.Context, jobID string, payload []byte) error {
 			return appauth.RedisClient().Set(ctx, importStagingKey(jobID), payload, importStagingTTL).Err()
 		},
-		now: time.Now,
+		newJobID: newImportJobID,
 	}
 }
 
@@ -120,7 +119,8 @@ func servePreview(w http.ResponseWriter, req *http.Request, deps previewDeps) {
 		target = defaultTarget
 	}
 	// Preview only stages catalog imports (CTO decision 2026-10-24); KB and any
-	// other target are rejected here. Execute is unchanged.
+	// other target are rejected here. Execute enforces the same allowlist and
+	// must match the staged target.
 	if target != defaultTarget {
 		writePreviewError(w, http.StatusBadRequest, "invalid_argument", msgBadTarget)
 		return
@@ -135,12 +135,18 @@ func servePreview(w http.ResponseWriter, req *http.Request, deps previewDeps) {
 
 	headers, rows, status, msg := readUploadedTable(fh)
 	if status != 0 {
-		rlog.Warn("import preview rejected", "reason", msg, "file", fh.Filename, "size", fh.Size, "tenant", user.TenantSchema)
+		// Filename is user-controlled: log only size and a normalised extension.
+		rlog.Warn("import preview rejected", "reason", msg, "ext", logExt(fh.Filename), "size", fh.Size, "tenant", user.TenantSchema)
 		writePreviewError(w, status, "invalid_argument", msg)
 		return
 	}
 
-	jobID := fmt.Sprintf("imp_%d", deps.now().UnixNano())
+	jobID, err := deps.newJobID()
+	if err != nil {
+		rlog.Error("import preview: generate jobId failed", "err", err, "tenant", user.TenantSchema)
+		writePreviewError(w, http.StatusInternalServerError, "internal", msgStageFailed)
+		return
+	}
 	raw, err := json.Marshal(importStagingPayload{
 		TenantSchema: user.TenantSchema,
 		TargetTable:  target,
@@ -174,6 +180,17 @@ func servePreview(w http.ResponseWriter, req *http.Request, deps previewDeps) {
 		Suggestions: suggestMapping(headers, target),
 		TotalRows:   len(rows),
 	})
+}
+
+// logExt returns ".csv", ".xlsx" or "other" so logs never carry the
+// user-supplied filename.
+func logExt(name string) string {
+	switch ext := strings.ToLower(filepath.Ext(name)); ext {
+	case ".csv", ".xlsx":
+		return ext
+	default:
+		return "other"
+	}
 }
 
 // writePreviewError writes Encore's standard error body ({code,message,details})
