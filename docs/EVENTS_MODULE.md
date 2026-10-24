@@ -95,6 +95,7 @@ Patch DDL dijalankan via `tenant.RunEventsSchemaPatches` (setiap koneksi events 
 - Encore Cloud: blok `"pii patch"` adalah blok **terakhir** di `cloudAdminTenantDDLBlocks()` (`tenant/cloud_admin_ddl.go`);
 - `tenantschema.PIIReady` juga mengecek `evt_event_person.full_name_enc` + `normalized_name` dan `evt_staff_roster.full_name_enc` + `normalized_name_idx` (masing-masing bila tabelnya ada), sehingga tenant lama yang sudah terlanjur kena terdeteksi *not ready* (`cloudReady=false`) dan patch PII (idempoten) dijalankan ulang oleh `RunSchemaPatches` / `migrate-tenant-schemas`.
 - `CurrentSchemaPatchVersion` = **4**: setelah deploy, tenant < v4 di-lazy-migrate pada akses pertama (async) sehingga tenant terdampak sembuh sendiri; tenant sehat tidak berubah datanya (test `TestSchemaV4Migration_IdempotentOnHealthyOldTenant`).
+- Index trigram katalog (`pg_trgm`, hanya jalur lokal) kini best-effort (`tenant/schema_patch_trgm.go`): opclass di-qualify ke schema ekstensi, dan kalau ekstensi tidak tersedia index di-skip dengan warning. Ini tidak pernah lagi menggagalkan patch PII.
 
 Perilaku tetap **fail-closed**: tidak ada fallback yang menulis nama plaintext ke `full_name` bila kolom `_enc` belum ada; `full_name` hanya berisi placeholder PII (`pii.Placeholder`).
 

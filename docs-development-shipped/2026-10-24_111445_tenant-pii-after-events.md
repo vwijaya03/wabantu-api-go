@@ -52,7 +52,28 @@ Tidak ada perubahan perilaku tulis data: tetap fail-closed, tidak ada fallback p
 - Tenant baru: register langsung benar (PII terakhir) dan dicatat v4.
 - Beban: semua tenant menjalankan full patch set sekali; bisa dipercepat/diratakan dengan `migrate-tenant-schemas` (rollout) setelah deploy.
 
-Catatan test (bukan perubahan prod): di cluster test Encore `pg_trgm` tidak terpasang dan role test tidak bisa `CREATE` di `public`, jadi `CREATE EXTENSION IF NOT EXISTS pg_trgm` memasang ekstensi di schema tenant pertama dan schema lain gagal `gin_trgm_ops does not exist` (sudah tercatat di `internal/apitest/README.md`). Test DB baru memanggil `resetTestTrgm` (DROP EXTENSION di DB test sekali pakai) sebelum menjalankan patch penuh. Perlu dipastikan di prod/cloud bahwa `pg_trgm` ada di `public` (inferensi, belum diverifikasi; perilaku ini sudah ada sejak sebelum branch ini).
+## pg_trgm / `gin_trgm_ops` (follow-up CTO)
+
+**Temuan (dari kode, git log, script, test; tanpa DB prod):**
+
+Terverifikasi:
+- Satu-satunya `CREATE EXTENSION pg_trgm` + `gin_trgm_ops` di repo ada di `tenantSchemaPatchSQL` (sebelum fix: `tenant/schema_patch.go:173-176`). Masuk sejak `c52e856` (2026-06-11). Tidak ada di migrations `.sql`, `CloudTenantPatchSQL`, `PIISchemaPatchSQL`, `cloudAdminTenantDDLBlocks`, maupun `scripts/` (`apply-pii-schema-cloud.sh` hanya menjalankan `PIISchemaPatchSQL` dengan `SET search_path TO "<schema>", public`).
+- `tenantSchemaPatchSQL` hanya dieksekusi di `RunSchemaPatches` bila `TenantPatchReady` false **dan** `Environment.Cloud == CloudLocal` (`tenant/schema_patch.go:220-225` sebelum fix). Guard CloudLocal masuk di `c84649c` (2026-08-25). Jadi di Encore Cloud SQL trigram tidak pernah dijalankan sejak 2026-08-25, termasuk saat bump v3 (`6e95803`, 2026-10-14) dan v4.
+- Saat dijalankan, koneksi tenant memakai `SET search_path TO "<schema>", public` (`tenant/tenant.go:262`), jadi `CREATE EXTENSION` tanpa `SCHEMA` memasang pg_trgm di **schema tenant** pertama yang menjalankannya; tenant lain lalu gagal `operator class "gin_trgm_ops" does not exist` (42704). Terbukti di cluster test Encore (ekstensi terpasang di `t_test_pii_repair`); keterbatasan ini sudah tercatat sejak `331892c` (`internal/apitest/README.md`, workaround `ensureWorkflowRuleTable`).
+- Tidak ada jejak (commit message, docs shipped, script) bahwa migrate v3 di Cloud gagal karena pg_trgm.
+
+Inferensi (belum diverifikasi):
+- Cloud v3/v4 tidak terdampak, asalkan build yang ter-deploy memuat `c84649c`. Tenant cloud mungkin tidak punya `idx_catalog_name_trgm` sama sekali (search katalog tetap jalan, tanpa index).
+- Jendela 2026-06-11 s.d. 2026-08-25: di cloud, `RunSchemaPatches` bisa menjalankan SQL ini dengan app role; kegagalan saat itu kemungkinan tertutup oleh error ownership 42501 yang sudah dicatat di `a0e400a`.
+- DB lokal dev/QA lama kemungkinan punya pg_trgm di schema tenant pertama.
+
+**Fix:** `tenant/schema_patch_trgm.go` (baru), dipanggil dari `tenant/schema_patch.go:228` setelah `tenantSchemaPatchSQL` (yang tidak lagi berisi trigram, :173-174):
+- Schema ekstensi di-resolve via `pg_extension JOIN pg_namespace` (`trgmExtensionSchemaSQL`, :15).
+- Opclass di-qualify dan di-quote dengan `quoteIdent` yang sudah ada: `"<schema>".gin_trgm_ops` (`catalogTrigramIndexSQL`, :30). Tidak ada interpolasi mentah. `schemaNameRe` tidak dipakai untuk schema ekstensi karena itu bukan schema tenant (nama seperti `trgm"x` harus tetap jalan, aman karena di-quote); untuk schema tenant di test tetap divalidasi `schemaNameRe`.
+- Kalau ekstensi tidak ada, hanya dicoba `CREATE EXTENSION IF NOT EXISTS pg_trgm SCHEMA public` (:24), tidak pernah ke schema tenant, karena `DROP SCHEMA ... CASCADE` tenant itu akan ikut menghapus ekstensi dan index trigram tenant lain.
+- Kalau ekstensi tidak ada dan tidak bisa dibuat, atau DDL index gagal: `rlog.Warn` dan lanjut (:77). Hanya pembatalan context yang dikembalikan. Patch PII tetap jalan, tetap fail-closed. Idempoten (`IF NOT EXISTS`).
+- `resetTestTrgm` **dihapus** (fix membuatnya tidak perlu). Test trigram baru yang memang harus mengatur ekstensi memakai `setTestTrgmState` dengan guard keras `requireEncoreTestDB`: `current_database()` harus cocok `^tenant-[a-z0-9]{4,}-test$`, selain itu `t.Fatal` (`wabantu_e2e`, `*-a25f8-run`, dll. ditolak).
+
 
 ## Verifikasi
 

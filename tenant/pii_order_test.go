@@ -77,7 +77,6 @@ func TestRunTenantDDL_NewTenantHasEventPersonPIIColumns(t *testing.T) {
 	if testing.Short() {
 		t.Skip("requires tenant database")
 	}
-	resetTestTrgm(t)
 	ctx := context.Background()
 	schema := "t_test_pii_after_events"
 	if err := RunTenantDDL(ctx, schema); err != nil {
@@ -98,7 +97,6 @@ func TestRunSchemaPatches_RepairsAffectedTenantIdempotent(t *testing.T) {
 	if testing.Short() {
 		t.Skip("requires tenant database")
 	}
-	resetTestTrgm(t)
 	ctx := context.Background()
 	schema := "t_test_pii_repair"
 	if err := RunTenantDDL(ctx, schema); err != nil {
@@ -146,7 +144,6 @@ func TestRunSchemaPatches_RepairsStaffRosterOnly(t *testing.T) {
 	if testing.Short() {
 		t.Skip("requires tenant database")
 	}
-	resetTestTrgm(t)
 	ctx := context.Background()
 	schema := "t_test_pii_repair_roster"
 	if err := RunTenantDDL(ctx, schema); err != nil {
@@ -176,18 +173,5 @@ func TestRunSchemaPatches_RepairsStaffRosterOnly(t *testing.T) {
 	ready, err = tenantschema.PIIReady(ctx, DataDB.Stdlib(), schema)
 	if err != nil || !ready {
 		t.Fatalf("PIIReady after repair = %v, %v; want true", ready, err)
-	}
-}
-
-// resetTestTrgm: the Encore test cluster has no pg_trgm preinstalled and the test role
-// cannot CREATE in public, so the first tenant schema running the always-apply patch
-// (CREATE EXTENSION IF NOT EXISTS pg_trgm) owns the extension and later schemas fail with
-// "gin_trgm_ops does not exist" (known limitation, see internal/apitest/README.md).
-// Test-only, throwaway test DB: drop it so the schema under test re-creates and owns it.
-func resetTestTrgm(t *testing.T) {
-	t.Helper()
-	if _, err := DataDB.Stdlib().ExecContext(context.Background(),
-		`DROP EXTENSION IF EXISTS pg_trgm CASCADE`); err != nil {
-		t.Fatalf("reset pg_trgm (test DB): %v", err)
 	}
 }

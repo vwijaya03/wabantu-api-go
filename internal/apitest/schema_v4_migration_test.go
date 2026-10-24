@@ -51,7 +51,6 @@ func TestSchemaV4Migration_IdempotentOnHealthyOldTenant(t *testing.T) {
 	if tenant.CurrentSchemaPatchVersion < 4 {
 		t.Fatalf("CurrentSchemaPatchVersion = %d, want >= 4", tenant.CurrentSchemaPatchVersion)
 	}
-	resetTestTrgm(t)
 	fx := BootstrapOwner(t)
 	WithOwnerAuth(fx)
 	ctx := t.Context()
@@ -117,18 +116,5 @@ func TestSchemaV4Migration_IdempotentOnHealthyOldTenant(t *testing.T) {
 				t.Errorf("run %d: rows of %s changed by migration", i, tbl)
 			}
 		}
-	}
-}
-
-// resetTestTrgm: the Encore test cluster has no pg_trgm preinstalled and the test role
-// cannot CREATE in public, so the first tenant schema running the always-apply patch
-// (CREATE EXTENSION IF NOT EXISTS pg_trgm) owns the extension and later schemas fail with
-// "gin_trgm_ops does not exist" (known limitation, see internal/apitest/README.md).
-// Test-only, throwaway test DB: drop it so the schema under test re-creates and owns it.
-func resetTestTrgm(t *testing.T) {
-	t.Helper()
-	if _, err := tenant.DataDB.Stdlib().ExecContext(context.Background(),
-		`DROP EXTENSION IF EXISTS pg_trgm CASCADE`); err != nil {
-		t.Fatalf("reset pg_trgm (test DB): %v", err)
 	}
 }

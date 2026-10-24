@@ -170,10 +170,8 @@ CREATE INDEX IF NOT EXISTS idx_order_contact_created
     ON "order"(contact_id, created_at DESC)
     WHERE deleted_at IS NULL;
 
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
-CREATE INDEX IF NOT EXISTS idx_catalog_name_trgm
-    ON business_catalog_item USING gin (name gin_trgm_ops)
-    WHERE deleted_at IS NULL;
+-- Catalog trigram index (pg_trgm) is created by ensureCatalogTrigramIndex
+-- (schema_patch_trgm.go) with a schema-qualified opclass; best-effort, never blocks PII.
 
 -- Finance: drop invalid functional index (to_char is not IMMUTABLE in PostgreSQL).
 DROP INDEX IF EXISTS idx_fin_txn_period;
@@ -225,6 +223,9 @@ func RunSchemaPatches(ctx context.Context, schemaName string) error {
 	if !ready {
 		if encore.Meta().Environment.Cloud == encore.CloudLocal {
 			if _, err = conn.ExecContext(ctx, tenantSchemaPatchSQL); err != nil {
+				return err
+			}
+			if err := ensureCatalogTrigramIndex(ctx, conn, schemaName); err != nil {
 				return err
 			}
 		}
