@@ -7,14 +7,18 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 	"sync"
 
 	"encore.dev/rlog"
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+
+	"encore.app/wabantu/shared/tlsguard"
 )
 
 var secrets struct {
@@ -60,6 +64,10 @@ func getClient(ctx context.Context) (*s3.Client, error) {
 				strings.TrimSpace(secrets.AWSS3SecretAccessKey),
 				"",
 			)),
+			// Same default AWS transport, plus the eMudhra TLS guard.
+			config.WithHTTPClient(awshttp.NewBuildableClient().WithTransportOptions(func(t *http.Transport) {
+				tlsguard.HardenTransport(t)
+			})),
 		)
 		if err != nil {
 			clientErr = fmt.Errorf("load aws config: %w", err)

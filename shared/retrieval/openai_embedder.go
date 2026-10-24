@@ -8,6 +8,8 @@ import (
 	"time"
 
 	openai "github.com/sashabaranov/go-openai"
+
+	"encore.app/wabantu/shared/tlsguard"
 )
 
 const openAIHTTPTimeout = 5 * time.Second
@@ -23,13 +25,13 @@ type OpenAIEmbedder struct {
 func newOpenAIHTTPClient() *http.Client {
 	return &http.Client{
 		Timeout: openAIHTTPTimeout,
-		Transport: &http.Transport{
+		Transport: tlsguard.HardenTransport(&http.Transport{
 			MaxIdleConns:        100,
 			MaxIdleConnsPerHost: 10,
 			IdleConnTimeout:     90 * time.Second,
 			TLSHandshakeTimeout: 5 * time.Second,
 			ForceAttemptHTTP2:   true,
-		},
+		}),
 	}
 }
 
