@@ -27,11 +27,6 @@ func cloudAdminTenantDDLBlocks() []cloudAdminDDLBlock {
 			covers: "TenantPatchReady, PricingReady, OrderIncomePatchReady, OrderPaymentProofPatchReady, KnowledgeBaseReady",
 		},
 		{
-			label:  "pii patch",
-			sql:    tenantschema.PIISchemaPatchSQL,
-			covers: "PIIReady",
-		},
-		{
 			label:  "finance patch",
 			sql:    financeSchemaPatchSQL,
 			covers: "FinanceModuleReady",
@@ -50,6 +45,14 @@ func cloudAdminTenantDDLBlocks() []cloudAdminDDLBlock {
 			label:  "retrieval patch",
 			sql:    retrievalOutboxPatchSQL,
 			covers: "RetrievalReady",
+		},
+		// PII must stay LAST: PIISchemaPatchSQL only ALTERs optional-module tables
+		// (evt_event_person, evt_staff_roster, fin_*) that already exist (to_regclass guard).
+		// Running it before "events patch" left new tenants without evt_*.full_name_enc.
+		{
+			label:  "pii patch",
+			sql:    tenantschema.PIISchemaPatchSQL,
+			covers: "PIIReady",
 		},
 	}
 }
