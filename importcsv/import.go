@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-
 	"time"
+	"unicode"
 
 	"encore.dev/beta/auth"
 	"encore.dev/beta/errs"
@@ -279,41 +279,116 @@ func loadStaging(ctx context.Context, get func(ctx context.Context, key string) 
 
 // ---------- Column suggestion ----------
 
+// columnAliases lists the header spellings (already normalised, see
+// normalizeHeader) that suggest a target column. Order matters: it is the
+// fixed iteration order and the final tie-break, so suggestions never depend
+// on Go's random map order.
+type columnAliases struct {
+	column  string
+	aliases []string
+}
+
+var suggestionAliases = []columnAliases{
+	{"external_code", []string{"external_code", "kode", "kode_produk", "kode_barang", "kode_item", "item_code", "product_code", "sku", "code"}},
+	{"barcode", []string{"barcode", "kode_barcode", "ean", "upc", "gtin"}},
+	{"name", []string{"name", "nama", "nama_produk", "nama_barang", "product_name", "product", "produk", "item"}},
+	{"description", []string{"description", "deskripsi", "keterangan", "desc"}},
+	{"sell_price", []string{"sell_price", "harga_jual", "harga", "price"}},
+	{"sell_unit", []string{"sell_unit", "satuan", "unit", "uom"}},
+	{"is_active", []string{"is_active", "aktif", "active", "status"}},
+}
+
+// normalizeHeader lowercases, trims and turns every run of non-alphanumeric
+// characters into a single "_" ("Kode Produk" -> "kode_produk",
+// "Harga (Rp)" -> "harga_rp").
+func normalizeHeader(h string) string {
+	var b strings.Builder
+	sep := false
+	for _, r := range strings.ToLower(strings.TrimSpace(h)) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			if sep && b.Len() > 0 {
+				b.WriteByte('_')
+			}
+			sep = false
+			b.WriteRune(r)
+			continue
+		}
+		sep = true
+	}
+	return b.String()
+}
+
+// exactColumn returns the column whose name or alias equals the normalised
+// header, in suggestionAliases order. It looks at every known column, valid
+// for the target or not, so the caller can leave a header unmapped instead of
+// picking a weaker match (e.g. "barcode" when there is no barcode column).
+func exactColumn(norm string) string {
+	for _, ca := range suggestionAliases {
+		for _, alias := range ca.aliases {
+			if norm == alias {
+				return ca.column
+			}
+		}
+	}
+	return ""
+}
+
+// partialColumn returns the column with the longest alias contained in the
+// normalised header ("barcode_produk" -> barcode via "barcode", not
+// external_code via "code"). Ties keep the first column/alias in
+// suggestionAliases order (strict > below). Like exactColumn it considers
+// every known column; validity is checked by the caller.
+func partialColumn(norm string) string {
+	best, bestLen := "", 0
+	for _, ca := range suggestionAliases {
+		for _, alias := range ca.aliases {
+			if len(alias) > bestLen && strings.Contains(norm, alias) {
+				best, bestLen = ca.column, len(alias)
+			}
+		}
+	}
+	return best
+}
+
+// suggestMapping proposes header -> column for the preview UI. Deterministic:
+//  1. exact pass over headers in file order (normalised header == column
+//     name or alias), then
+//  2. partial pass for still-unmapped headers (longest contained alias).
+//
+// Each column is suggested for at most one header and each header gets at
+// most one column; when two headers want the same column, the exact match
+// wins over a partial one and otherwise the earlier header wins. A header
+// whose best column is taken or not valid for the target stays unmapped (no
+// fallback to a weaker match, so "barcode" can never fall back to
+// external_code via "code").
 func suggestMapping(headers []string, target string) map[string]string {
 	suggestions := make(map[string]string)
 	valid := validColumns(target)
 	if valid == nil {
 		return suggestions
 	}
+	return suggestMappingFor(headers, valid)
+}
 
-	aliases := map[string][]string{
-		"external_code": {"kode", "sku", "code", "external_code", "item_code"},
-		"name":          {"nama", "name", "product", "produk", "item"},
-		"description":   {"deskripsi", "description", "desc", "keterangan"},
-		"sell_price":    {"harga", "price", "sell_price", "harga_jual"},
-		"sell_unit":     {"satuan", "unit", "sell_unit", "uom"},
-		"is_active":     {"aktif", "active", "is_active", "status"},
-		"barcode":       {"barcode", "kode_barcode"},
-		"question":      {"pertanyaan", "question", "q", "tanya"},
-		"answer":        {"jawaban", "answer", "a", "jawab"},
-		"category":      {"kategori", "category", "cat"},
+// suggestMappingFor is suggestMapping over an explicit set of valid columns.
+func suggestMappingFor(headers []string, valid map[string]bool) map[string]string {
+	suggestions := make(map[string]string)
+	taken := make(map[string]bool)
+	norms := make([]string, len(headers))
+	for i, h := range headers {
+		norms[i] = normalizeHeader(h)
 	}
-
-	for _, h := range headers {
-		hl := strings.ToLower(strings.TrimSpace(h))
-		for col, alts := range aliases {
-			if !valid[col] {
+	for _, pick := range []func(string) string{exactColumn, partialColumn} {
+		for i, h := range headers {
+			if _, done := suggestions[h]; done || norms[i] == "" {
 				continue
 			}
-			for _, alt := range alts {
-				if hl == alt || strings.Contains(hl, alt) {
-					suggestions[h] = col
-					break
-				}
+			col := pick(norms[i])
+			if col == "" || !valid[col] || taken[col] {
+				continue
 			}
-			if _, ok := suggestions[h]; ok {
-				break
-			}
+			suggestions[h] = col
+			taken[col] = true
 		}
 	}
 	return suggestions

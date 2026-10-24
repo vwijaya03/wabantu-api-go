@@ -40,6 +40,27 @@ Nama field `file` dan `targetTable` dipakai FE — **jangan diganti**.
   "sampleRows": [["Item A","SKU1"]], "suggestions": {"Nama":"name","Kode":"external_code"}, "totalRows": 1 }
 ```
 
+### `suggestions` (saran mapping kolom, `suggestMapping` di `importcsv/import.go`)
+
+Deterministik — hasil sama untuk header yang sama, tidak bergantung urutan map Go (dulu `range` atas map + `strings.Contains` membuat header `barcode` kadang jadi `external_code`; QA: 24 dari 40 preview template salah).
+
+1. Header dinormalisasi: huruf kecil, trim, setiap rangkaian karakter non huruf/angka → `_` (`"Kode Produk"` → `kode_produk`, `"Harga (Rp)"` → `harga_rp`).
+2. **Pass exact** (urutan header di file): header == nama kolom atau alias.
+3. **Pass partial** untuk header yang belum dapat kolom: alias **terpanjang** yang terkandung di header (`barcode_produk` → `barcode`, bukan `external_code` lewat `code`). Seri → urutan kolom lalu urutan alias di `suggestionAliases`.
+4. Satu kolom maksimal satu header, satu header maksimal satu kolom. Exact menang atas partial; sesama exact/partial, header yang lebih awal menang. Header yang kolom terbaiknya sudah dipakai, atau tidak valid untuk target, **dibiarkan kosong** (tidak jatuh ke kolom yang lebih lemah; `barcode` tidak pernah jadi `external_code`).
+
+| Kolom | Alias (ternormalisasi) |
+|-------|------------------------|
+| `external_code` | `external_code`, `kode`, `kode_produk`, `kode_barang`, `kode_item`, `item_code`, `product_code`, `sku`, `code` |
+| `barcode` | `barcode`, `kode_barcode`, `ean`, `upc`, `gtin` |
+| `name` | `name`, `nama`, `nama_produk`, `nama_barang`, `product_name`, `product`, `produk`, `item` |
+| `description` | `description`, `deskripsi`, `keterangan`, `desc` |
+| `sell_price` | `sell_price`, `harga_jual`, `harga`, `price` |
+| `sell_unit` | `sell_unit`, `satuan`, `unit`, `uom` |
+| `is_active` | `is_active`, `aktif`, `active`, `status` |
+
+Template resmi (tombol "Download template produk" di `/dashboard/import` → FE `app/api/import/templates/product/route.ts`) memakai header `external_code,name,description,sell_price,sell_unit,is_active,barcode` → semuanya exact ke kolom bernama sama. Saran hanya bantuan UI; owner tetap bisa mengubah mapping sebelum execute.
+
 ### Error (bentuk standar Encore `{code, message, details}`; pesan generik, detail hanya di `rlog`)
 
 | HTTP | Kapan |
@@ -68,4 +89,4 @@ Validasi tipe file: ekstensi (`.csv`/`.xlsx`, case-insensitive) **dan** sniff 51
 
 ## Test
 
-`encore test ./importcsv/...` — `preview_http_test.go` (CSV/XLSX OK, 401, 403, 413 Content-Length & streamed, tipe salah, zip bomb, field hilang, > 50.000 baris CSV & XLSX, error generik, gagal jobId), `execute_status_test.go` (target sama OK, target beda/KB 400, staff 403 di execute & status), `jobid_test.go` (format & unik), `tenant_scope_test.go` (status lintas tenant 404, tenant sama 200, staging lintas tenant 404), `preview_tenant_test.go` (preview HTTP → staging berisi `TenantID` → execute tenant sama OK, tenant lain 404) dan `preview_rootcause_test.go`.
+`encore test ./importcsv/...` — `preview_http_test.go` (CSV/XLSX OK, 401, 403, 413 Content-Length & streamed, tipe salah, zip bomb, field hilang, > 50.000 baris CSV & XLSX, error generik, gagal jobId), `execute_status_test.go` (target sama OK, target beda/KB 400, staff 403 di execute & status), `jobid_test.go` (format & unik), `tenant_scope_test.go` (status lintas tenant 404, tenant sama 200, staging lintas tenant 404), `preview_tenant_test.go` (preview HTTP → staging berisi `TenantID` → execute tenant sama OK, tenant lain 404), `suggest_mapping_test.go` (template resmi 100× identik & benar, `barcode` tidak pernah `external_code`, `kode`/`kode produk`/`sku` → `external_code`, konflik kolom ganda hanya satu) dan `preview_rootcause_test.go`.
