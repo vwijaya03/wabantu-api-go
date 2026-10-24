@@ -94,7 +94,11 @@ func FinanceModuleReady(ctx context.Context, q any, schema string) (bool, error)
 		return false, err
 	}
 	ok, err = ColumnExists(ctx, q, schema, "fin_checklist_template", "due_anchor_date")
-	return ok, err
+	if err != nil || !ok {
+		return false, err
+	}
+	// Unique index needed by ON CONFLICT (template_id, due_date) in finance checklist.
+	return IndexExists(ctx, q, schema, "idx_fin_checklist_tpl_date")
 }
 
 // EventsModuleReady — events module tables through latest patch.

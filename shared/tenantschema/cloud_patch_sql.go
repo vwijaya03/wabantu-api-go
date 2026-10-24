@@ -105,11 +105,6 @@ BEGIN
             WHERE deleted_at IS NULL;
     END IF;
 
-    IF to_regclass('fin_checklist_item') IS NOT NULL THEN
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_fin_checklist_tpl_date
-            ON fin_checklist_item(template_id, due_date);
-    END IF;
-
     IF to_regclass('fin_checklist_template') IS NOT NULL THEN
         ALTER TABLE fin_checklist_template ADD COLUMN IF NOT EXISTS due_anchor_date DATE;
     END IF;
@@ -135,4 +130,4 @@ CREATE TABLE IF NOT EXISTS knowledge_base_entry (
 );
 CREATE INDEX IF NOT EXISTS idx_kb_entry_category
     ON knowledge_base_entry(category);
-`
+` + FinChecklistIndexSQL

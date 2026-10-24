@@ -176,7 +176,7 @@ CREATE INDEX IF NOT EXISTS idx_order_contact_created
 -- Finance: drop invalid functional index (to_char is not IMMUTABLE in PostgreSQL).
 DROP INDEX IF EXISTS idx_fin_txn_period;
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_fin_checklist_tpl_date ON fin_checklist_item(template_id, due_date);
+` + tenantschema.FinChecklistIndexSQL + `
 
 ALTER TABLE fin_checklist_template ADD COLUMN IF NOT EXISTS due_anchor_date DATE;
 UPDATE fin_checklist_template

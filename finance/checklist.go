@@ -8,6 +8,7 @@ import (
 	"time"
 
 	appErrs "encore.app/wabantu/shared/errs"
+	"encore.dev/rlog"
 )
 
 // ============================================================
@@ -15,18 +16,18 @@ import (
 // ============================================================
 
 type ChecklistTemplate struct {
-	ID          string    `json:"id"`
-	Title       string    `json:"title"`
-	Description *string   `json:"description,omitempty"`
-	AmountHint  *string   `json:"amountHint,omitempty"`
-	CategoryID  *string   `json:"categoryId,omitempty"`
-	WalletID    *string   `json:"walletId,omitempty"`
+	ID            string    `json:"id"`
+	Title         string    `json:"title"`
+	Description   *string   `json:"description,omitempty"`
+	AmountHint    *string   `json:"amountHint,omitempty"`
+	CategoryID    *string   `json:"categoryId,omitempty"`
+	WalletID      *string   `json:"walletId,omitempty"`
 	Frequency     string    `json:"frequency"`
 	DayOfMonth    *int      `json:"dayOfMonth,omitempty"`
 	DueAnchorDate *string   `json:"dueAnchorDate,omitempty"`
 	IsActive      bool      `json:"isActive"`
-	Order       int       `json:"order"`
-	CreatedAt   time.Time `json:"createdAt"`
+	Order         int       `json:"order"`
+	CreatedAt     time.Time `json:"createdAt"`
 }
 
 type ChecklistItem struct {
@@ -236,7 +237,7 @@ func GetTodayChecklist(ctx context.Context) (*TodayChecklistResponse, error) {
 		SELECT id, $1::date FROM fin_checklist_template
 		WHERE is_active = true AND frequency = 'daily'
 		ON CONFLICT (template_id, due_date) DO NOTHING`, today); err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, checklistInternal("ensure daily checklist items", u.TenantSchema, err)
 	}
 	if _, err := qexec(ctx, sch, q, `
 		INSERT INTO fin_checklist_item (template_id, due_date)
@@ -244,7 +245,7 @@ func GetTodayChecklist(ctx context.Context) (*TodayChecklistResponse, error) {
 		WHERE is_active = true AND frequency = 'monthly'
 		  AND day_of_month = $2
 		ON CONFLICT (template_id, due_date) DO NOTHING`, today, dom); err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, checklistInternal("ensure monthly checklist items", u.TenantSchema, err)
 	}
 
 	// Fetch items
@@ -343,3 +344,9 @@ func ChecklistAction(ctx context.Context, p *ChecklistActionParams) (*ChecklistI
 
 // suppress unused
 var _ = sql.ErrNoRows
+
+// checklistInternal logs the DB error server-side and returns a generic client message.
+func checklistInternal(op string, sch any, err error) error {
+	rlog.Error("finance checklist: "+op, "schema", fmt.Sprint(sch), "err", err)
+	return appErrs.Internal("gagal memuat checklist")
+}

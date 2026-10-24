@@ -3,6 +3,7 @@ package tenant
 import (
 	"context"
 	"database/sql"
+	"encore.dev/rlog"
 	"fmt"
 
 	"encore.app/wabantu/shared/tenantschema"
@@ -216,7 +217,7 @@ CREATE TABLE IF NOT EXISTS fin_checklist_item (
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_fin_checklist_date ON fin_checklist_item(due_date, status);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_fin_checklist_tpl_date ON fin_checklist_item(template_id, due_date);
+` + tenantschema.FinChecklistIndexSQL + `
 
 CREATE TABLE IF NOT EXISTS fin_approval_setting (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -349,6 +350,7 @@ func runFinanceSchemaAndSeed(ctx context.Context, conn *sql.Conn) error {
 		return fmt.Errorf("finance schema check: %w", err)
 	}
 	if !ready {
+		logFinChecklistDuplicates(ctx, conn, schemaName)
 		if encore.Meta().Environment.Cloud != encore.CloudLocal {
 			if err := ensureCloudAdminDDLForConn(ctx, conn); err != nil {
 				return fmt.Errorf("finance cloud DDL: %w", err)
@@ -388,4 +390,24 @@ func runFinanceSchemaAndSeed(ctx context.Context, conn *sql.Conn) error {
 		return fmt.Errorf("inventory schema: %w", err)
 	}
 	return nil
+}
+
+// logFinChecklistDuplicates logs surplus (template_id, due_date) rows before the
+// dedupe in FinChecklistIndexSQL runs. Only when the unique index is still missing.
+func logFinChecklistDuplicates(ctx context.Context, conn *sql.Conn, schemaName string) {
+	has, err := tenantschema.IndexExists(ctx, conn, schemaName, "idx_fin_checklist_tpl_date")
+	if err != nil || has {
+		return
+	}
+	if ok, err := tenantschema.TableExists(ctx, conn, schemaName, "fin_checklist_item"); err != nil || !ok {
+		return
+	}
+	var n int64
+	if err := conn.QueryRowContext(ctx, tenantschema.FinChecklistDuplicateCountSQL).Scan(&n); err != nil {
+		rlog.Warn("fin_checklist_item duplicate count failed", "schema", schemaName, "err", err)
+		return
+	}
+	if n > 0 {
+		rlog.Warn("fin_checklist_item dedupe before unique index", "schema", schemaName, "duplicates", n)
+	}
 }
