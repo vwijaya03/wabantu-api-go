@@ -74,7 +74,7 @@ Raw handler wrappers: `auth/http_testutil.go`, `webhook/http_testutil.go`, `paym
 | **admin** | `BootstrapSuperAdmin` + `WithSuperAdminAuth` → `admin.ListTenants` | `requireSuperAdmin` cek `auth.Data().Role == super_admin`; impersonation belum di-smoke |
 | **audit** | `BootstrapSuperAdmin` + `WithSuperAdminAuth` → `audit.ListAuditLogs` | `RecordAudit` private — tidak di-smoke HTTP |
 | **flag** | `BootstrapOwner` + `WithOwnerAuth` → `flag.ListFlags` | Route `/flags/retrieval-*` butuh `super_admin` — smoke penuh pending |
-| **workflow** | `ensureWorkflowRuleTable` (DDL minimal, tanpa `pg_trgm`) → `workflow.ListRules` | Full `RunSchemaPatches` gagal di Encore test cluster (`gin_trgm_ops` missing) |
+| **workflow** | `ensureWorkflowRuleTable` (DDL minimal, tanpa `pg_trgm`) → `workflow.ListRules` | Historis: full `RunSchemaPatches` gagal di Encore test cluster (`gin_trgm_ops` missing). Sejak 2026-10-24 index trigram best-effort dengan opclass ter-qualify (`tenant/schema_patch_trgm.go`) |
 | **importcsv** | `ImportJobStatus` (NotFound) + unit `parseCSV`/`suggestMapping` di `importcsv/import_test.go` | `Preview` multipart via typed API gagal (`FileHeader.Open`); `Execute` + Pub/Sub belum di-smoke |
 
 Fixture super admin: `super_admin_fixture.go` (`BootstrapSuperAdmin`, `WithSuperAdminAuth`).

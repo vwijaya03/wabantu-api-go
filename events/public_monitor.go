@@ -14,6 +14,7 @@ type PublicStaffMonitorPerson struct {
 	VolunteerRoleName string   `json:"volunteerRoleName,omitempty"`
 	IsPencatat        bool     `json:"isPencatat"`
 	CountsTowardMeals bool     `json:"countsTowardMeals"`
+	MealNotes         string   `json:"mealNotes,omitempty"`
 	Notes             string   `json:"notes,omitempty"`
 }
 
@@ -95,7 +96,8 @@ func loadPublicStaffMonitorPeople(ctx context.Context, ts tenantScope, eventID s
 	rows, err := ts.QueryContext(ctx, `
 		SELECT p.id::text,
 		       COALESCE(p.full_name_enc,''), COALESCE(p.full_name,''),
-		       p.person_type, COALESCE(p.notes,''), p.counts_toward_meals
+		       p.person_type, COALESCE(p.notes,''), p.counts_toward_meals,
+		       COALESCE(p.meal_notes,'')
 		FROM evt_event_person p
 		WHERE p.event_id=$1::uuid AND p.deleted_at IS NULL
 		ORDER BY p.person_type, p.created_at`, eventID)
@@ -107,11 +109,12 @@ func loadPublicStaffMonitorPeople(ctx context.Context, ts tenantScope, eventID s
 		nameEnc, nameLegacy string
 		personType, notes   string
 		countsTowardMeals   bool
+		mealNotes           string
 	}
 	var scratch []staffScratch
 	for rows.Next() {
 		var s staffScratch
-		if err := rows.Scan(&s.personID, &s.nameEnc, &s.nameLegacy, &s.personType, &s.notes, &s.countsTowardMeals); err != nil {
+		if err := rows.Scan(&s.personID, &s.nameEnc, &s.nameLegacy, &s.personType, &s.notes, &s.countsTowardMeals, &s.mealNotes); err != nil {
 			_ = rows.Close()
 			return nil, err
 		}
@@ -146,6 +149,7 @@ func loadPublicStaffMonitorPeople(ctx context.Context, ts tenantScope, eventID s
 			VolunteerRoleName: extrasByID[i].VolunteerRoleName,
 			IsPencatat:        extrasByID[i].IsPencatat,
 			CountsTowardMeals: s.countsTowardMeals,
+			MealNotes:         s.mealNotes,
 			Notes:             publicDisplayNotes(s.notes),
 		})
 	}

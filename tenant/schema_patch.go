@@ -170,10 +170,8 @@ CREATE INDEX IF NOT EXISTS idx_order_contact_created
     ON "order"(contact_id, created_at DESC)
     WHERE deleted_at IS NULL;
 
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
-CREATE INDEX IF NOT EXISTS idx_catalog_name_trgm
-    ON business_catalog_item USING gin (name gin_trgm_ops)
-    WHERE deleted_at IS NULL;
+-- Catalog trigram index (pg_trgm) is created by ensureCatalogTrigramIndex
+-- (schema_patch_trgm.go) with a schema-qualified opclass; best-effort, never blocks PII.
 
 -- Finance: drop invalid functional index (to_char is not IMMUTABLE in PostgreSQL).
 DROP INDEX IF EXISTS idx_fin_txn_period;
@@ -227,15 +225,12 @@ func RunSchemaPatches(ctx context.Context, schemaName string) error {
 			if _, err = conn.ExecContext(ctx, tenantSchemaPatchSQL); err != nil {
 				return err
 			}
+			if err := ensureCatalogTrigramIndex(ctx, conn, schemaName); err != nil {
+				return err
+			}
 		}
 	}
-	if err := runPIISchemaOnConn(ctx, conn); err != nil {
-		return err
-	}
-	if err := runAlwaysApplyPatches(ctx, conn); err != nil {
-		return err
-	}
-	return runFinanceSchemaAndSeed(ctx, conn)
+	return runTenantPatchSteps(ctx, conn)
 }
 
 // runTenantBootstrapPatches applies patches + seeds during signup on an open tenant
@@ -245,13 +240,36 @@ func runTenantBootstrapPatches(ctx context.Context, conn *sql.Conn, schemaName s
 	if !schemaNameRe.MatchString(schemaName) {
 		return fmt.Errorf("invalid schema name: %q", schemaName)
 	}
-	if err := runPIISchemaOnConn(ctx, conn); err != nil {
-		return err
+	return runTenantPatchSteps(ctx, conn)
+}
+
+// tenantPatchStep is one ordered post-DDL step shared by signup and migrate.
+type tenantPatchStep struct {
+	name string
+	run  func(context.Context, *sql.Conn) error
+}
+
+// tenantPatchSteps returns the ordered patch sequence used by RunSchemaPatches and
+// runTenantBootstrapPatches. "pii" MUST be last: PIISchemaPatchSQL only ALTERs
+// optional-module tables (evt_event_person, evt_staff_roster, fin_*) that already
+// exist, and evt_* are created inside runFinanceSchemaAndSeed (runEventsSchemaAndSeed).
+// Running PII first left new tenants without evt_event_person.full_name_enc (500 on
+// create person). Fail-closed: no plaintext fallback when _enc columns are missing.
+func tenantPatchSteps() []tenantPatchStep {
+	return []tenantPatchStep{
+		{name: "always-apply", run: runAlwaysApplyPatches},
+		{name: "finance+events+inventory", run: runFinanceSchemaAndSeed},
+		{name: "pii", run: runPIISchemaOnConn},
 	}
-	if err := runAlwaysApplyPatches(ctx, conn); err != nil {
-		return err
+}
+
+func runTenantPatchSteps(ctx context.Context, conn *sql.Conn) error {
+	for _, step := range tenantPatchSteps() {
+		if err := step.run(ctx, conn); err != nil {
+			return err
+		}
 	}
-	return runFinanceSchemaAndSeed(ctx, conn)
+	return nil
 }
 
 // runAlwaysApplyPatches applies DDL that must run on every migration call regardless
