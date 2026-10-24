@@ -177,6 +177,7 @@ Kontak: package `inbox` — kolom `birth_date` pada create/update contact.
 - Disimpan di `evt_event_person.meal_notes TEXT NULL` (kolom ditambah otomatis lewat patch `ALTER ... ADD COLUMN IF NOT EXISTS` untuk tenant lama).
 - Server trim spasi; kosong → `NULL`; maksimal 200 karakter (dihitung per rune) → lebih dari itu `400 invalid_argument`.
 - Jika `countsTowardMeals=false`, server selalu menyimpan `NULL` (input diabaikan).
+- Berisi karakter NUL (`\x00`) → 400 "catatan konsumsi berisi karakter tidak valid" (`notes` juga: "catatan berisi karakter tidak valid").
 - PUT tanpa `mealNotes` (atau `""`) mengosongkan catatan. Ikut disalin saat duplikat acara.
 
 ### Pasien

@@ -13,10 +13,14 @@ const maxMealNotesLen = 200
 
 // normalizeMealNotes trims per-person meal notes ("nasi setengah", "alergi udang").
 // Returns nil (stored as NULL) when empty or when the person does not count toward meals.
-// Longer than maxMealNotesLen runes → InvalidArgument (400).
+// Longer than maxMealNotesLen runes, or containing NUL (\x00, rejected by Postgres TEXT)
+// → InvalidArgument (400).
 func normalizeMealNotes(s *string, countsTowardMeals bool) (*string, error) {
 	if !countsTowardMeals || s == nil {
 		return nil, nil
+	}
+	if containsNUL(*s) {
+		return nil, appErrs.BadRequest("catatan konsumsi berisi karakter tidak valid")
 	}
 	v := strings.TrimSpace(*s)
 	if v == "" {
@@ -39,4 +43,10 @@ func mealNotesValue(p *UpsertPersonParams) *string {
 		return nil
 	}
 	return &v
+}
+
+// containsNUL reports whether s contains a NUL byte. Postgres TEXT rejects 0x00
+// (SQLSTATE 22021), so such input must be refused with 400 instead of failing as 500.
+func containsNUL(s string) bool {
+	return strings.IndexByte(s, 0) >= 0
 }

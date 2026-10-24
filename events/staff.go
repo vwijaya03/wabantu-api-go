@@ -486,6 +486,9 @@ func DeleteEventPeopleBulk(ctx context.Context, eventId string, p *DeletePeopleP
 }
 
 func validatePerson(p *UpsertPersonParams) error {
+	if containsNUL(p.Notes) {
+		return appErrs.BadRequest("catatan berisi karakter tidak valid")
+	}
 	p.FullName = clampLen(p.FullName, maxPersonNameLen)
 	p.Notes = clampLen(p.Notes, maxNotesLen)
 	if strings.TrimSpace(p.FullName) == "" {

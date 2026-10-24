@@ -27,6 +27,9 @@ func TestNormalizeMealNotes(t *testing.T) {
 		{"countsTowardMeals=false ignores too long", strp(strings.Repeat("a", 500)), false, nil, false},
 		{"200 multibyte runes ok", strp(strings.Repeat("🍚", 200)), true, strp(strings.Repeat("🍚", 200)), false},
 		{"201 multibyte runes error", strp(strings.Repeat("é", 201)), true, nil, true},
+		{"NUL rejected", strp("nasi\x00setengah"), true, nil, true},
+		{"only NUL rejected (not treated as empty)", strp("\x00"), true, nil, true},
+		{"NUL ignored when countsTowardMeals=false", strp("nasi\x00"), false, nil, false},
 		{"trim does not count toward limit", strp("  " + strings.Repeat("x", 200) + "  "), true, strp(strings.Repeat("x", 200)), false},
 	}
 	for _, tc := range tests {
@@ -78,6 +81,30 @@ func TestValidatePersonMealNotes(t *testing.T) {
 	p = &UpsertPersonParams{FullName: "Budi", Role: "relawan", VolunteerRoleID: &vol, MealNotes: strp(strings.Repeat("a", 201))}
 	if err := validatePerson(p); err == nil {
 		t.Fatal("201 runes must be rejected")
+	}
+}
+
+func TestValidatePersonRejectsNUL(t *testing.T) {
+	vol := "role-1"
+	// Compare Code/Message directly: (*errs.Error).Error() needs the Encore runtime.
+	isInvalidArg := func(err error, msg string) bool {
+		var e *encoreerrs.Error
+		return errors.As(err, &e) && e.Code == encoreerrs.InvalidArgument && e.Message == msg
+	}
+	p := &UpsertPersonParams{FullName: "Budi", Role: "relawan", VolunteerRoleID: &vol, MealNotes: strp("nasi\x00setengah")}
+	if err := validatePerson(p); !isInvalidArg(err, "catatan konsumsi berisi karakter tidak valid") {
+		t.Fatalf("mealNotes with NUL: want InvalidArgument, got %#v", err)
+	}
+	p = &UpsertPersonParams{FullName: "Budi", Role: "relawan", VolunteerRoleID: &vol, Notes: "datang\x00sore"}
+	if err := validatePerson(p); !isInvalidArg(err, "catatan berisi karakter tidak valid") {
+		t.Fatalf("notes with NUL: want InvalidArgument, got %#v", err)
+	}
+	p = &UpsertPersonParams{FullName: "Budi", Role: "relawan", VolunteerRoleID: &vol, Notes: " datang sore ", MealNotes: strp(" alergi udang ")}
+	if err := validatePerson(p); err != nil {
+		t.Fatalf("clean notes must pass: %v", err)
+	}
+	if p.Notes != "datang sore" || deref(p.MealNotes) != "alergi udang" {
+		t.Fatalf("unexpected normalization: notes=%q mealNotes=%q", p.Notes, deref(p.MealNotes))
 	}
 }
 
