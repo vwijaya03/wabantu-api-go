@@ -418,7 +418,7 @@ Contacts mendukung status `active` dan `inactive`, termasuk batch update via `PA
 
 ## Import CSV/XLSX (staging)
 
-- **Preview** (`POST /import/preview`): parse file → simpan **semua baris** di **Redis** (`import:staging:<jobId>`, TTL 24 jam) → response `jobId` + sample 5 baris.
+- **Preview** (`POST /api/v1/import/preview`, endpoint Encore **raw** multipart: field `file` + `targetTable`): parse file → simpan **semua baris** di **Redis** (`import:staging:<jobId>`, TTL 24 jam) → response `jobId` + sample 5 baris. Batas: body 10 MB (413), `.csv`/`.xlsx` + cek isi, XLSX anti zip bomb, maks 50.000 baris. Detail: [docs/CATALOG_FILE_IMPORT.md](./docs/CATALOG_FILE_IMPORT.md).
 - **Target produk/katalog:** UI mengirim `targetTable: "business_catalog_item"` saat execute, sehingga backend tahu file ini adalah import produk. Kolom produk yang didukung: `external_code` dan `name` wajib; `description`, `sell_price`, `sell_unit`, `is_active`, `barcode` opsional.
 - **Execute** (`POST /import/execute`): kirim `jobId`, `targetTable`, dan `columnMapping` → worker Pub/Sub `file-import`; worker menyimpan ke `business_catalog_item` dengan `source='import'`.
 - **Template:** UI `/dashboard/import` menyediakan sample CSV dan XLSX lewat route frontend `/api/import/templates/product?format=csv|xlsx`.

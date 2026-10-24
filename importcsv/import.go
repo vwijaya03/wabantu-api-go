@@ -2,12 +2,9 @@ package importcsv
 
 import (
 	"context"
-	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"io"
-	"mime/multipart"
-	"path/filepath"
+	"net/http"
 	"strings"
 
 	"time"
@@ -22,8 +19,6 @@ import (
 	"encore.app/wabantu/business"
 	"encore.app/wabantu/kb"
 	"encore.app/wabantu/shared/types"
-
-	"github.com/xuri/excelize/v2"
 )
 
 var tenantDB = sqldb.Named("tenant")
@@ -127,61 +122,19 @@ const maxImportRows = 50_000
 
 func importStagingKey(jobID string) string { return "import:staging:" + jobID }
 
-// Preview parses an uploaded file, stores full rows in Redis (staging), returns jobId + sample.
+// PreviewHTTP parses an uploaded CSV/XLSX, stores full rows in Redis (staging),
+// and returns jobId + sample.
 //
-//encore:api auth method=POST path=/api/v1/import/preview tag:owner
-func Preview(ctx context.Context, file *multipart.FileHeader) (*PreviewResponse, error) {
-	u, _ := auth.UserID()
-	userData, _ := auth.Data().(*types.AuthUser)
-	rlog.Info("import preview", "user", u)
-
-	target := "business_catalog_item"
-	if userData == nil {
-		return nil, &errs.Error{Code: errs.Unauthenticated, Message: "not authenticated"}
-	}
-
-	f, err := file.Open()
-	if err != nil {
-		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "cannot open uploaded file"}
-	}
-	defer f.Close()
-
-	headers, rows, err := parseFile(f, file.Filename)
-	if err != nil {
-		return nil, &errs.Error{Code: errs.InvalidArgument, Message: fmt.Sprintf("parse error: %s", err)}
-	}
-	if len(rows) > maxImportRows {
-		return nil, &errs.Error{Code: errs.InvalidArgument, Message: fmt.Sprintf("max %d rows per import", maxImportRows)}
-	}
-
-	jobID := fmt.Sprintf("imp_%d", time.Now().UnixNano())
-	payload := importStagingPayload{
-		TenantSchema: userData.TenantSchema,
-		TargetTable:  target,
-		Headers:      headers,
-		Rows:         rows,
-		UploadedBy:   string(u),
-	}
-	raw, _ := json.Marshal(payload)
-	if err := appauth.RedisClient().Set(ctx, importStagingKey(jobID), raw, importStagingTTL).Err(); err != nil {
-		return nil, &errs.Error{Code: errs.Internal, Message: "failed to stage import file"}
-	}
-
-	sample := rows
-	if len(sample) > 5 {
-		sample = sample[:5]
-	}
-
-	suggestions := suggestMapping(headers, target)
-
-	return &PreviewResponse{
-		JobID:       jobID,
-		TargetTable: target,
-		Headers:     headers,
-		SampleRows:  sample,
-		Suggestions: suggestions,
-		TotalRows:   len(rows),
-	}, nil
+// Must be a raw endpoint: a typed Encore API marshals its request parameter
+// across the API boundary, and *multipart.FileHeader only carries the uploaded
+// bytes in unexported fields, so a typed `file *multipart.FileHeader` param can
+// never be opened (always 400 "cannot open uploaded file"). Multipart fields:
+// "file" (required) and "targetTable" (optional, default business_catalog_item);
+// both names are relied on by FE lib/api/import.ts. Limits: see preview_upload.go.
+//
+//encore:api auth raw method=POST path=/api/v1/import/preview tag:owner
+func PreviewHTTP(w http.ResponseWriter, req *http.Request) {
+	servePreview(w, req, defaultPreviewDeps())
 }
 
 // ImportJobStatus returns import results stored after the worker finishes.
@@ -274,63 +227,6 @@ func loadStaging(ctx context.Context, jobID, tenantSchema string) (*importStagin
 		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "staged import is empty"}
 	}
 	return &p, nil
-}
-
-// ---------- File parsing ----------
-
-func parseFile(r io.Reader, filename string) ([]string, [][]string, error) {
-	ext := strings.ToLower(filepath.Ext(filename))
-	switch ext {
-	case ".csv":
-		return parseCSV(r)
-	case ".xlsx":
-		return parseXLSX(r)
-	default:
-		return nil, nil, fmt.Errorf("unsupported file type: %s (use .csv or .xlsx)", ext)
-	}
-}
-
-func parseCSV(r io.Reader) ([]string, [][]string, error) {
-	reader := csv.NewReader(r)
-	reader.LazyQuotes = true
-	reader.TrimLeadingSpace = true
-
-	records, err := reader.ReadAll()
-	if err != nil {
-		return nil, nil, fmt.Errorf("CSV parse: %w", err)
-	}
-	if len(records) < 2 {
-		return nil, nil, fmt.Errorf("file must have a header row + at least one data row")
-	}
-	return records[0], records[1:], nil
-}
-
-func parseXLSX(r io.Reader) ([]string, [][]string, error) {
-	rc, ok := r.(io.ReadCloser)
-	if !ok {
-		rc = io.NopCloser(r)
-	}
-	defer rc.Close()
-
-	f, err := excelize.OpenReader(r)
-	if err != nil {
-		return nil, nil, fmt.Errorf("XLSX parse: %w", err)
-	}
-	defer f.Close()
-
-	sheet := f.GetSheetName(0)
-	if sheet == "" {
-		return nil, nil, fmt.Errorf("no sheets found in XLSX")
-	}
-
-	rows, err := f.GetRows(sheet)
-	if err != nil {
-		return nil, nil, fmt.Errorf("read sheet: %w", err)
-	}
-	if len(rows) < 2 {
-		return nil, nil, fmt.Errorf("file must have a header row + at least one data row")
-	}
-	return rows[0], rows[1:], nil
 }
 
 // ---------- Column suggestion ----------

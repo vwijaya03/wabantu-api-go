@@ -38,6 +38,7 @@ Peta navigasi untuk menjawab pertanyaan tentang backend WABantu. Mulai dari sini
 | Rollout RAG / webhook cleanup (2026-08-31)? | [20260831_101000_rag-hardening-webhook-cleanup.md](../docs-development-shipped/20260831_101000_rag-hardening-webhook-cleanup.md) |
 | Deploy RAG staging gagal / FAQ stuck `invalid embedding version`? | [20260901_143000_rag-staging-rollout-hotfixes.md](../docs-development-shipped/20260901_143000_rag-staging-rollout-hotfixes.md) |
 | Import katalog dari teks (caption WA, deskripsi toko)? | [CATALOG_TEXT_IMPORT.md](./CATALOG_TEXT_IMPORT.md) |
+| Import katalog CSV/XLSX — preview selalu 400 / batas upload? | [CATALOG_FILE_IMPORT.md](./CATALOG_FILE_IMPORT.md) · [2026-10-24_115045_import-preview-upload.md](../docs-development-shipped/2026-10-24_115045_import-preview-upload.md) |
 | Revamp UI katalog + fix upsert import (2026-08-31)? | [20260831_161500_catalog-revamp-text-import.md](../docs-development-shipped/20260831_161500_catalog-revamp-text-import.md) |
 | Tagihan Meta vs kuota WABantu | [META_WHATSAPP_MESSAGING_AND_BILLING.md](./META_WHATSAPP_MESSAGING_AND_BILLING.md) |
 | Kuota trial / paket / routing model AI | [LIMITS_AND_QUOTAS.md](../LIMITS_AND_QUOTAS.md) |
@@ -89,6 +90,7 @@ Peta navigasi untuk menjawab pertanyaan tentang backend WABantu. Mulai dari sini
 | [PRICE_TYPES_AND_CATALOG_PRICING.md](./PRICE_TYPES_AND_CATALOG_PRICING.md) | Tipe harga katalog |
 | [CATALOG_IMAGE_IMPORT.md](./CATALOG_IMAGE_IMPORT.md) | Import katalog dari gambar (dashboard) |
 | [CATALOG_TEXT_IMPORT.md](./CATALOG_TEXT_IMPORT.md) | Import katalog dari teks (dashboard) |
+| [CATALOG_FILE_IMPORT.md](./CATALOG_FILE_IMPORT.md) | Import katalog/KB dari file CSV/XLSX (preview raw multipart, batas upload) |
 | [INVENTORY_MODULE.md](./INVENTORY_MODULE.md) | Modul gudang & stok |
 
 ## Keuangan & modul lain

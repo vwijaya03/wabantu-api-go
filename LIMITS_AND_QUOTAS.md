@@ -153,6 +153,7 @@ Kompleksitas pesan (`MessageComplexity`) menentukan Haiku vs Sonnet pada plan `h
 | RAG query embed | — | **500 embed/jam/tenant** (`retrieval:embedquota:{tenantID}:{hour}`) — fallback lexical saat habis |
 | Import katalog dari gambar (vision) | — | `ai_token` saat **preview** saja (`PurposeCatalogImport`); commit tanpa AI |
 | Import transaksi dari gambar (vision) | — | `ai_token` saat **preview** saja (`PurposeTransactionImport`); commit tanpa AI |
+| Import katalog/KB dari file CSV/XLSX | — | Tanpa AI. Preview: body maks **10 MB** (413), maks **50.000** baris, XLSX ekstrak maks 64 MB ([CATALOG_FILE_IMPORT.md](./docs/CATALOG_FILE_IMPORT.md)) |
 | Undang staff | — | `admin_seat` |
 
 Pesan kuota habis: HTTP 403 / fallback pesan AI ramah (lihat `ai/autoreply.go`).
