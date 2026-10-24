@@ -306,3 +306,9 @@ Implementasi: `finance/order_income.go`, dipanggil dari `order/order.go`.
 | 2026-05 | Modul finance awal — wallet, transaksi, anggaran, investasi, recurring, checklist, laporan |
 | 2026-05-24 | Production hardening: `fin_transaction_type`, trade investasi, lot×100, biaya %, list transaksi + search, hapus dompet/aset dengan guard, dedupe kategori tenant, fix scan `tags` TEXT[] |
 | 2026-05-25 | Dividen per aset (`POST .../dividends`), satuan per tipe aset + migrasi lot→gram/unit/coin, beli/jual/dividen off quick picker, wallet update type guard |
+
+## Index unik checklist (`idx_fin_checklist_tpl_date`)
+`fin_checklist_item(template_id, due_date)` wajib punya unique index karena insert checklist harian/bulanan dan billing memakai `ON CONFLICT (template_id, due_date)`. Index dibuat lewat `tenantschema.FinChecklistIndexSQL` (satu blok DO = satu transaksi) di `tenantDDL`, `financeSchemaPatchSQL`, `tenantSchemaPatchSQL`, dan `CloudTenantPatchSQL`. `FinanceModuleReady` ikut memeriksa index ini, sehingga tenant lama yang belum punya index otomatis di-patch ulang.
+
+Dedupe hanya jalan kalau index **belum ada** (no-op di tenant yang sudah punya). Jumlah duplikat dihitung dan dicatat (`rlog.Warn` schema & jumlah, via `logFinChecklistDuplicates`) **sebelum** DDL yang berisi dedupe di semua jalur: `RunSchemaPatches`, `RunTenantDDL` (signup), `runFinanceSchemaAndSeed`, `applyCloudAdminTenantDDL`. Baris yang dihapus disalin dulu ke `fin_checklist_item_dedupe_bak` (per schema, kolom `fin_checklist_item` + `deleted_at`), dalam blok DO yang sama; tabel backup hanya dibuat kalau ada duplikat. Schema patch v5 memaksa tenant v4 yang index-nya hilang ikut sembuh lewat lazy migrate.
+Aturan simpan dedupe `fin_checklist_item` per `(template_id, due_date)` (deterministik, tanpa ctid): 1) `status <> 'pending'` (done) dulu, 2) `completed_at` terisi, 3) `transaction_id` terisi, 4) `created_at` terbaru, 5) `id` terbesar.

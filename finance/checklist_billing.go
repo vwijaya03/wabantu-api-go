@@ -498,7 +498,7 @@ func GetMonthlyBillingChecklist(ctx context.Context, p *MonthlyBillingParams) (*
 	}
 	q := tenantPool()
 	if err := ensureMonthlyBillingItems(ctx, sch, q, periodStart); err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, checklistInternal("ensure monthly billing items", sch, err)
 	}
 	if err := syncMonthlyBillingPeriod(ctx, sch, q, u.TenantSchema, u, periodStart, periodEnd, label); err != nil {
 		return nil, err
@@ -564,7 +564,7 @@ func ToggleMonthlyBillingItem(ctx context.Context, p *ToggleMonthlyBillingParams
 	}
 
 	if err := ensureMonthlyBillingItems(ctx, sch, q, periodStart); err != nil {
-		return nil, appErrs.Internal(err.Error())
+		return nil, checklistInternal("ensure monthly billing items", sch, err)
 	}
 	if err := syncMonthlyBillingPeriod(ctx, sch, q, u.TenantSchema, u, periodStart, periodEnd, label); err != nil {
 		return nil, err

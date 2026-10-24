@@ -1,6 +1,8 @@
 package tenant
 
 import (
+	"encore.app/wabantu/shared/tenantschema"
+
 	"context"
 	"database/sql"
 	"errors"
@@ -319,6 +321,7 @@ func RunTenantDDL(ctx context.Context, schemaName string) error {
 	if _, err := conn.ExecContext(ctx, fmt.Sprintf(`SET search_path TO "%s"`, schemaName)); err != nil {
 		return fmt.Errorf("set search_path: %w", err)
 	}
+	logFinChecklistDuplicates(ctx, conn, schemaName)
 	if _, err := conn.ExecContext(ctx, tenantDDL); err != nil {
 		return fmt.Errorf("run DDL: %w", err)
 	}
@@ -960,6 +963,7 @@ CREATE TABLE IF NOT EXISTS fin_checklist_item (
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_fin_checklist_date ON fin_checklist_item(due_date, status);
+` + tenantschema.FinChecklistIndexSQL + `
 
 CREATE TABLE IF NOT EXISTS fin_approval_setting (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),

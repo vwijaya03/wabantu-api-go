@@ -13,7 +13,7 @@ var SchemaManifests = []PatchManifest{
 	{
 		Version:          CurrentSchemaPatchVersion,
 		RequiresAdminDDL: false,
-		Description:      "v4: patch PII dijalankan ulang setelah evt_* (evt_event_person/evt_staff_roster *_enc). Termasuk v3: payment proof, inventory, finance, RAG retrieval — migrate-tenant-schemas / rollout applies admin DDL on cloud otomatis",
+		Description:      "v5: idx_fin_checklist_tpl_date dipulihkan (dedupe deterministik + backup fin_checklist_item_dedupe_bak). Termasuk v4: patch PII dijalankan ulang setelah evt_* (evt_event_person/evt_staff_roster *_enc). Termasuk v3: payment proof, inventory, finance, RAG retrieval — migrate-tenant-schemas / rollout applies admin DDL on cloud otomatis",
 	},
 }
 

@@ -88,6 +88,7 @@ func applyCloudAdminTenantDDL(ctx context.Context, schemaName string) error {
 		return nil
 	}
 	return withTenantAdminTx(ctx, schemaName, func(ctx context.Context, tx *sql.Tx) error {
+		logFinChecklistDuplicates(ctx, tx, schemaName)
 		for _, block := range cloudAdminTenantDDLBlocks() {
 			if strings.TrimSpace(block.sql) == "" {
 				continue
