@@ -1,6 +1,6 @@
 module encore.app/wabantu
 
-go 1.26.3
+go 1.26.10
 
 require (
 	encore.dev v1.44.6
