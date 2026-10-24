@@ -50,3 +50,13 @@ FE `wabantu-web-frontend` `app/api/import/templates/product/route.ts:5-13` (orig
 - `encore test ./importcsv/... ./internal/apiregistry/... ./internal/apitest/...` hijau di salinan unlinked `/tmp/wabantu-import-mapping-test` (log `audit/logs-import-mapping/`).
 - `importcsv/suggest_mapping_test.go`: template 100× identik & benar; `barcode`/`Kode Barcode`/`Barcode Produk` → `barcode` (100× tiap kasus), tanpa kolom barcode → kosong; `kode`/`kode produk`/`sku` → `external_code`; konflik kolom ganda hanya satu; normalisasi header.
 - Mutation (semua gagal sesuai harapan): kembalikan map range + Contains-first; slice berurutan tapi Contains-first satu pass; hapus cek kolom terpakai; partial ambil alias pertama bukan terpanjang; tanpa pass exact; fallback ke kolom valid saja.
+
+---
+
+## Follow-up CTO (commit kedua, 2026-10-24)
+
+1. **Deny-list partial** (`importcsv/import.go` `partialDenyTokens` + `hasPartialDenyToken`, dipakai `partialColumn`): header dengan token utuh `beli`, `modal`, `hpp`, `cost`, `kategori`, `category` tidak dapat saran partial (tetap kosong); match exact tetap berlaku. `Kode,Nama,Harga Beli,Harga Jual,Kategori` → `external_code`, `name`, —, `sell_price`, —.
+2. **Execute 400 untuk target duplikat**: `columnMapping` yang memetakan dua header ke kolom yang sama ditolak sebelum publish (`msgDuplicateTargetColumn`). Sebelumnya worker menulis keduanya ke field yang sama (yang terakhir menang, diam-diam).
+3. **Normalisasi**: test BOM (`"\uFEFFKode"` → `kode`) dan non-ASCII (`"Ü Nama"` → `ü_nama`; huruf non-ASCII dipertahankan, lalu partial `nama` → `name`).
+4. Baris endpoint execute bergeser 200 → 203; snapshot `internal/apiregistry` + `internal/apitest` (entri importcsv execute saja) diperbarui.
+5. Mutation: hapus deny-list → `TestSuggestMapping_DeniedTokensNoPartialMatch` & `TestHasPartialDenyToken` gagal; hapus cek duplikat di execute → `TestExecute_DuplicateTargetColumn_400` gagal.

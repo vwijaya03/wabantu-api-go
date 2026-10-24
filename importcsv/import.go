@@ -174,6 +174,9 @@ func redisGetBytes(ctx context.Context, key string) ([]byte, error) {
 
 const msgTargetMismatch = "targetTable does not match preview"
 
+// msgDuplicateTargetColumn: columnMapping maps two headers to one column.
+const msgDuplicateTargetColumn = "columnMapping maps more than one header to the same column"
+
 type executeDeps struct {
 	get     func(ctx context.Context, key string) ([]byte, error)
 	publish func(ctx context.Context, msg ImportRequest) error
@@ -226,6 +229,7 @@ func executeImport(ctx context.Context, user *types.AuthUser, req *ExecuteReques
 	if valid == nil {
 		return nil, &errs.Error{Code: errs.InvalidArgument, Message: fmt.Sprintf("unsupported target: %s", target)}
 	}
+	used := make(map[string]bool, len(req.ColumnMapping))
 	for _, col := range req.ColumnMapping {
 		if col == "" || col == "-" {
 			continue
@@ -233,6 +237,10 @@ func executeImport(ctx context.Context, user *types.AuthUser, req *ExecuteReques
 		if !valid[col] {
 			return nil, &errs.Error{Code: errs.InvalidArgument, Message: fmt.Sprintf("invalid column: %s", col)}
 		}
+		if used[col] {
+			return nil, &errs.Error{Code: errs.InvalidArgument, Message: msgDuplicateTargetColumn}
+		}
+		used[col] = true
 	}
 
 	jobID := req.JobID
@@ -298,6 +306,24 @@ var suggestionAliases = []columnAliases{
 	{"is_active", []string{"is_active", "aktif", "active", "status"}},
 }
 
+// partialDenyTokens: a header containing one of these whole tokens (after
+// normalizeHeader, split on "_") never gets a PARTIAL suggestion, so purchase
+// price / cost / category columns ("harga_beli", "cost_price",
+// "nama_kategori") are not mistaken for sell_price or name. Exact matches
+// still apply. Slice (not map) to keep the lookup order fixed.
+var partialDenyTokens = []string{"beli", "modal", "hpp", "cost", "kategori", "category"}
+
+func hasPartialDenyToken(norm string) bool {
+	for _, tok := range strings.Split(norm, "_") {
+		for _, deny := range partialDenyTokens {
+			if tok == deny {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // normalizeHeader lowercases, trims and turns every run of non-alphanumeric
 // characters into a single "_" ("Kode Produk" -> "kode_produk",
 // "Harga (Rp)" -> "harga_rp").
@@ -337,8 +363,12 @@ func exactColumn(norm string) string {
 // normalised header ("barcode_produk" -> barcode via "barcode", not
 // external_code via "code"). Ties keep the first column/alias in
 // suggestionAliases order (strict > below). Like exactColumn it considers
-// every known column; validity is checked by the caller.
+// every known column; validity is checked by the caller. Headers with a
+// partialDenyTokens token get no partial match.
 func partialColumn(norm string) string {
+	if hasPartialDenyToken(norm) {
+		return ""
+	}
 	best, bestLen := "", 0
 	for _, ca := range suggestionAliases {
 		for _, alias := range ca.aliases {

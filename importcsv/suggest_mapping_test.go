@@ -129,9 +129,43 @@ func TestNormalizeHeader(t *testing.T) {
 		"sell-price":    "sell_price",
 		"IS__ACTIVE":    "is_active",
 		"---":           "",
+		// UTF-8 BOM (U+FEFF) is not a letter/digit: dropped, no leading "_".
+		"\uFEFFKode": "kode",
+		// Non-ASCII letters are kept (lowercased), not dropped or folded:
+		// "Ü Nama" -> "ü_nama", which matches no alias exactly; the partial
+		// pass still finds "nama".
+		"Ü Nama": "ü_nama",
 	} {
 		if got := normalizeHeader(in); got != want {
 			t.Fatalf("normalizeHeader(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestSuggestMapping_DeniedTokensNoPartialMatch(t *testing.T) {
+	for _, h := range []string{"Harga Beli", "Harga Modal", "HPP", "Cost Price", "Nama Kategori", "Category", "harga_beli", "cost_price", "Kategori"} {
+		assertMapping100(t, []string{h}, catalogColumns, map[string]string{})
+	}
+	assertMapping100(t, []string{"Harga Jual"}, catalogColumns, map[string]string{"Harga Jual": "sell_price"})
+	// Deny-list must not block a later valid header from the same column.
+	assertMapping100(t, []string{"Kode", "Nama", "Harga Beli", "Harga Jual", "Kategori"}, catalogColumns, map[string]string{
+		"Kode":       "external_code",
+		"Nama":       "name",
+		"Harga Jual": "sell_price",
+	})
+	// Whole tokens only: "belian"/"hppx" are not denied.
+	assertMapping100(t, []string{"Harga Belian"}, catalogColumns, map[string]string{"Harga Belian": "sell_price"})
+	// Non-ASCII header still gets its partial match.
+	assertMapping100(t, []string{"Ü Nama"}, catalogColumns, map[string]string{"Ü Nama": "name"})
+}
+
+func TestHasPartialDenyToken(t *testing.T) {
+	for norm, want := range map[string]bool{
+		"harga_beli": true, "cost_price": true, "nama_kategori": true, "hpp": true, "harga_modal": true, "category": true,
+		"harga_jual": false, "harga_belian": false, "kode": false, "": false,
+	} {
+		if got := hasPartialDenyToken(norm); got != want {
+			t.Fatalf("hasPartialDenyToken(%q) = %v, want %v", norm, got, want)
 		}
 	}
 }
