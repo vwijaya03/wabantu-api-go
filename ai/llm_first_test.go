@@ -161,7 +161,14 @@ var (
 	lfFullShip   = order.ShippingAddress{Name: "Ana", Phone: "+62872839472828", Street: "Villa Kalijudan Indah A9", City: "Surabaya", Province: "Jawa Timur", PostalCode: "60177"}
 )
 
-func TestLLMFirstMapOpenOrders(t *testing.T) {
+// lfTestOpen is the unfinished-orders list (STATE.OpenOrders) of the given orders.
+func lfTestOpen(orders []persistedOrder) []salesbrain.OrderSnapshot {
+	list, _ := mapUnfinishedOrders(orders)
+	return list
+}
+
+// mapRemindOrders is the PROACTIVE reminder selection (72 hours, three orders).
+func TestLLMFirstMapRemindOrders(t *testing.T) {
 	now := time.Date(2026, 10, 17, 7, 0, 0, 0, time.UTC)
 	ago := func(h int) time.Time { return now.Add(-time.Duration(h) * time.Hour) }
 	orders := []persistedOrder{
@@ -175,7 +182,7 @@ func TestLLMFirstMapOpenOrders(t *testing.T) {
 		lfTestOrder(t, "11111111-0000-0000-0000-000000000008", "draft", "unpaid", ago(100), []order.OrderItem{lfTunaItem}, lfFullShip), // older than 72h
 		lfTestOrder(t, "22222222-0000-0000-0000-000000000009", "draft", "unpaid", ago(2), nil, order.ShippingAddress{}),                // no items
 	}
-	got := mapOpenOrders(orders, now)
+	got := mapRemindOrders(orders, now)
 
 	if len(got) != 3 {
 		t.Fatalf("want the 3 open orders (drafts and one awaiting payment), got %d: %+v", len(got), got)
@@ -201,14 +208,14 @@ func TestLLMFirstMapOpenOrders(t *testing.T) {
 	}
 }
 
-func TestLLMFirstMapOpenOrdersKeepsAtMostThree(t *testing.T) {
+func TestLLMFirstMapRemindOrdersKeepsAtMostThree(t *testing.T) {
 	now := time.Date(2026, 10, 17, 7, 0, 0, 0, time.UTC)
 	var orders []persistedOrder
 	for i := 0; i < 5; i++ {
 		orders = append(orders, lfTestOrder(t, strings.Repeat(string(rune('a'+i)), 8)+"-0000-0000-0000-000000000000", "draft", "unpaid",
 			now.Add(-time.Duration(i+1)*time.Hour), []order.OrderItem{lfTunaItem}, order.ShippingAddress{}))
 	}
-	if got := mapOpenOrders(orders, now); len(got) != 3 {
+	if got := mapRemindOrders(orders, now); len(got) != 3 {
 		t.Fatalf("at most three open orders are listed, got %d", len(got))
 	}
 }

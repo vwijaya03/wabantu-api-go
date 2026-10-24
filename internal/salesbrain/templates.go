@@ -23,6 +23,10 @@ const (
 	TplOpenOrderPick       TemplateKey = "open_order_pick"      // %[1]s numbered list
 	TplOrderCancelled      TemplateKey = "order_cancelled"      // %[1]s order ref
 	TplCancelPaidOrder     TemplateKey = "cancel_paid_order"    // %[1]s order ref, %[2]s shop name
+	TplCancelPick          TemplateKey = "cancel_pick"          // %[1]s numbered list of unfinished orders
+	TplCancelAllConfirm    TemplateKey = "cancel_all_confirm"   // %[1]s list of the orders that would be cancelled
+	TplCancelledMany       TemplateKey = "cancelled_many"       // %[1]s refs cancelled (comma separated)
+	TplCancelPaidMany      TemplateKey = "cancel_paid_many"     // %[1]s refs already paid, %[2]s shop name
 	TplNewOrderParked      TemplateKey = "new_order_parked"     // %[1]s order ref
 	TplCheckWithTeam       TemplateKey = "check_with_team"      // no args
 	TplOrderRef            TemplateKey = "order_ref"            // %[1]s order ref, appended after the order was saved
@@ -94,6 +98,22 @@ var templates = map[TemplateKey]map[Lang]string{
 	TplCancelPaidOrder: {
 		LangID: "Pesanan %[1]s sudah dibayar, jadi pembatalannya aku teruskan ke tim %[2]s ya Kak.",
 		LangEN: "Order %[1]s has already been paid, so I've passed the cancellation request to the %[2]s team.",
+	},
+	TplCancelPick: {
+		LangID: "Kakak punya beberapa pesanan yang belum selesai:\n%[1]s\nYang mana yang mau dibatalkan, Kak? Sebut nomor pesanannya, atau bilang \"batalkan semua\".",
+		LangEN: "You have a few unfinished orders:\n%[1]s\nWhich one would you like to cancel? Tell me the order number, or say \"cancel all\".",
+	},
+	TplCancelAllConfirm: {
+		LangID: "Kakak mau membatalkan semua pesanan yang belum selesai ini?\n%[1]s\nBalas OK kalau benar, atau bilang tidak kalau batal membatalkan.",
+		LangEN: "Do you want to cancel all of these unfinished orders?\n%[1]s\nReply OK to confirm, or say no to keep them.",
+	},
+	TplCancelledMany: {
+		LangID: "Siap Kak, pesanan %[1]s sudah dibatalkan. Mau pesan yang baru?",
+		LangEN: "Done, orders %[1]s are cancelled. Would you like to start a new one?",
+	},
+	TplCancelPaidMany: {
+		LangID: "Pesanan %[1]s sudah dibayar, jadi pembatalannya aku teruskan ke tim %[2]s ya Kak.",
+		LangEN: "Orders %[1]s have already been paid, so I've passed the cancellation requests to the %[2]s team.",
 	},
 	TplNewOrderParked: {
 		LangID: "Siap Kak, pesanan %[1]s tetap tersimpan; bilang saja kalau mau dilanjutkan atau dibatalkan. Mau pesan apa?",

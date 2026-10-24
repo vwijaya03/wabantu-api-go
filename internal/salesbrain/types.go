@@ -169,4 +169,15 @@ type Decision struct {
 	Fields         *FieldData `json:"fields"`
 	LanguageSwitch Lang       `json:"language_switch"`
 	Handoff        *Handoff   `json:"handoff"`
+	// CancelScope is only meaningful for IntentCancel: CancelOne (one order, the default) or
+	// CancelAll (every unfinished order; code asks the buyer to confirm first).
+	CancelScope CancelScope `json:"cancel_scope"`
 }
+
+// CancelScope says how much a cancel decision covers.
+type CancelScope string
+
+const (
+	CancelOne CancelScope = "one"
+	CancelAll CancelScope = "all"
+)
