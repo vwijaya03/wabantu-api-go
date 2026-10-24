@@ -182,7 +182,9 @@ func OrderIncomePatchReady(ctx context.Context, q any, schema string) (bool, err
 	return IndexExists(ctx, q, schema, "idx_fin_txn_order_income_ref")
 }
 
-// PIIReady — encrypted PII columns present (contact + lead).
+// PIIReady — encrypted PII columns present (contact + lead, and evt_event_person when
+// the events module table exists). evt_event_person is created by the events patch, so a
+// tenant whose PII patch ran before evt_* existed must report not-ready to get re-patched.
 func PIIReady(ctx context.Context, q any, schema string) (bool, error) {
 	q = Q(q)
 	for _, col := range []string{"phone_number_enc", "phone_number_idx"} {
@@ -192,8 +194,27 @@ func PIIReady(ctx context.Context, q any, schema string) (bool, error) {
 		}
 	}
 	ok, err := ColumnExists(ctx, q, schema, "lead", "phone_number_enc")
-	return ok, err
+	if err != nil || !ok {
+		return false, err
+	}
+	hasPerson, err := TableExists(ctx, q, schema, "evt_event_person")
+	if err != nil {
+		return false, err
+	}
+	if !hasPerson {
+		return true, nil
+	}
+	for _, col := range eventPersonPIIColumns {
+		ok, err := ColumnExists(ctx, q, schema, "evt_event_person", col)
+		if err != nil || !ok {
+			return false, err
+		}
+	}
+	return true, nil
 }
+
+// eventPersonPIIColumns are written by events create/update person (see PIISchemaPatchSQL).
+var eventPersonPIIColumns = []string{"full_name_enc", "normalized_name"}
 
 // InventoryModuleReady — inventory/HPP module tables present.
 func InventoryModuleReady(ctx context.Context, q any, schema string) (bool, error) {
