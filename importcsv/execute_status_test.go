@@ -137,6 +137,32 @@ func TestExecute_InvalidColumn_400(t *testing.T) {
 	}
 }
 
+// Two headers mapped to one column would make the worker write both into the
+// same field (last one wins, silently); reject before publishing.
+func TestExecute_DuplicateTargetColumn_400(t *testing.T) {
+	for _, mapping := range []map[string]string{
+		{"Nama": "name", "Kode": "name"},
+		{"Nama": "external_code", "Kode": "external_code"},
+	} {
+		store := newFakeStore(t, "imp_a", catalogStaged())
+		_, err := executeImport(context.Background(), ownerUser(),
+			&ExecuteRequest{JobID: "imp_a", ColumnMapping: mapping}, store.deps())
+		var e *errs.Error
+		if !errors.As(err, &e) || e.Code != errs.InvalidArgument || e.Message != msgDuplicateTargetColumn {
+			t.Fatalf("mapping %v: err=%v", mapping, err)
+		}
+		if len(store.published) != 0 || len(store.deleted) != 0 {
+			t.Fatalf("mapping %v: must not publish/delete", mapping)
+		}
+	}
+	// Unmapped headers ("" / "-") are not duplicates.
+	store := newFakeStore(t, "imp_a", catalogStaged())
+	if _, err := executeImport(context.Background(), ownerUser(),
+		&ExecuteRequest{JobID: "imp_a", ColumnMapping: map[string]string{"Nama": "-", "Kode": "-", "X": "", "Y": ""}}, store.deps()); err != nil {
+		t.Fatalf("unmapped-only mapping: %v", err)
+	}
+}
+
 func TestExecute_StaffForbidden_403(t *testing.T) {
 	for _, u := range []*types.AuthUser{staffUser(), nil, {AccountID: "acc_sa", Role: "super_admin", TenantSchema: "t_import_test"}} {
 		store := newFakeStore(t, "imp_a", catalogStaged())
