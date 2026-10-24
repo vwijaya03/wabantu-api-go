@@ -182,8 +182,8 @@ func OrderIncomePatchReady(ctx context.Context, q any, schema string) (bool, err
 	return IndexExists(ctx, q, schema, "idx_fin_txn_order_income_ref")
 }
 
-// PIIReady — encrypted PII columns present (contact + lead, and evt_event_person when
-// the events module table exists). evt_event_person is created by the events patch, so a
+// PIIReady — encrypted PII columns present (contact + lead, and evt_event_person /
+// evt_staff_roster when the events module tables exist). evt_* are created by the events patch, so a
 // tenant whose PII patch ran before evt_* existed must report not-ready to get re-patched.
 func PIIReady(ctx context.Context, q any, schema string) (bool, error) {
 	q = Q(q)
@@ -197,24 +197,33 @@ func PIIReady(ctx context.Context, q any, schema string) (bool, error) {
 	if err != nil || !ok {
 		return false, err
 	}
-	hasPerson, err := TableExists(ctx, q, schema, "evt_event_person")
-	if err != nil {
-		return false, err
-	}
-	if !hasPerson {
-		return true, nil
-	}
-	for _, col := range eventPersonPIIColumns {
-		ok, err := ColumnExists(ctx, q, schema, "evt_event_person", col)
-		if err != nil || !ok {
+	for _, t := range eventsPIITables {
+		has, err := TableExists(ctx, q, schema, t.table)
+		if err != nil {
 			return false, err
+		}
+		if !has {
+			continue
+		}
+		for _, col := range t.columns {
+			ok, err := ColumnExists(ctx, q, schema, t.table, col)
+			if err != nil || !ok {
+				return false, err
+			}
 		}
 	}
 	return true, nil
 }
 
-// eventPersonPIIColumns are written by events create/update person (see PIISchemaPatchSQL).
-var eventPersonPIIColumns = []string{"full_name_enc", "normalized_name"}
+// eventsPIITables lists evt_* PII columns written by the events module and added by
+// PIISchemaPatchSQL. Checked only when the table exists (events module is optional).
+var eventsPIITables = []struct {
+	table   string
+	columns []string
+}{
+	{table: "evt_event_person", columns: []string{"full_name_enc", "normalized_name"}},
+	{table: "evt_staff_roster", columns: []string{"full_name_enc", "normalized_name_idx"}},
+}
 
 // InventoryModuleReady — inventory/HPP module tables present.
 func InventoryModuleReady(ctx context.Context, q any, schema string) (bool, error) {

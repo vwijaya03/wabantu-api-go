@@ -77,6 +77,7 @@ func TestRunTenantDDL_NewTenantHasEventPersonPIIColumns(t *testing.T) {
 	if testing.Short() {
 		t.Skip("requires tenant database")
 	}
+	resetTestTrgm(t)
 	ctx := context.Background()
 	schema := "t_test_pii_after_events"
 	if err := RunTenantDDL(ctx, schema); err != nil {
@@ -97,6 +98,7 @@ func TestRunSchemaPatches_RepairsAffectedTenantIdempotent(t *testing.T) {
 	if testing.Short() {
 		t.Skip("requires tenant database")
 	}
+	resetTestTrgm(t)
 	ctx := context.Background()
 	schema := "t_test_pii_repair"
 	if err := RunTenantDDL(ctx, schema); err != nil {
@@ -127,5 +129,65 @@ func TestRunSchemaPatches_RepairsAffectedTenantIdempotent(t *testing.T) {
 		if err != nil || !ready {
 			t.Fatalf("run %d: PIIReady = %v, %v; want true", i, ready, err)
 		}
+	}
+}
+
+func TestCurrentSchemaPatchVersion_BumpedForPIIOrderFix(t *testing.T) {
+	if CurrentSchemaPatchVersion < 4 {
+		t.Fatalf("CurrentSchemaPatchVersion = %d; want >= 4 so tenants hit by the PII/evt_* order bug self-heal via lazy migrate", CurrentSchemaPatchVersion)
+	}
+	if manifestForVersion(CurrentSchemaPatchVersion) == nil {
+		t.Fatal("no SchemaManifests entry for CurrentSchemaPatchVersion")
+	}
+}
+
+// DB: tenant with only evt_staff_roster missing PII columns is detected and repaired.
+func TestRunSchemaPatches_RepairsStaffRosterOnly(t *testing.T) {
+	if testing.Short() {
+		t.Skip("requires tenant database")
+	}
+	resetTestTrgm(t)
+	ctx := context.Background()
+	schema := "t_test_pii_repair_roster"
+	if err := RunTenantDDL(ctx, schema); err != nil {
+		t.Fatalf("RunTenantDDL: %v", err)
+	}
+	if _, err := DataDB.Stdlib().ExecContext(ctx, fmt.Sprintf(`
+		DROP INDEX IF EXISTS %[1]s.idx_evt_staff_roster_active;
+		ALTER TABLE %[1]s.evt_staff_roster DROP COLUMN IF EXISTS full_name_enc, DROP COLUMN IF EXISTS normalized_name_idx;
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_evt_staff_roster_active
+		    ON %[1]s.evt_staff_roster(normalized_name, person_type) WHERE deleted_at IS NULL;`,
+		quoteIdent(schema))); err != nil {
+		t.Fatalf("simulate roster-only affected tenant: %v", err)
+	}
+	ready, err := tenantschema.PIIReady(ctx, DataDB.Stdlib(), schema)
+	if err != nil || ready {
+		t.Fatalf("PIIReady with roster missing PII = %v, %v; want false", ready, err)
+	}
+	if err := RunSchemaPatches(ctx, schema); err != nil {
+		t.Fatalf("RunSchemaPatches: %v", err)
+	}
+	for _, col := range []string{"full_name_enc", "normalized_name_idx"} {
+		ok, err := tenantschema.ColumnExists(ctx, DataDB.Stdlib(), schema, "evt_staff_roster", col)
+		if err != nil || !ok {
+			t.Fatalf("evt_staff_roster.%s after repair = %v, %v", col, ok, err)
+		}
+	}
+	ready, err = tenantschema.PIIReady(ctx, DataDB.Stdlib(), schema)
+	if err != nil || !ready {
+		t.Fatalf("PIIReady after repair = %v, %v; want true", ready, err)
+	}
+}
+
+// resetTestTrgm: the Encore test cluster has no pg_trgm preinstalled and the test role
+// cannot CREATE in public, so the first tenant schema running the always-apply patch
+// (CREATE EXTENSION IF NOT EXISTS pg_trgm) owns the extension and later schemas fail with
+// "gin_trgm_ops does not exist" (known limitation, see internal/apitest/README.md).
+// Test-only, throwaway test DB: drop it so the schema under test re-creates and owns it.
+func resetTestTrgm(t *testing.T) {
+	t.Helper()
+	if _, err := DataDB.Stdlib().ExecContext(context.Background(),
+		`DROP EXTENSION IF EXISTS pg_trgm CASCADE`); err != nil {
+		t.Fatalf("reset pg_trgm (test DB): %v", err)
 	}
 }

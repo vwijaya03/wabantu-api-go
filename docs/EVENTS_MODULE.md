@@ -93,7 +93,8 @@ Patch DDL dijalankan via `tenant.RunEventsSchemaPatches` (setiap koneksi events 
 **Urutan patch PII vs `evt_*` (fix 2026-10-24, `fix/tenant-pii-after-events`):** `PIISchemaPatchSQL` hanya meng-`ALTER` tabel modul opsional yang **sudah ada** (`to_regclass`), termasuk `evt_event_person.full_name_enc`/`normalized_name` dan `evt_staff_roster.full_name_enc`/`normalized_name_idx`. Karena `evt_*` dibuat oleh `eventsSchemaPatchSQL` (di dalam `runFinanceSchemaAndSeed`), patch PII **wajib** jalan sesudahnya:
 - signup & migrate lokal: `tenantPatchSteps()` di `tenant/schema_patch.go` — `always-apply` → `finance+events+inventory` → `pii` (terakhir);
 - Encore Cloud: blok `"pii patch"` adalah blok **terakhir** di `cloudAdminTenantDDLBlocks()` (`tenant/cloud_admin_ddl.go`);
-- `tenantschema.PIIReady` juga mengecek `evt_event_person.full_name_enc` + `normalized_name` bila tabelnya ada, sehingga tenant lama yang sudah terlanjur kena terdeteksi *not ready* dan patch PII (idempoten) dijalankan ulang oleh `RunSchemaPatches` / `migrate-tenant-schemas`.
+- `tenantschema.PIIReady` juga mengecek `evt_event_person.full_name_enc` + `normalized_name` dan `evt_staff_roster.full_name_enc` + `normalized_name_idx` (masing-masing bila tabelnya ada), sehingga tenant lama yang sudah terlanjur kena terdeteksi *not ready* (`cloudReady=false`) dan patch PII (idempoten) dijalankan ulang oleh `RunSchemaPatches` / `migrate-tenant-schemas`.
+- `CurrentSchemaPatchVersion` = **4**: setelah deploy, tenant < v4 di-lazy-migrate pada akses pertama (async) sehingga tenant terdampak sembuh sendiri; tenant sehat tidak berubah datanya (test `TestSchemaV4Migration_IdempotentOnHealthyOldTenant`).
 
 Perilaku tetap **fail-closed**: tidak ada fallback yang menulis nama plaintext ke `full_name` bila kolom `_enc` belum ada; `full_name` hanya berisi placeholder PII (`pii.Placeholder`).
 
@@ -366,7 +367,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:4000/api/v1/events/staff
 | Import roster 0 added | Roster kosong — sync dari acara lama atau tambah staf dengan checkbox roster |
 | Export pasien ditolak | Terlalu banyak baris filter (> 2500) — persempit filter |
 | Export job `failed` setelah 15 menit | Job `processing` kedaluwarsa — ulangi export |
-| Tambah staf/relawan 500 `column "full_name_enc" of relation "evt_event_person" does not exist` (tenant baru) | Patch PII jalan sebelum `evt_*` dibuat (diperbaiki 2026-10-24). Tenant yang sudah terlanjur kena: jalankan ulang patch — cloud: `POST /api/v1/admin/migrate-tenant-schemas` (tenant tidak di-skip karena `CloudTenantReady` kini false) atau `scripts/apply-pii-schema-cloud.sh`; lokal: SQL `PIISchemaPatchSQL` ke schema tenant (lihat `go run ./scripts/cmd/pii-patch-sql`) |
+| Tambah staf/relawan 500 `column "full_name_enc" of relation "evt_event_person" does not exist` (tenant baru) | Patch PII jalan sebelum `evt_*` dibuat (diperbaiki 2026-10-24). Tenant yang sudah terlanjur kena: otomatis via lazy migrate v4 pada akses pertama setelah deploy; bila perlu manual — cloud: `POST /api/v1/admin/migrate-tenant-schemas` (tenant tidak di-skip karena `CloudTenantReady` kini false) atau `scripts/apply-pii-schema-cloud.sh`; lokal: SQL `PIISchemaPatchSQL` ke schema tenant (lihat `go run ./scripts/cmd/pii-patch-sql`) |
 | User melihat error `evt_* does not exist` / teks Postgres di monitor/jadwal publik | **Seharusnya tidak lagi** — client mendapat 503 aman (`EVT_PUBLIC_UNAVAILABLE`). Cek log server dengan `errorCode=EVT_PUBLIC_UNAVAILABLE`, lalu jalankan schema patch tenant (`RunEventsSchemaPatches` / buka halaman acara sekali) |
 
 ---

@@ -94,6 +94,7 @@ func TestPIIReady_EventPersonMissingEncColumns(t *testing.T) {
 func TestPIIReady_EventPersonPatched(t *testing.T) {
 	tables := basePIITables()
 	tables["evt_event_person"] = []string{"id", "full_name", "full_name_enc", "normalized_name"}
+	tables["evt_staff_roster"] = []string{"id", "full_name", "full_name_enc", "normalized_name_idx"}
 	ok, err := PIIReady(context.Background(), fakeCatalog{tables: tables}, "t_x")
 	if err != nil || !ok {
 		t.Fatalf("PIIReady = %v, %v; want true", ok, err)
@@ -110,12 +111,51 @@ func TestPIIReady_ContactMissing(t *testing.T) {
 	}
 }
 
-// The patch PIIReady relies on must actually add the columns it checks.
-func TestPIISchemaPatchSQL_AddsEventPersonColumnsChecked(t *testing.T) {
-	for _, col := range eventPersonPIIColumns {
-		want := "ALTER TABLE evt_event_person ADD COLUMN IF NOT EXISTS " + col
-		if !strings.Contains(PIISchemaPatchSQL, want) {
-			t.Errorf("PIISchemaPatchSQL missing %q", want)
+func TestPIIReady_StaffRosterMissingEncColumns(t *testing.T) {
+	tables := basePIITables()
+	tables["evt_event_person"] = []string{"id", "full_name", "full_name_enc", "normalized_name"}
+	tables["evt_staff_roster"] = []string{"id", "full_name", "normalized_name"}
+	ok, err := PIIReady(context.Background(), fakeCatalog{tables: tables}, "t_x")
+	if err != nil || ok {
+		t.Fatalf("PIIReady with evt_staff_roster missing full_name_enc = %v, %v; want false", ok, err)
+	}
+	tables["evt_staff_roster"] = append(tables["evt_staff_roster"], "full_name_enc")
+	ok, _ = PIIReady(context.Background(), fakeCatalog{tables: tables}, "t_x")
+	if ok {
+		t.Fatal("PIIReady = true without evt_staff_roster.normalized_name_idx; want false")
+	}
+	tables["evt_staff_roster"] = append(tables["evt_staff_roster"], "normalized_name_idx")
+	ok, err = PIIReady(context.Background(), fakeCatalog{tables: tables}, "t_x")
+	if err != nil || !ok {
+		t.Fatalf("PIIReady with patched evt_staff_roster = %v, %v; want true", ok, err)
+	}
+}
+
+// Roster checked even when evt_event_person is absent (each table independent).
+func TestPIIReady_StaffRosterOnly(t *testing.T) {
+	tables := basePIITables()
+	tables["evt_staff_roster"] = []string{"id", "full_name"}
+	ok, err := PIIReady(context.Background(), fakeCatalog{tables: tables}, "t_x")
+	if err != nil || ok {
+		t.Fatalf("PIIReady = %v, %v; want false", ok, err)
+	}
+}
+
+// The patch PIIReady relies on must actually add every column it checks.
+func TestPIISchemaPatchSQL_AddsEventsColumnsChecked(t *testing.T) {
+	want := map[string]bool{"evt_event_person": false, "evt_staff_roster": false}
+	for _, tbl := range eventsPIITables {
+		want[tbl.table] = true
+		for _, col := range tbl.columns {
+			stmt := "ALTER TABLE " + tbl.table + " ADD COLUMN IF NOT EXISTS " + col
+			if !strings.Contains(PIISchemaPatchSQL, stmt) {
+				t.Errorf("PIISchemaPatchSQL missing %q", stmt)
+			}
+		}
+	}
+	for tbl, checked := range want {
+		if !checked {
+			t.Errorf("PIIReady does not check %s", tbl)
 		}
 	}
 }
