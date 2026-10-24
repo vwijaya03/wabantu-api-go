@@ -23,7 +23,7 @@ Catatan: `targetTable` dari form juga diabaikan (target di-hardcode `business_ca
 
 1. Preview jadi `//encore:api auth raw method=POST path=/api/v1/import/preview tag:owner` (`PreviewHTTP`), path/method sama, field `file` + `targetTable` sama, response JSON sama (`PreviewResponse` tanpa envelope), error tetap bentuk Encore `{code,message,details}`.
 2. Auth: `appauth.AuthenticateHTTP` + `CanPerformOwnerActions()` (pola upload raw lain); staging pakai `TenantSchema` sesi.
-3. `targetTable` dibaca: kosong → `business_catalog_item`; `knowledge_base_entry` juga diterima (sudah didukung `execute`); lainnya 400.
+3. `targetTable` dibaca dan dibatasi: kosong → `business_catalog_item`; hanya `business_catalog_item` yang diterima, `knowledge_base_entry` dan nilai lain → 400 (keputusan CTO 2026-10-24). `execute` tidak diubah.
 4. Keamanan: `http.MaxBytesReader` 10 MiB (+ fast path `Content-Length`) → 413; `ParseMultipartForm(8 MiB)` + `RemoveAll`; validasi ekstensi + sniff isi; `excelize.Options{UnzipSizeLimit: 64 MiB, UnzipXMLSizeLimit: 16 MiB}`; batas 50.000 baris dihitung saat streaming (CSV `Read` loop, XLSX `Rows` iterator); pesan error generik, detail di `rlog`.
 5. Endpoint lain di `importcsv` (`execute`, `status/:jobId`) tidak memakai `FileHeader` — tidak terdampak.
 6. Snapshot katalog endpoint (`internal/apiregistry`, `internal/apitest`) diperbarui (annotation `auth raw`, nomor baris).

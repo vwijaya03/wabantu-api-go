@@ -1,6 +1,6 @@
-# Import katalog / KB dari file (CSV & XLSX)
+# Import katalog dari file (CSV & XLSX)
 
-Owner upload file CSV/XLSX di dashboard (`/dashboard/import`, FE `lib/api/import.ts`) → **preview** (parse + staging Redis) → owner atur mapping kolom → **execute** (Pub/Sub `file-import`) → upsert ke `business_catalog_item` (`source='import'`) atau `knowledge_base_entry`.
+Owner upload file CSV/XLSX di dashboard (`/dashboard/import`, FE `lib/api/import.ts`) → **preview** (parse + staging Redis) → owner atur mapping kolom → **execute** (Pub/Sub `file-import`) → upsert ke `business_catalog_item` (`source='import'`). Preview hanya menerima target katalog.
 
 Tidak memakai AI; tidak mengurangi kuota `ai_token`.
 
@@ -23,7 +23,7 @@ API Encore bertipe me-marshal parameter request melewati boundary API. `*multipa
 | Field | Wajib | Nilai |
 |-------|-------|-------|
 | `file` | ya | file `.csv` atau `.xlsx` (hanya file pertama yang dipakai) |
-| `targetTable` | tidak | `business_catalog_item` (default) atau `knowledge_base_entry`; nilai lain → 400 |
+| `targetTable` | tidak | hanya `business_catalog_item` (kosong = `business_catalog_item`); `knowledge_base_entry` dan nilai lain → 400 (keputusan CTO 2026-10-24). `execute` tidak diubah. |
 
 Contoh: `curl -H "Authorization: Bearer $TOKEN" -F file=@katalog.csv -F targetTable=business_catalog_item $API/api/v1/import/preview`
 
@@ -43,7 +43,7 @@ Nama field `file` dan `targetTable` dipakai FE — **jangan diganti**.
 | 401 | Tanpa token / sesi tidak valid |
 | 403 | Bukan owner (mis. staff) |
 | 413 | Body > 10 MB (`Content-Length` atau terpotong `http.MaxBytesReader`) |
-| 400 | Bukan multipart, field `file` kosong, `targetTable` tidak didukung, ekstensi bukan `.csv`/`.xlsx`, isi tidak cocok ekstensi, CSV rusak, XLSX rusak/zip bomb, hanya header, > 50.000 baris |
+| 400 | Bukan multipart, field `file` kosong, `targetTable` selain `business_catalog_item`, ekstensi bukan `.csv`/`.xlsx`, isi tidak cocok ekstensi, CSV rusak, XLSX rusak/zip bomb, hanya header, > 50.000 baris |
 | 500 | Gagal staging Redis (pesan generik) |
 
 ## Batas & keamanan upload (`importcsv/preview_upload.go`)

@@ -90,7 +90,7 @@ Peta navigasi untuk menjawab pertanyaan tentang backend WABantu. Mulai dari sini
 | [PRICE_TYPES_AND_CATALOG_PRICING.md](./PRICE_TYPES_AND_CATALOG_PRICING.md) | Tipe harga katalog |
 | [CATALOG_IMAGE_IMPORT.md](./CATALOG_IMAGE_IMPORT.md) | Import katalog dari gambar (dashboard) |
 | [CATALOG_TEXT_IMPORT.md](./CATALOG_TEXT_IMPORT.md) | Import katalog dari teks (dashboard) |
-| [CATALOG_FILE_IMPORT.md](./CATALOG_FILE_IMPORT.md) | Import katalog/KB dari file CSV/XLSX (preview raw multipart, batas upload) |
+| [CATALOG_FILE_IMPORT.md](./CATALOG_FILE_IMPORT.md) | Import katalog dari file CSV/XLSX (preview raw multipart, batas upload) |
 | [INVENTORY_MODULE.md](./INVENTORY_MODULE.md) | Modul gudang & stok |
 
 ## Keuangan & modul lain

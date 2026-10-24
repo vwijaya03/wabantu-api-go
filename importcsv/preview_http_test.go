@@ -169,7 +169,7 @@ func TestPreview_CSV_OK(t *testing.T) {
 	}
 }
 
-func TestPreview_DefaultAndKBTarget(t *testing.T) {
+func TestPreview_DefaultTarget(t *testing.T) {
 	rec := &stageRecorder{}
 	body, ct := multipartBody(t, part{field: "file", filename: "x.csv", content: []byte("a,b\n1,2\n")})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/import/preview", body)
@@ -178,16 +178,26 @@ func TestPreview_DefaultAndKBTarget(t *testing.T) {
 	if rr.Code != http.StatusOK || rec.payload.TargetTable != "business_catalog_item" {
 		t.Fatalf("default target: status=%d target=%q", rr.Code, rec.payload.TargetTable)
 	}
+}
 
-	body, ct = multipartBody(t,
-		part{field: "file", filename: "x.csv", content: []byte("pertanyaan,jawaban\nq,a\n")},
-		part{field: "targetTable", content: []byte("knowledge_base_entry")},
-	)
-	req = httptest.NewRequest(http.MethodPost, "/api/v1/import/preview", body)
-	req.Header.Set("Content-Type", ct)
-	rr = do(t, req, testDeps(ownerUser(), rec))
-	if rr.Code != http.StatusOK || rec.payload.TargetTable != "knowledge_base_entry" {
-		t.Fatalf("kb target: status=%d target=%q", rr.Code, rec.payload.TargetTable)
+func TestPreview_NonCatalogTarget_400(t *testing.T) {
+	for _, target := range []string{"knowledge_base_entry", "contact", "BUSINESS_CATALOG_ITEM"} {
+		t.Run(target, func(t *testing.T) {
+			rec := &stageRecorder{}
+			body, ct := multipartBody(t,
+				part{field: "file", filename: "x.csv", content: []byte("pertanyaan,jawaban\nq,a\n")},
+				part{field: "targetTable", content: []byte(target)},
+			)
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/import/preview", body)
+			req.Header.Set("Content-Type", ct)
+			rr := do(t, req, testDeps(ownerUser(), rec))
+			if rr.Code != http.StatusBadRequest || rec.calls != 0 {
+				t.Fatalf("status=%d calls=%d body=%s", rr.Code, rec.calls, rr.Body.String())
+			}
+			if m := errBody(t, rr); m["message"] != msgBadTarget {
+				t.Fatalf("message=%v", m["message"])
+			}
+		})
 	}
 }
 

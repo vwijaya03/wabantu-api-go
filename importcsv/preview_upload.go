@@ -119,7 +119,9 @@ func servePreview(w http.ResponseWriter, req *http.Request, deps previewDeps) {
 	if target == "" {
 		target = defaultTarget
 	}
-	if validColumns(target) == nil {
+	// Preview only stages catalog imports (CTO decision 2026-10-24); KB and any
+	// other target are rejected here. Execute is unchanged.
+	if target != defaultTarget {
 		writePreviewError(w, http.StatusBadRequest, "invalid_argument", msgBadTarget)
 		return
 	}
