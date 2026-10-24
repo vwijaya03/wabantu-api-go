@@ -5,7 +5,9 @@ package tenantschema
 //
 // Runs as one DO block (= one transaction): dedupe + CREATE UNIQUE INDEX are atomic.
 // No-op when the index already exists (dedupe never runs on tenants that have it).
-// Duplicate count is reported via RAISE NOTICE (schema + count) before any delete.
+// Duplicate count is logged Go-side (logFinChecklistDuplicates) before this runs, and via
+// RAISE NOTICE. Losers are copied to fin_checklist_item_dedupe_bak (created only when
+// duplicates exist) before DELETE, in the same block.
 //
 // Keep rule per (template_id, due_date), deterministic (never ctid):
 //  1. status <> 'pending' (done/checked) first
@@ -32,8 +34,14 @@ BEGIN
     ) d;
     IF dup_count > 0 THEN
         RAISE NOTICE 'fin_checklist_item dedupe: schema=% duplicates=%', current_schema(), dup_count;
-        DELETE FROM fin_checklist_item f
-        USING (
+        -- Backup table only when duplicates exist (never created on no-op runs).
+        CREATE TABLE IF NOT EXISTS fin_checklist_item_dedupe_bak (LIKE fin_checklist_item);
+        ALTER TABLE fin_checklist_item_dedupe_bak
+            ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ NOT NULL DEFAULT now();
+        CREATE TEMP TABLE IF NOT EXISTS _fin_chk_losers (id UUID PRIMARY KEY) ON COMMIT DROP;
+        TRUNCATE _fin_chk_losers;
+        INSERT INTO _fin_chk_losers (id)
+        SELECT id FROM (
             SELECT id, row_number() OVER (
                 PARTITION BY template_id, due_date
                 ORDER BY (status <> 'pending') DESC,
@@ -44,7 +52,11 @@ BEGIN
             ) AS rn
             FROM fin_checklist_item
         ) r
-        WHERE f.id = r.id AND r.rn > 1;
+        WHERE r.rn > 1;
+        INSERT INTO fin_checklist_item_dedupe_bak
+        SELECT f.*, now() FROM fin_checklist_item f JOIN _fin_chk_losers l ON l.id = f.id;
+        DELETE FROM fin_checklist_item f USING _fin_chk_losers l WHERE f.id = l.id;
+        DROP TABLE _fin_chk_losers;
     END IF;
     CREATE UNIQUE INDEX IF NOT EXISTS idx_fin_checklist_tpl_date
         ON fin_checklist_item(template_id, due_date);

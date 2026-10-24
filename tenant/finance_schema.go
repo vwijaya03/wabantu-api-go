@@ -392,22 +392,31 @@ func runFinanceSchemaAndSeed(ctx context.Context, conn *sql.Conn) error {
 	return nil
 }
 
-// logFinChecklistDuplicates logs surplus (template_id, due_date) rows before the
-// dedupe in FinChecklistIndexSQL runs. Only when the unique index is still missing.
-func logFinChecklistDuplicates(ctx context.Context, conn *sql.Conn, schemaName string) {
-	has, err := tenantschema.IndexExists(ctx, conn, schemaName, "idx_fin_checklist_tpl_date")
+// warnFinChecklistDuplicates emits the pre-dedupe warning. Var so tests can observe it.
+var warnFinChecklistDuplicates = func(schemaName string, n int64) {
+	rlog.Warn("fin_checklist_item dedupe before unique index", "schema", schemaName, "duplicates", n)
+}
+
+// logFinChecklistDuplicates counts and logs surplus (template_id, due_date) rows before
+// the dedupe in FinChecklistIndexSQL runs. Only when the table exists and the unique
+// index is still missing. Returns the count (0 when nothing to dedupe or on error).
+func logFinChecklistDuplicates(ctx context.Context, q any, schemaName string) int64 {
+	has, err := tenantschema.IndexExists(ctx, q, schemaName, "idx_fin_checklist_tpl_date")
 	if err != nil || has {
-		return
+		return 0
 	}
-	if ok, err := tenantschema.TableExists(ctx, conn, schemaName, "fin_checklist_item"); err != nil || !ok {
-		return
+	if ok, err := tenantschema.TableExists(ctx, q, schemaName, "fin_checklist_item"); err != nil || !ok {
+		return 0
 	}
 	var n int64
-	if err := conn.QueryRowContext(ctx, tenantschema.FinChecklistDuplicateCountSQL).Scan(&n); err != nil {
+	if err := tenantschema.Q(q).QueryRowContext(ctx, `SELECT COALESCE(SUM(c - 1), 0) FROM (
+		SELECT count(*) AS c FROM `+quoteIdent(schemaName)+`.fin_checklist_item
+		GROUP BY template_id, due_date HAVING count(*) > 1) d`).Scan(&n); err != nil {
 		rlog.Warn("fin_checklist_item duplicate count failed", "schema", schemaName, "err", err)
-		return
+		return 0
 	}
 	if n > 0 {
-		rlog.Warn("fin_checklist_item dedupe before unique index", "schema", schemaName, "duplicates", n)
+		warnFinChecklistDuplicates(schemaName, n)
 	}
+	return n
 }

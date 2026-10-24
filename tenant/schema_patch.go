@@ -208,14 +208,16 @@ func RunSchemaPatches(ctx context.Context, schemaName string) error {
 	if !schemaNameRe.MatchString(schemaName) {
 		return fmt.Errorf("invalid schema name: %q", schemaName)
 	}
-	if err := applyCloudAdminTenantDDL(ctx, schemaName); err != nil {
-		return fmt.Errorf("cloud admin DDL: %w", err)
-	}
 	conn, err := TenantConn(ctx, schemaName)
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
+	// Count + log duplicates before any DDL containing FinChecklistIndexSQL (dedupe).
+	logFinChecklistDuplicates(ctx, conn, schemaName)
+	if err := applyCloudAdminTenantDDL(ctx, schemaName); err != nil {
+		return fmt.Errorf("cloud admin DDL: %w", err)
+	}
 	ready, err := tenantschema.TenantPatchReady(ctx, conn, schemaName)
 	if err != nil {
 		return err

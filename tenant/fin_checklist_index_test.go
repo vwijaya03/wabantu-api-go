@@ -96,6 +96,17 @@ func TestRunSchemaPatches_RestoresChecklistIndexWithKeepRule(t *testing.T) {
 	finChkSQL(t, `INSERT INTO `+finChkT+`fin_checklist_item (template_id, due_date, status, note, created_at) VALUES
 		($1, '2026-10-01', 'pending', 'old', now() - interval '1 hour'),
 		($1, '2026-10-01', 'pending', 'new', now())`, b)
+	// Warn must fire before deletion: at hook time all 4 rows still exist.
+	var warned, rowsAtWarn int64 = -1, -1
+	prev := warnFinChecklistDuplicates
+	warnFinChecklistDuplicates = func(sch string, n int64) {
+		if sch == finChkTestSchema {
+			warned = n
+			_ = DataDB.Stdlib().QueryRowContext(context.Background(), `SELECT count(*) FROM `+finChkT+`fin_checklist_item`).Scan(&rowsAtWarn)
+		}
+		prev(sch, n)
+	}
+	t.Cleanup(func() { warnFinChecklistDuplicates = prev })
 	if err := RunSchemaPatches(context.Background(), finChkTestSchema); err != nil {
 		t.Fatalf("RunSchemaPatches: %v", err)
 	}
@@ -115,6 +126,54 @@ func TestRunSchemaPatches_RestoresChecklistIndexWithKeepRule(t *testing.T) {
 	_ = DataDB.Stdlib().QueryRowContext(context.Background(), `SELECT note FROM `+finChkT+`fin_checklist_item WHERE template_id=$1`, b).Scan(&note)
 	if note != "new" {
 		t.Errorf("template b kept %q, want newest", note)
+	}
+	if warned != 2 || rowsAtWarn != 4 {
+		t.Fatalf("duplicate warn: count=%d rowsAtWarn=%d, want 2 and 4 (logged before delete)", warned, rowsAtWarn)
+	}
+	// Backup holds exactly the deleted losers.
+	var bak int
+	var bakA, bakB string
+	_ = DataDB.Stdlib().QueryRowContext(context.Background(), `SELECT count(*) FROM `+finChkT+`fin_checklist_item_dedupe_bak WHERE deleted_at IS NOT NULL`).Scan(&bak)
+	_ = DataDB.Stdlib().QueryRowContext(context.Background(), `SELECT status FROM `+finChkT+`fin_checklist_item_dedupe_bak WHERE template_id=$1`, a).Scan(&bakA)
+	_ = DataDB.Stdlib().QueryRowContext(context.Background(), `SELECT note FROM `+finChkT+`fin_checklist_item_dedupe_bak WHERE template_id=$1`, b).Scan(&bakB)
+	if bak != 2 || bakA != "pending" || bakB != "old" {
+		t.Fatalf("backup rows=%d a=%q b=%q, want 2 / pending / old", bak, bakA, bakB)
+	}
+}
+
+// Rerun with index present (v5): patches twice -> no deletion, no warn, no backup table.
+func TestRunSchemaPatches_RerunNoopWithIndex(t *testing.T) {
+	finChkSetup(t)
+	if CurrentSchemaPatchVersion != 5 {
+		t.Fatalf("CurrentSchemaPatchVersion=%d want 5", CurrentSchemaPatchVersion)
+	}
+	a := finChkTemplate(t)
+	finChkSQL(t, `INSERT INTO `+finChkT+`fin_checklist_item (template_id, due_date) VALUES ($1, '2026-10-01'), ($1, '2026-10-02')`, a)
+	called := false
+	prev := warnFinChecklistDuplicates
+	warnFinChecklistDuplicates = func(sch string, n int64) {
+		if sch == finChkTestSchema {
+			called = true
+		}
+		prev(sch, n)
+	}
+	t.Cleanup(func() { warnFinChecklistDuplicates = prev })
+	for i := 0; i < 2; i++ {
+		if err := RunSchemaPatches(context.Background(), finChkTestSchema); err != nil {
+			t.Fatalf("run %d: %v", i, err)
+		}
+	}
+	var n int
+	_ = DataDB.Stdlib().QueryRowContext(context.Background(), `SELECT count(*) FROM `+finChkT+`fin_checklist_item`).Scan(&n)
+	if n != 2 {
+		t.Fatalf("rows changed: %d", n)
+	}
+	ok, err := tenantschema.TableExists(context.Background(), DataDB.Stdlib(), finChkTestSchema, "fin_checklist_item_dedupe_bak")
+	if err != nil || ok {
+		t.Fatalf("backup table exists=%v err=%v, want not created", ok, err)
+	}
+	if called {
+		t.Fatal("duplicate warn fired with index present")
 	}
 }
 

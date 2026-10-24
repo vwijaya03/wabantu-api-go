@@ -321,6 +321,7 @@ func RunTenantDDL(ctx context.Context, schemaName string) error {
 	if _, err := conn.ExecContext(ctx, fmt.Sprintf(`SET search_path TO "%s"`, schemaName)); err != nil {
 		return fmt.Errorf("set search_path: %w", err)
 	}
+	logFinChecklistDuplicates(ctx, conn, schemaName)
 	if _, err := conn.ExecContext(ctx, tenantDDL); err != nil {
 		return fmt.Errorf("run DDL: %w", err)
 	}
