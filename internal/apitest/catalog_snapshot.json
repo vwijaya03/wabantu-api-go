@@ -1454,19 +1454,19 @@
         {
           "service": "importcsv",
           "file": "importcsv/import.go",
-          "line": 133,
+          "line": 134,
           "annotation": "auth raw method=POST path=/api/v1/import/preview tag:owner"
         },
         {
           "service": "importcsv",
           "file": "importcsv/import.go",
-          "line": 141,
+          "line": 142,
           "annotation": "auth method=GET path=/api/v1/import/status/:jobId tag:owner"
         },
         {
           "service": "importcsv",
           "file": "importcsv/import.go",
-          "line": 203,
+          "line": 200,
           "annotation": "auth method=POST path=/api/v1/import/execute tag:owner"
         }
       ]

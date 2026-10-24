@@ -62,6 +62,7 @@ type PreviewResponse struct {
 
 type importStagingPayload struct {
 	TenantSchema  string            `json:"tenantSchema"`
+	TenantID      string            `json:"tenantId"`
 	TargetTable   string            `json:"targetTable"`
 	Headers       []string          `json:"headers"`
 	Rows          [][]string        `json:"rows"`
@@ -136,7 +137,7 @@ func PreviewHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 // ImportJobStatus returns import results stored after the worker finishes.
-// Owner only (staff -> 403), same as preview/execute.
+// Owner only (staff -> 403); only the tenant that ran the import can read it (else 404).
 //
 //encore:api auth method=GET path=/api/v1/import/status/:jobId tag:owner
 func ImportJobStatus(ctx context.Context, jobId string) (*ImportResult, error) {
@@ -153,13 +154,9 @@ func importJobStatus(ctx context.Context, user *types.AuthUser, jobID string, ge
 	}
 	raw, err := get(ctx, importResultKey(jobID))
 	if err != nil {
-		return nil, &errs.Error{Code: errs.NotFound, Message: "import job not found or still processing"}
+		return nil, &errs.Error{Code: errs.NotFound, Message: msgImportJobNotFound}
 	}
-	var result ImportResult
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return nil, &errs.Error{Code: errs.Internal, Message: "invalid import result"}
-	}
-	return &result, nil
+	return decodeImportResultForTenant(raw, user.TenantID)
 }
 
 // requireImportOwner mirrors the preview / catalog_image_http check: only
@@ -214,7 +211,7 @@ func executeImport(ctx context.Context, user *types.AuthUser, req *ExecuteReques
 		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "jobId required (from preview)"}
 	}
 
-	staged, err := loadStaging(ctx, deps.get, req.JobID, user.TenantSchema)
+	staged, err := loadStaging(ctx, deps.get, req.JobID, user.TenantSchema, user.TenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -262,17 +259,17 @@ func executeImport(ctx context.Context, user *types.AuthUser, req *ExecuteReques
 	}, nil
 }
 
-func loadStaging(ctx context.Context, get func(ctx context.Context, key string) ([]byte, error), jobID, tenantSchema string) (*importStagingPayload, error) {
+func loadStaging(ctx context.Context, get func(ctx context.Context, key string) ([]byte, error), jobID, tenantSchema, tenantID string) (*importStagingPayload, error) {
 	raw, err := get(ctx, importStagingKey(jobID))
 	if err != nil {
-		return nil, &errs.Error{Code: errs.NotFound, Message: "import preview expired or not found — upload again"}
+		return nil, &errs.Error{Code: errs.NotFound, Message: msgImportStagingNotFound}
 	}
 	var p importStagingPayload
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return nil, &errs.Error{Code: errs.Internal, Message: "invalid staged import"}
 	}
-	if p.TenantSchema != tenantSchema {
-		return nil, &errs.Error{Code: errs.PermissionDenied, Message: "import job belongs to another tenant"}
+	if err := checkStagingTenant(&p, tenantSchema, tenantID); err != nil {
+		return nil, err
 	}
 	if len(p.Headers) == 0 || len(p.Rows) == 0 {
 		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "staged import is empty"}
@@ -350,7 +347,7 @@ func handleImport(ctx context.Context, req ImportRequest) error {
 		"failed", result.FailedCount,
 	)
 	if req.JobID != "" {
-		b, _ := json.Marshal(result)
+		b, _ := encodeImportResult(req.TenantID, result)
 		_ = appauth.RedisClient().Set(ctx, importResultKey(req.JobID), b, 24*time.Hour).Err()
 	}
 	return nil

@@ -149,6 +149,7 @@ func servePreview(w http.ResponseWriter, req *http.Request, deps previewDeps) {
 	}
 	raw, err := json.Marshal(importStagingPayload{
 		TenantSchema: user.TenantSchema,
+		TenantID:     user.TenantID,
 		TargetTable:  target,
 		Headers:      headers,
 		Rows:         rows,

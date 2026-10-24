@@ -54,6 +54,7 @@ func (s *fakeStore) deps() executeDeps {
 func catalogStaged() importStagingPayload {
 	return importStagingPayload{
 		TenantSchema: "t_import_test",
+		TenantID:     "ten_1",
 		TargetTable:  "business_catalog_item",
 		Headers:      []string{"Nama", "Kode"},
 		Rows:         [][]string{{"Kopi", "K1"}},
@@ -158,7 +159,7 @@ func TestExecute_ImpersonatingSuperAdmin_OK(t *testing.T) {
 
 func resultStore(t *testing.T, jobID string) *fakeStore {
 	t.Helper()
-	raw, _ := json.Marshal(ImportResult{TotalRows: 2, SuccessCount: 2})
+	raw, _ := encodeImportResult("ten_1", ImportResult{TotalRows: 2, SuccessCount: 2})
 	return &fakeStore{data: map[string][]byte{importResultKey(jobID): raw}}
 }
 
