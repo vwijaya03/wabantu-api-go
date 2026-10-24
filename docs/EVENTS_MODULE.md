@@ -175,7 +175,7 @@ Kontak: package `inbox` — kolom `birth_date` pada create/update contact.
 
 **Catatan konsumsi (`mealNotes`):** string opsional di body `POST/PUT .../people`, body daftar staf publik, respons list person, dan monitor staf publik. Contoh: "nasi setengah", "tanpa nasi", "alergi udang".
 - Disimpan di `evt_event_person.meal_notes TEXT NULL` (kolom ditambah otomatis lewat patch `ALTER ... ADD COLUMN IF NOT EXISTS` untuk tenant lama).
-- Server trim spasi; kosong → `NULL`; maksimal 200 karakter (dihitung per rune) → lebih dari itu `400 invalid_argument`.
+- Server trim spasi; kosong → `NULL`; maksimal 200 karakter (dihitung per rune) → lebih dari itu `400 invalid_argument`. DB juga menjaga lewat `evt_event_person_meal_notes_len_chk CHECK (char_length(meal_notes) <= 200)` (tenant lama: `NOT VALID`, hanya berlaku untuk tulisan baru).
 - Jika `countsTowardMeals=false`, server selalu menyimpan `NULL` (input diabaikan).
 - Berisi karakter NUL (`\x00`) → 400 "catatan konsumsi berisi karakter tidak valid" (`notes` juga: "catatan berisi karakter tidak valid").
 - PUT tanpa `mealNotes` (atau `""`) mengosongkan catatan. Ikut disalin saat duplikat acara.
