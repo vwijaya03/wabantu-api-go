@@ -2,12 +2,9 @@ package importcsv
 
 import (
 	"context"
-	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"io"
-	"mime/multipart"
-	"path/filepath"
+	"net/http"
 	"strings"
 
 	"time"
@@ -22,8 +19,6 @@ import (
 	"encore.app/wabantu/business"
 	"encore.app/wabantu/kb"
 	"encore.app/wabantu/shared/types"
-
-	"github.com/xuri/excelize/v2"
 )
 
 var tenantDB = sqldb.Named("tenant")
@@ -34,7 +29,7 @@ type ImportRequest struct {
 	JobID         string            `json:"jobId"`
 	TenantSchema  string            `json:"tenantSchema"`
 	TenantID      string            `json:"tenantId"`
-	TargetTable   string            `json:"targetTable"` // "business_catalog_item" | "knowledge_base_entry"
+	TargetTable   string            `json:"targetTable"` // "business_catalog_item" (legacy queued: "knowledge_base_entry")
 	Headers       []string          `json:"headers"`
 	ColumnMapping map[string]string `json:"columnMapping"`
 	Rows          [][]string        `json:"rows"`
@@ -53,7 +48,7 @@ var _ = pubsub.NewSubscription(ImportTopic, "import-processor", pubsub.Subscript
 // ---------- Types ----------
 
 type PreviewRequest struct {
-	TargetTable string `json:"targetTable"` // "business_catalog_item" | "knowledge_base_entry"
+	TargetTable string `json:"targetTable"` // "business_catalog_item" only
 }
 
 type PreviewResponse struct {
@@ -105,16 +100,14 @@ var catalogColumns = map[string]bool{
 	"sell_price": true, "sell_unit": true, "is_active": true, "barcode": true,
 }
 
-var kbColumns = map[string]bool{
-	"question": true, "answer": true, "category": true,
-}
-
+// validColumns is the allowlist of import targets (preview suggestions and
+// execute). Only business_catalog_item is importable from a file (CTO decision
+// 2026-10-24); knowledge_base_entry was removed. processRow keeps its KB case
+// only so already-queued file-import messages can still drain.
 func validColumns(target string) map[string]bool {
 	switch target {
 	case "business_catalog_item":
 		return catalogColumns
-	case "knowledge_base_entry":
-		return kbColumns
 	default:
 		return nil
 	}
@@ -127,71 +120,38 @@ const maxImportRows = 50_000
 
 func importStagingKey(jobID string) string { return "import:staging:" + jobID }
 
-// Preview parses an uploaded file, stores full rows in Redis (staging), returns jobId + sample.
+// PreviewHTTP parses an uploaded CSV/XLSX, stores full rows in Redis (staging),
+// and returns jobId + sample.
 //
-//encore:api auth method=POST path=/api/v1/import/preview tag:owner
-func Preview(ctx context.Context, file *multipart.FileHeader) (*PreviewResponse, error) {
-	u, _ := auth.UserID()
-	userData, _ := auth.Data().(*types.AuthUser)
-	rlog.Info("import preview", "user", u)
-
-	target := "business_catalog_item"
-	if userData == nil {
-		return nil, &errs.Error{Code: errs.Unauthenticated, Message: "not authenticated"}
-	}
-
-	f, err := file.Open()
-	if err != nil {
-		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "cannot open uploaded file"}
-	}
-	defer f.Close()
-
-	headers, rows, err := parseFile(f, file.Filename)
-	if err != nil {
-		return nil, &errs.Error{Code: errs.InvalidArgument, Message: fmt.Sprintf("parse error: %s", err)}
-	}
-	if len(rows) > maxImportRows {
-		return nil, &errs.Error{Code: errs.InvalidArgument, Message: fmt.Sprintf("max %d rows per import", maxImportRows)}
-	}
-
-	jobID := fmt.Sprintf("imp_%d", time.Now().UnixNano())
-	payload := importStagingPayload{
-		TenantSchema: userData.TenantSchema,
-		TargetTable:  target,
-		Headers:      headers,
-		Rows:         rows,
-		UploadedBy:   string(u),
-	}
-	raw, _ := json.Marshal(payload)
-	if err := appauth.RedisClient().Set(ctx, importStagingKey(jobID), raw, importStagingTTL).Err(); err != nil {
-		return nil, &errs.Error{Code: errs.Internal, Message: "failed to stage import file"}
-	}
-
-	sample := rows
-	if len(sample) > 5 {
-		sample = sample[:5]
-	}
-
-	suggestions := suggestMapping(headers, target)
-
-	return &PreviewResponse{
-		JobID:       jobID,
-		TargetTable: target,
-		Headers:     headers,
-		SampleRows:  sample,
-		Suggestions: suggestions,
-		TotalRows:   len(rows),
-	}, nil
+// Must be a raw endpoint: a typed Encore API marshals its request parameter
+// across the API boundary, and *multipart.FileHeader only carries the uploaded
+// bytes in unexported fields, so a typed `file *multipart.FileHeader` param can
+// never be opened (always 400 "cannot open uploaded file"). Multipart fields:
+// "file" (required) and "targetTable" (optional, default business_catalog_item);
+// both names are relied on by FE lib/api/import.ts. Limits: see preview_upload.go.
+//
+//encore:api auth raw method=POST path=/api/v1/import/preview tag:owner
+func PreviewHTTP(w http.ResponseWriter, req *http.Request) {
+	servePreview(w, req, defaultPreviewDeps())
 }
 
 // ImportJobStatus returns import results stored after the worker finishes.
+// Owner only (staff -> 403), same as preview/execute.
 //
 //encore:api auth method=GET path=/api/v1/import/status/:jobId tag:owner
 func ImportJobStatus(ctx context.Context, jobId string) (*ImportResult, error) {
-	if jobId == "" {
+	user, _ := auth.Data().(*types.AuthUser)
+	return importJobStatus(ctx, user, jobId, redisGetBytes)
+}
+
+func importJobStatus(ctx context.Context, user *types.AuthUser, jobID string, get func(ctx context.Context, key string) ([]byte, error)) (*ImportResult, error) {
+	if err := requireImportOwner(user); err != nil {
+		return nil, err
+	}
+	if jobID == "" {
 		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "jobId required"}
 	}
-	raw, err := appauth.RedisClient().Get(ctx, importResultKey(jobId)).Bytes()
+	raw, err := get(ctx, importResultKey(jobID))
 	if err != nil {
 		return nil, &errs.Error{Code: errs.NotFound, Message: "import job not found or still processing"}
 	}
@@ -202,24 +162,68 @@ func ImportJobStatus(ctx context.Context, jobId string) (*ImportResult, error) {
 	return &result, nil
 }
 
+// requireImportOwner mirrors the preview / catalog_image_http check: only
+// owners (or an impersonating super_admin) may use the import endpoints.
+func requireImportOwner(user *types.AuthUser) error {
+	if !user.CanPerformOwnerActions() {
+		return &errs.Error{Code: errs.PermissionDenied, Message: "forbidden"}
+	}
+	return nil
+}
+
+func redisGetBytes(ctx context.Context, key string) ([]byte, error) {
+	return appauth.RedisClient().Get(ctx, key).Bytes()
+}
+
+const msgTargetMismatch = "targetTable does not match preview"
+
+type executeDeps struct {
+	get     func(ctx context.Context, key string) ([]byte, error)
+	publish func(ctx context.Context, msg ImportRequest) error
+	del     func(ctx context.Context, key string) error
+}
+
+func defaultExecuteDeps() executeDeps {
+	return executeDeps{
+		get: redisGetBytes,
+		publish: func(ctx context.Context, msg ImportRequest) error {
+			_, err := ImportTopic.Publish(ctx, msg)
+			return err
+		},
+		del: func(ctx context.Context, key string) error {
+			return appauth.RedisClient().Del(ctx, key).Err()
+		},
+	}
+}
+
 // Execute validates mapping and publishes import job to the queue.
+// Owner only (staff -> 403). targetTable must equal the staged (preview)
+// target and must be an allowed import target (business_catalog_item only).
 //
 //encore:api auth method=POST path=/api/v1/import/execute tag:owner
 func Execute(ctx context.Context, req *ExecuteRequest) (*ExecuteResponse, error) {
-	uid, _ := auth.UserID()
-	userData := auth.Data().(*types.AuthUser)
+	user, _ := auth.Data().(*types.AuthUser)
+	return executeImport(ctx, user, req, defaultExecuteDeps())
+}
 
-	if req.JobID == "" {
+func executeImport(ctx context.Context, user *types.AuthUser, req *ExecuteRequest, deps executeDeps) (*ExecuteResponse, error) {
+	if err := requireImportOwner(user); err != nil {
+		return nil, err
+	}
+	if req == nil || req.JobID == "" {
 		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "jobId required (from preview)"}
 	}
 
-	staged, err := loadStaging(ctx, req.JobID, userData.TenantSchema)
+	staged, err := loadStaging(ctx, deps.get, req.JobID, user.TenantSchema)
 	if err != nil {
 		return nil, err
 	}
-	target := req.TargetTable
+	target := strings.TrimSpace(req.TargetTable)
 	if target == "" {
 		target = staged.TargetTable
+	}
+	if target != staged.TargetTable {
+		return nil, &errs.Error{Code: errs.InvalidArgument, Message: msgTargetMismatch}
 	}
 	valid := validColumns(target)
 	if valid == nil {
@@ -235,31 +239,31 @@ func Execute(ctx context.Context, req *ExecuteRequest) (*ExecuteResponse, error)
 	}
 
 	jobID := req.JobID
-	_, err = ImportTopic.Publish(ctx, ImportRequest{
+	err = deps.publish(ctx, ImportRequest{
 		JobID:         jobID,
-		TenantSchema:  userData.TenantSchema,
-		TenantID:      userData.TenantID,
+		TenantSchema:  user.TenantSchema,
+		TenantID:      user.TenantID,
 		TargetTable:   target,
 		Headers:       staged.Headers,
 		ColumnMapping: req.ColumnMapping,
 		Rows:          staged.Rows,
-		UploadedBy:    string(uid),
+		UploadedBy:    user.AccountID,
 	})
 	if err != nil {
 		return nil, &errs.Error{Code: errs.Internal, Message: "failed to queue import"}
 	}
 
-	_ = appauth.RedisClient().Del(ctx, importStagingKey(jobID)).Err()
+	_ = deps.del(ctx, importStagingKey(jobID))
 
-	rlog.Info("import queued", "user", uid, "target", target, "jobId", jobID)
+	rlog.Info("import queued", "user", user.AccountID, "target", target, "jobId", jobID)
 	return &ExecuteResponse{
 		Message: "Import job queued",
 		JobID:   jobID,
 	}, nil
 }
 
-func loadStaging(ctx context.Context, jobID, tenantSchema string) (*importStagingPayload, error) {
-	raw, err := appauth.RedisClient().Get(ctx, importStagingKey(jobID)).Bytes()
+func loadStaging(ctx context.Context, get func(ctx context.Context, key string) ([]byte, error), jobID, tenantSchema string) (*importStagingPayload, error) {
+	raw, err := get(ctx, importStagingKey(jobID))
 	if err != nil {
 		return nil, &errs.Error{Code: errs.NotFound, Message: "import preview expired or not found — upload again"}
 	}
@@ -274,63 +278,6 @@ func loadStaging(ctx context.Context, jobID, tenantSchema string) (*importStagin
 		return nil, &errs.Error{Code: errs.InvalidArgument, Message: "staged import is empty"}
 	}
 	return &p, nil
-}
-
-// ---------- File parsing ----------
-
-func parseFile(r io.Reader, filename string) ([]string, [][]string, error) {
-	ext := strings.ToLower(filepath.Ext(filename))
-	switch ext {
-	case ".csv":
-		return parseCSV(r)
-	case ".xlsx":
-		return parseXLSX(r)
-	default:
-		return nil, nil, fmt.Errorf("unsupported file type: %s (use .csv or .xlsx)", ext)
-	}
-}
-
-func parseCSV(r io.Reader) ([]string, [][]string, error) {
-	reader := csv.NewReader(r)
-	reader.LazyQuotes = true
-	reader.TrimLeadingSpace = true
-
-	records, err := reader.ReadAll()
-	if err != nil {
-		return nil, nil, fmt.Errorf("CSV parse: %w", err)
-	}
-	if len(records) < 2 {
-		return nil, nil, fmt.Errorf("file must have a header row + at least one data row")
-	}
-	return records[0], records[1:], nil
-}
-
-func parseXLSX(r io.Reader) ([]string, [][]string, error) {
-	rc, ok := r.(io.ReadCloser)
-	if !ok {
-		rc = io.NopCloser(r)
-	}
-	defer rc.Close()
-
-	f, err := excelize.OpenReader(r)
-	if err != nil {
-		return nil, nil, fmt.Errorf("XLSX parse: %w", err)
-	}
-	defer f.Close()
-
-	sheet := f.GetSheetName(0)
-	if sheet == "" {
-		return nil, nil, fmt.Errorf("no sheets found in XLSX")
-	}
-
-	rows, err := f.GetRows(sheet)
-	if err != nil {
-		return nil, nil, fmt.Errorf("read sheet: %w", err)
-	}
-	if len(rows) < 2 {
-		return nil, nil, fmt.Errorf("file must have a header row + at least one data row")
-	}
-	return rows[0], rows[1:], nil
 }
 
 // ---------- Column suggestion ----------
