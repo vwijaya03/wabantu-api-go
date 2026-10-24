@@ -106,6 +106,7 @@ CREATE TABLE IF NOT EXISTS evt_event_person (
     departure_time    TIME,
     notes                 TEXT,
     counts_toward_meals   BOOLEAN      NOT NULL DEFAULT true,
+    meal_notes            TEXT,
     created_at            TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
     deleted_at        TIMESTAMPTZ,
@@ -198,6 +199,7 @@ CREATE INDEX IF NOT EXISTS idx_evt_audit_created ON evt_audit_log(created_at DES
 
 ALTER TABLE evt_event_volunteer ADD COLUMN IF NOT EXISTS is_pencatat BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE evt_event_person ADD COLUMN IF NOT EXISTS counts_toward_meals BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE evt_event_person ADD COLUMN IF NOT EXISTS meal_notes TEXT;
 
 CREATE TABLE IF NOT EXISTS evt_person_therapy (
     person_id      UUID NOT NULL REFERENCES evt_event_person(id) ON DELETE CASCADE,

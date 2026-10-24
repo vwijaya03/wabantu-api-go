@@ -174,6 +174,13 @@ func eventsPersonPatchReady(ctx context.Context, schema string) (bool, error) {
 	if !hasMeals {
 		return false, nil
 	}
+	hasMealNotes, err := tenantschema.ColumnExists(ctx, db, schema, "evt_event_person", "meal_notes")
+	if err != nil {
+		return false, appErrs.Internal(err.Error())
+	}
+	if !hasMealNotes {
+		return false, nil
+	}
 	hasCatering, err := tenantschema.ColumnExists(ctx, db, schema, "evt_event", "catering_order_notes")
 	if err != nil {
 		return false, appErrs.Internal(err.Error())
@@ -190,6 +197,7 @@ func ensureEventsMissingColumns(ctx context.Context, conn *sql.Conn, schema stri
 		{"evt_event", "break_start_time"},
 		{"evt_event", "catering_order_notes"},
 		{"evt_event_person", "counts_toward_meals"},
+		{"evt_event_person", "meal_notes"},
 	}
 	var missing *colCheck
 	for i := range checks {

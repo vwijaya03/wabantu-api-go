@@ -110,7 +110,11 @@ func EventsModuleReady(ctx context.Context, q any, schema string) (bool, error) 
 	if err != nil || !ok {
 		return false, err
 	}
-	return ColumnExists(ctx, q, schema, "evt_event_person", "counts_toward_meals")
+	ok, err = ColumnExists(ctx, q, schema, "evt_event_person", "counts_toward_meals")
+	if err != nil || !ok {
+		return false, err
+	}
+	return ColumnExists(ctx, q, schema, "evt_event_person", "meal_notes")
 }
 
 // KnowledgeBaseReady — Q/A table for AI knowledge base module.

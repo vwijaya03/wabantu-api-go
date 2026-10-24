@@ -181,7 +181,7 @@ func copyEventPeople(ctx context.Context, ts tenantScope, srcID, dstID string) (
 	rows, err := ts.QueryContext(ctx, `
 		SELECT id::text, full_name, person_type, attendance_status,
 		       arrival_time::text, departure_time::text, COALESCE(notes,''),
-		       counts_toward_meals
+		       counts_toward_meals, meal_notes
 		FROM evt_event_person
 		WHERE event_id=$1::uuid AND deleted_at IS NULL
 		ORDER BY person_type, full_name`, srcID)
@@ -194,19 +194,19 @@ func copyEventPeople(ctx context.Context, ts tenantScope, srcID, dstID string) (
 	for rows.Next() {
 		var oldID, fullName, personType, att, notes string
 		var countsMeals bool
-		var arr, dep sql.NullString
-		if err := rows.Scan(&oldID, &fullName, &personType, &att, &arr, &dep, &notes, &countsMeals); err != nil {
+		var arr, dep, mealNotes sql.NullString
+		if err := rows.Scan(&oldID, &fullName, &personType, &att, &arr, &dep, &notes, &countsMeals, &mealNotes); err != nil {
 			return copied, appErrs.Internal(err.Error())
 		}
 		var newID string
 		err := ts.QueryRowContext(ctx, `
 			INSERT INTO evt_event_person (
 			  event_id, full_name, person_type, attendance_status,
-			  arrival_time, departure_time, notes, counts_toward_meals
-			) VALUES ($1::uuid,$2,$3,$4,$5::time,$6::time,$7,$8)
+			  arrival_time, departure_time, notes, counts_toward_meals, meal_notes
+			) VALUES ($1::uuid,$2,$3,$4,$5::time,$6::time,$7,$8,$9)
 			RETURNING id::text`,
 			dstID, fullName, personType, att,
-			nullTimeStrPtr(nullStringPtr(arr)), nullTimeStrPtr(nullStringPtr(dep)), notes, countsMeals,
+			nullTimeStrPtr(nullStringPtr(arr)), nullTimeStrPtr(nullStringPtr(dep)), notes, countsMeals, mealNotes,
 		).Scan(&newID)
 		if err != nil {
 			return copied, appErrs.Internal(err.Error())

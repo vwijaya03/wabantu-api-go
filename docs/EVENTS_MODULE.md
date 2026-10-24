@@ -62,7 +62,7 @@ Frontend: `web-frontend/lib/api/events.ts`, komponen di `web-frontend/components
 | `evt_event` | Acara (nama, slug, tanggal, jam, status) |
 | `evt_event_therapy` | Pengaturan per terapi: durasi, kapasitas, `schedule_mode`, jam (AUTO) |
 | `evt_event_therapy_slot_template` | Baris jam mulai/selesai per template (mode `MANUAL`) |
-| `evt_event_person` | Staf/orang di acara |
+| `evt_event_person` | Staf/orang di acara (`counts_toward_meals`, `meal_notes` = catatan konsumsi per orang) |
 | `evt_person_therapy` | Terapi yang dikuasai staf (+ jam partial) |
 | `evt_event_volunteer` | Relawan: peran + flag pencatat |
 | `evt_event_assignment` | Penugasan tugas |
@@ -173,6 +173,12 @@ Kontak: package `inbox` — kolom `birth_date` pada create/update contact.
 
 **Role slug (body):** `terapis`, `relawan`, `shijie`, `daoshi`, `fashi` → disimpan sebagai `person_type` DB.
 
+**Catatan konsumsi (`mealNotes`):** string opsional di body `POST/PUT .../people`, body daftar staf publik, respons list person, dan monitor staf publik. Contoh: "nasi setengah", "tanpa nasi", "alergi udang".
+- Disimpan di `evt_event_person.meal_notes TEXT NULL` (kolom ditambah otomatis lewat patch `ALTER ... ADD COLUMN IF NOT EXISTS` untuk tenant lama).
+- Server trim spasi; kosong → `NULL`; maksimal 200 karakter (dihitung per rune) → lebih dari itu `400 invalid_argument`.
+- Jika `countsTowardMeals=false`, server selalu menyimpan `NULL` (input diabaikan).
+- PUT tanpa `mealNotes` (atau `""`) mengosongkan catatan. Ikut disalin saat duplikat acara.
+
 ### Pasien
 
 | Method | Path | Role |
@@ -257,6 +263,7 @@ Seed default terapi (jika kosong): *Terapi 5 Elemen*, *Terapi Shijie*, *Terapi E
 - Pendaftaran pasien/staf: acara harus `PUBLISHED` dan dalam jendela registrasi.
 - Monitor & jadwal pasien: hanya `status = PUBLISHED` (selain itu → 404).
 - Monitor staf: field `cateringOrderNotes` dari `evt_event.catering_order_notes` (terpisah dari `eventDescription`).
+- Monitor staf: per orang ada `mealNotes` (dari `evt_event_person.meal_notes`, hanya terisi bila `countsTowardMeals=true`).
 
 #### Patient schedule response
 

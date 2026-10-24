@@ -284,6 +284,7 @@ type PublicStaffRegisterBody struct {
 	Phone             string   `json:"phone,omitempty"`
 	Notes             string   `json:"notes,omitempty"`
 	CountsTowardMeals *bool    `json:"countsTowardMeals,omitempty"`
+	MealNotes         *string  `json:"mealNotes,omitempty"`
 }
 
 //encore:api public method=GET path=/api/v1/public/events/:tenantSlug/register/:eventSlug/staff
@@ -458,6 +459,7 @@ func postPublicStaffRegistration(ctx context.Context, tenantSlug, eventSlug stri
 		AttendanceStatus:  "PRESENT",
 		Notes:             notes,
 		CountsTowardMeals: p.CountsTowardMeals,
+		MealNotes:         p.MealNotes,
 		SaveToRoster:      &saveFalse,
 	}
 	if err := validatePerson(params); err != nil {
