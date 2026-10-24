@@ -28,6 +28,8 @@ type lfFakeFX struct {
 	earlyPick  []bool // needPick answers, consumed one per call (empty: false)
 	cancelErr  error
 	pauseErr   error
+	pending    [][]string // ids stored by setPendingCancel
+	pendingErr error
 }
 
 type lfNote struct{ kind, title, body string }
@@ -71,6 +73,15 @@ func (f *lfFakeFX) cancelOrder(_ context.Context, id string) error {
 	f.cancelled = append(f.cancelled, id)
 	return f.cancelErr
 }
+func (f *lfFakeFX) setPendingCancel(_ context.Context, ids []string) error {
+	f.calls = append(f.calls, "setpending")
+	if f.pendingErr != nil {
+		return f.pendingErr
+	}
+	f.pending = append(f.pending, ids)
+	return nil
+}
+func (f *lfFakeFX) clearPendingCancel(context.Context) { f.calls = append(f.calls, "clearpending") }
 func (f *lfFakeFX) pause(_ context.Context, reason string) error {
 	f.calls = append(f.calls, "pause")
 	f.paused = append(f.paused, reason)
@@ -460,14 +471,14 @@ func lfOpenDraftOrders(t *testing.T) ([]persistedOrder, []salesbrain.OrderSnapsh
 		lfTestOrder(t, "f4bfce06-0000-0000-0000-000000000001", "draft", "unpaid", now.Add(-time.Hour), []order.OrderItem{lfTunaItem}, order.ShippingAddress{Name: "Ana", Phone: "+62872839472828"}),
 		lfTestOrder(t, "aaaaaaaa-0000-0000-0000-000000000002", "draft", "unpaid", now.Add(-5*time.Hour), []order.OrderItem{lfSalmonItem}, order.ShippingAddress{}),
 	}
-	return orders, mapOpenOrders(orders, now)
+	return orders, lfTestOpen(orders)
 }
 
 func TestLLMFirstApplyCancelDraftUsesTemplateAndClearsState(t *testing.T) {
 	fx := &lfFakeFX{}
 	all, _ := lfOpenDraftOrders(t)
 	orders := all[:1] // the buyer has exactly one open order
-	open := mapOpenOrders(orders, time.Date(2026, 10, 17, 7, 0, 0, 0, time.UTC))
+	open := lfTestOpen(orders)
 	d := salesbrain.Decision{Intent: salesbrain.IntentCancel, Reply: "OK, cancelled it for you!"}
 	plan := lfTestPlan(d, salesbrain.LangEN, nil, false, "")
 	in := lfApplyBase(plan, nil)
@@ -491,15 +502,15 @@ func TestLLMFirstApplyCancelDraftUsesTemplateAndClearsState(t *testing.T) {
 	}
 }
 
-// Two open orders and nothing that names one: the model is asking which one, so nothing is
-// cancelled on a guess. The model's own answer stands and the live state is not touched.
-func TestLLMFirstApplyCancelWithSeveralOpenOrdersDoesNotGuess(t *testing.T) {
+// Two unfinished orders and nothing that names one: a cancellation is never guessed. The buyer gets
+// the code-built pick list and the live state is not touched.
+func TestLLMFirstApplyCancelWithSeveralOpenOrdersSendsPickList(t *testing.T) {
 	fx := &lfFakeFX{}
 	orders, open := lfOpenDraftOrders(t)
 	if len(open) != 2 {
 		t.Fatalf("test setup: want two open orders, got %d", len(open))
 	}
-	d := salesbrain.Decision{Intent: salesbrain.IntentCancel, Reply: "You have two open orders, WB-F4BFCE06 and WB-AAAAAAAA. Which one should I cancel?"}
+	d := salesbrain.Decision{Intent: salesbrain.IntentCancel, Reply: "Done, cancelled WB-F4BFCE06!"}
 	plan := lfTestPlan(d, salesbrain.LangEN, nil, false, "")
 	in := lfApplyBase(plan, nil)
 	in.Orders, in.Open, in.UserText = orders, open, "cancel my order"
@@ -508,8 +519,16 @@ func TestLLMFirstApplyCancelWithSeveralOpenOrdersDoesNotGuess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(fx.calls) != 0 || out.Reply != d.Reply || out.OrderID != "" || out.ReplacedReason != "" {
-		t.Fatalf("nothing may be cancelled or replaced: calls=%v out=%+v", fx.calls, out)
+	if len(fx.calls) != 0 || out.OrderID != "" || out.ReplacedReason != lfReplacedCancelPick || out.Author != "system" {
+		t.Fatalf("nothing may be cancelled: calls=%v out=%+v", fx.calls, out)
+	}
+	for _, want := range []string{"WB-F4BFCE06", "WB-AAAAAAAA", "Which one would you like to cancel"} {
+		if !strings.Contains(out.Reply, want) {
+			t.Errorf("pick list missing %q:\n%s", want, out.Reply)
+		}
+	}
+	if strings.Contains(out.Reply, "Done") {
+		t.Errorf("the model's false claim must not be sent: %q", out.Reply)
 	}
 }
 
@@ -600,7 +619,7 @@ func TestLLMFirstApplyCancelAlreadyCancelledIsFine(t *testing.T) {
 	fx := &lfFakeFX{cancelErr: sql.ErrNoRows}
 	all, _ := lfOpenDraftOrders(t)
 	orders := all[:1] // exactly one open order, so the cancel target is unambiguous
-	open := mapOpenOrders(orders, time.Date(2026, 10, 17, 7, 0, 0, 0, time.UTC))
+	open := lfTestOpen(orders)
 	d := salesbrain.Decision{Intent: salesbrain.IntentCancel, Reply: "Cancelled."}
 	plan := lfTestPlan(d, salesbrain.LangEN, nil, false, "")
 	in := lfApplyBase(plan, nil)
@@ -666,7 +685,7 @@ func TestLLMFirstApplyContinueOrderLeavesPaymentStageAndLiveCartAlone(t *testing
 	now := time.Date(2026, 10, 17, 7, 0, 0, 0, time.UTC)
 	waiting := lfTestOrder(t, "bbbbbbbb-0000-0000-0000-000000000003", "draft", "unpaid", now.Add(-time.Hour), []order.OrderItem{lfSalmonItem}, lfFullShip)
 	orders := []persistedOrder{waiting}
-	open := mapOpenOrders(orders, now)
+	open := lfTestOpen(orders)
 	d := salesbrain.Decision{Intent: salesbrain.IntentContinueOrder, Reply: "Please pay by BCA transfer to complete it."}
 
 	fx := &lfFakeFX{}

@@ -95,3 +95,26 @@ func TestParseDecisionFieldsAcceptsNumbers(t *testing.T) {
 		t.Fatalf("got %+v err=%v", d.Fields, err)
 	}
 }
+
+func TestParseDecisionCancelScope(t *testing.T) {
+	cases := []struct {
+		raw  string
+		want CancelScope
+	}{
+		{`{"intent":"cancel","cancel_scope":"all","reply":"x"}`, CancelAll},
+		{`{"intent":"cancel","cancel_scope":" ALL ","reply":"x"}`, CancelAll},
+		{`{"intent":"cancel","cancel_scope":"one","reply":"x"}`, CancelOne},
+		{`{"intent":"cancel","cancel_scope":"everything","reply":"x"}`, ""},
+		{`{"intent":"cancel","reply":"x"}`, ""},
+		{`{"intent":"question","cancel_scope":"all","reply":"x"}`, ""}, // only a cancel carries a scope
+	}
+	for _, c := range cases {
+		d, err := ParseDecision(c.raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if d.CancelScope != c.want {
+			t.Errorf("%s: scope = %q, want %q", c.raw, d.CancelScope, c.want)
+		}
+	}
+}

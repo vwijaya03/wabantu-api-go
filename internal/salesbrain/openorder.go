@@ -12,17 +12,23 @@ import (
 const (
 	StatusDraft           = "draft"
 	StatusAwaitingPayment = "awaiting_payment"
+	// Statuses below exist only in the unfinished-orders list that answers the buyer ("do I have
+	// pending orders?"); the reminder policy never selects them (see SelectRemindOrders).
+	StatusAwaitingReview = "awaiting_review" // transfer proof submitted, shop is checking
+	StatusProcessing     = "processing"      // paid/confirmed, the shop is working on it
 )
 
 // Stage is where an open order is stuck.
 type Stage string
 
 const (
-	StageItems     Stage = "items"
-	StageRecipient Stage = "recipient"
-	StageAddress   Stage = "address"
-	StageConfirm   Stage = "confirm"
-	StagePayment   Stage = "payment"
+	StageItems      Stage = "items"
+	StageRecipient  Stage = "recipient"
+	StageAddress    Stage = "address"
+	StageConfirm    Stage = "confirm"
+	StagePayment    Stage = "payment"
+	StageReview     Stage = "review"     // transfer proof submitted, waiting for the shop to check it
+	StageProcessing Stage = "processing" // confirmed/paid, the shop is processing it
 )
 
 // OrderLine is one product line of a cart or order.
@@ -47,19 +53,25 @@ type OrderSnapshot struct {
 	Lines     []OrderLine
 	Subtotal  int64
 	UpdatedAt time.Time
+	// Paid: the order is past the unpaid stage (proof submitted, confirmed, paid, processing).
+	// Code never cancels it itself: a cancellation goes to the shop team.
+	Paid bool
 }
 
 const (
 	OpenOrderMaxAge      = 72 * time.Hour
 	SessionGap           = 30 * time.Minute
 	MaxRemindersPerOrder = 2
-	maxOpenOrdersListed  = 3
+	maxOpenOrdersListed  = 3  // reminder cap
+	MaxUnfinishedListed  = 10 // cap of the unfinished-orders list shown to the model
 	maxLinesDescribed    = 3
 )
 
-// SelectOpenOrders keeps drafts and unpaid orders updated within OpenOrderMaxAge, newest first,
-// at most three. Paid/processing/shipped/completed/cancelled orders are never "open".
-func SelectOpenOrders(snaps []OrderSnapshot, now time.Time) []OrderSnapshot {
+// SelectRemindOrders is the policy of the PROACTIVE reminder only: drafts and unpaid orders updated
+// within OpenOrderMaxAge, newest first, at most three. Paid/processing/shipped/completed/cancelled
+// orders are never reminded. It must not be used to answer "do I have pending orders?": that
+// answer comes from ListUnfinishedOrders, which has no age limit (incident 21 Oct 2026).
+func SelectRemindOrders(snaps []OrderSnapshot, now time.Time) []OrderSnapshot {
 	var out []OrderSnapshot
 	for _, s := range snaps {
 		if s.Status != StatusDraft && s.Status != StatusAwaitingPayment {
@@ -75,6 +87,19 @@ func SelectOpenOrders(snaps []OrderSnapshot, now time.Time) []OrderSnapshot {
 		out = out[:maxOpenOrdersListed]
 	}
 	return out
+}
+
+// ListUnfinishedOrders is the STATE that answers the buyer: every unfinished order of this buyer
+// whatever its age (the caller already dropped cancelled/shipped/completed ones), newest first,
+// at most MaxUnfinishedListed. more is how many were left out of the list.
+func ListUnfinishedOrders(snaps []OrderSnapshot) (list []OrderSnapshot, more int) {
+	list = append(list, snaps...)
+	sort.SliceStable(list, func(i, j int) bool { return list[i].UpdatedAt.After(list[j].UpdatedAt) })
+	if len(list) > MaxUnfinishedListed {
+		more = len(list) - MaxUnfinishedListed
+		list = list[:MaxUnfinishedListed]
+	}
+	return list, more
 }
 
 // ReminderState is persisted per conversation by the caller (Redis).
@@ -130,6 +155,12 @@ func DescribeOrder(o OrderSnapshot, lang Lang) string {
 }
 
 func describeLines(lines []OrderLine, lang Lang) string {
+	if len(lines) == 0 {
+		if lang == LangEN {
+			return "items not recorded"
+		}
+		return "item tidak tercatat"
+	}
 	var parts []string
 	for i, l := range lines {
 		if i == maxLinesDescribed {
@@ -148,18 +179,22 @@ func describeLines(lines []OrderLine, lang Lang) string {
 
 func stagePhrase(s Stage, lang Lang) string {
 	en := map[Stage]string{
-		StageItems:     "still choosing items",
-		StageRecipient: "just waiting for the recipient's name and phone",
-		StageAddress:   "just waiting for the delivery address",
-		StageConfirm:   "waiting for your final confirmation",
-		StagePayment:   "waiting for payment",
+		StageItems:      "still choosing items",
+		StageRecipient:  "just waiting for the recipient's name and phone",
+		StageAddress:    "just waiting for the delivery address",
+		StageConfirm:    "waiting for your final confirmation",
+		StagePayment:    "waiting for payment",
+		StageReview:     "payment proof received, the shop is checking it",
+		StageProcessing: "paid or confirmed, being processed by the shop",
 	}
 	id := map[Stage]string{
-		StageItems:     "masih memilih produk",
-		StageRecipient: "tinggal nama dan nomor HP penerima",
-		StageAddress:   "tinggal alamat pengiriman",
-		StageConfirm:   "tinggal konfirmasi akhir",
-		StagePayment:   "menunggu pembayaran",
+		StageItems:      "masih memilih produk",
+		StageRecipient:  "tinggal nama dan nomor HP penerima",
+		StageAddress:    "tinggal alamat pengiriman",
+		StageConfirm:    "tinggal konfirmasi akhir",
+		StagePayment:    "menunggu pembayaran",
+		StageReview:     "bukti bayar sudah masuk, sedang dicek toko",
+		StageProcessing: "sudah dibayar/dikonfirmasi, sedang diproses toko",
 	}
 	if lang == LangEN {
 		if p, ok := en[s]; ok {
