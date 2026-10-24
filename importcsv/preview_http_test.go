@@ -163,7 +163,7 @@ func TestPreview_CSV_OK(t *testing.T) {
 	if rec.calls != 1 || rec.jobID != "imp_42" {
 		t.Fatalf("stage calls=%d job=%q", rec.calls, rec.jobID)
 	}
-	if rec.payload.TenantSchema != "t_import_test" || rec.payload.UploadedBy != "acc_owner" || len(rec.payload.Rows) != 2 {
+	if rec.payload.TenantSchema != "t_import_test" || rec.payload.TenantID != "ten_1" || rec.payload.UploadedBy != "acc_owner" || len(rec.payload.Rows) != 2 {
 		t.Fatalf("staged payload = %+v", rec.payload)
 	}
 }

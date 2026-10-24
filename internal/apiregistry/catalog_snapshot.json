@@ -2062,7 +2062,7 @@
     {
       "service": "importcsv",
       "file": "importcsv/import.go",
-      "line": 203,
+      "line": 200,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/import/execute",
@@ -2072,7 +2072,7 @@
     {
       "service": "importcsv",
       "file": "importcsv/import.go",
-      "line": 133,
+      "line": 134,
       "access": "auth",
       "method": "POST",
       "path": "/api/v1/import/preview",
@@ -2083,7 +2083,7 @@
     {
       "service": "importcsv",
       "file": "importcsv/import.go",
-      "line": 141,
+      "line": 142,
       "access": "auth",
       "method": "GET",
       "path": "/api/v1/import/status/:jobId",

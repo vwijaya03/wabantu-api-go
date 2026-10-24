@@ -297,7 +297,7 @@ api-go/
   audit/                     # audit log
   admin/                     # super admin, impersonation
   flag/                      # feature flags + superadmin RAG rollout (`/flags/retrieval-*`)
-  importcsv/                 # import CSV/XLSX
+  importcsv/                 # import CSV/XLSX (job: jobId crypto/rand, status/execute dibatasi tenant)
   scripts/
     setup-secrets-from-env.sh
 ```
