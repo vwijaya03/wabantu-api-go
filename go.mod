@@ -1,6 +1,6 @@
 module encore.app/wabantu
 
-go 1.26.3
+go 1.26.10
 
 require (
 	encore.dev v1.44.6
@@ -14,7 +14,7 @@ require (
 	github.com/lvillar/gofpdf v1.1.0
 	github.com/redis/go-redis/v9 v9.19.0
 	github.com/sashabaranov/go-openai v1.42.0
-	github.com/xuri/excelize/v2 v2.9.0
+	github.com/xuri/excelize/v2 v2.11.1-0.20261020033641-611b222fd8f7
 )
 
 require (
@@ -37,13 +37,12 @@ require (
 	github.com/jackc/pgservicefile v0.0.0-20221227161230-091c0ba34f0a // indirect
 	github.com/jackc/puddle/v2 v2.2.1 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
-	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 // indirect
-	github.com/richardlehane/mscfb v1.0.4 // indirect
-	github.com/richardlehane/msoleps v1.0.4 // indirect
+	github.com/richardlehane/mscfb v1.0.8 // indirect
+	github.com/richardlehane/msoleps v1.0.6 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
-	github.com/stretchr/testify v1.11.1 // indirect
-	github.com/xuri/efp v0.0.0-20240408161823-9ad904a10d6d // indirect
-	github.com/xuri/nfp v0.0.0-20240318013403-ab9948c2c4a7 // indirect
+	github.com/tiendc/go-deepcopy v1.7.2 // indirect
+	github.com/xuri/efp v0.0.2 // indirect
+	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect
 	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect

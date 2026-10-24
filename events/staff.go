@@ -29,6 +29,7 @@ type EventPerson struct {
 	VolunteerRoleName  string    `json:"volunteerRoleName,omitempty"`
 	IsPencatat         bool      `json:"isPencatat"`
 	CountsTowardMeals  bool      `json:"countsTowardMeals"`
+	MealNotes          *string   `json:"mealNotes,omitempty"`
 	AvailableFrom      *string   `json:"availableFrom,omitempty"`
 	AvailableUntil     *string   `json:"availableUntil,omitempty"`
 	CreatedAt          time.Time `json:"createdAt"`
@@ -49,6 +50,7 @@ type UpsertPersonParams struct {
 	VolunteerRoleID  *string  `json:"volunteerRoleId,omitempty"`
 	IsPencatat        bool     `json:"isPencatat"`
 	CountsTowardMeals *bool    `json:"countsTowardMeals,omitempty"`
+	MealNotes         *string  `json:"mealNotes,omitempty"`
 	AvailableFrom     *string  `json:"availableFrom,omitempty"`
 	AvailableUntil    *string  `json:"availableUntil,omitempty"`
 }
@@ -106,10 +108,10 @@ func ListEventPeople(ctx context.Context, eventId string, p *ListPeopleParams) (
 		var items []EventPerson
 		for rows.Next() {
 			var person EventPerson
-			var arr, dep, notes sql.NullString
+			var arr, dep, notes, mealNotes sql.NullString
 			var nameEnc, nameLegacy sql.NullString
 			if err := rows.Scan(&person.ID, &person.EventID, &nameEnc, &nameLegacy, &person.PersonType,
-				&person.AttendanceStatus, &arr, &dep, &notes, &person.CountsTowardMeals, &person.CreatedAt); err != nil {
+				&person.AttendanceStatus, &arr, &dep, &notes, &person.CountsTowardMeals, &mealNotes, &person.CreatedAt); err != nil {
 				return nil, appErrs.Internal(err.Error())
 			}
 			person.FullName, err = decryptPersonName(nameEnc.String, nameLegacy.String)
@@ -123,6 +125,10 @@ func ListEventPeople(ctx context.Context, eventId string, p *ListPeopleParams) (
 				person.DepartureTime = &dep.String
 			}
 			person.Notes = notes.String
+			if mealNotes.Valid && mealNotes.String != "" {
+				mn := mealNotes.String
+				person.MealNotes = &mn
+			}
 			items = append(items, person)
 		}
 		if err := rows.Err(); err != nil {
@@ -148,7 +154,7 @@ func ListEventPeople(ctx context.Context, eventId string, p *ListPeopleParams) (
 		       COALESCE(p.full_name_enc,''), COALESCE(p.full_name,''),
 		       p.person_type, p.attendance_status,
 		       p.arrival_time::text, p.departure_time::text, COALESCE(p.notes,''),
-		       p.counts_toward_meals, p.created_at
+		       p.counts_toward_meals, p.meal_notes, p.created_at
 		FROM evt_event_person p
 		WHERE %s %s`, where, orderBy), args...)
 		if err != nil {
@@ -181,7 +187,7 @@ func ListEventPeople(ctx context.Context, eventId string, p *ListPeopleParams) (
 		       COALESCE(p.full_name_enc,''), COALESCE(p.full_name,''),
 		       p.person_type, p.attendance_status,
 		       p.arrival_time::text, p.departure_time::text, COALESCE(p.notes,''),
-		       p.counts_toward_meals, p.created_at
+		       p.counts_toward_meals, p.meal_notes, p.created_at
 		FROM evt_event_person p
 		WHERE %s %s LIMIT $%d OFFSET $%d`, where, orderBy, i, i+1), args...)
 	if err != nil {
@@ -255,11 +261,11 @@ func CreateEventPerson(ctx context.Context, eventId string, p *UpsertPersonParam
 		return nil, appErrs.Internal(encErr.Error())
 	}
 	err = txTS.QueryRowContext(ctx, `
-		INSERT INTO evt_event_person (event_id, full_name, full_name_enc, normalized_name, person_type, attendance_status, arrival_time, departure_time, notes, counts_toward_meals)
-		VALUES ($1::uuid,$2,$3,$4,$5,$6,$7::time,$8::time,$9,$10) RETURNING id::text`,
+		INSERT INTO evt_event_person (event_id, full_name, full_name_enc, normalized_name, person_type, attendance_status, arrival_time, departure_time, notes, counts_toward_meals, meal_notes)
+		VALUES ($1::uuid,$2,$3,$4,$5,$6,$7::time,$8::time,$9,$10,$11) RETURNING id::text`,
 		eventId, piiPlaceholder(nameEnc), nameEnc, nameIdx, pt, att,
 		nullTimeStrPtr(p.ArrivalTime), nullTimeStrPtr(p.DepartureTime), nullStr(p.Notes),
-		countsTowardMealsValue(p),
+		countsTowardMealsValue(p), mealNotesValue(p),
 	).Scan(&personID)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
@@ -287,6 +293,7 @@ func CreateEventPerson(ctx context.Context, eventId string, p *UpsertPersonParam
 		ID: personID, EventID: eventId, FullName: p.FullName,
 		PersonType: pt, AttendanceStatus: att,
 		TherapyIDs: therapyIDs, VolunteerRoleID: p.VolunteerRoleID, IsPencatat: p.IsPencatat,
+		CountsTowardMeals: countsTowardMealsValue(p), MealNotes: mealNotesValue(p),
 	}
 	if len(therapyIDs) > 0 {
 		out.TherapyID = &therapyIDs[0]
@@ -336,11 +343,11 @@ func UpdateEventPerson(ctx context.Context, eventId, personId string, p *UpsertP
 		UPDATE evt_event_person SET full_name=$1, full_name_enc=$2, normalized_name=$3,
 		  person_type=$4, attendance_status=$5,
 		  arrival_time=$6::time, departure_time=$7::time, notes=$8,
-		  counts_toward_meals=$9, updated_at=now()
-		WHERE id=$10::uuid AND event_id=$11::uuid AND deleted_at IS NULL`,
+		  counts_toward_meals=$9, meal_notes=$10, updated_at=now()
+		WHERE id=$11::uuid AND event_id=$12::uuid AND deleted_at IS NULL`,
 		piiPlaceholder(nameEnc), nameEnc, nameIdx, pt, att,
 		nullTimeStrPtr(p.ArrivalTime), nullTimeStrPtr(p.DepartureTime), nullStr(p.Notes),
-		countsTowardMealsValue(p), personId, eventId)
+		countsTowardMealsValue(p), mealNotesValue(p), personId, eventId)
 	if err != nil {
 		return nil, appErrs.Internal(err.Error())
 	}
@@ -479,6 +486,9 @@ func DeleteEventPeopleBulk(ctx context.Context, eventId string, p *DeletePeopleP
 }
 
 func validatePerson(p *UpsertPersonParams) error {
+	if containsNUL(p.Notes) {
+		return appErrs.BadRequest("catatan berisi karakter tidak valid")
+	}
 	p.FullName = clampLen(p.FullName, maxPersonNameLen)
 	p.Notes = clampLen(p.Notes, maxNotesLen)
 	if strings.TrimSpace(p.FullName) == "" {
@@ -505,6 +515,11 @@ func validatePerson(p *UpsertPersonParams) error {
 		return appErrs.BadRequest("status kehadiran tidak valid")
 	}
 	p.AttendanceStatus = att
+	mealNotes, err := normalizeMealNotes(p.MealNotes, countsTowardMealsValue(p))
+	if err != nil {
+		return err
+	}
+	p.MealNotes = mealNotes
 	return nil
 }
 
